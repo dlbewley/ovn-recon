@@ -1,0 +1,57 @@
+{
+    "name": "ocp-console-plugin",
+    "version": "0.0.1",
+    "private": true,
+    "repository": "git@github.com:example/ocp-console-plugin.git",
+    "scripts": {
+        "clean": "rm -rf dist",
+        "build": "npm run clean && NODE_ENV=production npm run ts-node node_modules/.bin/webpack",
+        "build:dev": "npm run clean && NODE_ENV=development npm run ts-node node_modules/.bin/webpack",
+        "start": "npm run ts-node node_modules/.bin/webpack serve",
+        "start:dev": "npm run ts-node node_modules/.bin/webpack serve",
+        "ts-node": "ts-node -O '{\"module\":\"commonjs\"}'",
+        "lint": "eslint ./src --fix",
+        "test": "jest"
+    },
+    "consolePlugin": {
+        "name": "ocp-console-plugin",
+        "version": "0.0.1",
+        "displayName": "OpenShift Console Plugin Example",
+        "description": "An example OpenShift console plugin",
+        "exposedModules": {
+            "ExamplePage": "./components/ExamplePage"
+        },
+        "dependencies": {
+            "@console/pluginAPI": "*"
+        }
+    },
+    "dependencies": {
+        "@patternfly/react-core": "4.276.8",
+        "@patternfly/react-table": "4.113.0",
+        "react": "^17.0.1",
+        "react-dom": "^17.0.1",
+        "react-router-dom": "^5.3.0",
+        "react-helmet": "^6.1.0",
+        "react-i18next": "^11.8.11",
+        "i18next": "^20.6.1"
+    },
+    "devDependencies": {
+        "@openshift-console/dynamic-plugin-sdk": "^0.0.20",
+        "@openshift-console/dynamic-plugin-sdk-webpack": "^0.0.11",
+        "@types/node": "^18.0.0",
+        "@types/react": "^17.0.37",
+        "@types/react-dom": "^17.0.11",
+        "@types/react-router-dom": "^5.3.2",
+        "@types/react-helmet": "^6.1.0",
+        "@types/webpack": "^5.28.0",
+        "@types/webpack-dev-server": "^4.7.2",
+        "ts-loader": "^9.2.6",
+        "ts-node": "^10.4.0",
+        "typescript": "^4.5.4",
+        "webpack": "^5.65.0",
+        "webpack-cli": "^4.9.1",
+        "webpack-dev-server": "^4.7.1",
+        "css-loader": "^6.5.1",
+        "style-loader": "^3.3.1"
+    }
+}

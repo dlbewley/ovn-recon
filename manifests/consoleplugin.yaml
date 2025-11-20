@@ -1,0 +1,13 @@
+apiVersion: console.openshift.io/v1
+kind: ConsolePlugin
+metadata:
+  name: ocp-console-plugin
+spec:
+  displayName: "OpenShift Console Plugin Example"
+  backend:
+    type: Service
+    service:
+      basePath: /
+      name: ocp-console-plugin
+      namespace: default
+      port: 9443

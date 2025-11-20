@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local configuration
+setup_env.sh
+
+# Logs
+*.log
+build.log
+
+# OS generated files
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
