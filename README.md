@@ -1,5 +1,8 @@
 # OpenShift Console Plugin Walkthrough
 
+![Built with AI](https://img.shields.io/badge/Built%20with-AI-blueviolet?style=for-the-badge)
+
+
 ## Repository
 
 The source code for this project is available at: [https://github.com/dlbewley/ocp-console-plugin](https://github.com/dlbewley/ocp-console-plugin)
