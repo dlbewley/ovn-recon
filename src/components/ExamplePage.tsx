@@ -8,18 +8,16 @@ const ExamplePage: React.FC = () => {
             <Helmet>
                 <title>Example Plugin Page</title>
             </Helmet>
-            <Page>
-                <PageSection>
-                    <Title headingLevel="h1">Example Plugin Page</Title>
-                </PageSection>
-                <PageSection>
-                    <Card>
-                        <CardBody>
-                            Hello from the OpenShift Console Plugin!
-                        </CardBody>
-                    </Card>
-                </PageSection>
-            </Page>
+            <PageSection>
+                <Title headingLevel="h1">Example Plugin Page</Title>
+            </PageSection>
+            <PageSection isFilled >
+                <Card isFullHeight>
+                    <CardBody>
+                        Hello from the OpenShift Console Plugin!
+                    </CardBody>
+                </Card>
+            </PageSection>
         </>
     );
 };
