@@ -4,7 +4,7 @@ import { ConsoleRemotePlugin } from '@openshift-console/dynamic-plugin-sdk-webpa
 import * as path from 'path';
 import * as webpack from 'webpack';
 
-const config: webpack.Configuration = {
+const config: any = {
     mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
     context: path.resolve(__dirname, 'src'),
     entry: './index.tsx',
@@ -47,6 +47,15 @@ const config: webpack.Configuration = {
     optimization: {
         chunkIds: 'named',
         minimize: false,
+    },
+    devServer: {
+        port: 9001,
+        allowedHosts: 'all',
+        headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+            "Access-Control-Allow-Headers": "X-Requested-With, Content-Type, Authorization"
+        },
     },
 };
 

@@ -2,7 +2,6 @@
 
 ![Built with AI](https://img.shields.io/badge/Built%20with-AI-blueviolet?style=for-the-badge)
 
-
 ## Repository
 
 The source code for this project is available at: [https://github.com/dlbewley/ocp-console-plugin](https://github.com/dlbewley/ocp-console-plugin)
@@ -98,6 +97,44 @@ The build artifacts will be in the `dist` directory.
     ```
 
     The OpenShift console will reload to apply the changes. You should see a notification that the console has been updated.
+
+### Development Deployment
+
+During development, you can deploy changes to the cluster using the following command:
+
+```bash
+source setup_env.sh && \
+    make build push && \
+    oc rollout restart deployment/ocp-console-plugin -n "$NAMESPACE" && \
+    oc wait --for=condition=ready pod -l "$APP_SELECTOR" -n "$NAMESPACE" --timeout=60s
+```
+
+Example `setup_env.sh`:
+
+```bash
+#!/bin/bash
+
+# OpenShift Environment Setup Script
+# Usage: source setup_env.sh
+
+# Set the KUBECONFIG environment variable to the user's preferred path
+export KUBECONFIG=/Users/dale/.kube/ocp/hub/kubeconfig
+export NAMESPACE=ocp-console-example
+export APP_SELECTOR='app=ocp-console-plugin'
+
+# Alias kubectl to oc for convenience and consistency
+alias kubectl='oc'
+# Replace eza alias if exists
+alias ls >/dev/null && unalias ls
+
+echo "# Environment configured:"
+echo "  KUBECONFIG=$KUBECONFIG"
+echo "  NAMESPACE=$NAMESPACE"
+echo "  APP_SELECTOR=$APP_SELECTOR"
+echo "# Aliases configured:"
+echo "  'kubectl' aliased to 'oc'"
+echo "  'ls' unaliased
+```
 
 ## Troubleshooting
 
