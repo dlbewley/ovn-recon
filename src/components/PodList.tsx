@@ -49,7 +49,7 @@ const PodList: React.FC = () => {
                                     {pods.map((pod) => (
                                         <Tr key={pod.metadata.uid}>
                                             <Td dataLabel="Name">
-                                                <Link to={`/pod-details/${pod.metadata.namespace}/${pod.metadata.name}`}>
+                                                <Link to={`/example/pod-details/${pod.metadata.namespace}/${pod.metadata.name}`}>
                                                     {pod.metadata.name}
                                                 </Link>
                                             </Td>

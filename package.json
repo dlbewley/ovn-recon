@@ -2,7 +2,7 @@
     "name": "ocp-console-plugin",
     "version": "0.0.1",
     "private": true,
-    "repository": "git@github.com:example/ocp-console-plugin.git",
+    "repository": "git@github.com:dlbewley/ocp-console-plugin.git",
     "scripts": {
         "clean": "rm -rf dist",
         "build": "npm run clean && NODE_ENV=production npm run ts-node node_modules/.bin/webpack",
@@ -21,7 +21,9 @@
         "exposedModules": {
             "ExamplePage": "./components/ExamplePage",
             "PodList": "./components/PodList",
-            "PodDetails": "./components/PodDetails"
+            "PodDetails": "./components/PodDetails",
+            "NodeNetworkStateList": "./components/NodeNetworkStateList",
+            "NodeNetworkStateDetails": "./components/NodeNetworkStateDetails"
         },
         "dependencies": {
             "@console/pluginAPI": "*"

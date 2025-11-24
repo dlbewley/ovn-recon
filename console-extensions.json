@@ -1,8 +1,16 @@
 [
     {
+        "type": "console.navigation/section",
+        "properties": {
+            "id": "example-section",
+            "perspective": "admin",
+            "name": "Example"
+        }
+    },
+    {
         "type": "console.page/route",
         "properties": {
-            "path": "/example-page",
+            "path": "/example/page",
             "component": {
                 "$codeRef": "ExamplePage"
             }
@@ -13,15 +21,15 @@
         "properties": {
             "id": "example-page-nav",
             "perspective": "admin",
-            "section": "home",
+            "section": "example-section",
             "name": "Example Plugin Page",
-            "href": "/example-page"
+            "href": "/example/page"
         }
     },
     {
         "type": "console.page/route",
         "properties": {
-            "path": "/pod-list",
+            "path": "/example/pod-list",
             "component": {
                 "$codeRef": "PodList"
             }
@@ -30,7 +38,7 @@
     {
         "type": "console.page/route",
         "properties": {
-            "path": "/pod-details/:ns/:name",
+            "path": "/example/pod-details/:ns/:name",
             "component": {
                 "$codeRef": "PodDetails"
             }
@@ -41,9 +49,37 @@
         "properties": {
             "id": "pod-list-nav",
             "perspective": "admin",
-            "section": "home",
+            "section": "example-section",
             "name": "Pod List",
-            "href": "/pod-list"
+            "href": "/example/pod-list"
+        }
+    },
+    {
+        "type": "console.page/route",
+        "properties": {
+            "path": "/example/node-network-state",
+            "component": {
+                "$codeRef": "NodeNetworkStateList"
+            }
+        }
+    },
+    {
+        "type": "console.page/route",
+        "properties": {
+            "path": "/example/node-network-state/:name",
+            "component": {
+                "$codeRef": "NodeNetworkStateDetails"
+            }
+        }
+    },
+    {
+        "type": "console.navigation/href",
+        "properties": {
+            "id": "node-network-state-nav",
+            "perspective": "admin",
+            "section": "example-section",
+            "name": "Node Network State",
+            "href": "/example/node-network-state"
         }
     }
 ]
