@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Card, CardBody, CardTitle, Popover, Button, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch } from '@patternfly/react-core';
-import { NetworkIcon, ServerIcon, TopologyIcon, CubeIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon, PficonVcenterIcon, MigrationIcon } from '@patternfly/react-icons';
+import { NetworkIcon, ServerIcon, TopologyIcon, CubeIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon, PficonVcenterIcon, MigrationIcon, TagIcon } from '@patternfly/react-icons';
 
 interface NodeVisualizationProps {
     nns: any; // NodeNetworkState resource
@@ -9,6 +9,17 @@ interface NodeVisualizationProps {
 }
 
 const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], nads = [] }) => {
+    // Graph Types
+    interface GraphNode {
+        id: string;
+        upstream: string[];
+        downstream: string[];
+    }
+
+    interface Graph {
+        nodes: { [id: string]: GraphNode };
+    }
+
     const interfaces = nns?.status?.currentState?.interfaces || [];
     const ovn = nns?.status?.currentState?.ovn || {};
     const bridgeMappings = ovn['bridge-mappings'] || [];
@@ -30,6 +41,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Group interfaces
     const ethInterfaces = interfaces.filter((iface: any) => iface.type === 'ethernet' && iface.state !== 'ignore');
     const bondInterfaces = interfaces.filter((iface: any) => iface.type === 'bond');
+    const vlanInterfaces = interfaces.filter((iface: any) => iface.type === 'vlan' || iface.type === 'mac-vlan');
 
     const isBridge = (iface: any) => {
         if (['linux-bridge', 'ovs-bridge'].includes(iface.type)) return true;
@@ -43,7 +55,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Logical interfaces: ovs-interface that are NOT bridges and NOT ignored
     const logicalInterfaces = interfaces.filter((iface: any) => iface.type === 'ovs-interface' && !isBridge(iface) && iface.state !== 'ignore' && !iface.name.startsWith('patch'));
 
-    const otherInterfaces = interfaces.filter((iface: any) => !['ethernet', 'bond'].includes(iface.type) && !isBridge(iface) && iface.type !== 'ovs-interface');
+    const otherInterfaces = interfaces.filter((iface: any) => !['ethernet', 'bond', 'vlan', 'mac-vlan'].includes(iface.type) && !isBridge(iface) && iface.type !== 'ovs-interface');
 
     // Calculate positions with dynamic column visibility
     const nodePositions: { [name: string]: { x: number, y: number } } = {};
@@ -52,6 +64,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const columns = [
         { name: 'Physical Interfaces', data: ethInterfaces, key: 'eth' },
         { name: 'Bonds', data: bondInterfaces, key: 'bond' },
+        { name: 'VLAN Interfaces', data: vlanInterfaces, key: 'vlan' },
         { name: 'Bridges', data: bridgeInterfaces, key: 'bridge' },
         { name: 'Logical Interfaces', data: logicalInterfaces, key: 'logical' },
         { name: 'Bridge Mappings', data: bridgeMappings, key: 'ovn' },
@@ -74,6 +87,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     if (showHiddenColumns || bondInterfaces.length > 0) {
         bondInterfaces.forEach((iface: any, index: number) => {
             const colOffset = visibleColumns.findIndex(col => col.key === 'bond');
+            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+        });
+    }
+
+    if (showHiddenColumns || vlanInterfaces.length > 0) {
+        vlanInterfaces.forEach((iface: any, index: number) => {
+            const colOffset = visibleColumns.findIndex(col => col.key === 'vlan');
             nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
         });
     }
@@ -135,6 +155,88 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         return Math.max(itemHeight, 60 + (lines * 12) + 10);
     };
 
+    // Build Graph
+    const graph = React.useMemo(() => {
+        const g: Graph = { nodes: {} };
+        const addNode = (id: string) => {
+            if (!g.nodes[id]) g.nodes[id] = { id, upstream: [], downstream: [] };
+        };
+        const addEdge = (source: string, target: string) => {
+            addNode(source);
+            addNode(target);
+            if (!g.nodes[source].downstream.includes(target)) g.nodes[source].downstream.push(target);
+            if (!g.nodes[target].upstream.includes(source)) g.nodes[target].upstream.push(source);
+        };
+
+        // 1. Interfaces (Physical, Bond, VLAN, Bridge, Logical)
+        interfaces.forEach((iface: any) => {
+            addNode(iface.name);
+            // Upstream: master/controller
+            const master = iface.controller || iface.master;
+            if (master) addEdge(iface.name, master);
+
+            // Upstream: base-iface (VLAN/MAC-VLAN)
+            const baseIface = iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'];
+            if (baseIface) addEdge(baseIface, iface.name); // Correct direction: Base -> VLAN
+        });
+
+        // 2. Bridge Mappings (Bridge -> OVN Localnet)
+        bridgeMappings.forEach((mapping: any) => {
+            const ovnNodeId = `ovn-${mapping.localnet}`;
+            if (mapping.bridge) addEdge(mapping.bridge, ovnNodeId);
+        });
+
+        // 3. CUDNs (OVN Localnet -> CUDN)
+        cudns.forEach((cudn: any) => {
+            const cudnNodeId = `cudn-${cudn.metadata.name}`;
+            const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
+            if (physicalNetworkName) {
+                const ovnNodeId = `ovn-${physicalNetworkName}`;
+                addEdge(ovnNodeId, cudnNodeId); // Flow: OVN -> CUDN
+            }
+        });
+
+        // 4. Attachments (CUDN -> Attachment)
+        attachmentNodes.forEach((node: any) => {
+            const attachmentNodeId = `attachment-${node.cudn}`;
+            const cudnNodeId = `cudn-${node.cudn}`;
+            addEdge(cudnNodeId, attachmentNodeId); // Flow: CUDN -> Attachment
+        });
+
+        return g;
+    }, [interfaces, bridgeMappings, cudns, attachmentNodes]);
+
+    // Path Traversal
+    const [highlightedPath, setHighlightedPath] = React.useState<Set<string>>(new Set());
+    const [isHighlightActive, setIsHighlightActive] = React.useState<boolean>(false);
+
+    const getFlowPath = (startNodeId: string) => {
+        const path = new Set<string>();
+        const visited = new Set<string>();
+
+        const traverse = (nodeId: string, direction: 'upstream' | 'downstream') => {
+            if (visited.has(nodeId)) return;
+            visited.add(nodeId);
+            path.add(nodeId);
+
+            const node = graph.nodes[nodeId];
+            if (!node) return;
+
+            const nextNodes = direction === 'upstream' ? node.upstream : node.downstream;
+            nextNodes.forEach(nextId => {
+                path.add(`${nodeId}-${nextId}`); // Add Edge ID (source-target)
+                path.add(`${nextId}-${nodeId}`); // Add Edge ID (reverse for safety)
+                traverse(nextId, direction);
+            });
+        };
+
+        traverse(startNodeId, 'upstream');
+        visited.clear(); // Reset visited for downstream traversal (allow overlap)
+        traverse(startNodeId, 'downstream');
+
+        return path;
+    };
+
     // Attachments positions with dynamic spacing
     let currentAttachmentY = padding;
     const attachmentColOffset = visibleColumns.length; // Attachments always after visible columns
@@ -167,6 +269,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             case 'ovn-mapping': return <RouteIcon />;
             case 'cudn': return <NetworkIcon />;
             case 'attachment': return <MigrationIcon />;
+            case 'vlan': return <TagIcon />;
+            case 'mac-vlan': return <TagIcon />;
             default: return <NetworkIcon />;
         }
     };
@@ -186,8 +290,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             <line
                 key={`${startNode}-${endNode}`}
                 x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke="currentColor"
-                strokeWidth="2"
+                stroke={isHighlightActive ? (highlightedPath.has(`${startNode}-${endNode}`) || highlightedPath.has(`${endNode}-${startNode}`) ? '#0066CC' : '#ccc') : 'currentColor'}
+                strokeWidth={isHighlightActive ? (highlightedPath.has(`${startNode}-${endNode}`) || highlightedPath.has(`${endNode}-${startNode}`) ? 4 : 1) : 2}
+                opacity={isHighlightActive ? (highlightedPath.has(`${startNode}-${endNode}`) || highlightedPath.has(`${endNode}-${startNode}`) ? 1 : 0.1) : 1}
             />
         );
     };
@@ -196,9 +301,21 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const [activeNode, setActiveNode] = React.useState<any>(null);
     const [anchorElement, setAnchorElement] = React.useState<any>(null);
 
-    const handleNodeClick = (event: React.MouseEvent, iface: any) => {
+    const handleNodeClick = (event: React.MouseEvent, iface: any, nodeId: string) => {
+        event.stopPropagation(); // Prevent clearing highlight when clicking a node
         setAnchorElement(event.currentTarget);
         setActiveNode(iface);
+
+        // Highlight Path
+        const path = getFlowPath(nodeId);
+        setHighlightedPath(path);
+        setIsHighlightActive(true);
+    };
+
+    const handleBackgroundClick = () => {
+        setIsHighlightActive(false);
+        setHighlightedPath(new Set());
+        handlePopoverClose();
     };
 
     const handlePopoverClose = () => {
@@ -246,8 +363,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         return (
             <g
                 transform={`translate(${x}, ${y})`}
-                style={{ cursor: 'pointer' }}
-                onClick={(e) => handleNodeClick(e, iface)}
+                style={{ cursor: 'pointer', opacity: isHighlightActive ? (highlightedPath.has(displayName) || highlightedPath.has(`ovn-${iface.localnet}`) || highlightedPath.has(`cudn-${iface.metadata?.name}`) || highlightedPath.has(`attachment-${iface.cudn}`) ? 1 : 0.3) : 1 }}
+                onClick={(e) => {
+                    let nodeId = displayName;
+                    if (type === 'ovn-mapping') nodeId = `ovn-${iface.localnet}`;
+                    else if (type === 'cudn') nodeId = `cudn-${iface.metadata.name}`;
+                    else if (type === 'attachment') nodeId = `attachment-${iface.cudn}`;
+                    handleNodeClick(e, iface, nodeId);
+                }}
             >
                 <title>{displayName} ({displayType})</title>
                 <rect width={itemWidth} height={nodeHeight} rx={5} fill={color} stroke="var(--pf-global--BorderColor--100)" strokeWidth={1} />
@@ -288,13 +411,21 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                         onChange={(event, checked) => setShowHiddenColumns(checked)}
                     />
                 </div>
-                <svg width="100%" height={calculatedHeight} viewBox={`0 0 ${width} ${calculatedHeight}`} style={{ border: '1px solid var(--pf-global--BorderColor--100)', background: 'var(--pf-global--BackgroundColor--200)', color: 'var(--pf-global--Color--100)' }}>
+                <svg width="100%" height={calculatedHeight} viewBox={`0 0 ${width} ${calculatedHeight}`} style={{ border: '1px solid var(--pf-global--BorderColor--100)', background: 'var(--pf-global--BackgroundColor--200)', color: 'var(--pf-global--Color--100)' }} onClick={handleBackgroundClick}>
 
                     {/* Connectors */}
                     {interfaces.map((iface: any) => {
                         const master = iface.controller || iface.master;
                         if (master && nodePositions[master]) {
                             return renderConnector(iface.name, master);
+                        }
+                        return null;
+                    })}
+                    {/* VLAN and MAC-VLAN to base-iface connectors */}
+                    {vlanInterfaces.map((iface: any) => {
+                        const baseIface = iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'];
+                        if (baseIface && nodePositions[baseIface]) {
+                            return renderConnector(baseIface, iface.name);
                         }
                         return null;
                     })}
@@ -308,16 +439,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                         // Connect CUDN to OVN Mapping
                         const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
                         if (physicalNetworkName && nodePositions[`ovn-${physicalNetworkName}`]) {
-                            // Draw FROM CUDN TO OVN Mapping
-                            return renderConnector(`cudn-${cudn.metadata.name}`, `ovn-${physicalNetworkName}`);
+                            // Draw FROM OVN Mapping TO CUDN (Left to Right)
+                            return renderConnector(`ovn-${physicalNetworkName}`, `cudn-${cudn.metadata.name}`);
                         }
                         return null;
                     })}
                     {attachmentNodes.map((node: any) => {
-                        // Connect Attachment to CUDN
+                        // Connect CUDN to Attachment (Left to Right)
                         if (nodePositions[`cudn-${node.cudn}`]) {
-                            // Draw FROM Attachment TO CUDN
-                            return renderConnector(`attachment-${node.cudn}`, `cudn-${node.cudn}`);
+                            // Draw FROM CUDN TO Attachment
+                            return renderConnector(`cudn-${node.cudn}`, `attachment-${node.cudn}`);
                         }
                         return null;
                     })}
@@ -333,6 +464,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 )}
                                 {col.key === 'bond' && bondInterfaces.map((iface: any) =>
                                     nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#663399')
+                                )}
+                                {col.key === 'vlan' && vlanInterfaces.map((iface: any) =>
+                                    nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#9933CC')
                                 )}
                                 {col.key === 'bridge' && bridgeInterfaces.map((iface: any) =>
                                     nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#FF6600')
