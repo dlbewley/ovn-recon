@@ -75,7 +75,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const visibleColumns = showHiddenColumns ? columns : columns.filter(col => col.data.length > 0);
 
     // Position nodes based on visible columns
-    let currentColIndex = 0;
+    const currentColIndex = 0;
 
     if (showHiddenColumns || ethInterfaces.length > 0) {
         ethInterfaces.forEach((iface: any, index: number) => {
