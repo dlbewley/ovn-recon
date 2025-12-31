@@ -1,14 +1,19 @@
 # OpenShift Console Plugin Walkthrough
 
 ![Built with AI](https://img.shields.io/badge/Built%20with-AI-blueviolet?style=for-the-badge)
+[![Image Repository on Quay](https://quay.io/repository/dbewley/ovn-recon/status "Image Repository on Quay")](https://quay.io/repository/dbewley/ovn-recon)
 
-![nns visualization](img/nns-visualization.png)
+**Examples**
+
+![nns visualization 1](img/nns-visualization.png)
+![nns visualization 2](img/nns-visualization-2.png)
+![nns visualization 3](img/nns-visualization-3.png)
 
 ## Repository
 
-The source code for this project is available at: [https://github.com/dlbewley/ocp-console-plugin](https://github.com/dlbewley/ocp-console-plugin)
+The source code for this project is available at: [https://github.com/dlbewley/ovn-recon](https://github.com/dlbewley/ovn-recon)
 
-I have created a basic OpenShift console plugin that adds a new page to the console UI.
+OpenShift Console Plugin for OVN Rcon.
 
 ## Project Structure
 
@@ -70,13 +75,13 @@ The build artifacts will be in the `dist` directory.
     Since you are likely building on a Mac (ARM64) and deploying to an OpenShift cluster (likely AMD64), you need to specify the target platform:
 
     ```bash
-    podman build --platform linux/amd64 -t quay.io/$QUAY_USER/ocp-console-plugin:latest .
+    podman build --platform linux/amd64 -t quay.io/$QUAY_USER/ovn-recon:latest .
     ```
 
 2.  **Push the image:**
 
     ```bash
-    podman push quay.io/$QUAY_USER/ocp-console-plugin:latest
+    podman push quay.io/$QUAY_USER/ovn-recon:latest
     ```
 
     > [!NOTE]
@@ -95,7 +100,7 @@ The build artifacts will be in the `dist` directory.
     Patch the Console Operator config to enable the plugin. Use a JSON patch to append to the list of plugins instead of replacing it:
 
     ```bash
-    oc patch console.operator.openshift.io cluster --type=json --patch '[{"op": "add", "path": "/spec/plugins/-", "value": "ocp-console-plugin"}]'
+    oc patch console.operator.openshift.io cluster --type=json --patch '[{"op": "add", "path": "/spec/plugins/-", "value": "ovn-recon"}]'
     ```
 
     The OpenShift console will reload to apply the changes. You should see a notification that the console has been updated.
@@ -107,7 +112,7 @@ During development, you can deploy changes to the cluster using the following co
 ```bash
 source setup_env.sh && \
     make build push && \
-    oc rollout restart deployment/ocp-console-plugin -n "$NAMESPACE" && \
+    oc rollout restart deployment/ovn-recon -n "$NAMESPACE" && \
     oc wait --for=condition=ready pod -l "$APP_SELECTOR" -n "$NAMESPACE" --timeout=60s
 ```
 
@@ -121,8 +126,8 @@ Example `setup_env.sh`:
 
 # Set the KUBECONFIG environment variable to the user's preferred path
 export KUBECONFIG=/Users/dale/.kube/ocp/hub/kubeconfig
-export NAMESPACE=ocp-console-example
-export APP_SELECTOR='app=ocp-console-plugin'
+export NAMESPACE=ovn-recon
+export APP_SELECTOR='app=ovn-recon'
 
 # Alias kubectl to oc for convenience and consistency
 alias kubectl='oc'
@@ -145,19 +150,19 @@ If the plugin does not appear in the console:
 1.  **Check the Plugin Pod:**
     Ensure the plugin pod is running and ready:
     ```bash
-    oc get pods -l app=ocp-console-plugin
+    oc get pods -l "$APP_SELECTOR" -n "$NAMESPACE"
     ```
 
 2.  **Verify Manifest Availability:**
     Check if the plugin manifest is being served correctly:
     ```bash
-    oc exec -n default deployment/ocp-console-plugin -- curl -k https://localhost:9443/plugin-manifest.json
+    oc exec -n default deployment/ovn-recon -- curl -k https://localhost:9443/plugin-manifest.json
     ```
 
 3.  **Check ConsolePlugin Status:**
     See if the Console Operator has successfully registered the plugin:
     ```bash
-    oc get consoleplugin ocp-console-plugin -o yaml
+    oc get consoleplugin ovn-recon -o yaml
     ```
     Look for the `Available` condition.
 

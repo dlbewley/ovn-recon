@@ -1,24 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ocp-console-plugin
+  name: ovn-recon
   labels:
-    app: ocp-console-plugin
+    app: ovn-recon
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ocp-console-plugin
+      app: ovn-recon
   template:
     metadata:
       labels:
-        app: ocp-console-plugin
+        app: ovn-recon
     spec:
       # imagePullSecrets:
       #   - name: quay-pullsecret
       containers:
-        - name: ocp-console-plugin
-          image: quay.io/dbewley/ocp-console-plugin:latest
+        - name: ovn-recon
+          image: quay.io/dbewley/ovn-recon:latest
           ports:
             - containerPort: 9443
               protocol: TCP

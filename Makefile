@@ -4,7 +4,7 @@
 CONTAINER_ENGINE ?= podman
 IMAGE_REGISTRY ?= quay.io
 IMAGE_USER ?= dbewley
-IMAGE_NAME ?= ocp-console-plugin
+IMAGE_NAME ?= ovn-recon
 IMAGE_TAG ?= latest
 
 # Derived Variables

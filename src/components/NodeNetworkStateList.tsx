@@ -40,7 +40,7 @@ const NodeNetworkStateList: React.FC = () => {
                                 {loaded && nodeNetworkStates?.map((nns, rowIndex) => (
                                     <Tr key={rowIndex}>
                                         <Td dataLabel={columns[0]}>
-                                            <Link to={`/example/node-network-state/${nns.metadata.name}`}>
+                                            <Link to={`/ovn-recon/node-network-state/${nns.metadata.name}`}>
                                                 {nns.metadata.name}
                                             </Link>
                                         </Td>

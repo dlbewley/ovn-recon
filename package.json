@@ -1,8 +1,8 @@
 {
-    "name": "ocp-console-plugin",
+    "name": "ovn-recon",
     "version": "0.0.1",
     "private": true,
-    "repository": "git@github.com:dlbewley/ocp-console-plugin.git",
+    "repository": "git@github.com:dlbewley/ovn-recon.git",
     "scripts": {
         "clean": "rm -rf dist",
         "build": "npm run clean && NODE_ENV=production npm run ts-node node_modules/.bin/webpack",
@@ -14,14 +14,11 @@
         "test": "jest"
     },
     "consolePlugin": {
-        "name": "ocp-console-plugin",
+        "name": "ovn-recon",
         "version": "0.0.1",
-        "displayName": "OpenShift Console Plugin Example",
-        "description": "An example OpenShift console plugin",
+        "displayName": "OVN Recon",
+        "description": "OpenShift Console Plugin for OVN Recon",
         "exposedModules": {
-            "ExamplePage": "./components/ExamplePage",
-            "PodList": "./components/PodList",
-            "PodDetails": "./components/PodDetails",
             "NodeNetworkStateList": "./components/NodeNetworkStateList",
             "NodeNetworkStateDetails": "./components/NodeNetworkStateDetails"
         },

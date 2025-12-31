@@ -2,62 +2,16 @@
     {
         "type": "console.navigation/section",
         "properties": {
-            "id": "example-section",
+            "id": "ovn-recon-section",
             "perspective": "admin",
-            "name": "Example"
+            "name": "OVN Recon",
+            "insertBefore": "networking"
         }
     },
     {
         "type": "console.page/route",
         "properties": {
-            "path": "/example/page",
-            "component": {
-                "$codeRef": "ExamplePage"
-            }
-        }
-    },
-    {
-        "type": "console.navigation/href",
-        "properties": {
-            "id": "example-page-nav",
-            "perspective": "admin",
-            "section": "example-section",
-            "name": "Example Plugin Page",
-            "href": "/example/page"
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "path": "/example/pod-list",
-            "component": {
-                "$codeRef": "PodList"
-            }
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "path": "/example/pod-details/:ns/:name",
-            "component": {
-                "$codeRef": "PodDetails"
-            }
-        }
-    },
-    {
-        "type": "console.navigation/href",
-        "properties": {
-            "id": "pod-list-nav",
-            "perspective": "admin",
-            "section": "example-section",
-            "name": "Pod List",
-            "href": "/example/pod-list"
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "path": "/example/node-network-state",
+            "path": "/ovn-recon/node-network-state",
             "component": {
                 "$codeRef": "NodeNetworkStateList"
             }
@@ -66,7 +20,7 @@
     {
         "type": "console.page/route",
         "properties": {
-            "path": "/example/node-network-state/:name",
+            "path": "/ovn-recon/node-network-state/:name",
             "component": {
                 "$codeRef": "NodeNetworkStateDetails"
             }
@@ -77,9 +31,9 @@
         "properties": {
             "id": "node-network-state-nav",
             "perspective": "admin",
-            "section": "example-section",
-            "name": "Node Network State",
-            "href": "/example/node-network-state"
+            "section": "networking",
+            "name": "OVN Recon",
+            "href": "/ovn-recon/node-network-state"
         }
     }
 ]

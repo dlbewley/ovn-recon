@@ -2,14 +2,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: ocp-console-plugin
+  name: ovn-recon
   labels:
-    app: ocp-console-plugin
+    app: ovn-recon
   annotations:
     service.alpha.openshift.io/serving-cert-secret-name: plugin-serving-cert
 spec:
   selector:
-    app: ocp-console-plugin
+    app: ovn-recon
   ports:
     - name: https
       port: 9443

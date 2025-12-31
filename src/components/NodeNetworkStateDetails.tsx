@@ -98,7 +98,7 @@ const NodeNetworkStateDetails: React.FC<any> = (props) => {
             <PageSection>
                 <Breadcrumb>
                     <BreadcrumbItem>
-                        <Link to="/example/node-network-state">Node Network State</Link>
+                        <Link to="/ovn-recon/node-network-state">Node Network State</Link>
                     </BreadcrumbItem>
                     <BreadcrumbItem isActive>{displayName}</BreadcrumbItem>
                 </Breadcrumb>
