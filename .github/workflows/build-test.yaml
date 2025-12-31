@@ -42,7 +42,9 @@ jobs:
         VERSION=${GITHUB_REF#refs/tags/}
         echo "Building version $VERSION"
         docker build -t quay.io/dbewley/ovn-recon:$VERSION .
-        docker tag quay.io/dbewley/ovn-recon:$VERSION quay.io/dbewley/ovn-recon:latest
+        if [[ "$VERSION" != *"-"* ]]; then
+          docker tag quay.io/dbewley/ovn-recon:$VERSION quay.io/dbewley/ovn-recon:latest
+        fi
 
     - name: Push Container
       if: startsWith(github.ref, 'refs/tags/v')
@@ -53,4 +55,6 @@ jobs:
         echo $QUAY_TOKEN | docker login quay.io -u $QUAY_USER --password-stdin
         VERSION=${GITHUB_REF#refs/tags/}
         docker push quay.io/dbewley/ovn-recon:$VERSION
-        docker push quay.io/dbewley/ovn-recon:latest
+        if [[ "$VERSION" != *"-"* ]]; then
+          docker push quay.io/dbewley/ovn-recon:latest
+        fi

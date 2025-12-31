@@ -80,6 +80,26 @@ To push the image to the registry (requires authentication):
 make push
 ```
 
+## Releasing
+
+To release a new version:
+
+1.  Run `npm version <patch|minor|major>`. This will:
+    - Update the version in `package.json`.
+    - Sync the version to `consolePlugin` section.
+    - Run linting and tests.
+    - Create a git commit and tag (e.g., `v1.0.1`).
+
+2.  Push the changes and tags to GitHub:
+    ```bash
+    git push --follow-tags
+    ```
+
+3.  The CI pipeline will automatically:
+    - Build the container image.
+    - Push the versioned tag (e.g., `quay.io/dbewley/ovn-recon:1.0.1`).
+    - If it is a stable release (no hyphen, e.g., `v1.0.0`), it will also update the `latest` tag. Prereleases (e.g., `v1.0.1-beta.1`) will **not** update `latest`.
+
 ## Deployment
 
 To deploy the manifests to an OpenShift cluster (requires `oc` CLI and an active session):
