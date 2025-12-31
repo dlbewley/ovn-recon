@@ -11,7 +11,8 @@
         "start:dev": "npm run ts-node node_modules/.bin/webpack serve",
         "ts-node": "ts-node -O '{\"module\":\"commonjs\"}'",
         "lint": "eslint ./src --fix",
-        "test": "jest"
+        "test": "jest",
+        "version": "node scripts/sync-version.js && git add package.json"
     },
     "consolePlugin": {
         "name": "ovn-recon",
