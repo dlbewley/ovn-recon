@@ -80,22 +80,50 @@ To push the image to the registry (requires authentication):
 make push
 ```
 
+## Feature Branch Workflow
+
+1.  Create and switch to a feature branch:
+    ```bash
+    git checkout -b feature/my-new-feature
+    ```
+
+2.  Make changes, commit them, and push:
+    ```bash
+    git add .
+    git commit -m "feat: add amazing new feature"
+    git push -u origin feature/my-new-feature
+    ```
+
+3.  Create a Pull Request (PR) via command line (requires [GitHub CLI](https://cli.github.com/)):
+    ```bash
+    gh pr create --title "feat: add amazing new feature" --body "Detailed description of changes"
+    ```
+    Or via the output link in the terminal.
+
+4.  Wait for CI checks (Build, Test, Lint) to pass. Merge the PR into `main` once approved.
+
 ## Releasing
 
 To release a new version:
 
-1.  Run `npm version <patch|minor|major>`. This will:
+1.  Switch to `main` and pull the latest changes:
+    ```bash
+    git checkout main
+    git pull origin main
+    ```
+
+2.  Run `npm version <patch|minor|major>`. This will:
     - Update the version in `package.json`.
     - Sync the version to `consolePlugin` section.
     - Run linting and tests.
     - Create a git commit and tag (e.g., `v1.0.1`).
 
-2.  Push the changes and tags to GitHub:
+3.  Push the changes and tags to GitHub:
     ```bash
     git push --follow-tags
     ```
 
-3.  The CI pipeline will automatically:
+4.  The CI pipeline will automatically:
     - Build the container image.
     - Push the versioned tag (e.g., `quay.io/dbewley/ovn-recon:1.0.1`).
     - If it is a stable release (no hyphen, e.g., `v1.0.0`), it will also update the `latest` tag. Prereleases (e.g., `v1.0.1-beta.1`) will **not** update `latest`.
