@@ -81,7 +81,7 @@ jobs:
       run: |
         VERSION=${GITHUB_REF#refs/tags/v}
         CHART_VERSION=$(grep '^version:' charts/ovn-recon/Chart.yaml | awk '{print $2}')
-        helm push ovn-recon-${CHART_VERSION}.tgz oci://quay.io/dbewley/charts
+        helm push ovn-recon-${CHART_VERSION}.tgz oci://quay.io/dbewley/ovn-recon
 
     - name: Create GitHub Release
       if: startsWith(github.ref, 'refs/tags/v')
