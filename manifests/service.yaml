@@ -5,11 +5,16 @@ metadata:
   name: ovn-recon
   labels:
     app: ovn-recon
+    app.kubernetes.io/name: ovn-recon
+    app.kubernetes.io/instance: ovn-recon
+    app.kubernetes.io/component: plugin
+    app.kubernetes.io/part-of: openshift-console-plugin
   annotations:
     service.alpha.openshift.io/serving-cert-secret-name: plugin-serving-cert
 spec:
   selector:
-    app: ovn-recon
+    app.kubernetes.io/name: ovn-recon
+    app.kubernetes.io/instance: ovn-recon
   ports:
     - name: https
       port: 9443

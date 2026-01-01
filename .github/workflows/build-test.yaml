@@ -1,0 +1,60 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Lint
+      run: npm run lint
+
+    - name: Test
+      run: npm run test
+
+    - name: Build Asset
+      run: npm run build
+
+    - name: Build Container
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        echo "Building version $VERSION"
+        docker build -t quay.io/dbewley/ovn-recon:$VERSION .
+        if [[ "$VERSION" != *"-"* ]]; then
+          docker tag quay.io/dbewley/ovn-recon:$VERSION quay.io/dbewley/ovn-recon:latest
+        fi
+
+    - name: Push Container
+      if: startsWith(github.ref, 'refs/tags/v')
+      env:
+        QUAY_USER: ${{ secrets.QUAY_USER }}
+        QUAY_TOKEN: ${{ secrets.QUAY_TOKEN }}
+      run: |
+        echo $QUAY_TOKEN | docker login quay.io -u $QUAY_USER --password-stdin
+        VERSION=${GITHUB_REF#refs/tags/}
+        docker push quay.io/dbewley/ovn-recon:$VERSION
+        if [[ "$VERSION" != *"-"* ]]; then
+          docker push quay.io/dbewley/ovn-recon:latest
+        fi

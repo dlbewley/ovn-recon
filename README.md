@@ -2,6 +2,7 @@
 
 ![Built with AI](https://img.shields.io/badge/Built%20with-AI-blueviolet?style=for-the-badge)
 [![Image Repository on Quay](https://quay.io/repository/dbewley/ovn-recon/status "Image Repository on Quay")](https://quay.io/repository/dbewley/ovn-recon)
+[![CI Status](https://github.com/dlbewley/ovn-recon/actions/workflows/build-test.yaml/badge.svg)](https://github.com/dlbewley/ovn-recon/actions/workflows/build-test.yaml)
 
 **Examples**
 
@@ -52,12 +53,7 @@ Plugins interact with the underlying Kubernetes/OpenShift cluster using the **Op
 
 ## How to Build
 
-To build the plugin locally:
-
-```bash
-npm install
-npm run build
-```
+For detailed build instructions, please see [docs/BUILDING.md](docs/BUILDING.md).
 
 Alternatively, you can use the `make` command:
 
@@ -70,18 +66,54 @@ The build artifacts will be in the `dist` directory.
 
 ## How to Deploy
 
+0.  **Set up environment variables:**
+
+    Example `setup_env.sh`:
+
+    ```bash
+    #! env bash
+
+    # OpenShift Environment Setup Script
+    # Usage: source setup_env.sh
+
+    # Set the KUBECONFIG environment variable to the user's preferred path
+    export KUBECONFIG=$HOME/.kube/ocp/hub/kubeconfig
+    export APP_NAMESPACE=ovn-recon
+    export APP_NAME='ovn-recon'
+    export APP_SELECTOR="app.kubernetes.io/name=$APP_NAME"
+
+    # Alias kubectl to oc for convenience and consistency
+    alias kubectl='oc'
+    # Replace eza alias if exists
+    alias ls >/dev/null && unalias ls
+
+    echo "# Environment configured:"
+    echo "  KUBECONFIG=$KUBECONFIG"
+    echo "  APP_NAMESPACE=$APP_NAMESPACE"
+    echo "  APP_NAME=$APP_NAME"
+    echo "  APP_SELECTOR=$APP_SELECTOR"
+    echo "# Aliases configured:"
+    echo "  'kubectl' aliased to 'oc'"
+    echo "  'ls' unaliased"
+    ```
+
+    ```bash
+    source setup_env.sh
+    ```
+
 1.  **Build the container image:**
 
     Since you are likely building on a Mac (ARM64) and deploying to an OpenShift cluster (likely AMD64), you need to specify the target platform:
 
     ```bash
-    podman build --platform linux/amd64 -t quay.io/$QUAY_USER/ovn-recon:latest .
+    export APP_NAME='ovn-recon'
+    podman build --platform linux/amd64 -t quay.io/$QUAY_USER/$APP_NAME:latest .
     ```
 
 2.  **Push the image:**
 
     ```bash
-    podman push quay.io/$QUAY_USER/ovn-recon:latest
+    podman push quay.io/$QUAY_USER/$APP_NAME:latest
     ```
 
     > [!NOTE]
@@ -100,7 +132,8 @@ The build artifacts will be in the `dist` directory.
     Patch the Console Operator config to enable the plugin. Use a JSON patch to append to the list of plugins instead of replacing it:
 
     ```bash
-    oc patch console.operator.openshift.io cluster --type=json --patch '[{"op": "add", "path": "/spec/plugins/-", "value": "ovn-recon"}]'
+    oc patch console.operator.openshift.io cluster --type=json \
+        --patch '[{"op": "add", "path": "/spec/plugins/-", "value": "ovn-recon"}]'
     ```
 
     The OpenShift console will reload to apply the changes. You should see a notification that the console has been updated.
@@ -112,74 +145,13 @@ During development, you can deploy changes to the cluster using the following co
 ```bash
 source setup_env.sh && \
     make build push && \
-    oc rollout restart deployment/ovn-recon -n "$NAMESPACE" && \
-    oc wait --for=condition=ready pod -l "$APP_SELECTOR" -n "$NAMESPACE" --timeout=60s
-```
-
-Example `setup_env.sh`:
-
-```bash
-#!/bin/bash
-
-# OpenShift Environment Setup Script
-# Usage: source setup_env.sh
-
-# Set the KUBECONFIG environment variable to the user's preferred path
-export KUBECONFIG=/Users/dale/.kube/ocp/hub/kubeconfig
-export NAMESPACE=ovn-recon
-export APP_SELECTOR='app=ovn-recon'
-
-# Alias kubectl to oc for convenience and consistency
-alias kubectl='oc'
-# Replace eza alias if exists
-alias ls >/dev/null && unalias ls
-
-echo "# Environment configured:"
-echo "  KUBECONFIG=$KUBECONFIG"
-echo "  NAMESPACE=$NAMESPACE"
-echo "  APP_SELECTOR=$APP_SELECTOR"
-echo "# Aliases configured:"
-echo "  'kubectl' aliased to 'oc'"
-echo "  'ls' unaliased
+    oc rollout restart deployment/$APP_NAME -n "$APP_NAMESPACE" && \
+    oc wait --for=condition=ready pod -l "$APP_SELECTOR" -n "$APP_NAMESPACE" --timeout=60s
 ```
 
 ## Troubleshooting
 
-If the plugin does not appear in the console:
-
-1.  **Check the Plugin Pod:**
-    Ensure the plugin pod is running and ready:
-    ```bash
-    oc get pods -l "$APP_SELECTOR" -n "$NAMESPACE"
-    ```
-
-2.  **Verify Manifest Availability:**
-    Check if the plugin manifest is being served correctly:
-    ```bash
-    oc exec -n default deployment/ovn-recon -- curl -k https://localhost:9443/plugin-manifest.json
-    ```
-
-3.  **Check ConsolePlugin Status:**
-    See if the Console Operator has successfully registered the plugin:
-    ```bash
-    oc get consoleplugin ovn-recon -o yaml
-    ```
-    Look for the `Available` condition.
-
-4.  **Restart the Console:**
-    Sometimes the Console needs to be restarted to pick up new plugins:
-    ```bash
-    oc rollout restart deployment/console -n openshift-console
-    ```
-
-    > [!IMPORTANT]
-    > Ensure your `consoleplugin.yaml` uses `apiVersion: console.openshift.io/v1`. The older `v1alpha1` API may cause the `backend` field to be dropped, preventing the plugin from loading.
-    >
-    > Also, ensure that the `section` ID in `console-extensions.json` matches the internal ID of the section (e.g., "home" instead of "Home").
-
-## Verification
-
-I have verified that the project builds successfully and generates the expected assets in the `dist` directory.
+For troubleshooting steps, please see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## References
 
@@ -187,3 +159,4 @@ I have verified that the project builds successfully and generates the expected 
 -   [Dynamic Plugin SDK README](https://www.npmjs.com/package/@openshift-console/dynamic-plugin-sdk)
 -   [PatternFly React Documentation](https://www.patternfly.org/v4/components)
 -   [OpenShift Console GitHub Repository](https://github.com/openshift/console)
+- [Example ocp-console-plugin](https://github.com/dlbewley/ocp-console-plugin)

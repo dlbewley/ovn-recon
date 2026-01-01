@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { NodeNetworkState } from '../types';
 import { PageSection, Title, Card, CardBody } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
@@ -6,7 +7,7 @@ import { Helmet } from 'react-helmet';
 import { Link } from 'react-router-dom';
 
 const NodeNetworkStateList: React.FC = () => {
-    const [nodeNetworkStates, loaded, loadError] = useK8sWatchResource<any[]>({
+    const [nodeNetworkStates, loaded, loadError] = useK8sWatchResource<NodeNetworkState[]>({
         groupVersionKind: {
             group: 'nmstate.io',
             version: 'v1beta1',
@@ -40,12 +41,12 @@ const NodeNetworkStateList: React.FC = () => {
                                 {loaded && nodeNetworkStates?.map((nns, rowIndex) => (
                                     <Tr key={rowIndex}>
                                         <Td dataLabel={columns[0]}>
-                                            <Link to={`/ovn-recon/node-network-state/${nns.metadata.name}`}>
-                                                {nns.metadata.name}
+                                            <Link to={`/ovn-recon/node-network-state/${nns.metadata?.name}`}>
+                                                {nns.metadata?.name}
                                             </Link>
                                         </Td>
                                         <Td dataLabel={columns[1]}>
-                                            {nns.metadata.creationTimestamp}
+                                            {nns.metadata?.creationTimestamp}
                                         </Td>
                                     </Tr>
                                 ))}
