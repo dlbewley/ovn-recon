@@ -126,7 +126,7 @@ To release a new version:
 4.  The CI pipeline will automatically:
     - Build the container image.
     - Push the versioned tag (e.g., `quay.io/dbewley/ovn-recon:1.0.1`).
-    - If it is a stable release (no hyphen, e.g., `v1.0.0`), it will also update the `latest` tag. Prereleases (e.g., `v1.0.1-beta.1`) will **not** update `latest`.
+    - If it is a stable release (no hyphen, e.g., `v1.0.0`), it will also update the `latest` tag. Prereleases containing a `-` (e.g., `v1.0.1-beta.1`) will **not** update `latest`.
     - **Create a GitHub Release** with automatically generated release notes. Pre-releases will be marked accordingly.
 
 ## Deployment
