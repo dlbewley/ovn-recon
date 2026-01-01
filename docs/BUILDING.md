@@ -115,6 +115,7 @@ To release a new version:
 2.  Run `npm version <patch|minor|major>`. This will:
     - Update the version in `package.json`.
     - Sync the version to `consolePlugin` section.
+    - Sync the version to `charts/ovn-recon/Chart.yaml` appVersion.
     - Run linting and tests.
     - Create a git commit and tag (e.g., `v1.0.1`).
 

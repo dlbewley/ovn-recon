@@ -149,6 +149,44 @@ source setup_env.sh && \
     oc wait --for=condition=ready pod -l "$APP_SELECTOR" -n "$APP_NAMESPACE" --timeout=60s
 ```
 
+
+### Helm Deployment
+
+Deploy using Helm:
+
+```bash
+helm install ovn-recon ./charts/ovn-recon \
+  --namespace ovn-recon \
+  --create-namespace
+```
+
+To customize the deployment, create a `values.yaml` file:
+
+```yaml
+image:
+  repository: quay.io/dbewley/ovn-recon
+  tag: "0.0.1"
+
+consolePlugin:
+  displayName: "OVN Recon"
+```
+
+Then install with your custom values:
+
+```bash
+helm install ovn-recon ./charts/ovn-recon \
+  --namespace ovn-recon \
+  --create-namespace \
+  --values values.yaml
+```
+
+To upgrade an existing deployment:
+
+```bash
+helm upgrade ovn-recon ./charts/ovn-recon \
+  --namespace ovn-recon
+```
+
 ## Troubleshooting
 
 For troubleshooting steps, please see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
