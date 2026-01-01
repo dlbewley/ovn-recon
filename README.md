@@ -152,7 +152,16 @@ source setup_env.sh && \
 
 ### Helm Deployment
 
-Deploy using Helm:
+Deploy using Helm from the OCI registry:
+
+```bash
+helm install ovn-recon oci://quay.io/dbewley/charts/ovn-recon \
+  --version 0.1.0 \
+  --namespace ovn-recon \
+  --create-namespace
+```
+
+Or from the local chart:
 
 ```bash
 helm install ovn-recon ./charts/ovn-recon \
