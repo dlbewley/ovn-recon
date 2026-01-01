@@ -12,7 +12,7 @@
         "ts-node": "ts-node -O '{\"module\":\"commonjs\"}'",
         "lint": "eslint ./src --fix",
         "test": "jest",
-        "version": "node scripts/sync-version.js && git add package.json"
+        "version": "node scripts/sync-version.js && git add package.json charts/ovn-recon/Chart.yaml"
     },
     "consolePlugin": {
         "name": "ovn-recon",

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ovn-recon
+description: A Helm chart for OVN Recon OpenShift Console Plugin
+type: application
+version: 0.1.0
+appVersion: "0.0.1"
