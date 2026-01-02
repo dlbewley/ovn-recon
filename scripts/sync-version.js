@@ -26,15 +26,16 @@ if (fs.existsSync(chartYamlPath)) {
 
     if (match) {
         const oldAppVersion = match[1];
-        if (oldAppVersion !== newVersion) {
+        const newAppVersion = `v${newVersion}`; // Add 'v' prefix to match container image tags
+        if (oldAppVersion !== newAppVersion) {
             const updatedChartYaml = chartYaml.replace(
                 appVersionRegex,
-                `appVersion: "${newVersion}"`
+                `appVersion: "${newAppVersion}"`
             );
             fs.writeFileSync(chartYamlPath, updatedChartYaml);
-            console.log(`Updated Helm chart appVersion from ${oldAppVersion} to ${newVersion}`);
+            console.log(`Updated Helm chart appVersion from ${oldAppVersion} to ${newAppVersion}`);
         } else {
-            console.log(`Helm chart appVersion is already up to date (${newVersion})`);
+            console.log(`Helm chart appVersion is already up to date (${newAppVersion})`);
         }
     }
 }

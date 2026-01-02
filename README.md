@@ -1,154 +1,44 @@
-# OpenShift Console Plugin Walkthrough
-
-![Built with AI](https://img.shields.io/badge/Built%20with-AI-blueviolet?style=for-the-badge)
-[![Image Repository on Quay](https://quay.io/repository/dbewley/ovn-recon/status "Image Repository on Quay")](https://quay.io/repository/dbewley/ovn-recon)
 [![CI Status](https://github.com/dlbewley/ovn-recon/actions/workflows/build-test.yaml/badge.svg)](https://github.com/dlbewley/ovn-recon/actions/workflows/build-test.yaml)
+![Built with AI](https://img.shields.io/badge/Built%20with-AI-blueviolet?style=plastic)
+[![Image Repository on Quay](https://img.shields.io/badge/Image%20on-Quay.io-blue?style=plastic "Image Repository on Quay")](https://quay.io/repository/dbewley/ovn-recon)
+[![Helm Chart on GHCR](https://img.shields.io/badge/Chart%20on-ghcr.io-green?style=plastic "Chart on GHCR")](https://github.com/dlbewley/ovn-recon/pkgs/container/charts%2Fovn-recon)
 
-**Examples**
+# Open Virtual Network Reconnaissance (OVN Recon)
 
-![nns visualization 1](img/nns-visualization.png)
-![nns visualization 2](img/nns-visualization-2.png)
-![nns visualization 3](img/nns-visualization-3.png)
+<div align="left">
+<a href="img/logo-full.png"><img src="img/logo-800.png" width="50%" align="left"/></a>
+</div>
+<div align="right">
+<p align="center"><b>Screenshots</b></p>
+<a href="img/nns-visualization.png"><img src="img/nns-visualization.png" width="25%" /></a>
+<a href="img/nns-visualization-2.png"><img src="img/nns-visualization-2.png" width="25%" /></a>
+<a href="img/nns-visualization-3.png"><img src="img/nns-visualization-3.png" width="25%" /></a>
+</div>
 
-## Repository
+<br clear="all"/>
 
-The source code for this project is available at: [https://github.com/dlbewley/ovn-recon](https://github.com/dlbewley/ovn-recon)
+**Open Virtual Network Reconnaissance (OVN Recon) is an OpenShift Console Plugin that provides a visualization of the Virtual and Node Network State in an OpenShift cluster.**
 
-OpenShift Console Plugin for OVN Rcon.
+## Kubernetes Resource Dependencies
 
-## Project Structure
+OVN Recon visualizes the following Kubernetes Custom Resources:
 
-- `package.json`: Defines the plugin metadata and dependencies.
-- `console-extensions.json`: Defines the extension points (new route and navigation item).
-- `webpack.config.ts`: Webpack configuration for building the plugin.
-- `tsconfig.json`: TypeScript configuration.
-- `src/components/ExamplePage.tsx`: The React component for the new page.
-- `Dockerfile`: For building the plugin image.
-- `nginx.conf`: Nginx configuration for serving the plugin assets.
+- **NodeNetworkState (NNS)** - Represents the current network configuration of a node, including interfaces, bridges, and OVN bridge mappings. Provided by the [nmstate operator](https://nmstate.io/).
+- **NodeNetworkConfigurationPolicy (NNCP)** - Defines desired network configuration for nodes. Used to configure OVN bridge mappings and physical network interfaces.
+- **ClusterUserDefinedNetwork (CUDN)** - Defines overlay networks that can be attached to pods. Part of OpenShift's [OVN-Kubernetes secondary networks](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/about-ovn-kubernetes.html).
+- **NetworkAttachmentDefinition (NAD)** - Multus CNI resource that references a CUDN and allows pods to attach to secondary networks.
+
+The plugin watches these resources in real-time and renders an interactive topology showing how physical interfaces, bridges, and virtual networks are connected.
 
 ## Architecture & Concepts
 
-### Technology Stack
-
-OpenShift Console plugins are built using standard web technologies:
-
--   **React**: The core library for building the user interface.
--   **TypeScript**: Used for type safety and better developer experience.
--   **PatternFly**: The design system used by OpenShift. It provides a set of React components that ensure your plugin looks and feels like a native part of the console.
--   **Webpack**: Bundles the plugin code. It uses **Module Federation** to expose the plugin's modules (components) so they can be dynamically loaded by the OpenShift Console at runtime.
-
-### How It Works
-
-1.  **Dynamic Loading**: The OpenShift Console is a host application that can dynamically load plugins. It fetches the plugin's manifest (`plugin-manifest.json`) to understand what extensions the plugin provides.
-2.  **Extensions**: Plugins define "extensions" in `console-extensions.json`. These extensions tell the console where to integrate the plugin's features (e.g., adding a new route, a navigation item, a dashboard widget, or a cluster overview item).
-3.  **Communication**: The plugin runs in its own pod (usually serving static assets via Nginx) but executes within the browser context of the main console application.
-
-### Data Gathering
-
-Plugins interact with the underlying Kubernetes/OpenShift cluster using the **OpenShift Console Dynamic Plugin SDK**. This SDK provides hooks and utilities to:
-
--   **Watch Resources**: Use hooks like `useK8sWatchResource` to subscribe to real-time updates of Kubernetes resources (Pods, Nodes, Custom Resources, etc.).
--   **API Calls**: Make direct API calls to the Kubernetes API server using `k8sGet`, `k8sCreate`, `k8sPatch`, etc.
--   **Proxying**: The console acts as a proxy for API requests, handling authentication (OAuth) automatically. The plugin doesn't need to manage user tokens directly; it simply makes requests through the SDK, and the console handles the rest.
+TODO
 
 ## How to Build
 
-For detailed build instructions, please see [docs/BUILDING.md](docs/BUILDING.md).
+For detailed build and developer deployment instructions, please see [docs/BUILDING.md](docs/BUILDING.md).
 
-Alternatively, you can use the `make` command:
-
-```bash
-make install
-make build
-```
-
-The build artifacts will be in the `dist` directory.
-
-## How to Deploy
-
-0.  **Set up environment variables:**
-
-    Example `setup_env.sh`:
-
-    ```bash
-    #! env bash
-
-    # OpenShift Environment Setup Script
-    # Usage: source setup_env.sh
-
-    # Set the KUBECONFIG environment variable to the user's preferred path
-    export KUBECONFIG=$HOME/.kube/ocp/hub/kubeconfig
-    export APP_NAMESPACE=ovn-recon
-    export APP_NAME='ovn-recon'
-    export APP_SELECTOR="app.kubernetes.io/name=$APP_NAME"
-
-    # Alias kubectl to oc for convenience and consistency
-    alias kubectl='oc'
-    # Replace eza alias if exists
-    alias ls >/dev/null && unalias ls
-
-    echo "# Environment configured:"
-    echo "  KUBECONFIG=$KUBECONFIG"
-    echo "  APP_NAMESPACE=$APP_NAMESPACE"
-    echo "  APP_NAME=$APP_NAME"
-    echo "  APP_SELECTOR=$APP_SELECTOR"
-    echo "# Aliases configured:"
-    echo "  'kubectl' aliased to 'oc'"
-    echo "  'ls' unaliased"
-    ```
-
-    ```bash
-    source setup_env.sh
-    ```
-
-1.  **Build the container image:**
-
-    Since you are likely building on a Mac (ARM64) and deploying to an OpenShift cluster (likely AMD64), you need to specify the target platform:
-
-    ```bash
-    export APP_NAME='ovn-recon'
-    podman build --platform linux/amd64 -t quay.io/$QUAY_USER/$APP_NAME:latest .
-    ```
-
-2.  **Push the image:**
-
-    ```bash
-    podman push quay.io/$QUAY_USER/$APP_NAME:latest
-    ```
-
-    > [!NOTE]
-    > Make sure to update the image reference in `manifests/deployment.yaml` to match your repository.
-
-3.  **Deploy to OpenShift:**
-
-    Apply the manifests using Kustomize:
-
-    ```bash
-    oc apply -k manifests
-    ```
-
-4.  **Enable the Plugin:**
-
-    Patch the Console Operator config to enable the plugin. Use a JSON patch to append to the list of plugins instead of replacing it:
-
-    ```bash
-    oc patch console.operator.openshift.io cluster --type=json \
-        --patch '[{"op": "add", "path": "/spec/plugins/-", "value": "ovn-recon"}]'
-    ```
-
-    The OpenShift console will reload to apply the changes. You should see a notification that the console has been updated.
-
-### Development Deployment
-
-During development, you can deploy changes to the cluster using the following command:
-
-```bash
-source setup_env.sh && \
-    make build push && \
-    oc rollout restart deployment/$APP_NAME -n "$APP_NAMESPACE" && \
-    oc wait --for=condition=ready pod -l "$APP_SELECTOR" -n "$APP_NAMESPACE" --timeout=60s
-```
-
+## Installation
 
 ### Helm Deployment
 
@@ -156,7 +46,7 @@ Deploy using Helm from the OCI registry:
 
 ```bash
 helm install ovn-recon oci://ghcr.io/dlbewley/charts/ovn-recon \
-  --version 0.1.0 \
+  --version 0.1.1 \
   --namespace ovn-recon \
   --create-namespace
 ```
@@ -174,7 +64,7 @@ To customize the deployment, create a `values.yaml` file:
 ```yaml
 image:
   repository: quay.io/dbewley/ovn-recon
-  tag: "0.0.1"
+  tag: "v0.0.2"
 
 consolePlugin:
   displayName: "OVN Recon"
@@ -195,6 +85,17 @@ To upgrade an existing deployment:
 helm upgrade ovn-recon ./charts/ovn-recon \
   --namespace ovn-recon
 ```
+
+### Enable the Plugin
+
+Patch the Console Operator config to enable the plugin. Use a JSON patch to append to the list of plugins instead of replacing it:
+
+```bash
+oc patch console.operator.openshift.io cluster --type=json \
+    --patch '[{"op": "add", "path": "/spec/plugins/-", "value": "ovn-recon"}]'
+```
+
+The OpenShift console will reload to apply the changes. You should see a notification that the console has been updated.
 
 ## Troubleshooting
 
