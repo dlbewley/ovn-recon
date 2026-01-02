@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- recon_v1alpha1_ovnrecon.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
