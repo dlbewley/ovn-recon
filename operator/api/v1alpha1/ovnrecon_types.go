@@ -49,6 +49,7 @@ type OvnReconStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// +kubebuilder:resource:scope=Cluster
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 

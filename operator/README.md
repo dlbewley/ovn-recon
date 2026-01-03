@@ -7,10 +7,21 @@
 ## Getting Started
 
 ### Prerequisites
-- go version v1.24.0+
+- go version v1.23.0+
 - docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- kubectl version v1.31+.
+- Access to a Kubernetes v1.31+ cluster (OpenShift 4.20 recommended)
+- KUBECONFIG environment variable set to your cluster config
+
+### Environment Setup
+
+**Set KUBECONFIG before running make commands:**
+
+Source the setup script from the project root:
+
+```sh
+source ../setup_env.sh
+```
 
 ### To Deploy on the cluster
 **Build and push your image to the location specified by `IMG`:**
@@ -26,12 +37,16 @@ Make sure you have the proper permission to the registry if the above commands d
 **Install the CRDs into the cluster:**
 
 ```sh
+# Ensure KUBECONFIG is set
+export KUBECONFIG=/Users/dale/.kube/ocp/hub/kubeconfig
 make install
 ```
 
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
 
 ```sh
+# Ensure KUBECONFIG is set
+export KUBECONFIG=/Users/dale/.kube/ocp/hub/kubeconfig
 make deploy IMG=<some-registry>/operator:tag
 ```
 
@@ -132,4 +147,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
