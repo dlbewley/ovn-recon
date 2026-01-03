@@ -3,4 +3,4 @@ name: ovn-recon
 description: A Helm chart for OVN Recon OpenShift Console Plugin
 type: application
 version: 0.1.1
-appVersion: "v0.0.3"
+appVersion: "v0.0.4"
