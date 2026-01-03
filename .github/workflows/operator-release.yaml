@@ -76,7 +76,8 @@ jobs:
         cd operator
         VERSION=${GITHUB_REF#refs/tags/}
         IMG=quay.io/dbewley/ovn-recon-operator:$VERSION
-        make bundle IMG=$IMG
+        # Pipe answers to make bundle non-interactive (order: display-name, description, provider-name, provider-url, keywords, maintainers)
+        printf "OVN Recon\nOpen Virtual Network Reconnaissance (OVN Recon) is an OpenShift Console Plugin that provides a visualization of the Virtual and Node Network State in an OpenShift cluster.\nBewley Internet Solutions\nhttps://guifreelife.com\nnetworking, openshift, ovn-kubernetes\nDale Bewley:dale@bewley.net\n" | make bundle IMG=$IMG
 
     - name: Build Bundle Image
       if: startsWith(github.ref, 'refs/tags/v')
