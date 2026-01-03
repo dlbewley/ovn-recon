@@ -50,13 +50,6 @@ spec:
       #             operator: In
       #             values:
       #               - linux
-      securityContext:
-        # Projects are configured by default to adhere to the "restricted" Pod Security Standards.
-        # This ensures that deployments meet the highest security requirements for Kubernetes.
-        # For more details, see: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
       containers:
       - command:
         - /manager
@@ -66,11 +59,6 @@ spec:
         image: ovn-recon-operator:latest
         name: manager
         ports: []
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - "ALL"
         livenessProbe:
           httpGet:
             path: /healthz

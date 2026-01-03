@@ -9,7 +9,7 @@ metadata:
 spec:
   image:
     repository: quay.io/dbewley/ovn-recon
-    tag: v0.0.3
+    tag: v0.0.4-a1
     pullPolicy: IfNotPresent
   consolePlugin:
     displayName: "OVN Recon"

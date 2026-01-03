@@ -63,6 +63,7 @@ type OvnReconReconciler struct {
 // +kubebuilder:rbac:groups=recon.bewley.net,resources=ovnrecons/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=operator.openshift.io,resources=consoles,verbs=get;list;watch;update;patch
 
@@ -125,20 +126,6 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return reconcile.Result{RequeueAfter: time.Second * 30}, err
 	}
 
-	// Check deployment status
-	deploymentReady, err := r.checkDeploymentReady(ctx, ovnRecon)
-	if err != nil {
-		log.Error(err, "Failed to check Deployment status")
-		return reconcile.Result{RequeueAfter: time.Second * 10}, err
-	}
-
-	if deploymentReady {
-		r.updateCondition(ctx, ovnRecon, "Available", metav1.ConditionTrue, "DeploymentReady", "Deployment is ready")
-	} else {
-		r.updateCondition(ctx, ovnRecon, "Available", metav1.ConditionFalse, "DeploymentNotReady", "Deployment is not ready")
-		return reconcile.Result{RequeueAfter: time.Second * 10}, nil
-	}
-
 	// 2. Reconcile Service
 	if err := r.reconcileService(ctx, ovnRecon); err != nil {
 		log.Error(err, "Failed to reconcile Service")
@@ -151,6 +138,20 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		log.Error(err, "Failed to reconcile ConsolePlugin")
 		r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "ConsolePluginReconcileFailed", err.Error())
 		return reconcile.Result{RequeueAfter: time.Second * 30}, err
+	}
+
+	// Check deployment status after the service is in place.
+	deploymentReady, err := r.checkDeploymentReady(ctx, ovnRecon)
+	if err != nil {
+		log.Error(err, "Failed to check Deployment status")
+		return reconcile.Result{RequeueAfter: time.Second * 10}, err
+	}
+
+	if deploymentReady {
+		r.updateCondition(ctx, ovnRecon, "Available", metav1.ConditionTrue, "DeploymentReady", "Deployment is ready")
+	} else {
+		r.updateCondition(ctx, ovnRecon, "Available", metav1.ConditionFalse, "DeploymentNotReady", "Deployment is not ready")
+		return reconcile.Result{RequeueAfter: time.Second * 10}, nil
 	}
 
 	// 4. Auto-enable plugin in Console operator configuration
@@ -255,7 +256,6 @@ func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *
 							},
 							ReadOnlyRootFilesystem: pointer.Bool(false),
 							RunAsNonRoot:           pointer.Bool(true),
-							RunAsUser:              pointer.Int64(1001),
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
@@ -269,8 +269,10 @@ func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *
 						},
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
-								TCPSocket: &corev1.TCPSocketAction{
-									Port: intstr.FromInt32(9443),
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/healthz",
+									Port:   intstr.FromInt32(9443),
+									Scheme: corev1.URISchemeHTTPS,
 								},
 							},
 							InitialDelaySeconds: 30,
@@ -280,8 +282,10 @@ func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *
 						},
 						ReadinessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
-								TCPSocket: &corev1.TCPSocketAction{
-									Port: intstr.FromInt32(9443),
+								HTTPGet: &corev1.HTTPGetAction{
+									Path:   "/readyz",
+									Port:   intstr.FromInt32(9443),
+									Scheme: corev1.URISchemeHTTPS,
 								},
 							},
 							InitialDelaySeconds: 5,
@@ -325,12 +329,14 @@ func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *rec
 		if service.Annotations == nil {
 			service.Annotations = map[string]string{}
 		}
+		service.Annotations["service.alpha.openshift.io/serving-cert-secret-name"] = "plugin-serving-cert"
 		service.Annotations["service.beta.openshift.io/serving-cert-secret-name"] = "plugin-serving-cert"
 		service.Spec = corev1.ServiceSpec{
 			Selector: labelsForOvnRecon(ovnRecon.Name),
 			Ports: []corev1.ServicePort{{
-				Port: 9443,
-				Name: "https",
+				Port:       9443,
+				TargetPort: intstr.FromInt32(9443),
+				Name:       "https",
 			}},
 		}
 		return nil
