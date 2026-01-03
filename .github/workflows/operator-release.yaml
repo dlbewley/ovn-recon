@@ -115,3 +115,32 @@ jobs:
           docker tag $BUNDLE_IMG quay.io/dbewley/ovn-recon-operator-bundle:latest
           docker push quay.io/dbewley/ovn-recon-operator-bundle:latest
         fi
+
+    - name: Build Catalog Image
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        cd operator
+        VERSION=${GITHUB_REF#refs/tags/}
+        BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:$VERSION
+        CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
+        # Try to pull existing catalog to add to it, but don't fail if it doesn't exist (first release)
+        if docker pull $CATALOG_IMG 2>/dev/null; then
+          # Catalog exists - add bundle to existing catalog
+          make catalog-build CATALOG_IMG=$CATALOG_IMG BUNDLE_IMGS=$BUNDLE_IMG CATALOG_BASE_IMG=$CATALOG_IMG
+        else
+          # Catalog doesn't exist - create new catalog with this bundle
+          make catalog-build CATALOG_IMG=$CATALOG_IMG BUNDLE_IMGS=$BUNDLE_IMG
+        fi
+
+    - name: Push Catalog Image
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        cd operator
+        VERSION=${GITHUB_REF#refs/tags/}
+        CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
+        make catalog-push CATALOG_IMG=$CATALOG_IMG
+        # Also tag as latest for non-prerelease versions
+        if [[ "$VERSION" != *"-"* ]]; then
+          docker tag $CATALOG_IMG quay.io/dbewley/bewley-operator-catalog:latest
+          docker push quay.io/dbewley/bewley-operator-catalog:latest
+        fi
