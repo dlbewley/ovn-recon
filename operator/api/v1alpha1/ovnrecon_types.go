@@ -25,6 +25,12 @@ import (
 
 // OvnReconSpec defines the desired state of OvnRecon.
 type OvnReconSpec struct {
+	// TargetNamespace is where the OVN Recon workload and Service are created.
+	// Defaults to "ovn-recon" when omitted.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:default=ovn-recon
+	TargetNamespace string `json:"targetNamespace,omitempty"`
+
 	// Image configuration for the plugin container
 	Image ImageSpec `json:"image,omitempty"`
 

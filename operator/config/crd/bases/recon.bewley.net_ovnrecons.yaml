@@ -57,6 +57,13 @@ spec:
                   tag:
                     type: string
                 type: object
+              targetNamespace:
+                default: ovn-recon
+                description: |-
+                  TargetNamespace is where the OVN Recon workload and Service are created.
+                  Defaults to "ovn-recon" when omitted.
+                minLength: 1
+                type: string
             type: object
           status:
             description: OvnReconStatus defines the observed state of OvnRecon.

@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"time"
 
@@ -46,9 +47,9 @@ import (
 )
 
 const (
-	finalizerName   = "ovnrecon.bewley.net/finalizer"
-	targetNamespace = "ovn-recon"
-	defaultImageTag = "v0.0.3"
+	finalizerName    = "ovnrecon.bewley.net/finalizer"
+	defaultNamespace = "ovn-recon"
+	defaultImageTag  = "latest"
 )
 
 // OvnReconReconciler reconciles a OvnRecon object
@@ -63,7 +64,6 @@ type OvnReconReconciler struct {
 // +kubebuilder:rbac:groups=recon.bewley.net,resources=ovnrecons/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=operator.openshift.io,resources=consoles,verbs=get;list;watch;update;patch
 
@@ -112,11 +112,13 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		ovnRecon.Status.Conditions = []metav1.Condition{}
 	}
 
-	// Ensure target namespace exists for namespaced resources.
-	if err := r.ensureTargetNamespace(ctx); err != nil {
-		log.Error(err, "Failed to ensure target namespace")
-		return reconcile.Result{RequeueAfter: time.Second * 30}, err
+	// Require target namespace to exist for namespaced resources.
+	if err := r.ensureTargetNamespaceExists(ctx, ovnRecon); err != nil {
+		log.Error(err, "Target namespace does not exist")
+		r.updateCondition(ctx, ovnRecon, "NamespaceReady", metav1.ConditionFalse, "NamespaceNotFound", err.Error())
+		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
+	r.updateCondition(ctx, ovnRecon, "NamespaceReady", metav1.ConditionTrue, "NamespaceFound", "Target namespace exists")
 
 	// 1. Reconcile Deployment
 	if err := r.reconcileDeployment(ctx, ovnRecon); err != nil {
@@ -130,15 +132,19 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err := r.reconcileService(ctx, ovnRecon); err != nil {
 		log.Error(err, "Failed to reconcile Service")
 		r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "ServiceReconcileFailed", err.Error())
+		r.updateCondition(ctx, ovnRecon, "ServiceReady", metav1.ConditionFalse, "ServiceReconcileFailed", err.Error())
 		return reconcile.Result{RequeueAfter: time.Second * 30}, err
 	}
+	r.updateCondition(ctx, ovnRecon, "ServiceReady", metav1.ConditionTrue, "ServiceReady", "Service is ready")
 
 	// 3. Reconcile ConsolePlugin
 	if err := r.reconcileConsolePlugin(ctx, ovnRecon); err != nil {
 		log.Error(err, "Failed to reconcile ConsolePlugin")
 		r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "ConsolePluginReconcileFailed", err.Error())
+		r.updateCondition(ctx, ovnRecon, "ConsolePluginReady", metav1.ConditionFalse, "ConsolePluginReconcileFailed", err.Error())
 		return reconcile.Result{RequeueAfter: time.Second * 30}, err
 	}
+	r.updateCondition(ctx, ovnRecon, "ConsolePluginReady", metav1.ConditionTrue, "ConsolePluginReady", "ConsolePlugin is ready")
 
 	// Check deployment status after the service is in place.
 	deploymentReady, err := r.checkDeploymentReady(ctx, ovnRecon)
@@ -204,10 +210,15 @@ func (r *OvnReconReconciler) isPrimaryInstance(ctx context.Context, ovnRecon *re
 }
 
 func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	imageTag := imageTagFor(ovnRecon)
+	appLabels := labelsForOvnReconWithVersion(ovnRecon.Name, imageTag)
+	operatorAnnotations := operatorVersionAnnotations()
+
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ovnRecon.Name,
-			Namespace: targetNamespace,
+			Namespace: namespace,
 		},
 	}
 
@@ -218,11 +229,20 @@ func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *
 			pullPolicy = corev1.PullPolicy(ovnRecon.Spec.Image.PullPolicy)
 		}
 
-		imageTag := ovnRecon.Spec.Image.Tag
-		if imageTag == "" {
-			imageTag = defaultImageTag
-		}
 		image := fmt.Sprintf("%s:%s", ovnRecon.Spec.Image.Repository, imageTag)
+
+		if deployment.Labels == nil {
+			deployment.Labels = map[string]string{}
+		}
+		for k, v := range appLabels {
+			deployment.Labels[k] = v
+		}
+		if deployment.Annotations == nil {
+			deployment.Annotations = map[string]string{}
+		}
+		for k, v := range operatorAnnotations {
+			deployment.Annotations[k] = v
+		}
 
 		deployment.Spec = appsv1.DeploymentSpec{
 			Replicas: &replicas,
@@ -231,7 +251,7 @@ func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labelsForOvnRecon(ovnRecon.Name),
+					Labels: appLabels,
 				},
 				Spec: corev1.PodSpec{
 					SecurityContext: &corev1.PodSecurityContext{
@@ -318,16 +338,29 @@ func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *
 }
 
 func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	appLabels := labelsForOvnReconWithVersion(ovnRecon.Name, imageTagFor(ovnRecon))
+	operatorAnnotations := operatorVersionAnnotations()
+
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ovnRecon.Name,
-			Namespace: targetNamespace,
+			Namespace: namespace,
 		},
 	}
 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
+		if service.Labels == nil {
+			service.Labels = map[string]string{}
+		}
+		for k, v := range appLabels {
+			service.Labels[k] = v
+		}
 		if service.Annotations == nil {
 			service.Annotations = map[string]string{}
+		}
+		for k, v := range operatorAnnotations {
+			service.Annotations[k] = v
 		}
 		service.Annotations["service.alpha.openshift.io/serving-cert-secret-name"] = "plugin-serving-cert"
 		service.Annotations["service.beta.openshift.io/serving-cert-secret-name"] = "plugin-serving-cert"
@@ -361,7 +394,42 @@ func labelsForOvnRecon(name string) map[string]string {
 	}
 }
 
+func labelsForOvnReconWithVersion(name, version string) map[string]string {
+	labels := labelsForOvnRecon(name)
+	if version != "" {
+		labels["app.kubernetes.io/version"] = version
+	}
+	labels["app.kubernetes.io/component"] = "plugin"
+	labels["app.kubernetes.io/part-of"] = "openshift-console-plugin"
+	return labels
+}
+
+func targetNamespace(ovnRecon *reconv1alpha1.OvnRecon) string {
+	if ovnRecon.Spec.TargetNamespace != "" {
+		return ovnRecon.Spec.TargetNamespace
+	}
+	return defaultNamespace
+}
+
+func imageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+	if ovnRecon.Spec.Image.Tag != "" {
+		return ovnRecon.Spec.Image.Tag
+	}
+	return defaultImageTag
+}
+
+func operatorVersionAnnotations() map[string]string {
+	version := os.Getenv("OPERATOR_VERSION")
+	if version == "" {
+		version = "dev"
+	}
+	return map[string]string{
+		"ovnrecon.bewley.net/operator-version": version,
+	}
+}
+
 func (r *OvnReconReconciler) reconcileConsolePlugin(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+	operatorAnnotations := operatorVersionAnnotations()
 	plugin := &unstructured.Unstructured{}
 	plugin.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "console.openshift.io",
@@ -383,11 +451,16 @@ func (r *OvnReconReconciler) reconcileConsolePlugin(ctx context.Context, ovnReco
 				"type": "Service",
 				"service": map[string]interface{}{
 					"name":      ovnRecon.Name,
-					"namespace": targetNamespace,
+					"namespace": targetNamespace(ovnRecon),
 					"port":      9443,
 					"basePath":  "/",
 				},
 			},
+		}
+		if len(operatorAnnotations) > 0 {
+			if err := unstructured.SetNestedStringMap(plugin.Object, operatorAnnotations, "metadata", "annotations"); err != nil {
+				return err
+			}
 		}
 		// ConsolePlugin is cluster-scoped, so we don't set a controller reference
 		// We use finalizers instead for cleanup
@@ -465,7 +538,7 @@ func (r *OvnReconReconciler) checkDeploymentReady(ctx context.Context, ovnRecon 
 	deployment := &appsv1.Deployment{}
 	err := r.Get(ctx, types.NamespacedName{
 		Name:      ovnRecon.Name,
-		Namespace: targetNamespace,
+		Namespace: targetNamespace(ovnRecon),
 	}, deployment)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -524,29 +597,21 @@ func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *recon
 	return reconcile.Result{}, nil
 }
 
-func (r *OvnReconReconciler) ensureTargetNamespace(ctx context.Context) error {
+func (r *OvnReconReconciler) ensureTargetNamespaceExists(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
 	ns := &corev1.Namespace{}
-	err := r.Get(ctx, client.ObjectKey{Name: targetNamespace}, ns)
+	err := r.Get(ctx, client.ObjectKey{Name: targetNamespace(ovnRecon)}, ns)
 	if err == nil {
 		return nil
 	}
-	if !errors.IsNotFound(err) {
-		return err
-	}
-
-	ns = &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: targetNamespace,
-		},
-	}
-	return r.Create(ctx, ns)
+	return err
 }
 
 func (r *OvnReconReconciler) deleteNamespacedResources(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ovnRecon.Name,
-			Namespace: targetNamespace,
+			Namespace: namespace,
 		},
 	}
 	if err := r.Delete(ctx, deployment); err != nil && !errors.IsNotFound(err) {
@@ -556,7 +621,7 @@ func (r *OvnReconReconciler) deleteNamespacedResources(ctx context.Context, ovnR
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ovnRecon.Name,
-			Namespace: targetNamespace,
+			Namespace: namespace,
 		},
 	}
 	if err := r.Delete(ctx, service); err != nil && !errors.IsNotFound(err) {

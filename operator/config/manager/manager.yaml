@@ -58,6 +58,9 @@ spec:
           - --health-probe-bind-address=:8081
         image: ovn-recon-operator:latest
         name: manager
+        env:
+          - name: OPERATOR_VERSION
+            value: dev
         ports: []
         livenessProbe:
           httpGet:

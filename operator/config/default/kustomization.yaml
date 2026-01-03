@@ -105,6 +105,22 @@ patches:
 #         delimiter: '.'
 #         index: 1
 #         create: true
+
+replacements:
+  - source:
+      kind: Deployment
+      name: ovn-recon-operator
+      fieldPath: spec.template.spec.containers.[name=manager].image
+    targets:
+      - select:
+          kind: Deployment
+          name: ovn-recon-operator
+        fieldPaths:
+          - spec.template.spec.containers.[name=manager].env.[name=OPERATOR_VERSION].value
+        options:
+          delimiter: ":"
+          index: 1
+          create: true
 #     - select: # Uncomment the following to set the Service namespace for TLS in Prometheus ServiceMonitor
 #         kind: ServiceMonitor
 #         group: monitoring.coreos.com

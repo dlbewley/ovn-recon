@@ -7,9 +7,10 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: ovn-recon
 spec:
+  targetNamespace: ovn-recon
   image:
     repository: quay.io/dbewley/ovn-recon
-    tag: v0.0.4-a1
+    tag: latest
     pullPolicy: IfNotPresent
   consolePlugin:
     displayName: "OVN Recon"
