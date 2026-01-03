@@ -77,17 +77,24 @@ jobs:
         VERSION=${GITHUB_REF#refs/tags/}
         VERSION_NUM=${VERSION#v}  # Remove 'v' prefix for bundle version
         IMG=quay.io/dbewley/ovn-recon-operator:$VERSION
-        # Prepare prerequisites
+        # Prepare prerequisites - these will create bin/kustomize and ensure operator-sdk is available
         make manifests
         make kustomize
-        make operator-sdk
-        cd config/manager && ./bin/kustomize edit set image controller=$IMG
-        cd ../..
+        # Verify kustomize was created (make kustomize installs to bin/kustomize)
+        if [ ! -f bin/kustomize ]; then
+          echo "Error: kustomize binary not found at bin/kustomize"
+          ls -la bin/ || echo "bin directory does not exist"
+          exit 1
+        fi
+        # Use system-installed operator-sdk (installed to /usr/local/bin in previous step)
         # Generate kustomize manifests with --interactive=false to use base CSV values
-        ./bin/operator-sdk generate kustomize manifests -q --interactive=false
+        operator-sdk generate kustomize manifests -q --interactive=false
+        # Update manager image in kustomize config
+        cd config/manager && ../../bin/kustomize edit set image controller=$IMG
+        cd ../..
         # Generate bundle - base CSV already has all metadata, so no prompts needed
-        ./bin/kustomize build config/manifests | ./bin/operator-sdk generate bundle -q --overwrite --version $VERSION_NUM --channels stable --default-channel stable
-        ./bin/operator-sdk bundle validate ./bundle
+        bin/kustomize build config/manifests | operator-sdk generate bundle -q --overwrite --version $VERSION_NUM --channels stable --default-channel stable
+        operator-sdk bundle validate ./bundle
 
     - name: Build Bundle Image
       if: startsWith(github.ref, 'refs/tags/v')
