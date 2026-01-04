@@ -41,9 +41,34 @@ For detailed build and developer deployment instructions, please see [docs/BUILD
 
 ### Operator Installation
 
-For operator-based installation, see [docs/OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
+Create catalog source
+
+```bash
+oc apply -f manifests/catalogsource.yaml
+```
+
+Create subscription
+
+```bash
+oc apply -f manifests/subscription.yaml
+```
+
+Create ovnrecon resource to enable console plugin and deploy OVN Recon application.
+
+```bash
+oc apply -f manifests/namespace.yaml
+oc apply -f manifests/ovnrecon.yaml
+```
+
+Console plugin will be automatically enabled.
+
+For detailed operator deployment instructions, please see [docs/OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
 
 ### Manual Installation
+
+#### Apply Manifests
+
+Apply namespace, consoleplugin, service, and deployment from [manifests](manifests/).
 
 #### Enable the Plugin
 
