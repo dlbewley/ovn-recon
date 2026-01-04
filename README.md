@@ -1,7 +1,6 @@
 [![CI Status](https://github.com/dlbewley/ovn-recon/actions/workflows/build-test.yaml/badge.svg)](https://github.com/dlbewley/ovn-recon/actions/workflows/build-test.yaml)
 ![Built with AI](https://img.shields.io/badge/Built%20with-AI-blueviolet?style=plastic)
 [![Image Repository on Quay](https://img.shields.io/badge/Image%20on-Quay.io-blue?style=plastic "Image Repository on Quay")](https://quay.io/repository/dbewley/ovn-recon)
-[![Helm Chart on GHCR](https://img.shields.io/badge/Chart%20on-ghcr.io-green?style=plastic "Chart on GHCR")](https://github.com/dlbewley/ovn-recon/pkgs/container/charts%2Fovn-recon)
 
 # Open Virtual Network Reconnaissance (OVN Recon)
 
@@ -40,53 +39,13 @@ For detailed build and developer deployment instructions, please see [docs/BUILD
 
 ## Installation
 
-### Helm Deployment
+### Operator Installation
 
-Deploy using Helm from the OCI registry:
+For operator-based installation, see [docs/OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
 
-```bash
-helm install ovn-recon oci://ghcr.io/dlbewley/charts/ovn-recon \
-  --version 0.1.1 \
-  --namespace ovn-recon \
-  --create-namespace
-```
+### Manual Installation
 
-Or from the local chart:
-
-```bash
-helm install ovn-recon ./charts/ovn-recon \
-  --namespace ovn-recon \
-  --create-namespace
-```
-
-To customize the deployment, create a `values.yaml` file:
-
-```yaml
-image:
-  repository: quay.io/dbewley/ovn-recon
-  tag: "v0.0.2"
-
-consolePlugin:
-  displayName: "OVN Recon"
-```
-
-Then install with your custom values:
-
-```bash
-helm install ovn-recon ./charts/ovn-recon \
-  --namespace ovn-recon \
-  --create-namespace \
-  --values values.yaml
-```
-
-To upgrade an existing deployment:
-
-```bash
-helm upgrade ovn-recon ./charts/ovn-recon \
-  --namespace ovn-recon
-```
-
-### Enable the Plugin
+#### Enable the Plugin
 
 Patch the Console Operator config to enable the plugin. Use a JSON patch to append to the list of plugins instead of replacing it:
 
@@ -103,8 +62,8 @@ For troubleshooting steps, please see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOO
 
 ## References
 
--   [OpenShift Console Dynamic Plugin SDK](https://github.com/openshift/console/tree/master/frontend/packages/console-dynamic-plugin-sdk)
--   [Dynamic Plugin SDK README](https://www.npmjs.com/package/@openshift-console/dynamic-plugin-sdk)
--   [PatternFly React Documentation](https://www.patternfly.org/v4/components)
--   [OpenShift Console GitHub Repository](https://github.com/openshift/console)
+- [OpenShift Console Dynamic Plugin SDK](https://github.com/openshift/console/tree/master/frontend/packages/console-dynamic-plugin-sdk)
+- [Dynamic Plugin SDK README](https://www.npmjs.com/package/@openshift-console/dynamic-plugin-sdk)
+- [PatternFly React Documentation](https://www.patternfly.org/v4/components)
+- [OpenShift Console GitHub Repository](https://github.com/openshift/console)
 - [Example ocp-console-plugin](https://github.com/dlbewley/ocp-console-plugin)
