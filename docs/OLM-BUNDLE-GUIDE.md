@@ -1,0 +1,343 @@
+# OLM Bundle Generation and Subscription Guide
+
+This guide explains how to generate an OLM bundle for the OVN Recon Operator and how users can subscribe to it in OpenShift.
+
+## Prerequisites
+
+- Operator SDK v1.42.0+ installed
+- Docker or Podman for building images
+- Access to a container registry (e.g., quay.io)
+- OpenShift cluster with OLM installed (default in OpenShift 4.x)
+
+## Part 1: Generating an OLM Bundle
+
+### Step 1: Build and Push the Operator Image
+
+First, build and push your operator image to a registry:
+
+```bash
+cd operator
+
+# Set your operator image
+export IMG=quay.io/dbewley/ovn-recon-operator:v0.0.1
+
+# Build the operator image
+make docker-build IMG=$IMG
+
+# Push the operator image
+make docker-push IMG=$IMG
+```
+
+### Step 2: Generate the Bundle
+
+The bundle contains all the manifests and metadata needed for OLM:
+
+```bash
+cd operator
+
+# Set version and channels (optional, defaults to 0.0.1 and "stable")
+export VERSION=0.0.1
+export CHANNELS=stable
+export DEFAULT_CHANNEL=stable
+
+# Generate the bundle
+make bundle IMG=$IMG
+```
+
+This will:
+- Generate manifests from your operator code
+- Create bundle metadata (CSV, annotations, etc.)
+- Validate the bundle structure
+- Create a `bundle/` directory with all required files
+
+### Step 3: Build and Push the Bundle Image
+
+```bash
+cd operator
+
+# Set bundle image
+export BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v0.0.1
+
+# Build bundle image
+make bundle-build BUNDLE_IMG=$BUNDLE_IMG
+
+# Push bundle image
+make bundle-push BUNDLE_IMG=$BUNDLE_IMG
+```
+
+### Step 4: Build and Push the Catalog Image (Optional but Recommended)
+
+A catalog contains one or more bundles and is what OLM uses to discover operators:
+
+```bash
+cd operator
+
+# Set catalog image
+export CATALOG_IMG=quay.io/dbewley/ovn-recon-operator-catalog:v0.0.1
+
+# Build catalog (includes your bundle)
+make catalog-build BUNDLE_IMGS=$BUNDLE_IMG CATALOG_IMG=$CATALOG_IMG
+
+# Push catalog image
+make catalog-push CATALOG_IMG=$CATALOG_IMG
+```
+
+### Complete Example Workflow
+
+```bash
+cd operator
+
+# 1. Set variables
+export VERSION=0.0.1
+export IMG=quay.io/dbewley/ovn-recon-operator:v${VERSION}
+export BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v${VERSION}
+export CATALOG_IMG=quay.io/dbewley/ovn-recon-operator-catalog:v${VERSION}
+
+# 2. Build and push operator
+make docker-build docker-push IMG=$IMG
+
+# 3. Generate bundle
+make bundle IMG=$IMG
+
+# 4. Build and push bundle
+make bundle-build bundle-push BUNDLE_IMG=$BUNDLE_IMG
+
+# 5. Build and push catalog
+make catalog-build catalog-push BUNDLE_IMGS=$BUNDLE_IMG CATALOG_IMG=$CATALOG_IMG
+```
+
+## Part 2: Creating a Subscription (User Guide)
+
+Users can install the operator via OLM in two ways:
+
+### Method 1: Using a CatalogSource (Recommended)
+
+This method uses a catalog image you've published.
+
+#### Step 1: Create a CatalogSource
+
+Create a `CatalogSource` resource that points to your catalog image:
+
+```yaml
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: ovn-recon-operator-catalog
+  namespace: openshift-marketplace
+spec:
+  sourceType: grpc
+  image: quay.io/dbewley/ovn-recon-operator-catalog:v0.0.1
+  displayName: OVN Recon Operator Catalog
+  publisher: Your Name
+  updateStrategy:
+    registryPoll:
+      interval: 30m
+```
+
+Apply it:
+
+```bash
+kubectl apply -f catalog-source.yaml
+```
+
+Wait for the catalog to be ready:
+
+```bash
+kubectl get catalogsource -n openshift-marketplace ovn-recon-operator-catalog
+```
+
+#### Step 2: Create a Subscription
+
+Create a `Subscription` resource:
+
+```yaml
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: ovn-recon-operator
+  namespace: openshift-operators  # or your target namespace
+spec:
+  channel: stable
+  name: ovn-recon-operator
+  source: ovn-recon-operator-catalog
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic  # or Manual for approval workflow
+```
+
+Apply it:
+
+```bash
+kubectl apply -f subscription.yaml
+```
+
+#### Step 3: Verify Installation
+
+Check the subscription status:
+
+```bash
+kubectl get subscription -n openshift-operators ovn-recon-operator
+```
+
+Check the operator installation:
+
+```bash
+kubectl get csv -n openshift-operators | grep ovn-recon
+```
+
+Check the operator pod:
+
+```bash
+kubectl get pods -n openshift-operators | grep ovn-recon
+```
+
+### Method 2: Using OperatorHub (Community Operators)
+
+If you've published to OperatorHub.io, users can install directly from the OperatorHub UI:
+
+1. Open OpenShift Console
+2. Navigate to **Operators** → **OperatorHub**
+3. Search for "OVN Recon"
+4. Click **Install**
+5. Select namespace and approval strategy
+6. Click **Subscribe**
+
+### Method 3: Direct Bundle Installation (Development/Testing)
+
+For testing, you can install directly from a bundle without a catalog:
+
+```bash
+# Install the operator from bundle
+operator-sdk run bundle quay.io/dbewley/ovn-recon-operator-bundle:v0.0.1
+
+# Or using OLM CLI
+oc create -f bundle/manifests/
+oc create -f bundle/metadata/
+```
+
+## Part 3: Creating an OvnRecon Instance
+
+After the operator is installed, create an instance:
+
+```yaml
+apiVersion: recon.bewley.net/v1alpha1
+kind: OvnRecon
+metadata:
+  name: ovn-recon
+  namespace: ovn-recon
+spec:
+  image:
+    repository: quay.io/dbewley/ovn-recon
+    tag: v0.0.3
+    pullPolicy: IfNotPresent
+  consolePlugin:
+    displayName: "OVN Recon"
+    enabled: true
+```
+
+Apply it:
+
+```bash
+kubectl apply -f config/samples/recon_v1alpha1_ovnrecon.yaml
+```
+
+## Troubleshooting
+
+### Bundle Validation Errors
+
+If bundle validation fails:
+
+```bash
+cd operator
+make bundle IMG=$IMG
+# Check the output for validation errors
+```
+
+Common issues:
+- Missing required fields in CSV
+- Invalid image references
+- Missing RBAC permissions
+
+### Catalog Not Appearing
+
+If the catalog doesn't appear in OperatorHub:
+
+```bash
+# Check catalog source status
+kubectl describe catalogsource -n openshift-marketplace ovn-recon-operator-catalog
+
+# Check catalog pods
+kubectl get pods -n openshift-marketplace | grep ovn-recon
+
+# Check logs
+kubectl logs -n openshift-marketplace -l olm.catalogSource=ovn-recon-operator-catalog
+```
+
+### Subscription Issues
+
+If subscription fails:
+
+```bash
+# Check subscription status
+kubectl describe subscription -n openshift-operators ovn-recon-operator
+
+# Check install plan
+kubectl get installplan -n openshift-operators
+
+# Check CSV status
+kubectl get csv -n openshift-operators ovn-recon-operator.v0.0.1 -o yaml
+```
+
+## Updating the Operator
+
+To release a new version:
+
+1. **Update version**:
+   ```bash
+   export VERSION=0.0.2
+   export IMG=quay.io/dbewley/ovn-recon-operator:v${VERSION}
+   export BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v${VERSION}
+   ```
+
+2. **Rebuild and push**:
+   ```bash
+   make docker-build docker-push IMG=$IMG
+   make bundle IMG=$IMG
+   make bundle-build bundle-push BUNDLE_IMG=$BUNDLE_IMG
+   ```
+
+3. **Update catalog** (add new bundle to existing catalog):
+   ```bash
+   export CATALOG_IMG=quay.io/dbewley/ovn-recon-operator-catalog:v0.0.2
+   make catalog-build BUNDLE_IMGS=$BUNDLE_IMG CATALOG_IMG=$CATALOG_IMG CATALOG_BASE_IMG=quay.io/dbewley/ovn-recon-operator-catalog:v0.0.1
+   make catalog-push CATALOG_IMG=$CATALOG_IMG
+   ```
+
+4. **Update CatalogSource** to point to new catalog version (or it will auto-update if using registry polling)
+
+## Makefile Variables Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VERSION` | `0.0.1` | Operator version |
+| `CHANNELS` | `stable` | Comma-separated list of channels |
+| `DEFAULT_CHANNEL` | `stable` | Default channel name |
+| `IMG` | `ovn-recon-operator:latest` | Operator container image |
+| `BUNDLE_IMG` | `$(IMAGE_TAG_BASE)-bundle:v$(VERSION)` | Bundle container image |
+| `CATALOG_IMG` | `$(IMAGE_TAG_BASE)-catalog:v$(VERSION)` | Catalog container image |
+| `IMAGE_TAG_BASE` | `bewley.net/operator` | Base image name |
+
+## Additional Resources
+
+- [Operator SDK Bundle Documentation](https://sdk.operatorframework.io/docs/olm-integration/generating-a-csv/)
+- [OLM Documentation](https://olm.operatorframework.io/)
+- [OpenShift Operator Lifecycle Manager](https://docs.openshift.com/container-platform/latest/operators/understanding/olm/olm-understanding-olm.html)
+
+
+# Bugs
+
+- PackageManifest shows up with name "Operator"
+- Installation results in invalid image reference
+  - Failed to pull image "ovn-recon-operator:latest": unable to pull image or OCI artifact
+- Controller runs in openshift-operators namespace
+- Maybe the CR should be namespaced to ovn-recon ?
+-
