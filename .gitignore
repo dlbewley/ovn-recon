@@ -3,6 +3,14 @@ node_modules/
 
 # Build output
 dist/
+operator/bundle/
+operator/dist/
+operator/bin/
+
+# Operator SDK/cache artifacts
+operator/.cache/
+operator/testbin/
+operator/cover.out
 
 # Local configuration
 setup_env.sh

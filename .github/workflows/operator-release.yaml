@@ -93,7 +93,14 @@ jobs:
         cd config/manager && ../../bin/kustomize edit set image controller=$IMG
         cd ../..
         # Generate bundle - base CSV already has all metadata, so no prompts needed
-        bin/kustomize build config/manifests | operator-sdk generate bundle -q --overwrite --version $VERSION_NUM --channels stable --default-channel stable
+        if [[ "$VERSION" == *"-"* ]]; then
+          CHANNELS=latest
+          DEFAULT_CHANNEL=latest
+        else
+          CHANNELS=stable,latest
+          DEFAULT_CHANNEL=stable
+        fi
+        bin/kustomize build config/manifests | operator-sdk generate bundle -q --overwrite --version $VERSION_NUM --channels $CHANNELS --default-channel $DEFAULT_CHANNEL
         operator-sdk bundle validate ./bundle
 
     - name: Build Bundle Image
