@@ -155,6 +155,12 @@ kubectl get catalogsource -n openshift-marketplace ovn-recon-operator-catalog
 
 #### Step 2: Create a Subscription
 
+Create the operator namespace (required before creating the Subscription):
+
+```bash
+kubectl create namespace ovn-recon-operator
+```
+
 Create a `Subscription` resource:
 
 ```yaml
@@ -205,7 +211,7 @@ If you've published to OperatorHub.io, users can install directly from the Opera
 2. Navigate to **Operators** → **OperatorHub**
 3. Search for "OVN Recon"
 4. Click **Install**
-5. Select namespace and approval strategy
+5. Select namespace and approval strategy (use `ovn-recon-operator` for the install namespace)
 6. Click **Subscribe**
 
 ### Method 3: Direct Bundle Installation (Development/Testing)
@@ -221,6 +227,8 @@ oc create -f bundle/manifests/
 oc create -f bundle/metadata/
 ```
 
+Note: the bundle includes a `Namespace` and `OperatorGroup` for `ovn-recon-operator`.
+
 ## Part 3: Creating an OvnRecon Instance
 
 After the operator is installed, create an instance:
@@ -234,7 +242,7 @@ metadata:
 spec:
   image:
     repository: quay.io/dbewley/ovn-recon
-    tag: v0.0.3
+    tag: latest
     pullPolicy: IfNotPresent
   consolePlugin:
     displayName: "OVN Recon"

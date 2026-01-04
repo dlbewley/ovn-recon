@@ -2,6 +2,8 @@
 # used to generate the 'manifests/' directory in a bundle.
 resources:
 - bases/operator.clusterserviceversion.yaml
+- bases/ovn-recon-operator-namespace.yaml
+- bases/ovn-recon-operator-operatorgroup.yaml
 - ../default
 - ../samples
 - ../scorecard
