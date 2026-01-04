@@ -229,6 +229,25 @@ oc create -f bundle/metadata/
 
 Note: the bundle includes a `Namespace` and `OperatorGroup` for `ovn-recon-operator`.
 
+### Render Operator-Generated Manifests (Debugging)
+
+To inspect the resources the controller would create for a given `OvnRecon` CR, use the render utility:
+
+```bash
+cd operator
+go run ./cmd/render -f config/samples/recon_v1alpha1_ovnrecon.yaml
+```
+
+You can also render from a live CR:
+
+```bash
+oc get ovnrecon ovn-recon -o yaml | go run ./cmd/render -f -
+```
+
+Also `make render` will emit the same.
+
+Consider these as the source of truth for refreshing the manual installation [manifests](../manifests).
+
 ## Part 3: Creating an OvnRecon Instance
 
 After the operator is installed, create an instance:
