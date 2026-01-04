@@ -73,6 +73,7 @@ jobs:
     - name: Generate Bundle
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
+        set -o pipefail
         cd operator
         VERSION=${GITHUB_REF#refs/tags/}
         VERSION_NUM=${VERSION#v}  # Remove 'v' prefix for bundle version
