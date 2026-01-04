@@ -1,5 +1,5 @@
 # Adds namespace to all resources.
-namespace: ovn-recon-system
+namespace: ovn-recon-operator
 
 # Value of this field is prepended to the
 # names of all resources, e.g. a deployment named

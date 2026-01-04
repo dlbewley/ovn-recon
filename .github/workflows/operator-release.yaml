@@ -102,6 +102,14 @@ jobs:
         fi
         bin/kustomize build config/manifests | operator-sdk generate bundle -q --overwrite --version $VERSION_NUM --channels $CHANNELS --default-channel $DEFAULT_CHANNEL
         operator-sdk bundle validate ./bundle
+        if rg -n --no-messages 'image:\s*controller:latest' bundle/manifests; then
+          echo "Error: bundle contains an unqualified controller image"
+          exit 1
+        fi
+        if rg -n --no-messages 'image:\s*ovn-recon-operator:latest' bundle/manifests; then
+          echo "Error: bundle contains an unqualified ovn-recon-operator image"
+          exit 1
+        fi
 
     - name: Build Bundle Image
       if: startsWith(github.ref, 'refs/tags/v')

@@ -162,7 +162,7 @@ apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
   name: ovn-recon-operator
-  namespace: openshift-operators  # or your target namespace
+  namespace: ovn-recon-operator
 spec:
   channel: stable
   name: ovn-recon-operator
@@ -182,19 +182,19 @@ kubectl apply -f subscription.yaml
 Check the subscription status:
 
 ```bash
-kubectl get subscription -n openshift-operators ovn-recon-operator
+kubectl get subscription -n ovn-recon-operator ovn-recon-operator
 ```
 
 Check the operator installation:
 
 ```bash
-kubectl get csv -n openshift-operators | grep ovn-recon
+kubectl get csv -n ovn-recon-operator | grep ovn-recon
 ```
 
 Check the operator pod:
 
 ```bash
-kubectl get pods -n openshift-operators | grep ovn-recon
+kubectl get pods -n ovn-recon-operator | grep ovn-recon
 ```
 
 ### Method 2: Using OperatorHub (Community Operators)
