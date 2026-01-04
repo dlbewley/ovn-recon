@@ -7,6 +7,10 @@ metadata:
       [{"apiVersion":"recon.bewley.net/v1alpha1","kind":"OvnRecon","metadata":{"name":"ovn-recon"},"spec":{"targetNamespace":"ovn-recon","image":{"repository":"quay.io/dbewley/ovn-recon","tag":"latest","pullPolicy":"IfNotPresent"},"consolePlugin":{"displayName":"OVN Recon","enabled":true}}}]
     capabilities: Basic Install
     categories: Networking
+    containerImage: quay.io/dbewley/ovn-recon-operator:latest
+    documentation: https://github.com/dlbewley/ovn-recon/tree/main/docs
+    repository: https://github.com/dlbewley/ovn-recon
+    support: https://github.com/dlbewley/ovn-recon/issues
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
