@@ -87,8 +87,7 @@ jobs:
           exit 1
         fi
         # Use system-installed operator-sdk (installed to /usr/local/bin in previous step)
-        # Generate kustomize manifests with --interactive=false to use base CSV values
-        operator-sdk generate kustomize manifests -q --interactive=false
+        # Do not regenerate CSV here; rely on the committed CSV in config/manifests/bases.
         # Update manager image in kustomize config
         cd config/manager && ../../bin/kustomize edit set image controller=$IMG
         cd ../..
