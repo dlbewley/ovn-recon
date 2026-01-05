@@ -41,23 +41,22 @@ For detailed build and developer deployment instructions, please see [docs/BUILD
 
 ### Operator Installation
 
-Create catalog source
+Create the Bewley Operators [catalog source](manifests/catalogsource.yaml)
 
 ```bash
 oc apply -f manifests/catalogsource.yaml
 ```
 
-Create subscription
+Install the [operator](manifests/operator/base).
 
 ```bash
-oc apply -f manifests/subscription.yaml
+oc apply -k manifests/operator/base
 ```
 
-Create ovnrecon resource to enable console plugin and deploy OVN Recon application.
+Create a `ovnrecon` resource [instance](manifests/instance/base) to enable console plugin and deploy OVN Recon application.
 
 ```bash
-oc apply -f manifests/namespace.yaml
-oc apply -f manifests/ovnrecon.yaml
+oc apply -k manifests/instance/base
 ```
 
 Console plugin will be automatically enabled.
@@ -66,11 +65,16 @@ For detailed operator deployment instructions, please see [docs/OLM-BUNDLE-GUIDE
 
 ### Manual Installation
 
-#### Apply Manifests
+Apply namespace, consoleplugin, service, and deployment from [manifests/manual/base](manifests/manual/base).
 
-Apply namespace, consoleplugin, service, and deployment from [manifests](manifests/).
+```bash
+oc apply -k manifests/manual/base
+```
 
-#### Enable the Plugin
+#### Enable the Console Plugin
+
+> [!NOTE]
+> When installing via the Operator, this step is not necessary.
 
 Patch the Console Operator config to enable the plugin. Use a JSON patch to append to the list of plugins instead of replacing it:
 

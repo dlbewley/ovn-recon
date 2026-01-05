@@ -1,16 +1,3 @@
-# apiVersion: operators.coreos.com/v1alpha1
-# kind: Subscription
-# metadata:
-#   name: ovn-recon-operator
-#   namespace: ovn-recon-operator
-# spec:
-#   channel: stable
-#   installPlanApproval: Automatic
-#   name: ovn-recon-operator
-#   source: bewley-operators
-#   sourceNamespace: openshift-marketplace
-#   startingCSV: ovn-recon-operator.v0.0.5
----
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
