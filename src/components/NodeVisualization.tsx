@@ -222,9 +222,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     const otherInterfaces = interfaces.filter((iface: Interface) => !['ethernet', 'bond', 'vlan', 'mac-vlan'].includes(iface.type) && !isBridge(iface) && iface.type !== 'ovs-interface');
 
-    // Calculate positions with dynamic column visibility
-    const nodePositions: { [name: string]: { x: number, y: number } } = {};
-
     // Define columns with their data
     const columns = [
         { name: 'Physical Interfaces', data: ethInterfaces, key: 'eth' },
@@ -238,58 +235,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     // Filter columns based on showHiddenColumns
     const visibleColumns = showHiddenColumns ? columns : columns.filter(col => col.data.length > 0);
-
-    // Position nodes based on visible columns
-    // const currentColIndex = 0; // Unused
-
-    if (showHiddenColumns || ethInterfaces.length > 0) {
-        ethInterfaces.forEach((iface: Interface, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'eth');
-            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
-    }
-
-    if (showHiddenColumns || bondInterfaces.length > 0) {
-        bondInterfaces.forEach((iface: Interface, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'bond');
-            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
-    }
-
-    if (showHiddenColumns || vlanInterfaces.length > 0) {
-        vlanInterfaces.forEach((iface: Interface, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'vlan');
-            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
-    }
-
-    if (showHiddenColumns || bridgeInterfaces.length > 0) {
-        bridgeInterfaces.forEach((iface: Interface, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'bridge');
-            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
-    }
-
-    if (showHiddenColumns || logicalInterfaces.length > 0) {
-        logicalInterfaces.forEach((iface: Interface, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'logical');
-            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
-    }
-
-    if (showHiddenColumns || bridgeMappings.length > 0) {
-        bridgeMappings.forEach((mapping: OvnBridgeMapping, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'ovn');
-            nodePositions[`ovn-${mapping.localnet}`] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
-    }
-
-    if (showHiddenColumns || cudns.length > 0) {
-        cudns.forEach((cudn: ClusterUserDefinedNetwork, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'cudn');
-            nodePositions[`cudn-${cudn.metadata?.name}`] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
-    }
 
     // Attachments (from CUDN status) - AGGREGATED
     const attachmentNodes: AttachmentNode[] = [];
@@ -327,6 +272,125 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
         return undefined;
     };
+
+    const gravityById: Record<string, number> = {};
+    const addGravity = (id: string) => {
+        gravityById[id] = (gravityById[id] || 0) + 1;
+    };
+    const addGravityEdge = (source: string, target: string) => {
+        addGravity(source);
+        addGravity(target);
+    };
+
+    interfaces.forEach((iface: Interface) => {
+        const master = iface.controller || iface.master;
+        if (master) addGravityEdge(iface.name, master);
+        const baseIface = iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'];
+        if (baseIface) addGravityEdge(baseIface, iface.name);
+    });
+
+    bridgeMappings.forEach((mapping: OvnBridgeMapping) => {
+        const ovnNodeId = `ovn-${mapping.localnet}`;
+        if (mapping.bridge) addGravityEdge(mapping.bridge, ovnNodeId);
+    });
+
+    cudns.forEach((cudn: ClusterUserDefinedNetwork) => {
+        const cudnNodeId = `cudn-${cudn.metadata?.name}`;
+        const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
+        if (physicalNetworkName) {
+            const ovnNodeId = `ovn-${physicalNetworkName}`;
+            addGravityEdge(ovnNodeId, cudnNodeId);
+        }
+    });
+
+    attachmentNodes.forEach((node: AttachmentNode) => {
+        addGravityEdge(`cudn-${node.cudn}`, `attachment-${node.cudn}`);
+    });
+
+    if (showNads) {
+        nads.forEach((nad: NetworkAttachmentDefinition) => {
+            const nadNodeId = getNadNodeId(nad);
+            const cudnName = findCudnNameForNad(nad);
+            if (cudnName) {
+                addGravityEdge(`cudn-${cudnName}`, nadNodeId);
+            }
+        });
+    }
+
+    const getGravity = (id: string) => gravityById[id] || 0;
+    const sortByGravity = <T,>(items: T[], getId: (item: T) => string) => items.slice().sort((a, b) => {
+        const gravityDiff = getGravity(getId(a)) - getGravity(getId(b));
+        if (gravityDiff !== 0) return gravityDiff;
+        const aId = getId(a);
+        const bId = getId(b);
+        return aId.localeCompare(bId);
+    });
+
+    const sortedEthInterfaces = sortByGravity(ethInterfaces, (iface) => iface.name);
+    const sortedBondInterfaces = sortByGravity(bondInterfaces, (iface) => iface.name);
+    const sortedVlanInterfaces = sortByGravity(vlanInterfaces, (iface) => iface.name);
+    const sortedBridgeInterfaces = sortByGravity(bridgeInterfaces, (iface) => iface.name);
+    const sortedLogicalInterfaces = sortByGravity(logicalInterfaces, (iface) => iface.name);
+    const sortedBridgeMappings = sortByGravity(bridgeMappings, (mapping) => `ovn-${mapping.localnet || ''}`);
+    const sortedCudns = sortByGravity(cudns, (cudn) => `cudn-${cudn.metadata?.name || ''}`);
+    const sortedAttachmentNodes = sortByGravity(attachmentNodes, (node) => `attachment-${node.cudn}`);
+    const sortedNads = sortByGravity(nads, (nad) => getNadNodeId(nad));
+    const sortedOtherInterfaces = sortByGravity(otherInterfaces, (iface) => iface.name);
+
+    // Calculate positions with dynamic column visibility
+    const nodePositions: { [name: string]: { x: number, y: number } } = {};
+
+    // Position nodes based on visible columns
+    // const currentColIndex = 0; // Unused
+
+    if (showHiddenColumns || ethInterfaces.length > 0) {
+        sortedEthInterfaces.forEach((iface: Interface, index: number) => {
+            const colOffset = visibleColumns.findIndex(col => col.key === 'eth');
+            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+        });
+    }
+
+    if (showHiddenColumns || bondInterfaces.length > 0) {
+        sortedBondInterfaces.forEach((iface: Interface, index: number) => {
+            const colOffset = visibleColumns.findIndex(col => col.key === 'bond');
+            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+        });
+    }
+
+    if (showHiddenColumns || vlanInterfaces.length > 0) {
+        sortedVlanInterfaces.forEach((iface: Interface, index: number) => {
+            const colOffset = visibleColumns.findIndex(col => col.key === 'vlan');
+            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+        });
+    }
+
+    if (showHiddenColumns || bridgeInterfaces.length > 0) {
+        sortedBridgeInterfaces.forEach((iface: Interface, index: number) => {
+            const colOffset = visibleColumns.findIndex(col => col.key === 'bridge');
+            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+        });
+    }
+
+    if (showHiddenColumns || logicalInterfaces.length > 0) {
+        sortedLogicalInterfaces.forEach((iface: Interface, index: number) => {
+            const colOffset = visibleColumns.findIndex(col => col.key === 'logical');
+            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+        });
+    }
+
+    if (showHiddenColumns || bridgeMappings.length > 0) {
+        sortedBridgeMappings.forEach((mapping: OvnBridgeMapping, index: number) => {
+            const colOffset = visibleColumns.findIndex(col => col.key === 'ovn');
+            nodePositions[`ovn-${mapping.localnet}`] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+        });
+    }
+
+    if (showHiddenColumns || cudns.length > 0) {
+        sortedCudns.forEach((cudn: ClusterUserDefinedNetwork, index: number) => {
+            const colOffset = visibleColumns.findIndex(col => col.key === 'cudn');
+            nodePositions[`cudn-${cudn.metadata?.name}`] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+        });
+    }
 
     // Helper to calculate attachment node height
     const getAttachmentHeight = (node: AttachmentNode) => {
@@ -434,7 +498,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Attachments positions with dynamic spacing
     let currentAttachmentY = padding;
     const attachmentColOffset = visibleColumns.length; // Attachments always after visible columns
-    attachmentNodes.forEach((node: AttachmentNode) => {
+    sortedAttachmentNodes.forEach((node: AttachmentNode) => {
         const height = getAttachmentHeight(node);
         nodePositions[`attachment-${node.cudn}`] = { x: padding + (attachmentColOffset * colSpacing), y: currentAttachmentY };
         currentAttachmentY += height + 20; // Add gap
@@ -442,7 +506,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     const nadColOffset = attachmentColOffset + 1; // NADs render to the right of Attachments
     if (showNads && (showHiddenColumns || nads.length > 0)) {
-        nads.forEach((nad: NetworkAttachmentDefinition, index: number) => {
+        sortedNads.forEach((nad: NetworkAttachmentDefinition, index: number) => {
             nodePositions[getNadNodeId(nad)] = { x: padding + (nadColOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
         });
     }
@@ -773,25 +837,25 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                         return (
                             <React.Fragment key={col.key}>
                                 <text x={xPos} y={padding - 10} fontWeight="bold" fill="currentColor">{col.name}</text>
-                                {col.key === 'eth' && ethInterfaces.map((iface: Interface) =>
+                                {col.key === 'eth' && sortedEthInterfaces.map((iface: Interface) =>
                                     nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#0066CC')
                                 )}
-                                {col.key === 'bond' && bondInterfaces.map((iface: Interface) =>
+                                {col.key === 'bond' && sortedBondInterfaces.map((iface: Interface) =>
                                     nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#663399')
                                 )}
-                                {col.key === 'vlan' && vlanInterfaces.map((iface: Interface) =>
+                                {col.key === 'vlan' && sortedVlanInterfaces.map((iface: Interface) =>
                                     nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#9933CC')
                                 )}
-                                {col.key === 'bridge' && bridgeInterfaces.map((iface: Interface) =>
+                                {col.key === 'bridge' && sortedBridgeInterfaces.map((iface: Interface) =>
                                     nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#FF6600')
                                 )}
-                                {col.key === 'logical' && logicalInterfaces.map((iface: Interface) =>
+                                {col.key === 'logical' && sortedLogicalInterfaces.map((iface: Interface) =>
                                     nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#0099CC')
                                 )}
-                                {col.key === 'ovn' && bridgeMappings.map((mapping: OvnBridgeMapping) =>
+                                {col.key === 'ovn' && sortedBridgeMappings.map((mapping: OvnBridgeMapping) =>
                                     nodePositions[`ovn-${mapping.localnet}`] && renderInterfaceNode(mapping, nodePositions[`ovn-${mapping.localnet}`].x, nodePositions[`ovn-${mapping.localnet}`].y, '#009900', 'ovn-mapping')
                                 )}
-                                {col.key === 'cudn' && cudns.map((cudn: ClusterUserDefinedNetwork) =>
+                                {col.key === 'cudn' && sortedCudns.map((cudn: ClusterUserDefinedNetwork) =>
                                     nodePositions[`cudn-${cudn.metadata?.name}`] && renderInterfaceNode(cudn, nodePositions[`cudn-${cudn.metadata?.name}`].x, nodePositions[`cudn-${cudn.metadata?.name}`].y, '#CC0099', 'cudn')
                                 )}
                             </React.Fragment>
@@ -800,14 +864,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
                     {/* Layer 7: Attachments (from CUDN status) */}
                     <text x={padding + (attachmentColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">Attachments</text>
-                    {attachmentNodes.map((node: AttachmentNode) =>
+                    {sortedAttachmentNodes.map((node: AttachmentNode) =>
                         nodePositions[`attachment-${node.cudn}`] && renderInterfaceNode(node, nodePositions[`attachment-${node.cudn}`].x, nodePositions[`attachment-${node.cudn}`].y, 'var(--pf-global--palette--gold-400)', 'attachment', getAttachmentHeight(node))
                     )}
 
                     {showNads && (
                         <>
                             <text x={padding + (nadColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">NADs</text>
-                            {nads.map((nad: NetworkAttachmentDefinition) =>
+                            {sortedNads.map((nad: NetworkAttachmentDefinition) =>
                                 nodePositions[getNadNodeId(nad)] && renderInterfaceNode(nad, nodePositions[getNadNodeId(nad)].x, nodePositions[getNadNodeId(nad)].y, '#CC9900', 'nad')
                             )}
                         </>
@@ -816,7 +880,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                     {/* Layer 8: Others */}
                     <text x={padding} y={calculatedHeight - 150} fontWeight="bold" fill="currentColor">Other Interfaces</text>
                     <g transform={`translate(${padding}, ${calculatedHeight - 140})`}>
-                        {otherInterfaces.map((iface: Interface, index: number) => {
+                        {sortedOtherInterfaces.map((iface: Interface, index: number) => {
                             const col = index % 4;
                             const row = Math.floor(index / 4);
                             return renderInterfaceNode(iface, col * (itemWidth + 20), row * (itemHeight + 20), '#666');
