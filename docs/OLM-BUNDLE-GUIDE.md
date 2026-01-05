@@ -80,7 +80,7 @@ A catalog contains one or more bundles and is what OLM uses to discover operator
 cd operator
 
 # Set catalog image
-export CATALOG_IMG=quay.io/dbewley/ovn-recon-operator-catalog:v0.0.1
+export CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
 
 # Build catalog (includes your bundle)
 make catalog-build BUNDLE_IMGS=$BUNDLE_IMG CATALOG_IMG=$CATALOG_IMG
@@ -98,7 +98,7 @@ cd operator
 export VERSION=0.0.1
 export IMG=quay.io/dbewley/ovn-recon-operator:v${VERSION}
 export BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v${VERSION}
-export CATALOG_IMG=quay.io/dbewley/ovn-recon-operator-catalog:v${VERSION}
+export CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
 
 # 2. Build and push operator
 make docker-build docker-push IMG=$IMG
@@ -123,34 +123,35 @@ This method uses a catalog image you've published.
 
 #### Step 1: Create a CatalogSource
 
-Create a `CatalogSource` resource that points to your catalog image:
+Create a `CatalogSource` resource that points to your catalog image
+(see `manifests/catalogsource.yaml` for the current names):
 
 ```yaml
 apiVersion: operators.coreos.com/v1alpha1
 kind: CatalogSource
 metadata:
-  name: ovn-recon-operator-catalog
+  name: bewley-operators
   namespace: openshift-marketplace
 spec:
   sourceType: grpc
-  image: quay.io/dbewley/bewley-operator-catalog:v4.20
-  displayName: OVN Recon Operator Catalog
-  publisher: Your Name
+  image: quay.io/dbewley/bewley-operator-catalog:latest
+  displayName: Bewley Operators
+  publisher: Dale Bewley
   updateStrategy:
     registryPoll:
-      interval: 30m
+      interval: 1h
 ```
 
 Apply it:
 
 ```bash
-kubectl apply -f catalog-source.yaml
+kubectl apply -f manifests/catalogsource.yaml
 ```
 
 Wait for the catalog to be ready:
 
 ```bash
-kubectl get catalogsource -n openshift-marketplace ovn-recon-operator-catalog
+kubectl get catalogsource -n openshift-marketplace bewley-operators
 ```
 
 #### Step 2: Create a Subscription
@@ -172,7 +173,7 @@ metadata:
 spec:
   channel: stable
   name: ovn-recon-operator
-  source: ovn-recon-operator-catalog
+  source: bewley-operators
   sourceNamespace: openshift-marketplace
   installPlanApproval: Automatic  # or Manual for approval workflow
 ```
@@ -297,13 +298,13 @@ If the catalog doesn't appear in OperatorHub:
 
 ```bash
 # Check catalog source status
-kubectl describe catalogsource -n openshift-marketplace ovn-recon-operator-catalog
+kubectl describe catalogsource -n openshift-marketplace bewley-operators
 
 # Check catalog pods
-kubectl get pods -n openshift-marketplace | grep ovn-recon
+kubectl get pods -n openshift-marketplace | grep bewley-operators
 
 # Check logs
-kubectl logs -n openshift-marketplace -l olm.catalogSource=ovn-recon-operator-catalog
+kubectl logs -n openshift-marketplace -l olm.catalogSource=bewley-operators
 ```
 
 ### Subscription Issues
@@ -312,13 +313,13 @@ If subscription fails:
 
 ```bash
 # Check subscription status
-kubectl describe subscription -n openshift-operators ovn-recon-operator
+kubectl describe subscription -n ovn-recon-operator ovn-recon-operator
 
 # Check install plan
-kubectl get installplan -n openshift-operators
+kubectl get installplan -n ovn-recon-operator
 
 # Check CSV status
-kubectl get csv -n openshift-operators ovn-recon-operator.v0.0.1 -o yaml
+kubectl get csv -n ovn-recon-operator ovn-recon-operator.v0.0.1 -o yaml
 ```
 
 ## Updating the Operator
@@ -354,7 +355,7 @@ The release workflow publishes bundles into:
 
 Stable releases are also added to **latest**, and **stable** is the default channel.
 
-4. **Update CatalogSource** to point to new catalog version (or it will auto-update if using registry polling)
+4. **CatalogSource**: the workflow updates `quay.io/dbewley/bewley-operator-catalog:v4.20`, so no CatalogSource changes are required.
 
 ## Makefile Variables Reference
 

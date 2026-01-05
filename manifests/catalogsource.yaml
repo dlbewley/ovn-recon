@@ -5,7 +5,7 @@ metadata:
   namespace: openshift-marketplace
 spec:
   sourceType: grpc
-  image: quay.io/dbewley/bewley-operator-catalog:v4.20
+  image: quay.io/dbewley/bewley-operator-catalog:latest
   displayName: Bewley Operators
   publisher: Dale Bewley
   updateStrategy:

@@ -1,21 +1,21 @@
-# operator
-// TODO(user): Add simple overview of use/purpose
+# OVN Recon Operator
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+The OVN Recon Operator installs and manages the OVN Recon OpenShift Console Plugin
+and its backing service. It reconciles an `OvnRecon` custom resource into the
+Deployment, Service, and ConsolePlugin resources needed by the plugin.
 
 ## Getting Started
 
 ### Prerequisites
-- go version v1.23.0+
-- docker version 17.03+.
-- kubectl version v1.31+.
-- Access to a Kubernetes v1.31+ cluster (OpenShift 4.20 recommended)
-- KUBECONFIG environment variable set to your cluster config
+- Go 1.23+
+- Docker or Podman
+- kubectl 1.31+
+- Access to a Kubernetes 1.31+ cluster (OpenShift 4.20 recommended)
+- `KUBECONFIG` set to your cluster config
 
 ### Environment Setup
-
-**Set KUBECONFIG before running make commands:**
+Set `KUBECONFIG` before running make commands:
 
 Source the setup script from the project root:
 
@@ -23,8 +23,8 @@ Source the setup script from the project root:
 source ../setup_env.sh
 ```
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+### Deploy to a Cluster
+Build and push your image to the location specified by `IMG`:
 
 ```sh
 make docker-build docker-push IMG=<some-registry>/operator:tag
@@ -34,7 +34,7 @@ make docker-build docker-push IMG=<some-registry>/operator:tag
 And it is required to have access to pull the image from the working environment.
 Make sure you have the proper permission to the registry if the above commands don’t work.
 
-**Install the CRDs into the cluster:**
+Install the CRDs into the cluster:
 
 ```sh
 # Ensure KUBECONFIG is set
@@ -42,7 +42,7 @@ export KUBECONFIG=/Users/dale/.kube/ocp/hub/kubeconfig
 make install
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+Deploy the manager to the cluster with the image specified by `IMG`:
 
 ```sh
 # Ensure KUBECONFIG is set
@@ -53,80 +53,39 @@ make deploy IMG=<some-registry>/operator:tag
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
 privileges or be logged in as admin.
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+Create an `OvnRecon` instance (example from `config/samples`):
 
 ```sh
 kubectl apply -k config/samples/
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
+Note: ensure the sample values are valid for your cluster.
 
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+### Uninstall
+Delete the instances (CRs) from the cluster:
 
 ```sh
 kubectl delete -k config/samples/
 ```
 
-**Delete the APIs(CRDs) from the cluster:**
+Delete the APIs (CRDs) from the cluster:
 
 ```sh
 make uninstall
 ```
 
-**UnDeploy the controller from the cluster:**
+Undeploy the controller from the cluster:
 
 ```sh
 make undeploy
 ```
 
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-operator-sdk edit --plugins=helm/v1-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
+## Distribution
+For OLM bundle and catalog publishing, see `docs/OLM-BUNDLE-GUIDE.md`.
+For local manifest inspection, use `make render`.
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
+Contributions are welcome. Please open an issue to discuss changes.
 
 **NOTE:** Run `make help` for more information on all potential `make` targets
 
