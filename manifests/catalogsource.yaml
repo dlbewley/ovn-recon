@@ -1,13 +1,13 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: CatalogSource
 metadata:
-  name: guifreelife-operators
+  name: bewley-operators
   namespace: openshift-marketplace
 spec:
   sourceType: grpc
-  image: quay.io/dbewley/guifreelife-operator-index:v4.20
-  displayName: Guifreelife Operators
-  publisher: GUIFreeLife
+  image: quay.io/dbewley/bewley-operator-catalog:latest
+  displayName: Bewley Operators
+  publisher: Dale Bewley
   updateStrategy:
     registryPoll:
       interval: 1h

@@ -1,7 +1,6 @@
 [![CI Status](https://github.com/dlbewley/ovn-recon/actions/workflows/build-test.yaml/badge.svg)](https://github.com/dlbewley/ovn-recon/actions/workflows/build-test.yaml)
 ![Built with AI](https://img.shields.io/badge/Built%20with-AI-blueviolet?style=plastic)
 [![Image Repository on Quay](https://img.shields.io/badge/Image%20on-Quay.io-blue?style=plastic "Image Repository on Quay")](https://quay.io/repository/dbewley/ovn-recon)
-[![Helm Chart on GHCR](https://img.shields.io/badge/Chart%20on-ghcr.io-green?style=plastic "Chart on GHCR")](https://github.com/dlbewley/ovn-recon/pkgs/container/charts%2Fovn-recon)
 
 # Open Virtual Network Reconnaissance (OVN Recon)
 
@@ -30,63 +29,44 @@ OVN Recon visualizes the following Kubernetes Custom Resources:
 
 The plugin watches these resources in real-time and renders an interactive topology showing how physical interfaces, bridges, and virtual networks are connected.
 
-## Architecture & Concepts
-
-TODO
-
-## How to Build
-
-For detailed build and developer deployment instructions, please see [docs/BUILDING.md](docs/BUILDING.md).
-
 ## Installation
 
-### Helm Deployment
+### Operator Installation (recommended)
 
-Deploy using Helm from the OCI registry:
-
-```bash
-helm install ovn-recon oci://ghcr.io/dlbewley/charts/ovn-recon \
-  --version 0.1.1 \
-  --namespace ovn-recon \
-  --create-namespace
-```
-
-Or from the local chart:
+Create the Bewley Operators [catalog source](manifests/catalogsource.yaml)
 
 ```bash
-helm install ovn-recon ./charts/ovn-recon \
-  --namespace ovn-recon \
-  --create-namespace
+oc apply -f manifests/catalogsource.yaml
 ```
 
-To customize the deployment, create a `values.yaml` file:
-
-```yaml
-image:
-  repository: quay.io/dbewley/ovn-recon
-  tag: "v0.0.2"
-
-consolePlugin:
-  displayName: "OVN Recon"
-```
-
-Then install with your custom values:
+Create the [operator subscription](manifests/operator/base).
 
 ```bash
-helm install ovn-recon ./charts/ovn-recon \
-  --namespace ovn-recon \
-  --create-namespace \
-  --values values.yaml
+oc apply -k manifests/operator/base
 ```
 
-To upgrade an existing deployment:
+Create the `ovnrecon` [resource instance](manifests/instance/base) to enable console plugin and deploy OVN Recon application.
 
 ```bash
-helm upgrade ovn-recon ./charts/ovn-recon \
-  --namespace ovn-recon
+oc apply -k manifests/instance/base
 ```
 
-### Enable the Plugin
+Console plugin will be automatically enabled.
+
+For detailed operator deployment instructions, please see [docs/OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
+
+### Manual Installation
+
+Create the namespace, consoleplugin, service, and deployment from [manifests/manual/base](manifests/manual/base) without an operator.
+
+```bash
+oc apply -k manifests/manual/base
+```
+
+#### Enable the Console Plugin
+
+> [!NOTE]
+> When installing via the Operator, this step is not necessary.
 
 Patch the Console Operator config to enable the plugin. Use a JSON patch to append to the list of plugins instead of replacing it:
 
@@ -101,10 +81,14 @@ The OpenShift console will reload to apply the changes. You should see a notific
 
 For troubleshooting steps, please see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
+## How to Build
+
+For detailed build and developer deployment instructions, please see [docs/BUILDING.md](docs/BUILDING.md).
+
 ## References
 
--   [OpenShift Console Dynamic Plugin SDK](https://github.com/openshift/console/tree/master/frontend/packages/console-dynamic-plugin-sdk)
--   [Dynamic Plugin SDK README](https://www.npmjs.com/package/@openshift-console/dynamic-plugin-sdk)
--   [PatternFly React Documentation](https://www.patternfly.org/v4/components)
--   [OpenShift Console GitHub Repository](https://github.com/openshift/console)
+- [OpenShift Console Dynamic Plugin SDK](https://github.com/openshift/console/tree/master/frontend/packages/console-dynamic-plugin-sdk)
+- [Dynamic Plugin SDK README](https://www.npmjs.com/package/@openshift-console/dynamic-plugin-sdk)
+- [PatternFly React Documentation](https://www.patternfly.org/v4/components)
+- [OpenShift Console GitHub Repository](https://github.com/openshift/console)
 - [Example ocp-console-plugin](https://github.com/dlbewley/ocp-console-plugin)
