@@ -1,15 +1,16 @@
 import * as React from 'react';
-import { Card, CardBody, CardTitle, Popover, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch } from '@patternfly/react-core';
+import { Card, CardBody, CardTitle, Popover, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch, Tabs, Tab, TabTitleText } from '@patternfly/react-core';
 import { NetworkIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon, PficonVcenterIcon, MigrationIcon, TagIcon } from '@patternfly/react-icons';
 
-import { NodeNetworkState, ClusterUserDefinedNetwork, Interface, OvnBridgeMapping } from '../types';
+import { NodeNetworkState, ClusterUserDefinedNetwork, Interface, OvnBridgeMapping, NetworkAttachmentDefinition } from '../types';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
     cudns?: ClusterUserDefinedNetwork[];
+    nads?: NetworkAttachmentDefinition[];
 }
 
-const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }) => {
+const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], nads = [] }) => {
     // Graph Types
     interface AttachmentNode {
         name: string;
@@ -17,6 +18,161 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
         namespaces: string[];
         cudn: string;
     }
+
+    type NodeKind = 'interface' | 'ovn-mapping' | 'cudn' | 'attachment' | 'nad' | 'other';
+
+    interface ResourceRef {
+        apiVersion: string;
+        kind: string;
+        name: string;
+        namespace?: string;
+    }
+
+    interface NodeLink {
+        label: string;
+        href: string;
+    }
+
+    interface NodeViewModel {
+        id: string;
+        kind: NodeKind;
+        label: string;
+        title: string;
+        subtitle: string;
+        state?: string;
+        namespaces?: string[];
+        badges?: string[];
+        links?: NodeLink[];
+        resourceRef?: ResourceRef;
+        isSynthetic?: boolean;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        raw?: any;
+    }
+
+    interface NodeKindDefinition {
+        label: string;
+        buildBadges?: (node: NodeViewModel) => string[];
+        buildLinks?: (node: NodeViewModel) => NodeLink[];
+        renderDetails?: (node: NodeViewModel) => React.ReactNode;
+    }
+
+    const parseNadConfig = (configString?: string) => {
+        if (!configString) return null;
+        try {
+            return JSON.parse(configString);
+        } catch {
+            return null;
+        }
+    };
+
+    const getResourceLinks = (ref: ResourceRef): NodeLink[] => {
+        const resourceId = ref.apiVersion ? `${ref.apiVersion.replace('/', '~')}~${ref.kind}` : ref.kind;
+        const base = ref.namespace ? `/k8s/ns/${ref.namespace}` : '/k8s/cluster';
+        const resourcePath = `${base}/${resourceId}/${ref.name}`;
+        return [
+            { label: 'Resource', href: resourcePath },
+            { label: 'YAML', href: `${resourcePath}/yaml` }
+        ];
+    };
+
+    const getNadNodeId = (nad: NetworkAttachmentDefinition) => {
+        const name = nad.metadata?.name || 'unknown-nad';
+        const namespace = nad.metadata?.namespace || 'default';
+        return `nad-${namespace}-${name}`;
+    };
+
+    const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
+        interface: {
+            label: 'Interface',
+            renderDetails: (node) => (
+                <DescriptionList isCompact>
+                    <DescriptionListGroup>
+                        <DescriptionListTerm>Type</DescriptionListTerm>
+                        <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
+                    </DescriptionListGroup>
+                    {node.state && (
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>State</DescriptionListTerm>
+                            <DescriptionListDescription>{node.state}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                    )}
+                    {node.raw?.mac_address && (
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>MAC Address</DescriptionListTerm>
+                            <DescriptionListDescription>{node.raw.mac_address}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                    )}
+                    {node.raw?.mtu && (
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>MTU</DescriptionListTerm>
+                            <DescriptionListDescription>{node.raw.mtu}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                    )}
+                    {node.raw?.ipv4?.address && node.raw.ipv4.address.length > 0 && (
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>IPv4</DescriptionListTerm>
+                            <DescriptionListDescription>{node.raw.ipv4.address[0].ip}/{node.raw.ipv4.address[0].prefix_length}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                    )}
+                </DescriptionList>
+            )
+        },
+        'ovn-mapping': {
+            label: 'OVN Mapping'
+        },
+        cudn: {
+            label: 'CUDN',
+            renderDetails: (node) => (
+                <DescriptionList isCompact>
+                    <DescriptionListGroup>
+                        <DescriptionListTerm>Topology</DescriptionListTerm>
+                        <DescriptionListDescription>{node.raw?.spec?.network?.topology || 'Unknown'}</DescriptionListDescription>
+                    </DescriptionListGroup>
+                    {node.raw?.spec?.network?.localNet?.physicalNetworkName && (
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>Physical Network</DescriptionListTerm>
+                            <DescriptionListDescription>{node.raw.spec.network.localNet.physicalNetworkName}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                    )}
+                    {node.raw?.spec?.network?.localnet?.physicalNetworkName && (
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>Physical Network</DescriptionListTerm>
+                            <DescriptionListDescription>{node.raw.spec.network.localnet.physicalNetworkName}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                    )}
+                </DescriptionList>
+            )
+        },
+        attachment: {
+            label: 'Attachment',
+            buildBadges: (node) => (node.isSynthetic ? ['synthetic', 'derived'] : [])
+        },
+        nad: {
+            label: 'NAD',
+            renderDetails: (node) => {
+                const config = parseNadConfig(node.raw?.spec?.config);
+                const nadType = typeof config?.type === 'string' ? config.type : 'Unknown';
+                const nadName = typeof config?.name === 'string' ? config.name : undefined;
+                return (
+                    <DescriptionList isCompact>
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>Type</DescriptionListTerm>
+                            <DescriptionListDescription>{nadType}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                        {nadName && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Network Name</DescriptionListTerm>
+                                <DescriptionListDescription>{nadName}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                    </DescriptionList>
+                );
+            }
+        },
+        other: {
+            label: 'Other'
+        }
+    };
 
     interface GraphNode {
         id: string;
@@ -34,6 +190,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
 
     // State for toggle
     const [showHiddenColumns, setShowHiddenColumns] = React.useState<boolean>(false);
+    const [showNads, setShowNads] = React.useState<boolean>(false);
 
     // Simple layout logic
     const width = 1600; // Increased width for new columns
@@ -154,6 +311,23 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
         }
     });
 
+    const getNadNetworkName = (nad: NetworkAttachmentDefinition) => {
+        const config = parseNadConfig(nad.spec?.config);
+        if (typeof config?.name === 'string') return config.name;
+        return undefined;
+    };
+
+    const findCudnNameForNad = (nad: NetworkAttachmentDefinition) => {
+        const nadConfigName = getNadNetworkName(nad);
+        const directMatch = nad.metadata?.name && cudns.find((cudn) => cudn.metadata?.name === nad.metadata?.name)?.metadata?.name;
+        if (directMatch) return directMatch;
+        if (nadConfigName) {
+            const configMatch = cudns.find((cudn) => cudn.metadata?.name === nadConfigName)?.metadata?.name;
+            if (configMatch) return configMatch;
+        }
+        return undefined;
+    };
+
     // Helper to calculate attachment node height
     const getAttachmentHeight = (node: AttachmentNode) => {
         const nsString = node.namespaces.join(', ');
@@ -211,8 +385,20 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
             addEdge(cudnNodeId, attachmentNodeId); // Flow: CUDN -> Attachment
         });
 
+        // 5. NADs (optional CUDN -> NAD)
+        if (showNads) {
+            nads.forEach((nad: NetworkAttachmentDefinition) => {
+                const nadNodeId = getNadNodeId(nad);
+                addNode(nadNodeId);
+                const cudnName = findCudnNameForNad(nad);
+                if (cudnName) {
+                    addEdge(`cudn-${cudnName}`, nadNodeId);
+                }
+            });
+        }
+
         return g;
-    }, [interfaces, bridgeMappings, cudns, attachmentNodes]);
+    }, [interfaces, bridgeMappings, cudns, attachmentNodes, nads, showNads]);
 
     // Path Traversal
     const [highlightedPath, setHighlightedPath] = React.useState<Set<string>>(new Set());
@@ -254,6 +440,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
         currentAttachmentY += height + 20; // Add gap
     });
 
+    const nadColOffset = attachmentColOffset + 1; // NADs render to the right of Attachments
+    if (showNads && (showHiddenColumns || nads.length > 0)) {
+        nads.forEach((nad: NetworkAttachmentDefinition, index: number) => {
+            nodePositions[getNadNodeId(nad)] = { x: padding + (nadColOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+        });
+    }
+
     // Dynamic height calculation
     const maxRows = Math.max(
         ethInterfaces.length,
@@ -262,6 +455,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
         logicalInterfaces.length,
         bridgeMappings.length,
         cudns.length,
+        showNads ? nads.length : 0,
         Math.ceil(otherInterfaces.length / 4) + 2
     );
     // Use currentAttachmentY for attachment column height
@@ -279,6 +473,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
             case 'attachment': return <MigrationIcon />;
             case 'vlan': return <TagIcon />;
             case 'mac-vlan': return <TagIcon />;
+            case 'nad': return <RouteIcon />;
             default: return <NetworkIcon />;
         }
     };
@@ -306,18 +501,17 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
     };
 
     // State for Popover
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [activeNode, setActiveNode] = React.useState<any>(null);
+    const [activeNode, setActiveNode] = React.useState<NodeViewModel | null>(null);
     const [anchorElement, setAnchorElement] = React.useState<HTMLElement | null>(null);
+    const [activePopoverTab, setActivePopoverTab] = React.useState<string | number>('summary');
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleNodeClick = (event: React.MouseEvent, iface: any, nodeId: string) => {
+    const handleNodeClick = (event: React.MouseEvent, node: NodeViewModel) => {
         event.stopPropagation(); // Prevent clearing highlight when clicking a node
         setAnchorElement(event.currentTarget as HTMLElement);
-        setActiveNode(iface);
+        setActiveNode(node);
 
         // Highlight Path
-        const path = getFlowPath(nodeId);
+        const path = getFlowPath(node.id);
         setHighlightedPath(path);
         setIsHighlightActive(true);
     };
@@ -333,39 +527,139 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
         setAnchorElement(null);
     };
 
+    React.useEffect(() => {
+        if (activeNode) {
+            setActivePopoverTab('summary');
+        }
+    }, [activeNode?.id]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resolveNodeId = (iface: any, type: string) => {
+        if (type === 'ovn-mapping') return `ovn-${iface.localnet}`;
+        if (type === 'cudn') return `cudn-${iface.metadata?.name}`;
+        if (type === 'attachment') return `attachment-${iface.cudn}`;
+        if (type === 'nad') return getNadNodeId(iface);
+        return iface.name;
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const buildNodeViewModel = (iface: any, type: string): NodeViewModel => {
+        const nodeId = resolveNodeId(iface, type);
+        const kind: NodeKind = type === 'ovn-mapping'
+            ? 'ovn-mapping'
+            : type === 'cudn'
+                ? 'cudn'
+                : type === 'attachment'
+                    ? 'attachment'
+                    : type === 'nad'
+                        ? 'nad'
+                        : type === 'other'
+                            ? 'other'
+                            : 'interface';
+
+        let label = iface.name;
+        let title = iface.name;
+        let subtitle = type;
+        let state = iface.state;
+        let namespaces: string[] | undefined;
+        let resourceRef: ResourceRef | undefined;
+        let isSynthetic = false;
+
+        if (type === 'ovn-mapping') {
+            label = iface.localnet;
+            title = iface.localnet;
+            subtitle = 'OVN Localnet';
+            state = iface.bridge ? `Bridge: ${iface.bridge}` : undefined;
+        } else if (type === 'cudn') {
+            label = iface.metadata?.name || '';
+            title = iface.metadata?.name || '';
+            subtitle = 'CUDN';
+            state = iface.spec?.network?.topology || 'Unknown';
+            if (iface.spec?.network?.topology === 'Localnet') {
+                const vlan = iface.spec?.network?.localnet?.vlan?.access?.id;
+                if (vlan) {
+                    state += ` VLAN ${vlan}`;
+                }
+            }
+            if (iface.metadata?.name) {
+                resourceRef = {
+                    apiVersion: iface.apiVersion || '',
+                    kind: iface.kind || 'ClusterUserDefinedNetwork',
+                    name: iface.metadata.name,
+                    namespace: iface.metadata.namespace
+                };
+            }
+        } else if (type === 'attachment') {
+            label = iface.name;
+            title = iface.name;
+            subtitle = 'NAD';
+            state = 'Namespaces:';
+            namespaces = iface.namespaces || [];
+            isSynthetic = true;
+        } else if (type === 'nad') {
+            label = iface.metadata?.name || '';
+            title = iface.metadata?.name || '';
+            subtitle = 'NAD';
+            const config = parseNadConfig(iface.spec?.config);
+            const nadType = typeof config?.type === 'string' ? config.type : undefined;
+            state = nadType ? `Type: ${nadType}` : undefined;
+            if (iface.metadata?.name) {
+                resourceRef = {
+                    apiVersion: iface.apiVersion || '',
+                    kind: iface.kind || 'NetworkAttachmentDefinition',
+                    name: iface.metadata.name,
+                    namespace: iface.metadata.namespace
+                };
+            }
+        }
+
+        const baseNode: NodeViewModel = {
+            id: nodeId,
+            kind,
+            label,
+            title,
+            subtitle,
+            state,
+            namespaces,
+            resourceRef,
+            isSynthetic,
+            raw: iface
+        };
+
+        const definition = nodeKindRegistry[kind];
+        if (resourceRef && !definition.buildLinks) {
+            baseNode.links = getResourceLinks(resourceRef);
+        }
+        if (definition.buildBadges) {
+            baseNode.badges = definition.buildBadges(baseNode);
+        }
+        if (definition.buildLinks) {
+            baseNode.links = definition.buildLinks(baseNode);
+        }
+
+        return baseNode;
+    };
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const renderInterfaceNode = (iface: any, x: number, y: number, color: string, typeOverride?: string, heightOverride?: number) => {
         const type = typeOverride || iface.type;
         const Icon = getIcon(type);
-        let displayName = iface.name;
-        let displayType = type;
-        let displayState = iface.state;
+        const viewNode = buildNodeViewModel(iface, type);
+        let displayName = viewNode.label;
+        let displayType = viewNode.subtitle;
+        let displayState = viewNode.state;
         let extraInfo = null;
         const nodeHeight = heightOverride || itemHeight;
 
         if (type === 'ovn-mapping') {
-            displayName = iface.localnet;
-            displayType = 'OVN Localnet';
-            displayState = `Bridge: ${iface.bridge}`;
+            // Already handled in buildNodeViewModel.
         } else if (type === 'cudn') {
-            displayName = iface.metadata?.name || '';
-            displayType = 'CUDN';
-            displayState = iface.spec?.network?.topology || 'Unknown';
-            // Add VLAN ID if localnet
-            if (iface.spec?.network?.topology === 'Localnet') {
-                const vlan = iface.spec?.network?.localnet?.vlan?.access?.id;
-                if (vlan) {
-                    displayState += ` VLAN ${vlan}`;
-                }
-            }
+            // Already handled in buildNodeViewModel.
         } else if (type === 'attachment') {
-            displayName = iface.name; // Name same as CUDN
-            displayType = 'NAD'; // Changed from 'Attachments'
-            displayState = 'Namespaces:'; // We will render namespaces below
             extraInfo = (
                 <foreignObject x={10} y={60} width={itemWidth - 20} height={nodeHeight - 70}>
                     <div style={{ fontSize: '10px', color: '#eee', wordWrap: 'break-word', lineHeight: '1.2' }}>
-                        {iface.namespaces.join(', ')}
+                        {viewNode.namespaces?.join(', ') || ''}
                     </div>
                 </foreignObject>
             );
@@ -374,14 +668,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
         return (
             <g
                 transform={`translate(${x}, ${y})`}
-                style={{ cursor: 'pointer', opacity: isHighlightActive ? (highlightedPath.has(displayName) || highlightedPath.has(`ovn-${iface.localnet}`) || highlightedPath.has(`cudn-${iface.metadata?.name}`) || highlightedPath.has(`attachment-${iface.cudn}`) ? 1 : 0.3) : 1 }}
-                onClick={(e) => {
-                    let nodeId = displayName;
-                    if (type === 'ovn-mapping') nodeId = `ovn-${iface.localnet}`;
-                    else if (type === 'cudn') nodeId = `cudn-${iface.metadata.name}`;
-                    else if (type === 'attachment') nodeId = `attachment-${iface.cudn}`;
-                    handleNodeClick(e, iface, nodeId);
-                }}
+                style={{ cursor: 'pointer', opacity: isHighlightActive ? (highlightedPath.has(viewNode.id) ? 1 : 0.3) : 1 }}
+                onClick={(e) => handleNodeClick(e, viewNode)}
             >
                 <title>{displayName} ({displayType})</title>
                 <rect width={itemWidth} height={nodeHeight} rx={5} fill={color} stroke="var(--pf-global--BorderColor--100)" strokeWidth={1} />
@@ -390,7 +678,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
                 </foreignObject>
                 <text x={35} y={25} fontSize="12" fontWeight="bold" fill="#fff">{displayName}</text>
                 <text x={10} y={45} fontSize="10" fill="#eee">{displayType}</text>
-                {type !== 'attachment' && <text x={10} y={60} fontSize="10" fill="#eee">{displayState}</text>}
+                {type !== 'attachment' && displayState && <text x={10} y={60} fontSize="10" fill="#eee">{displayState}</text>}
                 {extraInfo}
                 {type !== 'ovn-mapping' && type !== 'cudn' && type !== 'attachment' && (
                     <circle cx={itemWidth - 15} cy={15} r={5} fill={iface.state === 'up' ? '#4CAF50' : '#F44336'} />
@@ -420,6 +708,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
                         label="Show hidden columns"
                         isChecked={showHiddenColumns}
                         onChange={(event, checked) => setShowHiddenColumns(checked)}
+                    />
+                </div>
+                <div style={{ marginBottom: '16px' }}>
+                    <Switch
+                        id="show-nads-toggle"
+                        label="Show Net Attach Defs"
+                        isChecked={showNads}
+                        onChange={(event, checked) => setShowNads(checked)}
                     />
                 </div>
                 <svg width="100%" height={calculatedHeight} viewBox={`0 0 ${width} ${calculatedHeight}`} style={{ border: '1px solid var(--pf-global--BorderColor--100)', background: 'var(--pf-global--BackgroundColor--200)', color: 'var(--pf-global--Color--100)' }} onClick={handleBackgroundClick}>
@@ -463,6 +759,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
                         }
                         return null;
                     })}
+                    {showNads && nads.map((nad: NetworkAttachmentDefinition) => {
+                        const cudnName = findCudnNameForNad(nad);
+                        if (cudnName && nodePositions[`cudn-${cudnName}`]) {
+                            return renderConnector(`cudn-${cudnName}`, getNadNodeId(nad));
+                        }
+                        return null;
+                    })}
 
                     {/* Render visible columns dynamically */}
                     {visibleColumns.map((col, idx) => {
@@ -501,6 +804,15 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
                         nodePositions[`attachment-${node.cudn}`] && renderInterfaceNode(node, nodePositions[`attachment-${node.cudn}`].x, nodePositions[`attachment-${node.cudn}`].y, 'var(--pf-global--palette--gold-400)', 'attachment', getAttachmentHeight(node))
                     )}
 
+                    {showNads && (
+                        <>
+                            <text x={padding + (nadColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">NADs</text>
+                            {nads.map((nad: NetworkAttachmentDefinition) =>
+                                nodePositions[getNadNodeId(nad)] && renderInterfaceNode(nad, nodePositions[getNadNodeId(nad)].x, nodePositions[getNadNodeId(nad)].y, '#CC9900', 'nad')
+                            )}
+                        </>
+                    )}
+
                     {/* Layer 8: Others */}
                     <text x={padding} y={calculatedHeight - 150} fontWeight="bold" fill="currentColor">Other Interfaces</text>
                     <g transform={`translate(${padding}, ${calculatedHeight - 140})`}>
@@ -516,42 +828,103 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [] }
                     triggerRef={() => anchorElement as HTMLElement}
                     isVisible={!!activeNode}
                     shouldClose={handlePopoverClose}
-                    headerContent={<div>{activeNode?.name || activeNode?.localnet || activeNode?.metadata?.name}</div>}
+                    headerContent={<div>{activeNode?.title}</div>}
                     bodyContent={
-                        <DescriptionList isCompact>
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Type</DescriptionListTerm>
-                                <DescriptionListDescription>{activeNode?.type || (activeNode?.localnet ? 'OVN Localnet' : 'CUDN')}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>State</DescriptionListTerm>
-                                <DescriptionListDescription>{activeNode?.state || activeNode?.spec?.network?.topology || 'N/A'}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                            {activeNode?.mac_address && (
-                                <DescriptionListGroup>
-                                    <DescriptionListTerm>MAC Address</DescriptionListTerm>
-                                    <DescriptionListDescription>{activeNode.mac_address}</DescriptionListDescription>
-                                </DescriptionListGroup>
-                            )}
-                            {activeNode?.mtu && (
-                                <DescriptionListGroup>
-                                    <DescriptionListTerm>MTU</DescriptionListTerm>
-                                    <DescriptionListDescription>{activeNode.mtu}</DescriptionListDescription>
-                                </DescriptionListGroup>
-                            )}
-                            {activeNode?.ipv4?.address && activeNode.ipv4.address.length > 0 && (
-                                <DescriptionListGroup>
-                                    <DescriptionListTerm>IPv4</DescriptionListTerm>
-                                    <DescriptionListDescription>{activeNode.ipv4.address[0].ip}/{activeNode.ipv4.address[0].prefix_length}</DescriptionListDescription>
-                                </DescriptionListGroup>
-                            )}
-                            {activeNode?.namespaces && (
-                                <DescriptionListGroup>
-                                    <DescriptionListTerm>Namespaces</DescriptionListTerm>
-                                    <DescriptionListDescription>{activeNode.namespaces.join(', ')}</DescriptionListDescription>
-                                </DescriptionListGroup>
-                            )}
-                        </DescriptionList>
+                        activeNode
+                            ? (
+                                <Tabs
+                                    activeKey={activePopoverTab}
+                                    onSelect={(_event, key) => setActivePopoverTab(key)}
+                                >
+                                    <Tab eventKey="summary" title={<TabTitleText>Summary</TabTitleText>}>
+                                        <DescriptionList isCompact>
+                                            <DescriptionListGroup>
+                                                <DescriptionListTerm>Type</DescriptionListTerm>
+                                                <DescriptionListDescription>{activeNode.subtitle}</DescriptionListDescription>
+                                            </DescriptionListGroup>
+                                            {activeNode.state && (
+                                                <DescriptionListGroup>
+                                                    <DescriptionListTerm>State</DescriptionListTerm>
+                                                    <DescriptionListDescription>{activeNode.state}</DescriptionListDescription>
+                                                </DescriptionListGroup>
+                                            )}
+                                            {activeNode.namespaces && (
+                                                <DescriptionListGroup>
+                                                    <DescriptionListTerm>Namespaces</DescriptionListTerm>
+                                                    <DescriptionListDescription>{activeNode.namespaces.join(', ')}</DescriptionListDescription>
+                                                </DescriptionListGroup>
+                                            )}
+                                            {activeNode.resourceRef && (
+                                                <DescriptionListGroup>
+                                                    <DescriptionListTerm>Resource</DescriptionListTerm>
+                                                    <DescriptionListDescription>
+                                                        {activeNode.resourceRef.kind} {activeNode.resourceRef.namespace ? `${activeNode.resourceRef.namespace}/` : ''}{activeNode.resourceRef.name}
+                                                    </DescriptionListDescription>
+                                                </DescriptionListGroup>
+                                            )}
+                                            {activeNode.badges && activeNode.badges.length > 0 && (
+                                                <DescriptionListGroup>
+                                                    <DescriptionListTerm>Badges</DescriptionListTerm>
+                                                    <DescriptionListDescription>{activeNode.badges.join(', ')}</DescriptionListDescription>
+                                                </DescriptionListGroup>
+                                            )}
+                                        </DescriptionList>
+                                    </Tab>
+                                    <Tab eventKey="details" title={<TabTitleText>Details</TabTitleText>}>
+                                        {nodeKindRegistry[activeNode.kind]?.renderDetails?.(activeNode) || (
+                                            <DescriptionList isCompact>
+                                                <DescriptionListGroup>
+                                                    <DescriptionListTerm>Details</DescriptionListTerm>
+                                                    <DescriptionListDescription>No extra details.</DescriptionListDescription>
+                                                </DescriptionListGroup>
+                                            </DescriptionList>
+                                        )}
+                                    </Tab>
+                                    <Tab eventKey="links" title={<TabTitleText>Links</TabTitleText>}>
+                                        {activeNode.links && activeNode.links.length > 0 ? (
+                                            <DescriptionList isCompact>
+                                                <DescriptionListGroup>
+                                                    <DescriptionListTerm>Links</DescriptionListTerm>
+                                                    <DescriptionListDescription>
+                                                        {activeNode.links.map((link) => (
+                                                            <div key={link.href}><a href={link.href}>{link.label}</a></div>
+                                                        ))}
+                                                    </DescriptionListDescription>
+                                                </DescriptionListGroup>
+                                            </DescriptionList>
+                                        ) : (
+                                            <DescriptionList isCompact>
+                                                <DescriptionListGroup>
+                                                    <DescriptionListTerm>Links</DescriptionListTerm>
+                                                    <DescriptionListDescription>No links available.</DescriptionListDescription>
+                                                </DescriptionListGroup>
+                                            </DescriptionList>
+                                        )}
+                                    </Tab>
+                                    <Tab eventKey="yaml" title={<TabTitleText>YAML</TabTitleText>}>
+                                        {activeNode.links && activeNode.links.length > 0 ? (
+                                            <DescriptionList isCompact>
+                                                <DescriptionListGroup>
+                                                    <DescriptionListTerm>YAML</DescriptionListTerm>
+                                                    <DescriptionListDescription>
+                                                        {activeNode.links.filter((link) => link.label === 'YAML').map((link) => (
+                                                            <div key={link.href}><a href={link.href}>Open YAML</a></div>
+                                                        ))}
+                                                    </DescriptionListDescription>
+                                                </DescriptionListGroup>
+                                            </DescriptionList>
+                                        ) : (
+                                            <DescriptionList isCompact>
+                                                <DescriptionListGroup>
+                                                    <DescriptionListTerm>YAML</DescriptionListTerm>
+                                                    <DescriptionListDescription>No YAML link available.</DescriptionListDescription>
+                                                </DescriptionListGroup>
+                                            </DescriptionList>
+                                        )}
+                                    </Tab>
+                                </Tabs>
+                            )
+                            : null
                     }
                 >
                     <div style={{ display: 'none' }} />
