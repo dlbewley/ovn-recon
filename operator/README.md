@@ -1,5 +1,7 @@
 # OVN Recon Operator
 
+See also [operator readme](../operator/README.md).
+
 ## Description
 The OVN Recon Operator installs and manages the OVN Recon OpenShift Console Plugin
 and its backing service. It reconciles an `OvnRecon` custom resource into the
@@ -90,6 +92,58 @@ Contributions are welcome. Please open an issue to discuss changes.
 **NOTE:** Run `make help` for more information on all potential `make` targets
 
 More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+
+## Code Structure
+
+### Controller (`internal/controller/ovnrecon_controller.go`)
+
+The main controller implements the reconciliation logic for `OvnRecon` custom resources.
+
+**Key Functions**:
+- `Reconcile()` - Main reconciliation loop with finalizer handling and primary instance detection
+- `reconcileDeployment()` - Creates/updates Deployment using desired resource spec
+- `reconcileService()` - Creates/updates Service using desired resource spec
+- `reconcileConsolePlugin()` - Creates/updates ConsolePlugin with correct API structure
+- `reconcileConsoleOperator()` - Enables plugin in Console operator configuration
+- `handleDeletion()` - Handles cleanup on CR deletion (removes finalizer, deletes resources)
+- `removePluginFromConsole()` - Removes plugin from Console operator during deletion
+- `checkDeploymentReady()` - Checks Deployment readiness status
+- `updateCondition()` - Updates status conditions on the CR
+- `isPrimaryInstance()` - Determines if this instance is the primary (oldest) instance
+- `ensureTargetNamespaceExists()` - Validates that the target namespace exists
+- `deleteNamespacedResources()` - Deletes Deployment and Service during cleanup
+- `SetupWithManager()` - Configures the controller with the manager
+
+**Helper Functions**:
+- `labelsForOvnRecon()` - Generates standard Kubernetes labels for resources
+- `labelsForOvnReconWithVersion()` - Generates labels including version information
+- `targetNamespace()` - Determines target namespace from spec or default
+- `imageTagFor()` - Determines image tag from spec or default
+- `operatorVersionAnnotations()` - Generates operator version annotations
+
+### Desired Resources (`internal/controller/desired_resources.go`)
+
+This file contains functions that generate the desired state specifications for Kubernetes resources.
+
+**Key Functions**:
+- `DesiredDeployment()` - Generates Deployment spec with security contexts, resource limits, health probes, and volume mounts
+- `DesiredService()` - Generates Service spec with TLS certificate annotations for OpenShift
+- `DesiredConsolePlugin()` - Generates ConsolePlugin unstructured resource with backend service configuration
+- `mergeStringMap()` - Helper function for merging string maps (used for labels and annotations)
+
+## Known Issues
+
+### YAML Dependency Conflict
+There's a known dependency conflict between `go.yaml.in/yaml/v3` and `gopkg.in/yaml.v3` in `k8s.io/kube-openapi`. This is a transitive dependency that doesn't affect runtime but may cause build warnings.
+
+**Current Status**: Mitigated by excluding problematic versions (v3.0.3, v3.0.4) in `go.mod`. The build completes successfully with no warnings.
+
+**Workarounds** (if issue resurfaces):
+1. Exclude kube-openapi if not needed
+2. Use replace directive (may cause other issues)
+3. Wait for upstream fix
+
+**Impact**: Low - doesn't affect runtime, only potential build warnings
 
 ## License
 
