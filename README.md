@@ -29,17 +29,9 @@ OVN Recon visualizes the following Kubernetes Custom Resources:
 
 The plugin watches these resources in real-time and renders an interactive topology showing how physical interfaces, bridges, and virtual networks are connected.
 
-## Architecture & Concepts
-
-TODO
-
-## How to Build
-
-For detailed build and developer deployment instructions, please see [docs/BUILDING.md](docs/BUILDING.md).
-
 ## Installation
 
-### Operator Installation
+### Operator Installation (recommended)
 
 Create the Bewley Operators [catalog source](manifests/catalogsource.yaml)
 
@@ -47,13 +39,13 @@ Create the Bewley Operators [catalog source](manifests/catalogsource.yaml)
 oc apply -f manifests/catalogsource.yaml
 ```
 
-Install the [operator](manifests/operator/base).
+Create the [operator subscription](manifests/operator/base).
 
 ```bash
 oc apply -k manifests/operator/base
 ```
 
-Create a `ovnrecon` resource [instance](manifests/instance/base) to enable console plugin and deploy OVN Recon application.
+Create the `ovnrecon` [resource instance](manifests/instance/base) to enable console plugin and deploy OVN Recon application.
 
 ```bash
 oc apply -k manifests/instance/base
@@ -65,7 +57,7 @@ For detailed operator deployment instructions, please see [docs/OLM-BUNDLE-GUIDE
 
 ### Manual Installation
 
-Apply namespace, consoleplugin, service, and deployment from [manifests/manual/base](manifests/manual/base).
+Create the namespace, consoleplugin, service, and deployment from [manifests/manual/base](manifests/manual/base) without an operator.
 
 ```bash
 oc apply -k manifests/manual/base
@@ -88,6 +80,10 @@ The OpenShift console will reload to apply the changes. You should see a notific
 ## Troubleshooting
 
 For troubleshooting steps, please see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+## How to Build
+
+For detailed build and developer deployment instructions, please see [docs/BUILDING.md](docs/BUILDING.md).
 
 ## References
 
