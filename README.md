@@ -1,4 +1,5 @@
 [![CI Status](https://github.com/dlbewley/ovn-recon/actions/workflows/build-test.yaml/badge.svg)](https://github.com/dlbewley/ovn-recon/actions/workflows/build-test.yaml)
+[![Release](https://img.shields.io/github/v/release/dlbewley/ovn-recon)](https://github.com/dlbewley/ovn-recon/releases)
 ![Built with AI](https://img.shields.io/badge/Built%20with-AI-blueviolet?style=plastic)
 [![Image Repository on Quay](https://img.shields.io/badge/Image%20on-Quay.io-blue?style=plastic "Image Repository on Quay")](https://quay.io/repository/dbewley/ovn-recon)
 
