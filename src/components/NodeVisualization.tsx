@@ -273,25 +273,27 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         return undefined;
     };
 
-    const gravityById: Record<string, number> = {};
-    const addGravity = (id: string) => {
-        gravityById[id] = (gravityById[id] || 0) + 1;
-    };
-    const addGravityEdge = (source: string, target: string) => {
-        addGravity(source);
-        addGravity(target);
+    // Path-aware gravity calculation to minimize edge crossings
+    // Build connection graph for path finding
+    const connectionGraph: Record<string, string[]> = {};
+    const addConnectionEdge = (source: string, target: string) => {
+        if (!connectionGraph[source]) connectionGraph[source] = [];
+        if (!connectionGraph[target]) connectionGraph[target] = [];
+        if (!connectionGraph[source].includes(target)) connectionGraph[source].push(target);
+        if (!connectionGraph[target].includes(source)) connectionGraph[target].push(source);
     };
 
+    // Build graph from all relationships
     interfaces.forEach((iface: Interface) => {
         const master = iface.controller || iface.master;
-        if (master) addGravityEdge(iface.name, master);
+        if (master) addConnectionEdge(iface.name, master);
         const baseIface = iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'];
-        if (baseIface) addGravityEdge(baseIface, iface.name);
+        if (baseIface) addConnectionEdge(baseIface, iface.name);
     });
 
     bridgeMappings.forEach((mapping: OvnBridgeMapping) => {
         const ovnNodeId = `ovn-${mapping.localnet}`;
-        if (mapping.bridge) addGravityEdge(mapping.bridge, ovnNodeId);
+        if (mapping.bridge) addConnectionEdge(mapping.bridge, ovnNodeId);
     });
 
     cudns.forEach((cudn: ClusterUserDefinedNetwork) => {
@@ -299,12 +301,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
         if (physicalNetworkName) {
             const ovnNodeId = `ovn-${physicalNetworkName}`;
-            addGravityEdge(ovnNodeId, cudnNodeId);
+            addConnectionEdge(ovnNodeId, cudnNodeId);
         }
     });
 
     attachmentNodes.forEach((node: AttachmentNode) => {
-        addGravityEdge(`cudn-${node.cudn}`, `attachment-${node.cudn}`);
+        addConnectionEdge(`cudn-${node.cudn}`, `attachment-${node.cudn}`);
     });
 
     if (showNads) {
@@ -312,24 +314,107 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             const nadNodeId = getNadNodeId(nad);
             const cudnName = findCudnNameForNad(nad);
             if (cudnName) {
-                addGravityEdge(`cudn-${cudnName}`, nadNodeId);
+                addConnectionEdge(`cudn-${cudnName}`, nadNodeId);
             }
         });
     }
 
+    // Find longest paths from physical interfaces through to attachments
+    // This finds paths that go left-to-right through columns to minimize edge crossings
+    const findLongestPath = (startNode: string, visited: Set<string> = new Set(), path: string[] = []): string[] => {
+        if (visited.has(startNode)) return path;
+        visited.add(startNode);
+        const currentPath = [...path, startNode];
+        const neighbors = connectionGraph[startNode] || [];
+
+        if (neighbors.length === 0) {
+            return currentPath;
+        }
+
+        let longestPath = currentPath;
+        for (const neighbor of neighbors) {
+            if (!currentPath.includes(neighbor)) {
+                const subPath = findLongestPath(neighbor, new Set(visited), currentPath);
+                if (subPath.length > longestPath.length) {
+                    longestPath = subPath;
+                }
+            }
+        }
+
+        return longestPath;
+    };
+
+    // Find longest paths starting from physical interfaces
+    // We find the longest path from each physical interface to prioritize those paths
+    const allPaths: string[][] = [];
+    const physicalInterfaceNames = new Set([
+        ...ethInterfaces.map(i => i.name),
+        ...bondInterfaces.map(i => i.name),
+        ...vlanInterfaces.map(i => i.name),
+        ...bridgeInterfaces.map(i => i.name)
+    ]);
+
+    physicalInterfaceNames.forEach(ifaceName => {
+        if (connectionGraph[ifaceName]) {
+            const path = findLongestPath(ifaceName);
+            if (path.length >= 2) {
+                allPaths.push(path);
+            }
+        }
+    });
+
+    // Sort paths by length (longer paths are more important for alignment)
+    allPaths.sort((a, b) => b.length - a.length);
+
+    // Assign path-based gravity: nodes in longer paths get lower gravity
+    // Nodes earlier in longer paths get even lower gravity
+    const gravityById: Record<string, number> = {};
+    const pathMembership: Record<string, { pathLength: number; position: number }[]> = {};
+
+    allPaths.forEach((path, pathIndex) => {
+        const pathLength = path.length;
+        path.forEach((nodeId, position) => {
+            if (!pathMembership[nodeId]) {
+                pathMembership[nodeId] = [];
+            }
+            pathMembership[nodeId].push({ pathLength, position });
+        });
+    });
+
+    // Calculate gravity: prioritize nodes in longer paths, earlier in those paths
+    Object.keys(pathMembership).forEach(nodeId => {
+        const memberships = pathMembership[nodeId];
+        // Find the best (longest) path this node is in
+        const bestPath = memberships.reduce((best, current) =>
+            current.pathLength > best.pathLength ? current : best
+        );
+        // Gravity = 1000 - (pathLength * 100) - position
+        // This ensures longer paths and earlier positions get lower gravity
+        const pathGravity = 1000 - (bestPath.pathLength * 100) - bestPath.position;
+        gravityById[nodeId] = pathGravity;
+    });
+
+    // For nodes not in any path, use connection count as fallback
+    Object.keys(connectionGraph).forEach(nodeId => {
+        if (!gravityById[nodeId]) {
+            const connectionCount = connectionGraph[nodeId]?.length || 0;
+            gravityById[nodeId] = 10000 + connectionCount; // High gravity (low priority) for unconnected nodes
+        }
+    });
+
     // Enhance gravity sorting: favor 'br-ex' and bridge mappings
-    // Decrement gravity by 1 to give higher priority (lower gravity = higher priority)
+    // Decrement gravity by 100 to give higher priority (lower gravity = higher priority)
     if (gravityById['br-ex'] !== undefined) {
-        gravityById['br-ex'] = Math.max(0, gravityById['br-ex'] - 1);
+        gravityById['br-ex'] = Math.max(0, gravityById['br-ex'] - 100);
     }
     bridgeMappings.forEach((mapping: OvnBridgeMapping) => {
         const ovnNodeId = `ovn-${mapping.localnet || ''}`;
         if (gravityById[ovnNodeId] !== undefined) {
-            gravityById[ovnNodeId] = Math.max(0, gravityById[ovnNodeId] - 1);
+            gravityById[ovnNodeId] = Math.max(0, gravityById[ovnNodeId] - 100);
         }
     });
 
-    const getGravity = (id: string) => gravityById[id] || 0;
+    const getGravity = (id: string) => gravityById[id] || 10000;
     const sortByGravity = <T,>(items: T[], getId: (item: T) => string) => items.slice().sort((a, b) => {
         const gravityDiff = getGravity(getId(a)) - getGravity(getId(b));
         if (gravityDiff !== 0) return gravityDiff;
