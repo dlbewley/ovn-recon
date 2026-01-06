@@ -363,34 +363,70 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     });
 
-    // Sort paths by length (longer paths are more important for alignment)
-    allPaths.sort((a, b) => b.length - a.length);
+    // Identify important starting nodes (like 'br-ex') that should prioritize their paths
+    const importantNodes = new Set<string>(['br-ex']);
+
+    // Mark paths that contain important nodes (before sorting)
+    const pathsWithImportantNodes = new Set<number>();
+    allPaths.forEach((path, pathIndex) => {
+        if (path.some(nodeId => importantNodes.has(nodeId))) {
+            pathsWithImportantNodes.add(pathIndex);
+        }
+    });
+
+    // Create path metadata to preserve index after sorting
+    const pathMetadata = allPaths.map((path, index) => ({
+        path,
+        index,
+        hasImportantNode: pathsWithImportantNodes.has(index),
+        length: path.length
+    }));
+
+    // Sort paths by: 1) contains important node, 2) length (longer paths are more important)
+    pathMetadata.sort((a, b) => {
+        if (a.hasImportantNode !== b.hasImportantNode) {
+            return a.hasImportantNode ? -1 : 1; // Paths with important nodes come first
+        }
+        return b.length - a.length; // Then by length
+    });
+
+    // Update allPaths to match sorted order
+    allPaths.length = 0;
+    allPaths.push(...pathMetadata.map(m => m.path));
 
     // Assign path-based gravity: nodes in longer paths get lower gravity
     // Nodes earlier in longer paths get even lower gravity
+    // Nodes in paths with important nodes get additional priority
     const gravityById: Record<string, number> = {};
-    const pathMembership: Record<string, { pathLength: number; position: number }[]> = {};
+    const pathMembership: Record<string, { pathLength: number; position: number; hasImportantNode: boolean }[]> = {};
 
-    allPaths.forEach((path, pathIndex) => {
-        const pathLength = path.length;
-        path.forEach((nodeId, position) => {
+    pathMetadata.forEach((meta) => {
+        const pathLength = meta.path.length;
+        const hasImportantNode = meta.hasImportantNode;
+        meta.path.forEach((nodeId, position) => {
             if (!pathMembership[nodeId]) {
                 pathMembership[nodeId] = [];
             }
-            pathMembership[nodeId].push({ pathLength, position });
+            pathMembership[nodeId].push({ pathLength, position, hasImportantNode });
         });
     });
 
     // Calculate gravity: prioritize nodes in longer paths, earlier in those paths
+    // Give additional priority to nodes in paths containing important nodes
     Object.keys(pathMembership).forEach(nodeId => {
         const memberships = pathMembership[nodeId];
-        // Find the best (longest) path this node is in
-        const bestPath = memberships.reduce((best, current) =>
-            current.pathLength > best.pathLength ? current : best
-        );
+        // Find the best path: prefer paths with important nodes, then longest, then earliest position
+        const bestPath = memberships.reduce((best, current) => {
+            if (current.hasImportantNode && !best.hasImportantNode) return current;
+            if (!current.hasImportantNode && best.hasImportantNode) return best;
+            if (current.pathLength > best.pathLength) return current;
+            if (current.pathLength < best.pathLength) return best;
+            return current.position < best.position ? current : best;
+        });
         // Gravity = 1000 - (pathLength * 100) - position
-        // This ensures longer paths and earlier positions get lower gravity
-        const pathGravity = 1000 - (bestPath.pathLength * 100) - bestPath.position;
+        // Additional -500 bonus for paths with important nodes
+        const importantBonus = bestPath.hasImportantNode ? 500 : 0;
+        const pathGravity = 1000 - (bestPath.pathLength * 100) - bestPath.position - importantBonus;
         gravityById[nodeId] = pathGravity;
     });
 
@@ -402,15 +438,66 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     });
 
-    // Enhance gravity sorting: favor 'br-ex' and bridge mappings
-    // Decrement gravity by 100 to give higher priority (lower gravity = higher priority)
-    if (gravityById['br-ex'] !== undefined) {
-        gravityById['br-ex'] = Math.max(0, gravityById['br-ex'] - 100);
-    }
-    bridgeMappings.forEach((mapping: OvnBridgeMapping) => {
-        const ovnNodeId = `ovn-${mapping.localnet || ''}`;
-        if (gravityById[ovnNodeId] !== undefined) {
-            gravityById[ovnNodeId] = Math.max(0, gravityById[ovnNodeId] - 100);
+    // Find all nodes in the important path: nodes connected to important nodes
+    // This includes physical interfaces that are slaves of 'br-ex' (dynamically identified, no hardcoding)
+    const nodesInImportantPath = new Set<string>();
+    const findImportantPathNodes = (nodeId: string, visited: Set<string> = new Set(), depth: number = 0) => {
+        if (visited.has(nodeId) || depth > 5) return; // Limit depth to avoid infinite loops
+        visited.add(nodeId);
+        nodesInImportantPath.add(nodeId);
+
+        const neighbors = connectionGraph[nodeId] || [];
+        neighbors.forEach(neighbor => {
+            if (!visited.has(neighbor)) {
+                findImportantPathNodes(neighbor, new Set(visited), depth + 1);
+            }
+        });
+    };
+
+    // Start from important nodes and find all connected nodes in their paths
+    importantNodes.forEach(nodeId => {
+        nodesInImportantPath.add(nodeId); // Include the important node itself
+        if (connectionGraph[nodeId]) {
+            findImportantPathNodes(nodeId);
+        }
+    });
+
+    // Find physical interfaces that are slaves of 'br-ex' (dynamically, no hardcoding)
+    const physicalInterfacesSlaveToBrEx = new Set<string>();
+    interfaces.forEach((iface: Interface) => {
+        const master = iface.controller || iface.master;
+        if (master === 'br-ex') {
+            physicalInterfacesSlaveToBrEx.add(iface.name);
+        }
+    });
+
+    // Give highest priority to physical interfaces that are slaves of 'br-ex'
+    physicalInterfacesSlaveToBrEx.forEach(ifaceName => {
+        gravityById[ifaceName] = 25; // Very low gravity = very high priority (even higher than br-ex)
+    });
+
+    // Give priority to all nodes in the important path
+    // This ensures the entire path from physical interface (slave of br-ex) -> br-ex -> physnet -> machinenet aligns
+    nodesInImportantPath.forEach(nodeId => {
+        if (importantNodes.has(nodeId)) {
+            // Important nodes themselves get highest priority (but not higher than their slaves)
+            if (!physicalInterfacesSlaveToBrEx.has(nodeId)) {
+                gravityById[nodeId] = 50; // Very low gravity = very high priority
+            }
+        } else if (physicalInterfacesSlaveToBrEx.has(nodeId)) {
+            // Already handled above, skip
+        } else if (gravityById[nodeId] && gravityById[nodeId] >= 10000) {
+            // Very high gravity (not in path), give big boost
+            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 5000);
+        } else if (gravityById[nodeId] && gravityById[nodeId] >= 1000) {
+            // Medium-high gravity, give medium boost
+            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 500);
+        } else if (gravityById[nodeId] && gravityById[nodeId] >= 100) {
+            // Medium gravity, give small boost
+            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 50);
+        } else if (!gravityById[nodeId]) {
+            // Not in any path but in important path, give medium priority
+            gravityById[nodeId] = 200;
         }
     });
 
@@ -462,10 +549,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     }
 
     if (showHiddenColumns || bridgeInterfaces.length > 0) {
-        sortedBridgeInterfaces.forEach((iface: Interface, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'bridge');
-            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
+        const colOffset = visibleColumns.findIndex(col => col.key === 'bridge');
+        if (colOffset >= 0) {
+            sortedBridgeInterfaces.forEach((iface: Interface, index: number) => {
+                nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+            });
+        }
     }
 
     if (showHiddenColumns || logicalInterfaces.length > 0) {
@@ -946,27 +1035,49 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                         return (
                             <React.Fragment key={col.key}>
                                 <text x={xPos} y={padding - 10} fontWeight="bold" fill="currentColor">{col.name}</text>
-                                {col.key === 'eth' && sortedEthInterfaces.map((iface: Interface) =>
-                                    nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#0066CC')
-                                )}
-                                {col.key === 'bond' && sortedBondInterfaces.map((iface: Interface) =>
-                                    nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#663399')
-                                )}
-                                {col.key === 'vlan' && sortedVlanInterfaces.map((iface: Interface) =>
-                                    nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#9933CC')
-                                )}
-                                {col.key === 'bridge' && sortedBridgeInterfaces.map((iface: Interface) =>
-                                    nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#FF6600')
-                                )}
-                                {col.key === 'logical' && sortedLogicalInterfaces.map((iface: Interface) =>
-                                    nodePositions[iface.name] && renderInterfaceNode(iface, nodePositions[iface.name].x, nodePositions[iface.name].y, '#0099CC')
-                                )}
-                                {col.key === 'ovn' && sortedBridgeMappings.map((mapping: OvnBridgeMapping) =>
-                                    nodePositions[`ovn-${mapping.localnet}`] && renderInterfaceNode(mapping, nodePositions[`ovn-${mapping.localnet}`].x, nodePositions[`ovn-${mapping.localnet}`].y, '#009900', 'ovn-mapping')
-                                )}
-                                {col.key === 'cudn' && sortedCudns.map((cudn: ClusterUserDefinedNetwork) =>
-                                    nodePositions[`cudn-${cudn.metadata?.name}`] && renderInterfaceNode(cudn, nodePositions[`cudn-${cudn.metadata?.name}`].x, nodePositions[`cudn-${cudn.metadata?.name}`].y, '#CC0099', 'cudn')
-                                )}
+                                {col.key === 'eth' && sortedEthInterfaces
+                                    .filter((iface: Interface) => nodePositions[iface.name])
+                                    .map((iface: Interface, renderIndex: number) => {
+                                        const pos = nodePositions[iface.name];
+                                        return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0066CC');
+                                    })}
+                                {col.key === 'bond' && sortedBondInterfaces
+                                    .filter((iface: Interface) => nodePositions[iface.name])
+                                    .map((iface: Interface, renderIndex: number) => {
+                                        const pos = nodePositions[iface.name];
+                                        return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#663399');
+                                    })}
+                                {col.key === 'vlan' && sortedVlanInterfaces
+                                    .filter((iface: Interface) => nodePositions[iface.name])
+                                    .map((iface: Interface, renderIndex: number) => {
+                                        const pos = nodePositions[iface.name];
+                                        return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#9933CC');
+                                    })}
+                                {col.key === 'bridge' && sortedBridgeInterfaces
+                                    .filter((iface: Interface) => nodePositions[iface.name])
+                                    .map((iface: Interface, renderIndex: number) => {
+                                        const pos = nodePositions[iface.name];
+                                        // Recalculate Y position based on render index to eliminate gaps
+                                        return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#FF6600');
+                                    })}
+                                {col.key === 'logical' && sortedLogicalInterfaces
+                                    .filter((iface: Interface) => nodePositions[iface.name])
+                                    .map((iface: Interface, renderIndex: number) => {
+                                        const pos = nodePositions[iface.name];
+                                        return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0099CC');
+                                    })}
+                                {col.key === 'ovn' && sortedBridgeMappings
+                                    .filter((mapping: OvnBridgeMapping) => nodePositions[`ovn-${mapping.localnet}`])
+                                    .map((mapping: OvnBridgeMapping, renderIndex: number) => {
+                                        const pos = nodePositions[`ovn-${mapping.localnet}`];
+                                        return renderInterfaceNode(mapping, pos.x, padding + (renderIndex * (itemHeight + 20)), '#009900', 'ovn-mapping');
+                                    })}
+                                {col.key === 'cudn' && sortedCudns
+                                    .filter((cudn: ClusterUserDefinedNetwork) => nodePositions[`cudn-${cudn.metadata?.name}`])
+                                    .map((cudn: ClusterUserDefinedNetwork, renderIndex: number) => {
+                                        const pos = nodePositions[`cudn-${cudn.metadata?.name}`];
+                                        return renderInterfaceNode(cudn, pos.x, padding + (renderIndex * (itemHeight + 20)), '#CC0099', 'cudn');
+                                    })}
                             </React.Fragment>
                         );
                     })}
