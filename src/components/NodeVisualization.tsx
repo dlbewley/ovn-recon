@@ -317,6 +317,18 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         });
     }
 
+    // Enhance gravity sorting: favor 'br-ex' and bridge mappings
+    // Decrement gravity by 1 to give higher priority (lower gravity = higher priority)
+    if (gravityById['br-ex'] !== undefined) {
+        gravityById['br-ex'] = Math.max(0, gravityById['br-ex'] - 1);
+    }
+    bridgeMappings.forEach((mapping: OvnBridgeMapping) => {
+        const ovnNodeId = `ovn-${mapping.localnet || ''}`;
+        if (gravityById[ovnNodeId] !== undefined) {
+            gravityById[ovnNodeId] = Math.max(0, gravityById[ovnNodeId] - 1);
+        }
+    });
+
     const getGravity = (id: string) => gravityById[id] || 0;
     const sortByGravity = <T,>(items: T[], getId: (item: T) => string) => items.slice().sort((a, b) => {
         const gravityDiff = getGravity(getId(a)) - getGravity(getId(b));
@@ -714,6 +726,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         let displayState = viewNode.state;
         let extraInfo = null;
         const nodeHeight = heightOverride || itemHeight;
+        const gravityValue = getGravity(viewNode.id);
 
         if (type === 'ovn-mapping') {
             // Already handled in buildNodeViewModel.
@@ -747,6 +760,17 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 {type !== 'ovn-mapping' && type !== 'cudn' && type !== 'attachment' && (
                     <circle cx={itemWidth - 15} cy={15} r={5} fill={iface.state === 'up' ? '#4CAF50' : '#F44336'} />
                 )}
+                {/* Gravity value badge - small, dimmed number in bottom-right corner */}
+                <text
+                    x={itemWidth - 8}
+                    y={nodeHeight - 8}
+                    fontSize="9"
+                    fill="rgba(255, 255, 255, 0.4)"
+                    textAnchor="end"
+                    style={{ fontFamily: 'monospace' }}
+                >
+                    {gravityValue}
+                </text>
             </g>
         );
     };
