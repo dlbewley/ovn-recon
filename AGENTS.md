@@ -1,8 +1,18 @@
 # Agent Instructions
 
+## Environment Setup
+
+Environment variables are set in `setup_env.sh` and should be sourced before running any commands.
+
+```bash
+source setup_env.sh
+```
+
+## Task Management
+
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
-## Quick Reference
+### Quick Reference
 
 ```bash
 bd ready              # Find available work
@@ -12,7 +22,7 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
-## Landing the Plane (Session Completion)
+### Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
 
@@ -38,3 +48,15 @@ bd sync               # Sync with git
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 
+## Rebuild and Deploy
+
+During development, changes can be built and deployed to cluster with the following commands. Once complete the console should be reloaded to see the changes.
+
+Please allow up to 2 minutes for the command completion.
+
+```bash
+source setup_env.sh && \
+   make build push && \
+   oc rollout restart deployment/$APP_NAME -n "$APP_NAMESPACE" && \
+   oc wait --for=condition=ready pod -l "$APP_SELECTOR" -n "$APP_NAMESPACE" --timeout=60s
+```

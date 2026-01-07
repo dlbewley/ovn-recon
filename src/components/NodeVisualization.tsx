@@ -1,6 +1,9 @@
 import * as React from 'react';
-import { Card, CardBody, CardTitle, Popover, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch, Tabs, Tab, TabTitleText } from '@patternfly/react-core';
-import { NetworkIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon, PficonVcenterIcon, MigrationIcon, TagIcon } from '@patternfly/react-icons';
+import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch, Tabs, Tab, TabTitleText, Flex, FlexItem } from '@patternfly/react-core';
+import { NetworkIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon, PficonVcenterIcon, MigrationIcon, TagIcon, ExternalLinkAltIcon } from '@patternfly/react-icons';
+
+import { CodeEditor, Language } from '@patternfly/react-code-editor';
+import * as yaml from 'js-yaml';
 
 import { NodeNetworkState, ClusterUserDefinedNetwork, Interface, OvnBridgeMapping, NetworkAttachmentDefinition } from '../types';
 
@@ -960,261 +963,296 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         );
     }
 
+    const panelContent = (
+        <DrawerPanelContent isResizable widths={{ default: 'width_33' }}>
+            <DrawerHead>
+                <Flex direction={{ default: 'column' }}>
+                    <FlexItem>
+                        <Title headingLevel="h2" size="xl">
+                            {activeNode?.title}
+                        </Title>
+                    </FlexItem>
+                    <FlexItem>
+                        {activeNode?.subtitle && <span style={{ color: 'var(--pf-global--Color--200)', fontSize: '0.9em' }}>{activeNode.subtitle}</span>}
+                    </FlexItem>
+                </Flex>
+                <DrawerActions>
+                    <DrawerCloseButton onClick={handlePopoverClose} />
+                </DrawerActions>
+            </DrawerHead>
+            {activeNode && (
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+                    <div style={{ flex: '0 0 auto', zIndex: 10, boxShadow: '0 1px 2px 0 rgba(0,0,0,0.1)' }}>
+                        <Tabs
+                            activeKey={activePopoverTab}
+                            onSelect={(_event, key) => setActivePopoverTab(key)}
+                            isFilled
+                            className="node-details-tabs"
+                        >
+                            <Tab eventKey="summary" title={<TabTitleText>Summary</TabTitleText>} />
+                            <Tab eventKey="details" title={<TabTitleText>Details</TabTitleText>} />
+                            <Tab eventKey="links" title={<TabTitleText>Links</TabTitleText>} />
+                            <Tab eventKey="yaml" title={<TabTitleText>YAML</TabTitleText>} />
+                        </Tabs>
+                    </div>
+                    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                        {activePopoverTab === 'summary' && (
+                            <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
+                                <DescriptionList isCompact>
+                                    <DescriptionListGroup>
+                                        <DescriptionListTerm>Type</DescriptionListTerm>
+                                        <DescriptionListDescription>{activeNode.subtitle}</DescriptionListDescription>
+                                    </DescriptionListGroup>
+                                    <DescriptionListGroup>
+                                        <DescriptionListTerm>CUDN</DescriptionListTerm>
+                                        <DescriptionListDescription>{activeNode.badges?.find((b) => b.startsWith('CUDN:'))?.split(':')[1] || 'N/A'}</DescriptionListDescription>
+                                    </DescriptionListGroup>
+                                    {activeNode.state && (
+                                        <DescriptionListGroup>
+                                            <DescriptionListTerm>State</DescriptionListTerm>
+                                            <DescriptionListDescription>{activeNode.state}</DescriptionListDescription>
+                                        </DescriptionListGroup>
+                                    )}
+                                    {activeNode.kind === 'interface' && activeNode.raw && activeNode.raw.type === 'vlan' && activeNode.raw.vlan && (
+                                        <DescriptionListGroup>
+                                            <DescriptionListTerm>Localnet VLAN {activeNode.raw.vlan.id}</DescriptionListTerm>
+                                            <DescriptionListDescription>
+                                                Base: {activeNode.raw.vlan['base-iface']} <br />
+                                                ID: {activeNode.raw.vlan.id}
+                                            </DescriptionListDescription>
+                                        </DescriptionListGroup>
+                                    )}
+                                </DescriptionList>
+                            </div>
+                        )}
+                        {activePopoverTab === 'details' && (
+                            <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
+                                {nodeKindRegistry[activeNode.kind]?.renderDetails?.(activeNode) || (
+                                    <DescriptionList isCompact>
+                                        <DescriptionListGroup>
+                                            <DescriptionListTerm>No details available</DescriptionListTerm>
+                                        </DescriptionListGroup>
+                                    </DescriptionList>
+                                )}
+                            </div>
+                        )}
+                        {activePopoverTab === 'links' && (
+                            <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
+                                {activeNode.links && activeNode.links.length > 0 ? (
+                                    <DescriptionList isCompact>
+                                        <DescriptionListGroup>
+                                            <DescriptionListTerm>Available Links</DescriptionListTerm>
+                                            <DescriptionListDescription>
+                                                <ul className="pf-v6-c-list">
+                                                    {activeNode.links.map((link) => (
+                                                        <li key={link.href}>
+                                                            <a href={link.href} target="_blank" rel="noopener noreferrer">
+                                                                {link.label}
+                                                            </a>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </DescriptionListDescription>
+                                        </DescriptionListGroup>
+                                    </DescriptionList>
+                                ) : (
+                                    <div style={{ color: 'var(--pf-global--Color--200)' }}>No links available.</div>
+                                )}
+                            </div>
+                        )}
+                        {activePopoverTab === 'yaml' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+                                {activeNode.raw && (
+                                    <>
+                                        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
+                                            <CodeEditor
+                                                isDarkTheme
+                                                isLineNumbersVisible
+                                                isReadOnly
+                                                code={yaml.dump(activeNode.raw)}
+                                                language={Language.yaml}
+                                                height="100%"
+                                                style={{ height: '100%' }}
+                                            />
+                                        </div>
+                                        <div style={{ flex: '0 0 auto', padding: 'var(--pf-global--spacer--md)', backgroundColor: 'var(--pf-global--BackgroundColor--100)' }}>
+                                            <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-global--spacer--sm)' }} />
+                                            <a
+                                                href={`${window.location.origin}/k8s/ns/${activeNode.raw.metadata?.namespace || 'default'}/${activeNode.kind === 'other' || activeNode.kind === 'interface' || activeNode.kind === 'ovn-mapping' ? 'nodenetworkstates.nmstate.io' : 'clusteruserdefinednetworks.k8s.cni.cncf.io'}/${activeNode.raw.metadata?.name}/yaml`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                View Resource in Console
+                                            </a>
+                                        </div>
+                                    </>
+                                )}
+                                {!activeNode.raw && (
+                                    <span style={{ fontSize: '0.9em', color: 'var(--pf-global--Color--200)', padding: '16px' }}>No YAML content available.</span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </DrawerPanelContent>
+    );
+
     return (
         <Card isFullHeight>
             <CardTitle>Network Topology Visualization</CardTitle>
-            <CardBody>
-                <div style={{ marginBottom: '16px' }}>
-                    <Switch
-                        id="show-hidden-columns-toggle"
-                        label="Show hidden columns"
-                        isChecked={showHiddenColumns}
-                        onChange={(event, checked) => setShowHiddenColumns(checked)}
-                    />
-                </div>
-                <div style={{ marginBottom: '16px' }}>
-                    <Switch
-                        id="show-nads-toggle"
-                        label="Show Net Attach Defs"
-                        isChecked={showNads}
-                        onChange={(event, checked) => setShowNads(checked)}
-                    />
-                </div>
-                <svg width="100%" height={calculatedHeight} viewBox={`0 0 ${width} ${calculatedHeight}`} style={{ border: '1px solid var(--pf-global--BorderColor--100)', background: 'var(--pf-global--BackgroundColor--200)', color: 'var(--pf-global--Color--100)' }} onClick={handleBackgroundClick}>
+            <CardBody style={{ padding: 0, overflow: 'hidden' }}>
+                <Drawer isExpanded={!!activeNode} isInline>
+                    <DrawerContent panelContent={activeNode ? panelContent : null}>
+                        <DrawerContentBody style={{ padding: '24px', overflow: 'auto' }}>
+                            <div style={{ marginBottom: '16px' }}>
+                                <Switch
+                                    id="show-hidden-columns-toggle"
+                                    label="Show hidden columns"
+                                    isChecked={showHiddenColumns}
+                                    onChange={(event, checked) => setShowHiddenColumns(checked)}
+                                />
+                            </div>
+                            <div style={{ marginBottom: '16px' }}>
+                                <Switch
+                                    id="show-nads-toggle"
+                                    label="Show Net Attach Defs"
+                                    isChecked={showNads}
+                                    onChange={(event, checked) => setShowNads(checked)}
+                                />
+                            </div>
 
-                    {/* Connectors */}
-                    {interfaces.map((iface: Interface) => {
-                        const master = iface.controller || iface.master;
-                        if (master && nodePositions[master]) {
-                            return renderConnector(iface.name, master);
-                        }
-                        return null;
-                    })}
-                    {/* VLAN and MAC-VLAN to base-iface connectors */}
-                    {vlanInterfaces.map((iface: Interface) => {
-                        const baseIface = iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'];
-                        if (baseIface && nodePositions[baseIface]) {
-                            return renderConnector(baseIface, iface.name);
-                        }
-                        return null;
-                    })}
-                    {bridgeMappings.map((mapping: OvnBridgeMapping) => {
-                        if (mapping.bridge && nodePositions[mapping.bridge]) {
-                            return renderConnector(mapping.bridge, `ovn-${mapping.localnet}`);
-                        }
-                        return null;
-                    })}
-                    {cudns.map((cudn: ClusterUserDefinedNetwork) => {
-                        // Connect CUDN to OVN Mapping
-                        const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
-                        if (physicalNetworkName && nodePositions[`ovn-${physicalNetworkName}`]) {
-                            // Draw FROM OVN Mapping TO CUDN (Left to Right)
-                            return renderConnector(`ovn-${physicalNetworkName}`, `cudn-${cudn.metadata?.name}`);
-                        }
-                        return null;
-                    })}
-                    {attachmentNodes.map((node: AttachmentNode) => {
-                        // Connect CUDN to Attachment (Left to Right)
-                        if (nodePositions[`cudn-${node.cudn}`]) {
-                            // Draw FROM CUDN TO Attachment
-                            return renderConnector(`cudn-${node.cudn}`, `attachment-${node.cudn}`);
-                        }
-                        return null;
-                    })}
-                    {showNads && nads.map((nad: NetworkAttachmentDefinition) => {
-                        const cudnName = findCudnNameForNad(nad);
-                        if (cudnName && nodePositions[`cudn-${cudnName}`]) {
-                            return renderConnector(`cudn-${cudnName}`, getNadNodeId(nad));
-                        }
-                        return null;
-                    })}
+                            <svg width="100%" height={calculatedHeight} viewBox={`0 0 ${width} ${calculatedHeight}`} style={{ border: '1px solid var(--pf-global--BorderColor--100)', background: 'var(--pf-global--BackgroundColor--200)', color: 'var(--pf-global--Color--100)' }} onClick={handleBackgroundClick}>
+                                {/* Connectors */}
+                                {interfaces.map((iface: Interface) => {
+                                    const master = iface.controller || iface.master;
+                                    if (master && nodePositions[master]) {
+                                        return renderConnector(iface.name, master);
+                                    }
+                                    return null;
+                                })}
+                                {/* VLAN and MAC-VLAN to base-iface connectors */}
+                                {vlanInterfaces.map((iface: Interface) => {
+                                    const baseIface = iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'];
+                                    if (baseIface && nodePositions[baseIface]) {
+                                        return renderConnector(baseIface, iface.name);
+                                    }
+                                    return null;
+                                })}
+                                {bridgeMappings.map((mapping: OvnBridgeMapping) => {
+                                    if (mapping.bridge && nodePositions[mapping.bridge]) {
+                                        return renderConnector(mapping.bridge, `ovn-${mapping.localnet}`);
+                                    }
+                                    return null;
+                                })}
+                                {cudns.map((cudn: ClusterUserDefinedNetwork) => {
+                                    // Connect CUDN to OVN Mapping
+                                    const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
+                                    if (physicalNetworkName && nodePositions[`ovn-${physicalNetworkName}`]) {
+                                        // Draw FROM OVN Mapping TO CUDN (Left to Right)
+                                        return renderConnector(`ovn-${physicalNetworkName}`, `cudn-${cudn.metadata?.name}`);
+                                    }
+                                    return null;
+                                })}
+                                {attachmentNodes.map((node: AttachmentNode) => {
+                                    // Connect CUDN to Attachment (Left to Right)
+                                    if (nodePositions[`cudn-${node.cudn}`]) {
+                                        // Draw FROM CUDN TO Attachment
+                                        return renderConnector(`cudn-${node.cudn}`, `attachment-${node.cudn}`);
+                                    }
+                                    return null;
+                                })}
+                                {showNads && nads.map((nad: NetworkAttachmentDefinition) => {
+                                    const cudnName = findCudnNameForNad(nad);
+                                    if (cudnName && nodePositions[`cudn-${cudnName}`]) {
+                                        return renderConnector(`cudn-${cudnName}`, getNadNodeId(nad));
+                                    }
+                                    return null;
+                                })}
 
-                    {/* Render visible columns dynamically */}
-                    {visibleColumns.map((col, idx) => {
-                        const xPos = padding + (idx * colSpacing);
-                        return (
-                            <React.Fragment key={col.key}>
-                                <text x={xPos} y={padding - 10} fontWeight="bold" fill="currentColor">{col.name}</text>
-                                {col.key === 'eth' && sortedEthInterfaces
-                                    .filter((iface: Interface) => nodePositions[iface.name])
-                                    .map((iface: Interface, renderIndex: number) => {
-                                        const pos = nodePositions[iface.name];
-                                        return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0066CC');
-                                    })}
-                                {col.key === 'bond' && sortedBondInterfaces
-                                    .filter((iface: Interface) => nodePositions[iface.name])
-                                    .map((iface: Interface, renderIndex: number) => {
-                                        const pos = nodePositions[iface.name];
-                                        return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#663399');
-                                    })}
-                                {col.key === 'vlan' && sortedVlanInterfaces
-                                    .filter((iface: Interface) => nodePositions[iface.name])
-                                    .map((iface: Interface, renderIndex: number) => {
-                                        const pos = nodePositions[iface.name];
-                                        return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#9933CC');
-                                    })}
-                                {col.key === 'bridge' && sortedBridgeInterfaces
-                                    .filter((iface: Interface) => nodePositions[iface.name])
-                                    .map((iface: Interface, renderIndex: number) => {
-                                        const pos = nodePositions[iface.name];
-                                        // Recalculate Y position based on render index to eliminate gaps
-                                        return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#FF6600');
-                                    })}
-                                {col.key === 'logical' && sortedLogicalInterfaces
-                                    .filter((iface: Interface) => nodePositions[iface.name])
-                                    .map((iface: Interface, renderIndex: number) => {
-                                        const pos = nodePositions[iface.name];
-                                        return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0099CC');
-                                    })}
-                                {col.key === 'ovn' && sortedBridgeMappings
-                                    .filter((mapping: OvnBridgeMapping) => nodePositions[`ovn-${mapping.localnet}`])
-                                    .map((mapping: OvnBridgeMapping, renderIndex: number) => {
-                                        const pos = nodePositions[`ovn-${mapping.localnet}`];
-                                        return renderInterfaceNode(mapping, pos.x, padding + (renderIndex * (itemHeight + 20)), '#009900', 'ovn-mapping');
-                                    })}
-                                {col.key === 'cudn' && sortedCudns
-                                    .filter((cudn: ClusterUserDefinedNetwork) => nodePositions[`cudn-${cudn.metadata?.name}`])
-                                    .map((cudn: ClusterUserDefinedNetwork, renderIndex: number) => {
-                                        const pos = nodePositions[`cudn-${cudn.metadata?.name}`];
-                                        return renderInterfaceNode(cudn, pos.x, padding + (renderIndex * (itemHeight + 20)), '#CC0099', 'cudn');
-                                    })}
-                            </React.Fragment>
-                        );
-                    })}
+                                {/* Render visible columns dynamically */}
+                                {visibleColumns.map((col, idx) => {
+                                    const xPos = padding + (idx * colSpacing);
+                                    return (
+                                        <React.Fragment key={col.key}>
+                                            <text x={xPos} y={padding - 10} fontWeight="bold" fill="currentColor">{col.name}</text>
+                                            {col.key === 'eth' && sortedEthInterfaces
+                                                .filter((iface: Interface) => nodePositions[iface.name])
+                                                .map((iface: Interface, renderIndex: number) => {
+                                                    const pos = nodePositions[iface.name];
+                                                    return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0066CC');
+                                                })}
+                                            {col.key === 'bond' && sortedBondInterfaces
+                                                .filter((iface: Interface) => nodePositions[iface.name])
+                                                .map((iface: Interface, renderIndex: number) => {
+                                                    const pos = nodePositions[iface.name];
+                                                    return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#663399');
+                                                })}
+                                            {col.key === 'vlan' && sortedVlanInterfaces
+                                                .filter((iface: Interface) => nodePositions[iface.name])
+                                                .map((iface: Interface, renderIndex: number) => {
+                                                    const pos = nodePositions[iface.name];
+                                                    return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#9933CC');
+                                                })}
+                                            {col.key === 'bridge' && sortedBridgeInterfaces
+                                                .filter((iface: Interface) => nodePositions[iface.name])
+                                                .map((iface: Interface, renderIndex: number) => {
+                                                    const pos = nodePositions[iface.name];
+                                                    // Recalculate Y position based on render index to eliminate gaps
+                                                    return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#FF6600');
+                                                })}
+                                            {col.key === 'logical' && sortedLogicalInterfaces
+                                                .filter((iface: Interface) => nodePositions[iface.name])
+                                                .map((iface: Interface, renderIndex: number) => {
+                                                    const pos = nodePositions[iface.name];
+                                                    return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0099CC');
+                                                })}
+                                            {col.key === 'ovn' && sortedBridgeMappings
+                                                .filter((mapping: OvnBridgeMapping) => nodePositions[`ovn-${mapping.localnet}`])
+                                                .map((mapping: OvnBridgeMapping, renderIndex: number) => {
+                                                    const pos = nodePositions[`ovn-${mapping.localnet}`];
+                                                    return renderInterfaceNode(mapping, pos.x, padding + (renderIndex * (itemHeight + 20)), '#009900', 'ovn-mapping');
+                                                })}
+                                            {col.key === 'cudn' && sortedCudns
+                                                .filter((cudn: ClusterUserDefinedNetwork) => nodePositions[`cudn-${cudn.metadata?.name}`])
+                                                .map((cudn: ClusterUserDefinedNetwork, renderIndex: number) => {
+                                                    const pos = nodePositions[`cudn-${cudn.metadata?.name}`];
+                                                    return renderInterfaceNode(cudn, pos.x, padding + (renderIndex * (itemHeight + 20)), '#CC0099', 'cudn');
+                                                })}
+                                        </React.Fragment>
+                                    );
+                                })}
 
-                    {/* Layer 7: Attachments (from CUDN status) */}
-                    <text x={padding + (attachmentColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">Attachments</text>
-                    {sortedAttachmentNodes.map((node: AttachmentNode) =>
-                        nodePositions[`attachment-${node.cudn}`] && renderInterfaceNode(node, nodePositions[`attachment-${node.cudn}`].x, nodePositions[`attachment-${node.cudn}`].y, 'var(--pf-global--palette--gold-400)', 'attachment', getAttachmentHeight(node))
-                    )}
+                                {/* Layer 7: Attachments (from CUDN status) */}
+                                <text x={padding + (attachmentColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">Attachments</text>
+                                {sortedAttachmentNodes.map((node: AttachmentNode) =>
+                                    nodePositions[`attachment-${node.cudn}`] && renderInterfaceNode(node, nodePositions[`attachment-${node.cudn}`].x, nodePositions[`attachment-${node.cudn}`].y, 'var(--pf-global--palette--gold-400)', 'attachment', getAttachmentHeight(node))
+                                )}
 
-                    {showNads && (
-                        <>
-                            <text x={padding + (nadColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">NADs</text>
-                            {sortedNads.map((nad: NetworkAttachmentDefinition) =>
-                                nodePositions[getNadNodeId(nad)] && renderInterfaceNode(nad, nodePositions[getNadNodeId(nad)].x, nodePositions[getNadNodeId(nad)].y, '#CC9900', 'nad')
-                            )}
-                        </>
-                    )}
-
-                    {/* Layer 8: Others */}
-                    <text x={padding} y={calculatedHeight - 150} fontWeight="bold" fill="currentColor">Other Interfaces</text>
-                    <g transform={`translate(${padding}, ${calculatedHeight - 140})`}>
-                        {sortedOtherInterfaces.map((iface: Interface, index: number) => {
-                            const col = index % 4;
-                            const row = Math.floor(index / 4);
-                            return renderInterfaceNode(iface, col * (itemWidth + 20), row * (itemHeight + 20), '#666');
-                        })}
-                    </g>
-                </svg>
-
-                <Popover
-                    triggerRef={() => anchorElement as HTMLElement}
-                    isVisible={!!activeNode}
-                    shouldClose={handlePopoverClose}
-                    headerContent={<div>{activeNode?.title}</div>}
-                    bodyContent={
-                        activeNode
-                            ? (
-                                <Tabs
-                                    activeKey={activePopoverTab}
-                                    onSelect={(_event, key) => setActivePopoverTab(key)}
-                                >
-                                    <Tab eventKey="summary" title={<TabTitleText>Summary</TabTitleText>}>
-                                        <DescriptionList isCompact>
-                                            <DescriptionListGroup>
-                                                <DescriptionListTerm>Type</DescriptionListTerm>
-                                                <DescriptionListDescription>{activeNode.subtitle}</DescriptionListDescription>
-                                            </DescriptionListGroup>
-                                            {activeNode.state && (
-                                                <DescriptionListGroup>
-                                                    <DescriptionListTerm>State</DescriptionListTerm>
-                                                    <DescriptionListDescription>{activeNode.state}</DescriptionListDescription>
-                                                </DescriptionListGroup>
-                                            )}
-                                            {activeNode.namespaces && (
-                                                <DescriptionListGroup>
-                                                    <DescriptionListTerm>Namespaces</DescriptionListTerm>
-                                                    <DescriptionListDescription>{activeNode.namespaces.join(', ')}</DescriptionListDescription>
-                                                </DescriptionListGroup>
-                                            )}
-                                            {activeNode.resourceRef && (
-                                                <DescriptionListGroup>
-                                                    <DescriptionListTerm>Resource</DescriptionListTerm>
-                                                    <DescriptionListDescription>
-                                                        {activeNode.resourceRef.kind} {activeNode.resourceRef.namespace ? `${activeNode.resourceRef.namespace}/` : ''}{activeNode.resourceRef.name}
-                                                    </DescriptionListDescription>
-                                                </DescriptionListGroup>
-                                            )}
-                                            {activeNode.badges && activeNode.badges.length > 0 && (
-                                                <DescriptionListGroup>
-                                                    <DescriptionListTerm>Badges</DescriptionListTerm>
-                                                    <DescriptionListDescription>{activeNode.badges.join(', ')}</DescriptionListDescription>
-                                                </DescriptionListGroup>
-                                            )}
-                                        </DescriptionList>
-                                    </Tab>
-                                    <Tab eventKey="details" title={<TabTitleText>Details</TabTitleText>}>
-                                        {nodeKindRegistry[activeNode.kind]?.renderDetails?.(activeNode) || (
-                                            <DescriptionList isCompact>
-                                                <DescriptionListGroup>
-                                                    <DescriptionListTerm>Details</DescriptionListTerm>
-                                                    <DescriptionListDescription>No extra details.</DescriptionListDescription>
-                                                </DescriptionListGroup>
-                                            </DescriptionList>
+                                {showNads && (
+                                    <>
+                                        <text x={padding + (nadColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">NADs</text>
+                                        {sortedNads.map((nad: NetworkAttachmentDefinition) =>
+                                            nodePositions[getNadNodeId(nad)] && renderInterfaceNode(nad, nodePositions[getNadNodeId(nad)].x, nodePositions[getNadNodeId(nad)].y, '#CC9900', 'nad')
                                         )}
-                                    </Tab>
-                                    <Tab eventKey="links" title={<TabTitleText>Links</TabTitleText>}>
-                                        {activeNode.links && activeNode.links.length > 0 ? (
-                                            <DescriptionList isCompact>
-                                                <DescriptionListGroup>
-                                                    <DescriptionListTerm>Links</DescriptionListTerm>
-                                                    <DescriptionListDescription>
-                                                        {activeNode.links.map((link) => (
-                                                            <div key={link.href}><a href={link.href}>{link.label}</a></div>
-                                                        ))}
-                                                    </DescriptionListDescription>
-                                                </DescriptionListGroup>
-                                            </DescriptionList>
-                                        ) : (
-                                            <DescriptionList isCompact>
-                                                <DescriptionListGroup>
-                                                    <DescriptionListTerm>Links</DescriptionListTerm>
-                                                    <DescriptionListDescription>No links available.</DescriptionListDescription>
-                                                </DescriptionListGroup>
-                                            </DescriptionList>
-                                        )}
-                                    </Tab>
-                                    <Tab eventKey="yaml" title={<TabTitleText>YAML</TabTitleText>}>
-                                        {activeNode.links && activeNode.links.length > 0 ? (
-                                            <DescriptionList isCompact>
-                                                <DescriptionListGroup>
-                                                    <DescriptionListTerm>YAML</DescriptionListTerm>
-                                                    <DescriptionListDescription>
-                                                        {activeNode.links.filter((link) => link.label === 'YAML').map((link) => (
-                                                            <div key={link.href}><a href={link.href}>Open YAML</a></div>
-                                                        ))}
-                                                    </DescriptionListDescription>
-                                                </DescriptionListGroup>
-                                            </DescriptionList>
-                                        ) : (
-                                            <DescriptionList isCompact>
-                                                <DescriptionListGroup>
-                                                    <DescriptionListTerm>YAML</DescriptionListTerm>
-                                                    <DescriptionListDescription>No YAML link available.</DescriptionListDescription>
-                                                </DescriptionListGroup>
-                                            </DescriptionList>
-                                        )}
-                                    </Tab>
-                                </Tabs>
-                            )
-                            : null
-                    }
-                >
-                    <div style={{ display: 'none' }} />
-                </Popover>
+                                    </>
+                                )}
+
+                                {/* Layer 8: Others */}
+                                <text x={padding} y={calculatedHeight - 150} fontWeight="bold" fill="currentColor">Other Interfaces</text>
+                                <g transform={`translate(${padding}, ${calculatedHeight - 140})`}>
+                                    {sortedOtherInterfaces.map((iface: Interface, index: number) => {
+                                        const col = index % 4;
+                                        const row = Math.floor(index / 4);
+                                        return renderInterfaceNode(iface, col * (itemWidth + 20), row * (itemHeight + 20), '#666');
+                                    })}
+                                </g>
+                            </svg>
+                        </DrawerContentBody>
+                    </DrawerContent>
+                </Drawer>
             </CardBody>
-        </Card>
+        </Card >
     );
 };
 
