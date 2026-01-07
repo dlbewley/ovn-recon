@@ -28,10 +28,12 @@
         }
     },
     "dependencies": {
+        "@patternfly/react-code-editor": "^6.4.0",
         "@patternfly/react-core": "^6.0.0",
         "@patternfly/react-icons": "^6.0.0",
         "@patternfly/react-table": "^6.0.0",
         "i18next": "^20.6.1",
+        "js-yaml": "^4.1.1",
         "react": "^17.0.1",
         "react-dom": "^17.0.1",
         "react-helmet": "^6.1.0",
@@ -44,6 +46,7 @@
         "@openshift-console/dynamic-plugin-sdk": "^1.0.0",
         "@openshift-console/dynamic-plugin-sdk-webpack": "^1.0.0",
         "@types/jest": "^30.0.0",
+        "@types/js-yaml": "^4.0.9",
         "@types/node": "^18.0.0",
         "@types/react": "^17.0.37",
         "@types/react-dom": "^17.0.11",
