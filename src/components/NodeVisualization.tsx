@@ -761,7 +761,19 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const handleNodeClick = (event: React.MouseEvent, node: NodeViewModel) => {
         event.stopPropagation(); // Prevent clearing highlight when clicking a node
         setAnchorElement(event.currentTarget as HTMLElement);
+
+        // Preserve tab selection when switching between nodes
+        const wasDrawerOpen = activeNode !== null;
+        const isSwitchingNodes = wasDrawerOpen && activeNode?.id !== node.id;
+
         setActiveNode(node);
+
+        // Only reset to summary if drawer was closed (opening for first time)
+        // If switching between nodes, preserve the current tab selection
+        if (!wasDrawerOpen) {
+            setActivePopoverTab('summary');
+        }
+        // If switching nodes, activePopoverTab remains unchanged
 
         // Highlight Path
         const path = getFlowPath(node.id);
@@ -779,12 +791,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         setActiveNode(null);
         setAnchorElement(null);
     };
-
-    React.useEffect(() => {
-        if (activeNode) {
-            setActivePopoverTab('summary');
-        }
-    }, [activeNode?.id]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resolveNodeId = (iface: any, type: string) => {
@@ -1101,8 +1107,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     return (
         <Card isFullHeight>
             <CardTitle>Network Topology Visualization</CardTitle>
-            <CardBody style={{ padding: 0, overflow: 'hidden' }}>
-                <Drawer isExpanded={!!activeNode} isInline>
+            <CardBody style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
+                <Drawer isExpanded={!!activeNode}>
                     <DrawerContent panelContent={activeNode ? panelContent : null}>
                         <DrawerContentBody style={{ padding: '24px', overflow: 'auto' }}>
                             <div style={{ marginBottom: '16px' }}>
