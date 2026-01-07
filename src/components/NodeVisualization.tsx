@@ -1195,7 +1195,25 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         <div style={{ flex: '0 0 auto', padding: 'var(--pf-global--spacer--md)', backgroundColor: 'var(--pf-global--BackgroundColor--100)' }}>
                                             <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-global--spacer--sm)' }} />
                                             <a
-                                                href={`${window.location.origin}/k8s/ns/${activeNode.raw.metadata?.namespace || 'default'}/${activeNode.kind === 'other' || activeNode.kind === 'interface' || activeNode.kind === 'ovn-mapping' ? 'nodenetworkstates.nmstate.io' : 'clusteruserdefinednetworks.k8s.cni.cncf.io'}/${activeNode.raw.metadata?.name}/yaml`}
+                                                href={(() => {
+                                                    // Use resourceRef if available for consistent link generation
+                                                    if (activeNode.resourceRef) {
+                                                        const resourceId = activeNode.resourceRef.apiVersion
+                                                            ? `${activeNode.resourceRef.apiVersion.replace('/', '~')}~${activeNode.resourceRef.kind}`
+                                                            : activeNode.resourceRef.kind;
+                                                        const base = activeNode.resourceRef.namespace
+                                                            ? `/k8s/ns/${activeNode.resourceRef.namespace}`
+                                                            : '/k8s/cluster';
+                                                        return `${window.location.origin}${base}/${resourceId}/${activeNode.resourceRef.name}/yaml`;
+                                                    }
+                                                    // Fallback: use same logic as getResourceLinks() for cluster-scoped resources
+                                                    const namespace = activeNode.raw?.metadata?.namespace;
+                                                    const resourceId = activeNode.kind === 'other' || activeNode.kind === 'interface' || activeNode.kind === 'ovn-mapping'
+                                                        ? 'nodenetworkstates.nmstate.io'
+                                                        : 'clusteruserdefinednetworks.k8s.cni.cncf.io';
+                                                    const base = namespace ? `/k8s/ns/${namespace}` : '/k8s/cluster';
+                                                    return `${window.location.origin}${base}/${resourceId}/${activeNode.raw.metadata?.name}/yaml`;
+                                                })()}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                             >
