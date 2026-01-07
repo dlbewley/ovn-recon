@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch, Tabs, Tab, TabTitleText, Flex, FlexItem } from '@patternfly/react-core';
+import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch, Tabs, Tab, TabTitleText, Flex, FlexItem, Button } from '@patternfly/react-core';
 import { NetworkIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon, PficonVcenterIcon, MigrationIcon, TagIcon, ExternalLinkAltIcon } from '@patternfly/react-icons';
 
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
@@ -194,6 +194,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // State for toggle
     const [showHiddenColumns, setShowHiddenColumns] = React.useState<boolean>(false);
     const [showNads, setShowNads] = React.useState<boolean>(false);
+
+    // Pan/Zoom state
+    const [viewBox, setViewBox] = React.useState<{ x: number; y: number; width: number; height: number } | null>(null);
+    const [isPanning, setIsPanning] = React.useState<boolean>(false);
+    const [panStart, setPanStart] = React.useState<{ x: number; y: number } | null>(null);
+    const [zoomLevel, setZoomLevel] = React.useState<number>(1);
+    const svgContainerRef = React.useRef<SVGSVGElement | null>(null);
 
     // Simple layout logic
     const width = 1600; // Increased width for new columns
@@ -714,6 +721,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Use currentAttachmentY for attachment column height
     const calculatedHeight = Math.max(600, padding + (maxRows * (itemHeight + 20)) + 200, currentAttachmentY + 100);
 
+    // Initialize viewBox after calculatedHeight is computed
+    React.useEffect(() => {
+        if (!viewBox && calculatedHeight > 0) {
+            setViewBox({ x: 0, y: 0, width, height: calculatedHeight });
+            setZoomLevel(1);
+        }
+    }, [calculatedHeight, width]);
+
     const getIcon = (type: string) => {
         switch (type) {
             case 'ethernet': return <ResourcePoolIcon />;
@@ -751,6 +766,102 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 opacity={isHighlightActive ? (highlightedPath.has(`${startNode}-${endNode}`) || highlightedPath.has(`${endNode}-${startNode}`) ? 1 : 0.1) : 1}
             />
         );
+    };
+
+
+    // Pan/Zoom handlers
+    const handleZoom = (delta: number, clientX?: number, clientY?: number) => {
+        if (!viewBox || !svgContainerRef.current) return;
+
+        const svgRect = svgContainerRef.current.getBoundingClientRect();
+        const zoomFactor = delta > 0 ? 1.1 : 0.9;
+        const newZoom = Math.max(0.1, Math.min(5, zoomLevel * zoomFactor));
+
+        if (clientX !== undefined && clientY !== undefined) {
+            // Zoom towards mouse position
+            const mouseX = clientX - svgRect.left;
+            const mouseY = clientY - svgRect.top;
+            const svgWidth = svgRect.width;
+            const svgHeight = svgRect.height;
+
+            const mouseXPercent = mouseX / svgWidth;
+            const mouseYPercent = mouseY / svgHeight;
+
+            const newWidth = width / newZoom;
+            const newHeight = calculatedHeight / newZoom;
+
+            const newX = viewBox.x + (mouseXPercent * viewBox.width) - (mouseXPercent * newWidth);
+            const newY = viewBox.y + (mouseYPercent * viewBox.height) - (mouseYPercent * newHeight);
+
+            setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight });
+        } else {
+            // Zoom towards center
+            const newWidth = width / newZoom;
+            const newHeight = calculatedHeight / newZoom;
+            const newX = viewBox.x + (viewBox.width - newWidth) / 2;
+            const newY = viewBox.y + (viewBox.height - newHeight) / 2;
+
+            setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight });
+        }
+
+        setZoomLevel(newZoom);
+    };
+
+    const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
+        event.preventDefault();
+        if (event.ctrlKey || event.metaKey) {
+            // Zoom with Ctrl/Cmd + wheel
+            handleZoom(-event.deltaY, event.clientX, event.clientY);
+        }
+    };
+
+    const handleMouseDown = (event: React.MouseEvent<SVGSVGElement>) => {
+        // Don't pan if clicking on a node (g element)
+        const target = event.target as HTMLElement;
+        if (target && (target.tagName === 'g' || target.closest('g'))) {
+            return; // Let node click handler deal with it
+        }
+
+        // Only pan with middle mouse button or shift + left click
+        if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
+            event.preventDefault();
+            setIsPanning(true);
+            setPanStart({ x: event.clientX, y: event.clientY });
+        }
+    };
+
+    const handleMouseMove = (event: React.MouseEvent<SVGSVGElement>) => {
+        if (isPanning && panStart && viewBox) {
+            const deltaX = event.clientX - panStart.x;
+            const deltaY = event.clientY - panStart.y;
+
+            if (svgContainerRef.current) {
+                const svgRect = svgContainerRef.current.getBoundingClientRect();
+                const scaleX = viewBox.width / svgRect.width;
+                const scaleY = viewBox.height / svgRect.height;
+
+                setViewBox({
+                    x: viewBox.x - (deltaX * scaleX),
+                    y: viewBox.y - (deltaY * scaleY),
+                    width: viewBox.width,
+                    height: viewBox.height
+                });
+            }
+
+            setPanStart({ x: event.clientX, y: event.clientY });
+        }
+    };
+
+    const handleMouseUp = () => {
+        setIsPanning(false);
+        setPanStart(null);
+    };
+
+    const handleZoomIn = () => handleZoom(1);
+    const handleZoomOut = () => handleZoom(-1);
+    const handleResetZoom = () => {
+        setViewBox({ x: 0, y: 0, width, height: calculatedHeight });
+        setZoomLevel(1);
     };
 
     // State for Popover
@@ -1128,7 +1239,40 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 />
                             </div>
 
-                            <svg width="100%" height={calculatedHeight} viewBox={`0 0 ${width} ${calculatedHeight}`} style={{ border: '1px solid var(--pf-global--BorderColor--100)', background: 'var(--pf-global--BackgroundColor--200)', color: 'var(--pf-global--Color--100)' }} onClick={handleBackgroundClick}>
+                            <Flex style={{ marginBottom: '8px', alignItems: 'center' }}>
+                                <FlexItem>
+                                    <Button variant="secondary" onClick={handleZoomIn} aria-label="Zoom in" style={{ marginRight: '4px' }}>+</Button>
+                                </FlexItem>
+                                <FlexItem>
+                                    <Button variant="secondary" onClick={handleZoomOut} aria-label="Zoom out" style={{ marginRight: '4px' }}>−</Button>
+                                </FlexItem>
+                                <FlexItem>
+                                    <Button variant="secondary" onClick={handleResetZoom} aria-label="Reset zoom" style={{ marginRight: '16px' }}>Reset</Button>
+                                </FlexItem>
+                                <FlexItem>
+                                    <span style={{ fontSize: '0.9em', color: 'var(--pf-global--Color--200)' }}>
+                                        Zoom: {Math.round(zoomLevel * 100)}% | Use Ctrl/Cmd + Scroll to zoom | Shift + Drag to pan
+                                    </span>
+                                </FlexItem>
+                            </Flex>
+                            <svg
+                                ref={svgContainerRef}
+                                width="100%"
+                                height={calculatedHeight}
+                                viewBox={viewBox ? `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}` : `0 0 ${width} ${calculatedHeight}`}
+                                style={{
+                                    border: '1px solid var(--pf-global--BorderColor--100)',
+                                    background: 'var(--pf-global--BackgroundColor--200)',
+                                    color: 'var(--pf-global--Color--100)',
+                                    cursor: isPanning ? 'grabbing' : 'grab'
+                                }}
+                                onWheel={handleWheel}
+                                onMouseDown={handleMouseDown}
+                                onMouseMove={handleMouseMove}
+                                onMouseUp={handleMouseUp}
+                                onMouseLeave={handleMouseUp}
+                                onClick={handleBackgroundClick}
+                            >
                                 {/* Connectors */}
                                 {interfaces.map((iface: Interface) => {
                                     const master = iface.controller || iface.master;
