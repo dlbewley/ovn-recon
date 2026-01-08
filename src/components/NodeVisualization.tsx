@@ -42,6 +42,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         label: string;
         title: string;
         subtitle: string;
+        graphDisplayLabel?: string; // Abbreviation for graph node display (e.g., "CUDN", "NAD")
         state?: string;
         namespaces?: string[];
         badges?: string[];
@@ -121,7 +122,67 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             )
         },
         'ovn-mapping': {
-            label: 'OVN Mapping'
+            label: 'OVN Mapping',
+            renderDetails: (node) => {
+                // Find all CUDNs that reference this bridge mapping
+                const localnetName = node.raw?.localnet;
+                const referencingCudns = cudns.filter((cudn: ClusterUserDefinedNetwork) => {
+                    const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
+                    return physicalNetworkName === localnetName;
+                });
+
+                return (
+                    <DescriptionList isCompact>
+                        {node.raw?.bridge && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Bridge</DescriptionListTerm>
+                                <DescriptionListDescription>{node.raw.bridge}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {referencingCudns.length > 0 && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Referenced by CUDNs</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    <ul className="pf-v6-c-list">
+                                        {referencingCudns.map((cudn: ClusterUserDefinedNetwork) => {
+                                            const cudnName = cudn.metadata?.name || 'Unknown';
+                                            // Build resource link for CUDN (cluster-scoped resource)
+                                            const resourceRef: ResourceRef = {
+                                                apiVersion: cudn.apiVersion || 'k8s.ovn.org/v1',
+                                                kind: cudn.kind || 'ClusterUserDefinedNetwork',
+                                                name: cudnName,
+                                                namespace: undefined // CUDN is cluster-scoped
+                                            };
+                                            const resourceLinks = getResourceLinks(resourceRef);
+                                            const resourceLink = resourceLinks.find(link => link.label === 'Resource') || resourceLinks[0];
+
+                                            return (
+                                                <li key={cudnName}>
+                                                    <a
+                                                        href={`${window.location.origin}${resourceLink?.href || '#'}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                    >
+                                                        {cudnName}
+                                                    </a>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {referencingCudns.length === 0 && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Referenced by CUDNs</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    <span style={{ color: 'var(--pf-global--Color--200)' }}>No CUDNs reference this bridge mapping</span>
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                    </DescriptionList>
+                );
+            }
         },
         cudn: {
             label: 'CUDN',
@@ -930,6 +991,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         let label = iface.name;
         let title = iface.name;
         let subtitle = type;
+        let graphDisplayLabel: string | undefined;
         let state = iface.state;
         let namespaces: string[] | undefined;
         let resourceRef: ResourceRef | undefined;
@@ -938,13 +1000,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         if (type === 'ovn-mapping') {
             label = iface.localnet;
             title = iface.localnet;
-            subtitle = 'OVN Localnet';
+            subtitle = 'OVN Bridge Mapping';
+            graphDisplayLabel = 'OVN Bridge Mapping'; // Same as subtitle for bridge mappings
             state = iface.bridge ? `Bridge: ${iface.bridge}` : undefined;
         } else if (type === 'cudn') {
             label = iface.metadata?.name || '';
             title = iface.metadata?.name || '';
-            subtitle = 'CUDN';
-            state = iface.spec?.network?.topology || 'Unknown';
+            const topology = iface.spec?.network?.topology || 'Unknown';
+            subtitle = `${topology} ClusterUserDefinedNetwork`;
+            graphDisplayLabel = 'CUDN'; // Abbreviation for graph display
+            state = topology;
             if (iface.spec?.network?.topology === 'Localnet') {
                 const vlan = iface.spec?.network?.localnet?.vlan?.access?.id;
                 if (vlan) {
@@ -962,14 +1027,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         } else if (type === 'attachment') {
             label = iface.name;
             title = iface.name;
-            subtitle = 'NAD';
+            subtitle = 'NetworkAttachmentDefinition';
+            graphDisplayLabel = 'NAD'; // Abbreviation for graph display
             state = 'Namespaces:';
             namespaces = iface.namespaces || [];
             isSynthetic = true;
         } else if (type === 'nad') {
             label = iface.metadata?.name || '';
             title = iface.metadata?.name || '';
-            subtitle = 'NAD';
+            subtitle = 'NetworkAttachmentDefinition';
+            graphDisplayLabel = 'NAD'; // Abbreviation for graph display
             const config = parseNadConfig(iface.spec?.config);
             const nadType = typeof config?.type === 'string' ? config.type : undefined;
             state = nadType ? `Type: ${nadType}` : undefined;
@@ -989,6 +1056,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             label,
             title,
             subtitle,
+            graphDisplayLabel,
             state,
             namespaces,
             resourceRef,
@@ -1016,7 +1084,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         const Icon = getIcon(type);
         const viewNode = buildNodeViewModel(iface, type);
         let displayName = viewNode.label;
-        let displayType = viewNode.subtitle;
+        let displayType = viewNode.graphDisplayLabel || viewNode.subtitle; // Use abbreviation for graph, verbose for drawer
         let displayState = viewNode.state;
         let extraInfo = null;
         const nodeHeight = heightOverride || itemHeight;
