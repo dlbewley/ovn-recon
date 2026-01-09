@@ -1,5 +1,7 @@
 import * as React from 'react';
-import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch, Tabs, Tab, TabTitleText, Flex, FlexItem, Button } from '@patternfly/react-core';
+import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch, Tabs, Tab, TabTitleText, Flex, FlexItem, Button, FormSelect, FormSelectOption } from '@patternfly/react-core';
+import { useHistory } from 'react-router-dom';
+import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { NetworkIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon, PficonVcenterIcon, MigrationIcon, TagIcon, ExternalLinkAltIcon } from '@patternfly/react-icons';
 
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
@@ -248,6 +250,25 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         nodes: { [id: string]: GraphNode };
     }
 
+    const history = useHistory();
+
+    // Fetch all NodeNetworkState resources for the dropdown
+    const [allNodeNetworkStates] = useK8sWatchResource<NodeNetworkState[]>({
+        groupVersionKind: {
+            group: 'nmstate.io',
+            version: 'v1beta1',
+            kind: 'NodeNetworkState',
+        },
+        isList: true,
+    });
+
+    const handleHostSelect = (event: React.FormEvent<HTMLSelectElement>) => {
+        const value = (event.target as HTMLSelectElement).value;
+        if (value) {
+            history.push(`/ovn-recon/node-network-state/${value}`);
+        }
+    };
+
     const interfaces: Interface[] = nns?.status?.currentState?.interfaces || [];
     const ovn = nns?.status?.currentState?.ovn;
     const bridgeMappings: OvnBridgeMapping[] = ovn?.['bridge-mappings'] || [];
@@ -266,7 +287,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Simple layout logic
     const width = 1600; // Increased width for new columns
     // const height = 800; // Unused
-    const padding = 50;
+    const padding = 10; // Reduced padding to minimize whitespace
     const itemHeight = 80;
     const itemWidth = 160;
     const colSpacing = 220;
@@ -1140,7 +1161,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     if (interfaces.length === 0) {
         return (
             <Card isFullHeight>
-                <CardTitle>Network Topology Visualization</CardTitle>
+                <CardTitle>OVN Recon - Network Topology</CardTitle>
                 <CardBody>
                     No interfaces found in NodeNetworkState status.
                 </CardBody>
@@ -1303,42 +1324,47 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     return (
         <Card isFullHeight>
-            <CardTitle>Network Topology Visualization</CardTitle>
+            <CardTitle>OVN Recon - Network Topology</CardTitle>
             <CardBody style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
                 <Drawer isExpanded={!!activeNode}>
                     <DrawerContent panelContent={activeNode ? panelContent : null}>
-                        <DrawerContentBody style={{ padding: '24px', overflow: 'auto' }}>
-                            <div style={{ marginBottom: '16px' }}>
-                                <Switch
-                                    id="show-hidden-columns-toggle"
-                                    label="Show hidden columns"
-                                    isChecked={showHiddenColumns}
-                                    onChange={(event, checked) => setShowHiddenColumns(checked)}
-                                />
-                            </div>
-                            <div style={{ marginBottom: '16px' }}>
-                                <Switch
-                                    id="show-nads-toggle"
-                                    label="Show Net Attach Defs"
-                                    isChecked={showNads}
-                                    onChange={(event, checked) => setShowNads(checked)}
-                                />
-                            </div>
-
-                            <Flex style={{ marginBottom: '8px', alignItems: 'center' }}>
+                        <DrawerContentBody style={{ padding: '12px 24px', overflow: 'auto' }}>
+                            <Flex style={{ marginBottom: '16px', alignItems: 'center', gap: '16px' }}>
                                 <FlexItem>
-                                    <Button variant="secondary" onClick={handleZoomIn} aria-label="Zoom in" style={{ marginRight: '4px' }}>+</Button>
+                                    <FormSelect
+                                        value={nns?.metadata?.name || ''}
+                                        onChange={handleHostSelect}
+                                        aria-label="Host selector"
+                                        style={{ minWidth: '200px' }}
+                                    >
+                                        <FormSelectOption key="placeholder" value="" label="Select host" isPlaceholder />
+                                        {allNodeNetworkStates
+                                            ?.slice()
+                                            .sort((a: NodeNetworkState, b: NodeNetworkState) => {
+                                                const nameA = a.metadata?.name || '';
+                                                const nameB = b.metadata?.name || '';
+                                                return nameA.localeCompare(nameB);
+                                            })
+                                            .map((nnsItem: NodeNetworkState) => (
+                                                <FormSelectOption key={nnsItem.metadata?.name} value={nnsItem.metadata?.name || ''} label={nnsItem.metadata?.name || 'Unknown'} />
+                                            ))}
+                                    </FormSelect>
                                 </FlexItem>
                                 <FlexItem>
-                                    <Button variant="secondary" onClick={handleZoomOut} aria-label="Zoom out" style={{ marginRight: '4px' }}>−</Button>
+                                    <Switch
+                                        id="show-nads-toggle"
+                                        label="Show Net Attach Defs"
+                                        isChecked={showNads}
+                                        onChange={(event, checked) => setShowNads(checked)}
+                                    />
                                 </FlexItem>
                                 <FlexItem>
-                                    <Button variant="secondary" onClick={handleResetZoom} aria-label="Reset zoom" style={{ marginRight: '16px' }}>Reset</Button>
-                                </FlexItem>
-                                <FlexItem>
-                                    <span style={{ fontSize: '0.9em', color: 'var(--pf-global--Color--200)' }}>
-                                        Zoom: {Math.round(zoomLevel * 100)}% | Use Ctrl/Cmd + Scroll to zoom | Shift + Drag to pan
-                                    </span>
+                                    <Switch
+                                        id="show-hidden-columns-toggle"
+                                        label="Show hidden columns"
+                                        isChecked={showHiddenColumns}
+                                        onChange={(event, checked) => setShowHiddenColumns(checked)}
+                                    />
                                 </FlexItem>
                             </Flex>
                             <svg
@@ -1484,6 +1510,22 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     })}
                                 </g>
                             </svg>
+                            <Flex style={{ marginTop: '16px', alignItems: 'center' }}>
+                                <FlexItem>
+                                    <Button variant="secondary" onClick={handleZoomIn} aria-label="Zoom in" style={{ marginRight: '4px' }}>+</Button>
+                                </FlexItem>
+                                <FlexItem>
+                                    <Button variant="secondary" onClick={handleZoomOut} aria-label="Zoom out" style={{ marginRight: '4px' }}>−</Button>
+                                </FlexItem>
+                                <FlexItem>
+                                    <Button variant="secondary" onClick={handleResetZoom} aria-label="Reset zoom" style={{ marginRight: '16px' }}>Reset</Button>
+                                </FlexItem>
+                                <FlexItem>
+                                    <span style={{ fontSize: '0.9em', color: 'var(--pf-global--Color--200)' }}>
+                                        Zoom: {Math.round(zoomLevel * 100)}% | Use Ctrl/Cmd + Scroll to zoom | Shift + Drag to pan
+                                    </span>
+                                </FlexItem>
+                            </Flex>
                         </DrawerContentBody>
                     </DrawerContent>
                 </Drawer>

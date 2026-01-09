@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { NodeNetworkState } from '../types';
-import { PageSection, Title, Card, CardBody } from '@patternfly/react-core';
+import { PageSection, Title, Card, CardBody, CardTitle } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { Helmet } from 'react-helmet';
@@ -16,18 +16,19 @@ const NodeNetworkStateList: React.FC = () => {
         isList: true,
     });
 
-    const columns = ['Name', 'Created'];
+    const columns = ['Name', 'NNS'];
 
     return (
         <>
             <Helmet>
-                <title>Node Network State</title>
+                <title>OVN Recon - Nodes</title>
             </Helmet>
             <PageSection>
-                <Title headingLevel="h1">Node Network State</Title>
+                <Title headingLevel="h1">OVN Recon - Nodes</Title>
             </PageSection>
             <PageSection isFilled>
                 <Card>
+                    <CardTitle>View Node Topology</CardTitle>
                     <CardBody>
                         <Table aria-label="Node Network State List">
                             <Thead>
@@ -38,18 +39,24 @@ const NodeNetworkStateList: React.FC = () => {
                                 </Tr>
                             </Thead>
                             <Tbody>
-                                {loaded && nodeNetworkStates?.map((nns, rowIndex) => (
-                                    <Tr key={rowIndex}>
-                                        <Td dataLabel={columns[0]}>
-                                            <Link to={`/ovn-recon/node-network-state/${nns.metadata?.name}`}>
-                                                {nns.metadata?.name}
-                                            </Link>
-                                        </Td>
-                                        <Td dataLabel={columns[1]}>
-                                            {nns.metadata?.creationTimestamp}
-                                        </Td>
-                                    </Tr>
-                                ))}
+                                {loaded && nodeNetworkStates?.map((nns, rowIndex) => {
+                                    const nnsName = nns.metadata?.name || '';
+                                    const resourcePath = `/k8s/cluster/nmstate.io~v1beta1~NodeNetworkState/${nnsName}`;
+                                    return (
+                                        <Tr key={rowIndex}>
+                                            <Td dataLabel={columns[0]}>
+                                                <Link to={`/ovn-recon/node-network-state/${nnsName}`}>
+                                                    {nnsName}
+                                                </Link>
+                                            </Td>
+                                            <Td dataLabel={columns[1]}>
+                                                <a href={resourcePath} target="_blank" rel="noopener noreferrer">
+                                                    NodeNetworkState
+                                                </a>
+                                            </Td>
+                                        </Tr>
+                                    );
+                                })}
                                 {!loaded && !loadError && (
                                     <Tr>
                                         <Td colSpan={2}>Loading...</Td>
