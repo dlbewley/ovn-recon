@@ -99,16 +99,16 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
     return (
         <>
             <Helmet>
-                <title>Node Network State: {displayName}</title>
+                <title>OVN Recon - {displayName}</title>
             </Helmet>
             <PageSection>
                 <Breadcrumb>
                     <BreadcrumbItem>
-                        <Link to="/ovn-recon/node-network-state">Node Network State</Link>
+                        <Link to="/ovn-recon/node-network-state">OVN Recon</Link>
                     </BreadcrumbItem>
                     <BreadcrumbItem isActive>{displayName}</BreadcrumbItem>
                 </Breadcrumb>
-                <Title headingLevel="h1" className="pf-u-mt-lg">Node Network State: {displayName}</Title>
+                <Title headingLevel="h1" className="pf-u-mt-lg">Node Network Topology: {displayName}</Title>
             </PageSection>
             <PageSection isFilled>
                 <NodeVisualization nns={nns} cudns={cudns} nads={nads} />

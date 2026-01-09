@@ -1,5 +1,7 @@
 import * as React from 'react';
-import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch, Tabs, Tab, TabTitleText, Flex, FlexItem } from '@patternfly/react-core';
+import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch, Tabs, Tab, TabTitleText, Flex, FlexItem, Button, FormSelect, FormSelectOption } from '@patternfly/react-core';
+import { useHistory } from 'react-router-dom';
+import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { NetworkIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon, PficonVcenterIcon, MigrationIcon, TagIcon, ExternalLinkAltIcon } from '@patternfly/react-icons';
 
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
@@ -42,6 +44,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         label: string;
         title: string;
         subtitle: string;
+        graphDisplayLabel?: string; // Abbreviation for graph node display (e.g., "CUDN", "NAD")
         state?: string;
         namespaces?: string[];
         badges?: string[];
@@ -121,7 +124,67 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             )
         },
         'ovn-mapping': {
-            label: 'OVN Mapping'
+            label: 'OVN Mapping',
+            renderDetails: (node) => {
+                // Find all CUDNs that reference this bridge mapping
+                const localnetName = node.raw?.localnet;
+                const referencingCudns = cudns.filter((cudn: ClusterUserDefinedNetwork) => {
+                    const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
+                    return physicalNetworkName === localnetName;
+                });
+
+                return (
+                    <DescriptionList isCompact>
+                        {node.raw?.bridge && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Bridge</DescriptionListTerm>
+                                <DescriptionListDescription>{node.raw.bridge}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {referencingCudns.length > 0 && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Referenced by CUDNs</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    <ul className="pf-v6-c-list">
+                                        {referencingCudns.map((cudn: ClusterUserDefinedNetwork) => {
+                                            const cudnName = cudn.metadata?.name || 'Unknown';
+                                            // Build resource link for CUDN (cluster-scoped resource)
+                                            const resourceRef: ResourceRef = {
+                                                apiVersion: cudn.apiVersion || 'k8s.ovn.org/v1',
+                                                kind: cudn.kind || 'ClusterUserDefinedNetwork',
+                                                name: cudnName,
+                                                namespace: undefined // CUDN is cluster-scoped
+                                            };
+                                            const resourceLinks = getResourceLinks(resourceRef);
+                                            const resourceLink = resourceLinks.find(link => link.label === 'Resource') || resourceLinks[0];
+
+                                            return (
+                                                <li key={cudnName}>
+                                                    <a
+                                                        href={`${window.location.origin}${resourceLink?.href || '#'}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                    >
+                                                        {cudnName}
+                                                    </a>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {referencingCudns.length === 0 && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Referenced by CUDNs</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    <span style={{ color: 'var(--pf-global--Color--200)' }}>No CUDNs reference this bridge mapping</span>
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                    </DescriptionList>
+                );
+            }
         },
         cudn: {
             label: 'CUDN',
@@ -187,6 +250,25 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         nodes: { [id: string]: GraphNode };
     }
 
+    const history = useHistory();
+
+    // Fetch all NodeNetworkState resources for the dropdown
+    const [allNodeNetworkStates] = useK8sWatchResource<NodeNetworkState[]>({
+        groupVersionKind: {
+            group: 'nmstate.io',
+            version: 'v1beta1',
+            kind: 'NodeNetworkState',
+        },
+        isList: true,
+    });
+
+    const handleHostSelect = (event: React.FormEvent<HTMLSelectElement>) => {
+        const value = (event.target as HTMLSelectElement).value;
+        if (value) {
+            history.push(`/ovn-recon/node-network-state/${value}`);
+        }
+    };
+
     const interfaces: Interface[] = nns?.status?.currentState?.interfaces || [];
     const ovn = nns?.status?.currentState?.ovn;
     const bridgeMappings: OvnBridgeMapping[] = ovn?.['bridge-mappings'] || [];
@@ -195,10 +277,17 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const [showHiddenColumns, setShowHiddenColumns] = React.useState<boolean>(false);
     const [showNads, setShowNads] = React.useState<boolean>(false);
 
+    // Pan/Zoom state
+    const [viewBox, setViewBox] = React.useState<{ x: number; y: number; width: number; height: number } | null>(null);
+    const [isPanning, setIsPanning] = React.useState<boolean>(false);
+    const [panStart, setPanStart] = React.useState<{ x: number; y: number } | null>(null);
+    const [zoomLevel, setZoomLevel] = React.useState<number>(1);
+    const svgContainerRef = React.useRef<SVGSVGElement | null>(null);
+
     // Simple layout logic
     const width = 1600; // Increased width for new columns
     // const height = 800; // Unused
-    const padding = 50;
+    const padding = 10; // Reduced padding to minimize whitespace
     const itemHeight = 80;
     const itemWidth = 160;
     const colSpacing = 220;
@@ -714,6 +803,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Use currentAttachmentY for attachment column height
     const calculatedHeight = Math.max(600, padding + (maxRows * (itemHeight + 20)) + 200, currentAttachmentY + 100);
 
+    // Initialize viewBox after calculatedHeight is computed
+    React.useEffect(() => {
+        if (!viewBox && calculatedHeight > 0) {
+            setViewBox({ x: 0, y: 0, width, height: calculatedHeight });
+            setZoomLevel(1);
+        }
+    }, [calculatedHeight, width]);
+
     const getIcon = (type: string) => {
         switch (type) {
             case 'ethernet': return <ResourcePoolIcon />;
@@ -753,6 +850,102 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         );
     };
 
+
+    // Pan/Zoom handlers
+    const handleZoom = (delta: number, clientX?: number, clientY?: number) => {
+        if (!viewBox || !svgContainerRef.current) return;
+
+        const svgRect = svgContainerRef.current.getBoundingClientRect();
+        const zoomFactor = delta > 0 ? 1.1 : 0.9;
+        const newZoom = Math.max(0.1, Math.min(5, zoomLevel * zoomFactor));
+
+        if (clientX !== undefined && clientY !== undefined) {
+            // Zoom towards mouse position
+            const mouseX = clientX - svgRect.left;
+            const mouseY = clientY - svgRect.top;
+            const svgWidth = svgRect.width;
+            const svgHeight = svgRect.height;
+
+            const mouseXPercent = mouseX / svgWidth;
+            const mouseYPercent = mouseY / svgHeight;
+
+            const newWidth = width / newZoom;
+            const newHeight = calculatedHeight / newZoom;
+
+            const newX = viewBox.x + (mouseXPercent * viewBox.width) - (mouseXPercent * newWidth);
+            const newY = viewBox.y + (mouseYPercent * viewBox.height) - (mouseYPercent * newHeight);
+
+            setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight });
+        } else {
+            // Zoom towards center
+            const newWidth = width / newZoom;
+            const newHeight = calculatedHeight / newZoom;
+            const newX = viewBox.x + (viewBox.width - newWidth) / 2;
+            const newY = viewBox.y + (viewBox.height - newHeight) / 2;
+
+            setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight });
+        }
+
+        setZoomLevel(newZoom);
+    };
+
+    const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
+        event.preventDefault();
+        if (event.ctrlKey || event.metaKey) {
+            // Zoom with Ctrl/Cmd + wheel
+            handleZoom(-event.deltaY, event.clientX, event.clientY);
+        }
+    };
+
+    const handleMouseDown = (event: React.MouseEvent<SVGSVGElement>) => {
+        // Don't pan if clicking on a node (g element)
+        const target = event.target as HTMLElement;
+        if (target && (target.tagName === 'g' || target.closest('g'))) {
+            return; // Let node click handler deal with it
+        }
+
+        // Only pan with middle mouse button or shift + left click
+        if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
+            event.preventDefault();
+            setIsPanning(true);
+            setPanStart({ x: event.clientX, y: event.clientY });
+        }
+    };
+
+    const handleMouseMove = (event: React.MouseEvent<SVGSVGElement>) => {
+        if (isPanning && panStart && viewBox) {
+            const deltaX = event.clientX - panStart.x;
+            const deltaY = event.clientY - panStart.y;
+
+            if (svgContainerRef.current) {
+                const svgRect = svgContainerRef.current.getBoundingClientRect();
+                const scaleX = viewBox.width / svgRect.width;
+                const scaleY = viewBox.height / svgRect.height;
+
+                setViewBox({
+                    x: viewBox.x - (deltaX * scaleX),
+                    y: viewBox.y - (deltaY * scaleY),
+                    width: viewBox.width,
+                    height: viewBox.height
+                });
+            }
+
+            setPanStart({ x: event.clientX, y: event.clientY });
+        }
+    };
+
+    const handleMouseUp = () => {
+        setIsPanning(false);
+        setPanStart(null);
+    };
+
+    const handleZoomIn = () => handleZoom(1);
+    const handleZoomOut = () => handleZoom(-1);
+    const handleResetZoom = () => {
+        setViewBox({ x: 0, y: 0, width, height: calculatedHeight });
+        setZoomLevel(1);
+    };
+
     // State for Popover
     const [activeNode, setActiveNode] = React.useState<NodeViewModel | null>(null);
     const [anchorElement, setAnchorElement] = React.useState<HTMLElement | null>(null);
@@ -761,7 +954,19 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const handleNodeClick = (event: React.MouseEvent, node: NodeViewModel) => {
         event.stopPropagation(); // Prevent clearing highlight when clicking a node
         setAnchorElement(event.currentTarget as HTMLElement);
+
+        // Preserve tab selection when switching between nodes
+        const wasDrawerOpen = activeNode !== null;
+        const isSwitchingNodes = wasDrawerOpen && activeNode?.id !== node.id;
+
         setActiveNode(node);
+
+        // Only reset to summary if drawer was closed (opening for first time)
+        // If switching between nodes, preserve the current tab selection
+        if (!wasDrawerOpen) {
+            setActivePopoverTab('summary');
+        }
+        // If switching nodes, activePopoverTab remains unchanged
 
         // Highlight Path
         const path = getFlowPath(node.id);
@@ -779,12 +984,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         setActiveNode(null);
         setAnchorElement(null);
     };
-
-    React.useEffect(() => {
-        if (activeNode) {
-            setActivePopoverTab('summary');
-        }
-    }, [activeNode?.id]);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resolveNodeId = (iface: any, type: string) => {
@@ -813,6 +1012,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         let label = iface.name;
         let title = iface.name;
         let subtitle = type;
+        let graphDisplayLabel: string | undefined;
         let state = iface.state;
         let namespaces: string[] | undefined;
         let resourceRef: ResourceRef | undefined;
@@ -821,13 +1021,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         if (type === 'ovn-mapping') {
             label = iface.localnet;
             title = iface.localnet;
-            subtitle = 'OVN Localnet';
+            subtitle = 'OVN Bridge Mapping';
+            graphDisplayLabel = 'OVN Bridge Mapping'; // Same as subtitle for bridge mappings
             state = iface.bridge ? `Bridge: ${iface.bridge}` : undefined;
         } else if (type === 'cudn') {
             label = iface.metadata?.name || '';
             title = iface.metadata?.name || '';
-            subtitle = 'CUDN';
-            state = iface.spec?.network?.topology || 'Unknown';
+            const topology = iface.spec?.network?.topology || 'Unknown';
+            subtitle = `${topology} ClusterUserDefinedNetwork`;
+            graphDisplayLabel = 'CUDN'; // Abbreviation for graph display
+            state = topology;
             if (iface.spec?.network?.topology === 'Localnet') {
                 const vlan = iface.spec?.network?.localnet?.vlan?.access?.id;
                 if (vlan) {
@@ -845,14 +1048,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         } else if (type === 'attachment') {
             label = iface.name;
             title = iface.name;
-            subtitle = 'NAD';
+            subtitle = 'NetworkAttachmentDefinition';
+            graphDisplayLabel = 'NAD'; // Abbreviation for graph display
             state = 'Namespaces:';
             namespaces = iface.namespaces || [];
             isSynthetic = true;
         } else if (type === 'nad') {
             label = iface.metadata?.name || '';
             title = iface.metadata?.name || '';
-            subtitle = 'NAD';
+            subtitle = 'NetworkAttachmentDefinition';
+            graphDisplayLabel = 'NAD'; // Abbreviation for graph display
             const config = parseNadConfig(iface.spec?.config);
             const nadType = typeof config?.type === 'string' ? config.type : undefined;
             state = nadType ? `Type: ${nadType}` : undefined;
@@ -872,6 +1077,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             label,
             title,
             subtitle,
+            graphDisplayLabel,
             state,
             namespaces,
             resourceRef,
@@ -899,7 +1105,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         const Icon = getIcon(type);
         const viewNode = buildNodeViewModel(iface, type);
         let displayName = viewNode.label;
-        let displayType = viewNode.subtitle;
+        let displayType = viewNode.graphDisplayLabel || viewNode.subtitle; // Use abbreviation for graph, verbose for drawer
         let displayState = viewNode.state;
         let extraInfo = null;
         const nodeHeight = heightOverride || itemHeight;
@@ -955,7 +1161,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     if (interfaces.length === 0) {
         return (
             <Card isFullHeight>
-                <CardTitle>Network Topology Visualization</CardTitle>
+                <CardTitle>OVN Recon - Network Topology</CardTitle>
                 <CardBody>
                     No interfaces found in NodeNetworkState status.
                 </CardBody>
@@ -1078,7 +1284,25 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         <div style={{ flex: '0 0 auto', padding: 'var(--pf-global--spacer--md)', backgroundColor: 'var(--pf-global--BackgroundColor--100)' }}>
                                             <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-global--spacer--sm)' }} />
                                             <a
-                                                href={`${window.location.origin}/k8s/ns/${activeNode.raw.metadata?.namespace || 'default'}/${activeNode.kind === 'other' || activeNode.kind === 'interface' || activeNode.kind === 'ovn-mapping' ? 'nodenetworkstates.nmstate.io' : 'clusteruserdefinednetworks.k8s.cni.cncf.io'}/${activeNode.raw.metadata?.name}/yaml`}
+                                                href={(() => {
+                                                    // Use resourceRef if available for consistent link generation
+                                                    if (activeNode.resourceRef) {
+                                                        const resourceId = activeNode.resourceRef.apiVersion
+                                                            ? `${activeNode.resourceRef.apiVersion.replace('/', '~')}~${activeNode.resourceRef.kind}`
+                                                            : activeNode.resourceRef.kind;
+                                                        const base = activeNode.resourceRef.namespace
+                                                            ? `/k8s/ns/${activeNode.resourceRef.namespace}`
+                                                            : '/k8s/cluster';
+                                                        return `${window.location.origin}${base}/${resourceId}/${activeNode.resourceRef.name}/yaml`;
+                                                    }
+                                                    // Fallback: use same logic as getResourceLinks() for cluster-scoped resources
+                                                    const namespace = activeNode.raw?.metadata?.namespace;
+                                                    const resourceId = activeNode.kind === 'other' || activeNode.kind === 'interface' || activeNode.kind === 'ovn-mapping'
+                                                        ? 'nodenetworkstates.nmstate.io'
+                                                        : 'clusteruserdefinednetworks.k8s.cni.cncf.io';
+                                                    const base = namespace ? `/k8s/ns/${namespace}` : '/k8s/cluster';
+                                                    return `${window.location.origin}${base}/${resourceId}/${activeNode.raw.metadata?.name}/yaml`;
+                                                })()}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                             >
@@ -1100,29 +1324,67 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     return (
         <Card isFullHeight>
-            <CardTitle>Network Topology Visualization</CardTitle>
-            <CardBody style={{ padding: 0, overflow: 'hidden' }}>
-                <Drawer isExpanded={!!activeNode} isInline>
+            <CardTitle>OVN Recon - Network Topology</CardTitle>
+            <CardBody style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
+                <Drawer isExpanded={!!activeNode}>
                     <DrawerContent panelContent={activeNode ? panelContent : null}>
-                        <DrawerContentBody style={{ padding: '24px', overflow: 'auto' }}>
-                            <div style={{ marginBottom: '16px' }}>
-                                <Switch
-                                    id="show-hidden-columns-toggle"
-                                    label="Show hidden columns"
-                                    isChecked={showHiddenColumns}
-                                    onChange={(event, checked) => setShowHiddenColumns(checked)}
-                                />
-                            </div>
-                            <div style={{ marginBottom: '16px' }}>
-                                <Switch
-                                    id="show-nads-toggle"
-                                    label="Show Net Attach Defs"
-                                    isChecked={showNads}
-                                    onChange={(event, checked) => setShowNads(checked)}
-                                />
-                            </div>
-
-                            <svg width="100%" height={calculatedHeight} viewBox={`0 0 ${width} ${calculatedHeight}`} style={{ border: '1px solid var(--pf-global--BorderColor--100)', background: 'var(--pf-global--BackgroundColor--200)', color: 'var(--pf-global--Color--100)' }} onClick={handleBackgroundClick}>
+                        <DrawerContentBody style={{ padding: '12px 24px', overflow: 'auto' }}>
+                            <Flex style={{ marginBottom: '16px', alignItems: 'center', gap: '16px' }}>
+                                <FlexItem>
+                                    <FormSelect
+                                        value={nns?.metadata?.name || ''}
+                                        onChange={handleHostSelect}
+                                        aria-label="Host selector"
+                                        style={{ minWidth: '200px' }}
+                                    >
+                                        <FormSelectOption key="placeholder" value="" label="Select host" isPlaceholder />
+                                        {allNodeNetworkStates
+                                            ?.slice()
+                                            .sort((a: NodeNetworkState, b: NodeNetworkState) => {
+                                                const nameA = a.metadata?.name || '';
+                                                const nameB = b.metadata?.name || '';
+                                                return nameA.localeCompare(nameB);
+                                            })
+                                            .map((nnsItem: NodeNetworkState) => (
+                                                <FormSelectOption key={nnsItem.metadata?.name} value={nnsItem.metadata?.name || ''} label={nnsItem.metadata?.name || 'Unknown'} />
+                                            ))}
+                                    </FormSelect>
+                                </FlexItem>
+                                <FlexItem>
+                                    <Switch
+                                        id="show-nads-toggle"
+                                        label="Show Net Attach Defs"
+                                        isChecked={showNads}
+                                        onChange={(event, checked) => setShowNads(checked)}
+                                    />
+                                </FlexItem>
+                                <FlexItem>
+                                    <Switch
+                                        id="show-hidden-columns-toggle"
+                                        label="Show hidden columns"
+                                        isChecked={showHiddenColumns}
+                                        onChange={(event, checked) => setShowHiddenColumns(checked)}
+                                    />
+                                </FlexItem>
+                            </Flex>
+                            <svg
+                                ref={svgContainerRef}
+                                width="100%"
+                                height={calculatedHeight}
+                                viewBox={viewBox ? `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}` : `0 0 ${width} ${calculatedHeight}`}
+                                style={{
+                                    border: '1px solid var(--pf-global--BorderColor--100)',
+                                    background: 'var(--pf-global--BackgroundColor--200)',
+                                    color: 'var(--pf-global--Color--100)',
+                                    cursor: isPanning ? 'grabbing' : 'grab'
+                                }}
+                                onWheel={handleWheel}
+                                onMouseDown={handleMouseDown}
+                                onMouseMove={handleMouseMove}
+                                onMouseUp={handleMouseUp}
+                                onMouseLeave={handleMouseUp}
+                                onClick={handleBackgroundClick}
+                            >
                                 {/* Connectors */}
                                 {interfaces.map((iface: Interface) => {
                                     const master = iface.controller || iface.master;
@@ -1248,6 +1510,22 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     })}
                                 </g>
                             </svg>
+                            <Flex style={{ marginTop: '16px', alignItems: 'center' }}>
+                                <FlexItem>
+                                    <Button variant="secondary" onClick={handleZoomIn} aria-label="Zoom in" style={{ marginRight: '4px' }}>+</Button>
+                                </FlexItem>
+                                <FlexItem>
+                                    <Button variant="secondary" onClick={handleZoomOut} aria-label="Zoom out" style={{ marginRight: '4px' }}>−</Button>
+                                </FlexItem>
+                                <FlexItem>
+                                    <Button variant="secondary" onClick={handleResetZoom} aria-label="Reset zoom" style={{ marginRight: '16px' }}>Reset</Button>
+                                </FlexItem>
+                                <FlexItem>
+                                    <span style={{ fontSize: '0.9em', color: 'var(--pf-global--Color--200)' }}>
+                                        Zoom: {Math.round(zoomLevel * 100)}% | Use Ctrl/Cmd + Scroll to zoom | Shift + Drag to pan
+                                    </span>
+                                </FlexItem>
+                            </Flex>
                         </DrawerContentBody>
                     </DrawerContent>
                 </Drawer>

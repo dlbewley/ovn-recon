@@ -8,6 +8,10 @@ Environment variables are set in `setup_env.sh` and should be sourced before run
 source setup_env.sh
 ```
 
+## Code Guidelines
+
+When implementing any UI element consider leveraging [PatternFly](https://www.patternfly.org/) to remain consistent with the OpenShift 4.20 and later console.
+
 ## Task Management
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
