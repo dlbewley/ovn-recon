@@ -10,7 +10,7 @@ spec:
   targetNamespace: ovn-recon
   image:
     repository: quay.io/dbewley/ovn-recon
-    tag: latest
+    # tag: latest
     pullPolicy: IfNotPresent
   consolePlugin:
     displayName: "OVN Recon"
