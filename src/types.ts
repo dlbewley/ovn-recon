@@ -59,3 +59,16 @@ export interface NetworkAttachmentDefinition extends K8sResourceCommon {
         config: string;
     };
 }
+
+export interface RouteAdvertisements extends K8sResourceCommon {
+    spec?: {
+        networkSelectors?: {
+            clusterUserDefinedNetworkSelector?: {
+                networkSelector?: {
+                    matchLabels?: { [key: string]: string };
+                    matchExpressions?: { key: string; operator: string; values: string[] }[];
+                };
+            };
+        }[];
+    };
+}
