@@ -285,6 +285,11 @@ func imageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
 	if ovnRecon.Spec.Image.Tag != "" {
 		return ovnRecon.Spec.Image.Tag
 	}
+	// Use operator version as default tag if available
+	version := os.Getenv("OPERATOR_VERSION")
+	if version != "" && version != "dev" {
+		return version
+	}
 	return defaultImageTag
 }
 
