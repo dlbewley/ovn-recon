@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -267,11 +268,60 @@ func labelsForOvnRecon(name string) map[string]string {
 func labelsForOvnReconWithVersion(name, version string) map[string]string {
 	labels := labelsForOvnRecon(name)
 	if version != "" {
-		labels["app.kubernetes.io/version"] = version
+		// Ensure version is a valid label value (alphanumeric, -, _, .)
+		// If explicit version has invalid chars, we sanitize or drop it.
+		// Detailed regex: (([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?
+		// For simplicity, we'll replace invalid characters with '-'
+		validVersion := sanitizeLabelValue(version)
+		if validVersion != "" {
+			labels["app.kubernetes.io/version"] = validVersion
+		}
 	}
 	labels["app.kubernetes.io/component"] = "plugin"
 	labels["app.kubernetes.io/part-of"] = "openshift-console-plugin"
 	return labels
+}
+
+func sanitizeLabelValue(value string) string {
+	// A simple sanitizer that keeps alphanumeric, '-', '_', '.'
+	// and ensures start/end are alphanumeric.
+	if value == "" {
+		return ""
+	}
+
+	// Filter invalid chars
+	var clean []rune
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			clean = append(clean, r)
+		} else {
+			clean = append(clean, '-')
+		}
+	}
+
+	val := string(clean)
+
+	// Trim non-alphanumeric from start
+	for len(val) > 0 {
+		first := val[0]
+		if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || (first >= '0' && first <= '9')) {
+			val = val[1:]
+		} else {
+			break
+		}
+	}
+
+	// Trim non-alphanumeric from end
+	for len(val) > 0 {
+		last := val[len(val)-1]
+		if !((last >= 'a' && last <= 'z') || (last >= 'A' && last <= 'Z') || (last >= '0' && last <= '9')) {
+			val = val[:len(val)-1]
+		} else {
+			break
+		}
+	}
+
+	return val
 }
 
 func targetNamespace(ovnRecon *reconv1alpha1.OvnRecon) string {
@@ -287,7 +337,9 @@ func imageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
 	}
 	// Use operator version as default tag if available
 	version := os.Getenv("OPERATOR_VERSION")
-	if version != "" && version != "dev" {
+	// Sanity check: valid tags cannot contain colons.
+	// This protects against polluted env vars (e.g. "v0.1.2:quay.io/...")
+	if version != "" && version != "dev" && !strings.Contains(version, ":") {
 		return version
 	}
 	return defaultImageTag

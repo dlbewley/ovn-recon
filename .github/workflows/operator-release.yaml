@@ -78,7 +78,7 @@ jobs:
         VERSION=${GITHUB_REF#refs/tags/}
 
         # Update operator version in manager.yaml so controller defaults to this version
-        sed -i "s/value: dev/value: $VERSION/" config/manager/manager.yaml
+        sed -i "s/value: dev/value: ${VERSION}/" config/manager/manager.yaml
 
         VERSION_NUM=${VERSION#v}  # Remove 'v' prefix for bundle version
         IMG=quay.io/dbewley/ovn-recon-operator:$VERSION
