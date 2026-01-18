@@ -42,7 +42,10 @@ func DesiredDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deployment {
 	if ovnRecon.Spec.Image.PullPolicy != "" {
 		pullPolicy = corev1.PullPolicy(ovnRecon.Spec.Image.PullPolicy)
 	}
-	image := fmt.Sprintf("%s:%s", ovnRecon.Spec.Image.Repository, imageTag)
+	image := ovnRecon.Spec.Image.Repository
+	if imageTag != "" {
+		image = fmt.Sprintf("%s:%s", image, imageTag)
+	}
 	replicas := int32(1)
 
 	return &appsv1.Deployment{
