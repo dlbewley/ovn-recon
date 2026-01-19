@@ -47,6 +47,14 @@ export interface ClusterUserDefinedNetwork extends K8sResourceCommon {
                 physicalNetworkName: string;
                 vlan?: { access: { id: number } };
             };
+            layer2?: {
+                subnets?: string[];
+                joinSubnets?: string[];
+            };
+            layer3?: {
+                subnets?: string[];
+                joinSubnets?: string[];
+            };
         };
     };
     status?: {
@@ -57,5 +65,18 @@ export interface ClusterUserDefinedNetwork extends K8sResourceCommon {
 export interface NetworkAttachmentDefinition extends K8sResourceCommon {
     spec?: {
         config: string;
+    };
+}
+
+export interface RouteAdvertisements extends K8sResourceCommon {
+    spec?: {
+        networkSelectors?: {
+            clusterUserDefinedNetworkSelector?: {
+                networkSelector?: {
+                    matchLabels?: { [key: string]: string };
+                    matchExpressions?: { key: string; operator: string; values: string[] }[];
+                };
+            };
+        }[];
     };
 }
