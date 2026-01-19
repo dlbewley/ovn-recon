@@ -369,29 +369,110 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         },
         vrf: {
             label: 'VRF',
-            renderDetails: (node) => (
-                <DescriptionList isCompact>
-                    {node.raw?.['ovn-port'] && (
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>OVN Port</DescriptionListTerm>
-                            <DescriptionListDescription>{node.raw['ovn-port']}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                    )
-                    }
-                    {
-                        node.raw?.['route-table-id'] && (
+            renderDetails: (node) => {
+                const ra = routeAdvertisements?.find(r => {
+                    const raName = r.metadata?.name || '';
+                    const truncatedRaName = raName.substring(0, 15);
+                    return raName === node.raw.name || truncatedRaName === node.raw.name;
+                });
+
+                return (
+                    <DescriptionList isCompact>
+                        {node.raw?.['ovn-port'] && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>OVN Port</DescriptionListTerm>
+                                <DescriptionListDescription>{node.raw['ovn-port']}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {node.raw?.['route-table-id'] && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>Route Table ID</DescriptionListTerm>
                                 <DescriptionListDescription>{node.raw['route-table-id']}</DescriptionListDescription>
                             </DescriptionListGroup>
-                        )
-                    }
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>State</DescriptionListTerm>
-                        <DescriptionListDescription>{node.state}</DescriptionListDescription>
-                    </DescriptionListGroup>
-                </DescriptionList >
-            )
+                        )}
+                        {ra && (
+                            <>
+                                <DescriptionListGroup>
+                                    <DescriptionListTerm>Route Advertisement</DescriptionListTerm>
+                                    <DescriptionListDescription>
+                                        <ul className="pf-v6-c-list">
+                                            <li>
+                                                <a
+                                                    href={`/k8s/cluster/k8s.ovn.org~v1~RouteAdvertisements/${ra.metadata?.name}`}
+                                                    className="pf-v6-c-button pf-m-link pf-m-inline"
+                                                >
+                                                    {ra.metadata?.name}
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </DescriptionListDescription>
+                                </DescriptionListGroup>
+                                {(() => {
+                                    const matchedCudns = cudns.filter(cudn => {
+                                        const topology = cudn.spec?.network?.topology;
+                                        if (topology !== 'Layer2' && topology !== 'Layer3') return false;
+
+                                        return ra.spec?.networkSelectors?.some(selector => {
+                                            const selectorSpec = selector.clusterUserDefinedNetworkSelector?.networkSelector;
+                                            if (!selectorSpec) return false;
+                                            const cudnLabels = cudn.metadata?.labels || {};
+
+                                            // Check matchLabels
+                                            if (selectorSpec.matchLabels) {
+                                                if (!Object.entries(selectorSpec.matchLabels).every(([key, value]) => cudnLabels[key] === value)) {
+                                                    return false;
+                                                }
+                                            }
+
+                                            // Check matchExpressions
+                                            if (selectorSpec.matchExpressions) {
+                                                const expressionsMatch = selectorSpec.matchExpressions.every((expr: { key: string; operator: string; values: string[] }) => {
+                                                    const labelValue = cudnLabels[expr.key];
+                                                    if (expr.operator === 'In') return expr.values.includes(labelValue);
+                                                    if (expr.operator === 'NotIn') return !expr.values.includes(labelValue);
+                                                    if (expr.operator === 'Exists') return Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
+                                                    if (expr.operator === 'DoesNotExist') return !Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
+                                                    return false;
+                                                });
+                                                if (!expressionsMatch) return false;
+                                            }
+
+                                            return true;
+                                        });
+                                    });
+
+                                    if (matchedCudns.length > 0) {
+                                        return (
+                                            <DescriptionListGroup>
+                                                <DescriptionListTerm>Matched CUDNs</DescriptionListTerm>
+                                                <DescriptionListDescription>
+                                                    <ul className="pf-v6-c-list">
+                                                        {matchedCudns.map(cudn => (
+                                                            <li key={cudn.metadata?.name}>
+                                                                <a
+                                                                    href={`/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/${cudn.metadata?.name}`}
+                                                                    className="pf-v6-c-button pf-m-link pf-m-inline"
+                                                                >
+                                                                    {cudn.metadata?.name}
+                                                                </a>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </DescriptionListDescription>
+                                            </DescriptionListGroup>
+                                        );
+                                    }
+                                    return null;
+                                })()}
+                            </>
+                        )}
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>State</DescriptionListTerm>
+                            <DescriptionListDescription>{node.state}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                    </DescriptionList >
+                );
+            }
         },
         other: {
             label: 'Other'
