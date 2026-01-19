@@ -241,6 +241,25 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                             <DescriptionListTerm>Topology</DescriptionListTerm>
                             <DescriptionListDescription>{topology || 'Unknown'}</DescriptionListDescription>
                         </DescriptionListGroup>
+
+                        {(topology === 'Layer2' || topology === 'Layer3') && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Subnets</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    {(topology === 'Layer2' ? node.raw?.spec?.network?.layer2?.subnets : node.raw?.spec?.network?.layer3?.subnets)?.join(', ') || '-'}
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+
+                        {(node.raw?.spec?.network?.localNet?.vlan?.access?.id || node.raw?.spec?.network?.localnet?.vlan?.access?.id) && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>VLAN ID</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    {node.raw?.spec?.network?.localNet?.vlan?.access?.id || node.raw?.spec?.network?.localnet?.vlan?.access?.id}
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+
                         {node.raw?.spec?.network?.localNet?.physicalNetworkName && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>Physical Network</DescriptionListTerm>
@@ -253,6 +272,39 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 <DescriptionListDescription>{node.raw.spec.network.localnet.physicalNetworkName}</DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
+
+                        {(() => {
+                            const condition = node.raw?.status?.conditions?.find((c: { type: string; status: string }) => c.type === 'NetworkCreated' && c.status === 'True');
+                            if (condition && condition.message) {
+                                const match = condition.message.match(/\[(.*?)\]/);
+                                if (match && match[1]) {
+                                    const namespaces = match[1].split(',').map((ns: string) => ns.trim()).sort();
+                                    if (namespaces.length > 0) {
+                                        return (
+                                            <DescriptionListGroup>
+                                                <DescriptionListTerm>Associated Namespaces</DescriptionListTerm>
+                                                <DescriptionListDescription>
+                                                    <ul className="pf-v6-c-list">
+                                                        {namespaces.map((ns: string) => (
+                                                            <li key={ns}>
+                                                                <a
+                                                                    href={`/k8s/ns/${ns}/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/${node.raw.metadata.name}`}
+                                                                    className="pf-v6-c-button pf-m-link pf-m-inline"
+                                                                >
+                                                                    {ns}
+                                                                </a>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </DescriptionListDescription>
+                                            </DescriptionListGroup>
+                                        );
+                                    }
+                                }
+                            }
+                            return null;
+                        })()}
+
                         {matchingRAs.length > 0 && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>Route Advertisements</DescriptionListTerm>

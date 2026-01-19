@@ -47,6 +47,14 @@ export interface ClusterUserDefinedNetwork extends K8sResourceCommon {
                 physicalNetworkName: string;
                 vlan?: { access: { id: number } };
             };
+            layer2?: {
+                subnets?: string[];
+                joinSubnets?: string[];
+            };
+            layer3?: {
+                subnets?: string[];
+                joinSubnets?: string[];
+            };
         };
     };
     status?: {
