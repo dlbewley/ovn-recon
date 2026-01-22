@@ -11,6 +11,7 @@ metadata:
     documentation: https://github.com/dlbewley/ovn-recon/tree/main/docs
     repository: https://github.com/dlbewley/ovn-recon
     support: https://github.com/dlbewley/ovn-recon/issues
+    operatorframework.io/suggested-namespace: ovn-recon
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
@@ -35,9 +36,9 @@ spec:
       deployments: null
     strategy: ""
   installModes:
-  - supported: false
+  - supported: true
     type: OwnNamespace
-  - supported: false
+  - supported: true
     type: SingleNamespace
   - supported: false
     type: MultiNamespace
