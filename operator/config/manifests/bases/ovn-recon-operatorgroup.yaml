@@ -2,5 +2,5 @@ apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
   name: ovn-recon-operator
-  namespace: ovn-recon-operator
+  namespace: ovn-recon
 spec: {}
