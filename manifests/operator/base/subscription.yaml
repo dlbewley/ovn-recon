@@ -4,11 +4,11 @@ metadata:
   labels:
     operators.coreos.com/ovn-recon-operator.ovn-recon-operator: ""
   name: ovn-recon-operator
-  namespace: ovn-recon-operator
+  namespace: ovn-recon
 spec:
   channel: stable
   installPlanApproval: Automatic
   name: ovn-recon-operator
   source: bewley-operators
   sourceNamespace: openshift-marketplace
-  startingCSV: ovn-recon-operator.v0.0.5
+  startingCSV: ovn-recon-operator.v0.1.5

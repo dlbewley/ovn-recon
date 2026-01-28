@@ -31,16 +31,16 @@ import (
 )
 
 // namespace where the project is deployed in
-const namespace = "operator-system"
+const namespace = "ovn-recon"
 
 // serviceAccountName created for the project
-const serviceAccountName = "operator-controller-manager"
+const serviceAccountName = "ovn-recon-controller-manager"
 
 // metricsServiceName is the name of the metrics service of the project
-const metricsServiceName = "operator-controller-manager-metrics-service"
+const metricsServiceName = "ovn-recon-controller-manager-metrics-service"
 
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
-const metricsRoleBindingName = "operator-metrics-binding"
+const metricsRoleBindingName = "ovn-recon-metrics-binding"
 
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string

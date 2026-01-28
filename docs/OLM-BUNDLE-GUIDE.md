@@ -163,7 +163,7 @@ kubectl get catalogsource -n openshift-marketplace bewley-operators
 Create the operator namespace (required before creating the Subscription):
 
 ```bash
-kubectl create namespace ovn-recon-operator
+kubectl create namespace ovn-recon
 ```
 
 Create a `Subscription` resource:
@@ -175,14 +175,14 @@ metadata:
   labels:
     operators.coreos.com/ovn-recon-operator.ovn-recon-operator: ""
   name: ovn-recon-operator
-  namespace: ovn-recon-operator
+  namespace: ovn-recon
 spec:
   channel: stable
   installPlanApproval: Automatic
   name: ovn-recon-operator
   source: bewley-operators
   sourceNamespace: openshift-marketplace
-  startingCSV: ovn-recon-operator.v0.0.5
+  startingCSV: ovn-recon-operator.v0.1.5
   installPlanApproval: Automatic  # or Manual for approval workflow
 ```
 
@@ -197,19 +197,19 @@ kubectl apply -f subscription.yaml
 Check the subscription status:
 
 ```bash
-kubectl get subscription -n ovn-recon-operator ovn-recon-operator
+kubectl get subscription -n ovn-recon ovn-recon-operator
 ```
 
 Check the operator installation:
 
 ```bash
-kubectl get csv -n ovn-recon-operator | grep ovn-recon
+kubectl get csv -n ovn-recon | grep ovn-recon
 ```
 
 Check the operator pod:
 
 ```bash
-kubectl get pods -n ovn-recon-operator | grep ovn-recon
+kubectl get pods -n ovn-recon | grep ovn-recon
 ```
 
 ### Method 2: Using OperatorHub (Community Operators)
@@ -220,7 +220,7 @@ If you've published to OperatorHub.io, users can install directly from the Opera
 2. Navigate to **Operators** → **OperatorHub**
 3. Search for "OVN Recon"
 4. Click **Install**
-5. Select namespace and approval strategy (use `ovn-recon-operator` for the install namespace)
+5. Select namespace and approval strategy (use `ovn-recon` for the install namespace)
 6. Click **Subscribe**
 
 ### Method 3: Direct Bundle Installation (Development/Testing)
@@ -321,13 +321,13 @@ If subscription fails:
 
 ```bash
 # Check subscription status
-kubectl describe subscription -n ovn-recon-operator ovn-recon-operator
+kubectl describe subscription -n ovn-recon ovn-recon-operator
 
 # Check install plan
-kubectl get installplan -n ovn-recon-operator
+kubectl get installplan -n ovn-recon
 
 # Check CSV status
-kubectl get csv -n ovn-recon-operator ovn-recon-operator.v0.0.1 -o yaml
+kubectl get csv -n ovn-recon ovn-recon-operator.v0.0.1 -o yaml
 ```
 
 ## Updating the Operator
