@@ -32,6 +32,20 @@ jobs:
         chmod +x operator-sdk
         sudo mv operator-sdk /usr/local/bin/
 
+    - name: Set Release Metadata
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        echo "VERSION_NUM=${VERSION#v}" >> $GITHUB_ENV
+        if [[ "$VERSION" == *"-"* ]]; then
+          # Set pre-release images to expire in 30 days in Quay
+          EXPIRY_TIME=$(date -d "30 days" +%s)
+          echo "EXPIRY_LABEL=--label quay.expires-at=$EXPIRY_TIME" >> $GITHUB_ENV
+        else
+          echo "EXPIRY_LABEL=" >> $GITHUB_ENV
+        fi
+
     - name: Build
       run: |
         cd operator
@@ -46,9 +60,8 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
         cd operator
-        VERSION=${GITHUB_REF#refs/tags/}
-        echo "Building version $VERSION"
-        docker build -t quay.io/dbewley/ovn-recon-operator:$VERSION .
+        echo "Building version $VERSION with $EXPIRY_LABEL"
+        make docker-build IMG=quay.io/dbewley/ovn-recon-operator:$VERSION BUILD_ARGS="$EXPIRY_LABEL"
         if [[ "$VERSION" != *"-"* ]]; then
           docker tag quay.io/dbewley/ovn-recon-operator:$VERSION quay.io/dbewley/ovn-recon-operator:latest
         fi
@@ -64,7 +77,6 @@ jobs:
     - name: Push Operator Image
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
-        VERSION=${GITHUB_REF#refs/tags/}
         docker push quay.io/dbewley/ovn-recon-operator:$VERSION
         if [[ "$VERSION" != *"-"* ]]; then
           docker push quay.io/dbewley/ovn-recon-operator:latest
@@ -75,12 +87,10 @@ jobs:
       run: |
         set -o pipefail
         cd operator
-        VERSION=${GITHUB_REF#refs/tags/}
 
         # Update operator version in manager.yaml so controller defaults to this version
         sed -i "s/value: dev/value: ${VERSION}/" config/manager/manager.yaml
 
-        VERSION_NUM=${VERSION#v}  # Remove 'v' prefix for bundle version
         IMG=quay.io/dbewley/ovn-recon-operator:$VERSION
         # Prepare prerequisites - these will create bin/kustomize and ensure operator-sdk is available
         make manifests
@@ -92,7 +102,6 @@ jobs:
           exit 1
         fi
         # Use system-installed operator-sdk (installed to /usr/local/bin in previous step)
-        # Do not regenerate CSV here; rely on the committed CSV in config/manifests/bases.
         # Update manager image in kustomize config
         cd config/manager && ../../bin/kustomize edit set image controller=$IMG
         cd ../..
@@ -119,15 +128,12 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
         cd operator
-        VERSION=${GITHUB_REF#refs/tags/}
         BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:$VERSION
-        make bundle-build BUNDLE_IMG=$BUNDLE_IMG
+        make bundle-build BUNDLE_IMG=$BUNDLE_IMG BUILD_ARGS="$EXPIRY_LABEL"
 
     - name: Push Bundle Image
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
-        cd operator
-        VERSION=${GITHUB_REF#refs/tags/}
         BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:$VERSION
         docker push $BUNDLE_IMG
         if [[ "$VERSION" != *"-"* ]]; then
@@ -139,7 +145,6 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
         cd operator
-        VERSION=${GITHUB_REF#refs/tags/}
         BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:$VERSION
         CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
         # Try to pull existing catalog to add to it, but don't fail if it doesn't exist (first release)
@@ -155,7 +160,6 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
         cd operator
-        VERSION=${GITHUB_REF#refs/tags/}
         CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
         make catalog-push CATALOG_IMG=$CATALOG_IMG
         # Also tag as latest for non-prerelease versions
