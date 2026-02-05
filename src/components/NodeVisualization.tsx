@@ -386,7 +386,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                         )}
                         {node.raw?.vrf?.['route-table-id'] && (
                             <DescriptionListGroup>
-                                <DescriptionListTerm>Route Table ID</DescriptionListTerm>
+                                <DescriptionListTerm>Route Table</DescriptionListTerm>
                                 <DescriptionListDescription>{node.raw.vrf['route-table-id']}</DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
@@ -466,10 +466,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 })()}
                             </>
                         )}
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>State</DescriptionListTerm>
-                            <DescriptionListDescription>{node.state}</DescriptionListDescription>
-                        </DescriptionListGroup>
+
                     </DescriptionList >
                 );
             }
@@ -1466,9 +1463,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             subtitle = 'VRF Interface';
             graphDisplayLabel = 'VRF';
             const details: string[] = [];
-            if (iface.vrf?.port) details.push(`Port: ${Array.isArray(iface.vrf.port) ? iface.vrf.port.join(', ') : iface.vrf.port}`);
-            if (iface.vrf?.['route-table-id']) details.push(`RT: ${iface.vrf['route-table-id']}`);
-            state = details.length > 0 ? details.join(', ') : iface.state;
+            if (iface.vrf?.port) details.push(`${Array.isArray(iface.vrf.port) ? iface.vrf.port.join(', ') : iface.vrf.port}`);
+            if (iface.vrf?.['route-table-id']) details.push(`Tbl ${iface.vrf['route-table-id']}`);
+            state = details.length > 0 ? details.join(' ') : iface.state;
         } else if (type === 'cudn') {
             label = iface.metadata?.name || '';
             title = iface.metadata?.name || '';
@@ -1665,7 +1662,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         <DescriptionListTerm>CUDN</DescriptionListTerm>
                                         <DescriptionListDescription>{activeNode.badges?.find((b) => b.startsWith('CUDN:'))?.split(':')[1] || 'N/A'}</DescriptionListDescription>
                                     </DescriptionListGroup>
-                                    {activeNode.state && (
+                                    {activeNode.state && activeNode.kind !== 'vrf' && (
                                         <DescriptionListGroup>
                                             <DescriptionListTerm>State</DescriptionListTerm>
                                             <DescriptionListDescription>{activeNode.state}</DescriptionListDescription>
