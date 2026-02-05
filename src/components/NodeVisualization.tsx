@@ -378,16 +378,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
                 return (
                     <DescriptionList isCompact>
-                        {node.raw?.['ovn-port'] && (
+                        {node.raw?.vrf?.port && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>OVN Port</DescriptionListTerm>
-                                <DescriptionListDescription>{node.raw['ovn-port']}</DescriptionListDescription>
+                                <DescriptionListDescription>{Array.isArray(node.raw.vrf.port) ? node.raw.vrf.port.join(', ') : node.raw.vrf.port}</DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
-                        {node.raw?.['route-table-id'] && (
+                        {node.raw?.vrf?.['route-table-id'] && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>Route Table ID</DescriptionListTerm>
-                                <DescriptionListDescription>{node.raw['route-table-id']}</DescriptionListDescription>
+                                <DescriptionListDescription>{node.raw.vrf['route-table-id']}</DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
                         {ra && (
@@ -1426,8 +1426,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             subtitle = 'VRF Interface';
             graphDisplayLabel = 'VRF';
             const details: string[] = [];
-            if (iface['ovn-port']) details.push(`Port: ${iface['ovn-port']}`);
-            if (iface['route-table-id']) details.push(`RT: ${iface['route-table-id']}`);
+            if (iface.vrf?.port) details.push(`Port: ${Array.isArray(iface.vrf.port) ? iface.vrf.port.join(', ') : iface.vrf.port}`);
+            if (iface.vrf?.['route-table-id']) details.push(`RT: ${iface.vrf['route-table-id']}`);
             state = details.length > 0 ? details.join(', ') : iface.state;
         } else if (type === 'cudn') {
             label = iface.metadata?.name || '';
@@ -1440,6 +1440,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 const vlan = iface.spec?.network?.localnet?.vlan?.access?.id;
                 if (vlan) {
                     state += ` VLAN ${vlan}`;
+                }
+            } else if (iface.spec?.network?.topology === 'Layer2' || iface.spec?.network?.topology === 'Layer3') {
+                const subnets = iface.spec?.network?.topology === 'Layer2'
+                    ? iface.spec?.network?.layer2?.subnets
+                    : iface.spec?.network?.layer3?.subnets;
+                if (subnets && subnets.length > 0) {
+                    state += ` ${subnets.join(', ')}`;
                 }
             }
             if (iface.metadata?.name) {
