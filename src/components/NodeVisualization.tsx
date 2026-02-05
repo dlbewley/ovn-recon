@@ -540,17 +540,50 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const vrfInterfaces = interfaces.filter((iface: Interface) => iface.type === 'vrf');
     const vlanInterfaces = interfaces.filter((iface: Interface) => iface.type === 'vlan' || iface.type === 'mac-vlan'); // Includes mac-vlan
 
+    const explicitBridgeNames = new Set(interfaces.filter(i => ['linux-bridge', 'ovs-bridge', 'openvswitch'].includes(i.type)).map(i => i.name));
+
+    const resolveNodeId = (iface: any, type: string) => {
+        if (type === 'ovn-mapping') return `ovn-${iface.localnet}`;
+        if (type === 'cudn') return `cudn-${iface.metadata?.name}`;
+        if (type === 'attachment') return `attachment-${iface.cudn}`;
+        if (type === 'nad') return getNadNodeId(iface);
+        // Special handling for ovs-interface with same name as a bridge
+        if (type === 'ovs-interface' && explicitBridgeNames.has(iface.name)) {
+            return `interface-${iface.name}`;
+        }
+        return iface.name;
+    };
+
     const isBridge = (iface: Interface) => {
-        if (['linux-bridge', 'ovs-bridge'].includes(iface.type)) return true;
+        if (['linux-bridge', 'ovs-bridge', 'openvswitch'].includes(iface.type)) return true;
+
         // ovs-interface is a bridge if it is a controller AND does NOT have a patch
-        if (iface.type === 'ovs-interface' && controllerNames.has(iface.name) && !iface.patch && iface.state !== 'ignore') return true;
+        if (iface.type === 'ovs-interface' && controllerNames.has(iface.name) && !iface.patch && iface.state !== 'ignore') {
+            // CRITICAL: If there is an explicit bridge with this name, this ovs-interface is NOT the bridge.
+            // It is the internal interface of the bridge.
+            if (explicitBridgeNames.has(iface.name)) return false;
+            return true;
+        }
         return false;
     };
 
     const bridgeInterfaces = interfaces.filter(isBridge);
 
     // Logical interfaces: ovs-interface that are NOT bridges and NOT ignored
-    const logicalInterfaces = interfaces.filter((iface: Interface) => iface.type === 'ovs-interface' && !isBridge(iface) && iface.state !== 'ignore' && !iface.name.startsWith('patch'));
+    const logicalInterfaces = interfaces.filter((iface: Interface) => {
+        if (iface.type !== 'ovs-interface') return false;
+        if (iface.state === 'ignore') return false;
+        if (iface.name.startsWith('patch')) return false;
+
+        // Condition 1: It is NOT considered a bridge
+        if (!isBridge(iface)) return true;
+
+        // Condition 2: It MIGHT be considered a bridge by heuristic, BUT we want to forcefully include it
+        // if it shadows an explicit bridge.
+        if (explicitBridgeNames.has(iface.name)) return true;
+
+        return false;
+    });
 
     const otherInterfaces = interfaces.filter((iface: Interface) => !['ethernet', 'bond', 'vlan', 'mac-vlan', 'vrf'].includes(iface.type) && !isBridge(iface) && iface.type !== 'ovs-interface');
 
@@ -566,7 +599,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     ];
 
     // Filter columns based on showHiddenColumns
-    const visibleColumns = showHiddenColumns ? columns : columns.filter(col => col.data.length > 0);
+    const visibleColumns = showHiddenColumns ? columns : columns.filter(col => col.data.length > 0 && col.key !== 'logical');
 
     // Attachments (from CUDN status) - AGGREGATED
     const attachmentNodes: AttachmentNode[] = [];
@@ -931,14 +964,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     if (showHiddenColumns || ethInterfaces.length > 0) {
         sortedEthInterfaces.forEach((iface: Interface, index: number) => {
             const colOffset = visibleColumns.findIndex(col => col.key === 'eth');
-            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+            nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
         });
     }
 
     if (showHiddenColumns || bondInterfaces.length > 0) {
         sortedBondInterfaces.forEach((iface: Interface, index: number) => {
             const colOffset = visibleColumns.findIndex(col => col.key === 'bond');
-            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+            nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
         });
     }
 
@@ -947,7 +980,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     if (showHiddenColumns || vlanInterfaces.length > 0) {
         sortedVlanInterfaces.forEach((iface: Interface, index: number) => {
             const colOffset = visibleColumns.findIndex(col => col.key === 'vlan');
-            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+            nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
         });
     }
 
@@ -955,7 +988,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         const colOffset = visibleColumns.findIndex(col => col.key === 'bridge');
         if (colOffset >= 0) {
             sortedBridgeInterfaces.forEach((iface: Interface, index: number) => {
-                nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
             });
         }
     }
@@ -963,7 +996,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     if (showHiddenColumns || logicalInterfaces.length > 0) {
         sortedLogicalInterfaces.forEach((iface: Interface, index: number) => {
             const colOffset = visibleColumns.findIndex(col => col.key === 'logical');
-            nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+            nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
         });
     }
 
@@ -989,7 +1022,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
             // Stack VRFs below
             sortedVrfInterfaces.forEach((iface: Interface) => {
-                nodePositions[iface.name] = { x: padding + (colOffset * colSpacing), y: currentY };
+                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: currentY };
                 currentY += (itemHeight + 20);
             });
         }
@@ -1026,14 +1059,25 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
         // 1. Interfaces (Physical, Bond, VLAN, Bridge, Logical)
         interfaces.forEach((iface: Interface) => {
-            addNode(iface.name);
+            addNode(resolveNodeId(iface, iface.type));
             // Upstream: master/controller
             const master = iface.controller || iface.master;
-            if (master) addEdge(iface.name, master);
+            if (master) {
+                // Master usually refers to a bridge or bond.
+                // If master is 'br-ex', we typically want to point to the Bridge 'br-ex' (id: 'br-ex')
+                // NOT the interface 'br-ex' (id: 'interface-br-ex').
+                // Since resolveNodeId returns 'br-ex' for Bridge types (since iface.name is br-ex and type is bridge), and masters are just names...
+                // Connection targets usually refer to the "main" entity (bridge/bond).
+                addNode(master); // Assume master is a bridge or bond ID (simple name)
+                addEdge(resolveNodeId(iface, iface.type), master);
+            }
 
             // Upstream: base-iface (VLAN/MAC-VLAN)
             const baseIface = iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'];
-            if (baseIface) addEdge(baseIface, iface.name); // Correct direction: Base -> VLAN
+            if (baseIface) {
+                addNode(baseIface);
+                addEdge(baseIface, resolveNodeId(iface, iface.type)); // Correct direction: Base -> VLAN
+            }
         });
 
         // 2. Bridge Mappings (Bridge -> OVN Localnet)
@@ -1123,7 +1167,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
                             if (isSelected) {
                                 const cudnNodeId = `cudn-${cudn.metadata?.name}`;
-                                addEdge(vrf.name, cudnNodeId);
+                                if (isSelected) {
+                                    const cudnNodeId = `cudn-${cudn.metadata?.name}`;
+                                    addEdge(resolveNodeId(vrf, vrf.type), cudnNodeId);
+                                }
                             }
                         }
                     });
@@ -1379,14 +1426,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         setAnchorElement(null);
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resolveNodeId = (iface: any, type: string) => {
-        if (type === 'ovn-mapping') return `ovn-${iface.localnet}`;
-        if (type === 'cudn') return `cudn-${iface.metadata?.name}`;
-        if (type === 'attachment') return `attachment-${iface.cudn}`;
-        if (type === 'nad') return getNadNodeId(iface);
-        return iface.name;
-    };
+
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const buildNodeViewModel = (iface: any, type: string): NodeViewModel => {
@@ -1908,34 +1948,34 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         <React.Fragment key={col.key}>
                                             {col.key !== 'l3' && <text x={xPos} y={padding - 10} fontWeight="bold" fill="currentColor">{col.name}</text>}
                                             {col.key === 'eth' && sortedEthInterfaces
-                                                .filter((iface: Interface) => nodePositions[iface.name])
+                                                .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
                                                 .map((iface: Interface, renderIndex: number) => {
-                                                    const pos = nodePositions[iface.name];
+                                                    const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0066CC');
                                                 })}
                                             {col.key === 'bond' && sortedBondInterfaces
-                                                .filter((iface: Interface) => nodePositions[iface.name])
+                                                .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
                                                 .map((iface: Interface, renderIndex: number) => {
-                                                    const pos = nodePositions[iface.name];
+                                                    const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#663399');
                                                 })}
                                             {col.key === 'vlan' && sortedVlanInterfaces
-                                                .filter((iface: Interface) => nodePositions[iface.name])
+                                                .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
                                                 .map((iface: Interface, renderIndex: number) => {
-                                                    const pos = nodePositions[iface.name];
+                                                    const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#9933CC');
                                                 })}
                                             {col.key === 'bridge' && sortedBridgeInterfaces
-                                                .filter((iface: Interface) => nodePositions[iface.name])
+                                                .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
                                                 .map((iface: Interface, renderIndex: number) => {
-                                                    const pos = nodePositions[iface.name];
+                                                    const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     // Recalculate Y position based on render index to eliminate gaps
                                                     return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#FF6600');
                                                 })}
                                             {col.key === 'logical' && sortedLogicalInterfaces
-                                                .filter((iface: Interface) => nodePositions[iface.name])
+                                                .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
                                                 .map((iface: Interface, renderIndex: number) => {
-                                                    const pos = nodePositions[iface.name];
+                                                    const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0099CC');
                                                 })}
                                             {col.key === 'l3' && (
