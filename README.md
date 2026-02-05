@@ -34,6 +34,20 @@ The plugin watches these resources in real-time and renders an interactive topol
 
 ### Operator Installation (recommended)
 
+
+#### GUI Operator Installation Method
+
+- Click the ➕ icon at the top right of the OpenShift Console
+- Select "Import YAML"
+- Paste in this YAML: <https://raw.githubusercontent.com/dlbewley/ovn-recon/refs/heads/main/manifests/catalogsource.yaml>
+- After a few moments navigate to "Ecosystem -> Software Catalog" (or Operator Hub in older versions)
+- Search for "OVN Recon Operator"
+- Click install and accept the defaults
+- After a few moments click the tile to create a "ovnrecon" resource and accept the defaults
+- After a few more moments a new "OVN Recon" menu will show up within the Networking menu.
+
+#### CLI Operator Installation Method
+
 Create the Bewley Operators [catalog source](manifests/catalogsource.yaml)
 
 ```bash
