@@ -63,10 +63,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         renderDetails?: (node: NodeViewModel) => React.ReactNode;
     }
 
-    const parseNadConfig = (configString?: string) => {
-        if (!configString) return null;
+    /** Parse NAD spec.config; accepts string (JSON) or already-parsed object from the API. */
+    const parseNadConfig = (config: string | Record<string, unknown> | undefined): Record<string, unknown> | null => {
+        if (config == null) return null;
+        if (typeof config === 'object' && config !== null && !Array.isArray(config)) {
+            return config as Record<string, unknown>;
+        }
+        if (typeof config !== 'string') return null;
         try {
-            return JSON.parse(configString);
+            const parsed = JSON.parse(config);
+            return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : null;
         } catch {
             return null;
         }
@@ -635,6 +641,51 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         return undefined;
     };
 
+    /** Upstream node ids for a NAD: bridge name (when type=bridge/cnv-bridge) and/or ovn-${physicalNetworkName}. */
+    const getNadUpstreamNodeIds = (nad: NetworkAttachmentDefinition): string[] => {
+        const rawConfig = nad.spec?.config;
+        const config = parseNadConfig(rawConfig);
+        const upstream: string[] = [];
+
+        if (config) {
+            const nadType = typeof config.type === 'string' ? config.type : '';
+            if ((nadType === 'bridge' || nadType === 'cnv-bridge') && typeof config.bridge === 'string') {
+                upstream.push(config.bridge);
+            }
+            if (typeof config.physicalNetworkName === 'string') {
+                upstream.push(`ovn-${config.physicalNetworkName}`);
+            }
+        }
+
+        if (upstream.length > 0) return upstream;
+
+        // Fallback: extract bridge/type from raw config string when parse fails (e.g. multiline YAML, encoding)
+        const configStr = typeof rawConfig === 'string' ? rawConfig : '';
+        if (!configStr) return [];
+        const typeMatch = configStr.match(/"type"\s*:\s*"([^"]+)"/);
+        const bridgeMatch = configStr.match(/"bridge"\s*:\s*"([^"]+)"/);
+        const nadType = typeMatch ? typeMatch[1] : '';
+        const bridgeName = bridgeMatch ? bridgeMatch[1] : '';
+        if ((nadType === 'bridge' || nadType === 'cnv-bridge') && bridgeName) {
+            upstream.push(bridgeName);
+        }
+        const physMatch = configStr.match(/"physicalNetworkName"\s*:\s*"([^"]+)"/);
+        if (physMatch && physMatch[1]) {
+            upstream.push(`ovn-${physMatch[1]}`);
+        }
+        return upstream;
+    };
+
+    /** Upstream node ids used for drawing edges. When the NAD is CUDN-backed, we do not link to bridge-mapping (ovn-*). */
+    const getNadUpstreamNodeIdsForEdges = (nad: NetworkAttachmentDefinition): string[] => {
+        const upstream = getNadUpstreamNodeIds(nad);
+        const cudnName = findCudnNameForNad(nad);
+        if (cudnName) {
+            return upstream.filter((id) => !id.startsWith('ovn-'));
+        }
+        return upstream;
+    };
+
     // Path-aware gravity calculation to minimize edge crossings
     // Build connection graph for path finding
     const connectionGraph: Record<string, string[]> = {};
@@ -678,6 +729,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             if (cudnName) {
                 addConnectionEdge(`cudn-${cudnName}`, nadNodeId);
             }
+            getNadUpstreamNodeIdsForEdges(nad).forEach((upstreamId) => addConnectionEdge(upstreamId, nadNodeId));
         });
     }
 
@@ -1100,7 +1152,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             addEdge(cudnNodeId, attachmentNodeId); // Flow: CUDN -> Attachment
         });
 
-        // 5. NADs (optional CUDN -> NAD)
+        // 5. NADs (optional CUDN -> NAD, and upstream bridge / bridge-mapping -> NAD)
         if (showNads) {
             nads.forEach((nad: NetworkAttachmentDefinition) => {
                 const nadNodeId = getNadNodeId(nad);
@@ -1109,6 +1161,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 if (cudnName) {
                     addEdge(`cudn-${cudnName}`, nadNodeId);
                 }
+                getNadUpstreamNodeIdsForEdges(nad).forEach((upstreamId) => addEdge(upstreamId, nadNodeId));
             });
         }
 
@@ -1930,12 +1983,24 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     }
                                     return null;
                                 })}
-                                {showNads && nads.map((nad: NetworkAttachmentDefinition) => {
+                                {showNads && nads.flatMap((nad: NetworkAttachmentDefinition) => {
+                                    const nadNodeId = getNadNodeId(nad);
+                                    const connectors: React.ReactNode[] = [];
                                     const cudnName = findCudnNameForNad(nad);
                                     if (cudnName && nodePositions[`cudn-${cudnName}`]) {
-                                        return renderConnector(`cudn-${cudnName}`, getNadNodeId(nad));
+                                        connectors.push(<React.Fragment key={`nad-${nadNodeId}-cudn`}>{renderConnector(`cudn-${cudnName}`, nadNodeId)}</React.Fragment>);
                                     }
-                                    return null;
+                                    getNadUpstreamNodeIdsForEdges(nad).forEach((upstreamId) => {
+                                        const renderFromId = nodePositions[upstreamId]
+                                            ? upstreamId
+                                            : !upstreamId.startsWith('ovn-') && nodePositions[`interface-${upstreamId}`]
+                                                ? `interface-${upstreamId}`
+                                                : null;
+                                        if (renderFromId) {
+                                            connectors.push(<React.Fragment key={`nad-${nadNodeId}-up-${upstreamId}`}>{renderConnector(renderFromId, nadNodeId)}</React.Fragment>);
+                                        }
+                                    });
+                                    return connectors;
                                 })}
 
                                 {/* Render visible columns dynamically */}
