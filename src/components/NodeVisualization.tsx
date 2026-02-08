@@ -7,25 +7,27 @@ import { NetworkIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
 import * as yaml from 'js-yaml';
 
-import { NodeNetworkState, ClusterUserDefinedNetwork, Interface, OvnBridgeMapping, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
+import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, Interface, OvnBridgeMapping, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
     cudns?: ClusterUserDefinedNetwork[];
+    udns?: UserDefinedNetwork[];
     nads?: NetworkAttachmentDefinition[];
     routeAdvertisements?: RouteAdvertisements[];
 }
 
-const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], nads = [], routeAdvertisements = [] }) => {
+const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], udns = [], nads = [], routeAdvertisements = [] }) => {
     // Graph Types
     interface AttachmentNode {
         name: string;
         type: string;
         namespaces: string[];
-        cudn: string;
+        cudn?: string;
+        udnId?: string; // 'namespace-name' for UDN-backed attachments
     }
 
-    type NodeKind = 'interface' | 'ovn-mapping' | 'cudn' | 'attachment' | 'nad' | 'vrf' | 'other';
+    type NodeKind = 'interface' | 'ovn-mapping' | 'cudn' | 'udn' | 'attachment' | 'nad' | 'vrf' | 'other';
 
     interface ResourceRef {
         apiVersion: string;
@@ -63,10 +65,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         renderDetails?: (node: NodeViewModel) => React.ReactNode;
     }
 
-    const parseNadConfig = (configString?: string) => {
-        if (!configString) return null;
+    /** Parse NAD spec.config; accepts string (JSON) or already-parsed object from the API. */
+    const parseNadConfig = (config: string | Record<string, unknown> | undefined): Record<string, unknown> | null => {
+        if (config == null) return null;
+        if (typeof config === 'object' && config !== null && !Array.isArray(config)) {
+            return config as Record<string, unknown>;
+        }
+        if (typeof config !== 'string') return null;
         try {
-            return JSON.parse(configString);
+            const parsed = JSON.parse(config);
+            return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : null;
         } catch {
             return null;
         }
@@ -87,6 +95,31 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         const namespace = nad.metadata?.namespace || 'default';
         return `nad-${namespace}-${name}`;
     };
+
+    const getUdnNodeId = (udn: UserDefinedNetwork) => {
+        const name = udn.metadata?.name || 'unknown-udn';
+        const namespace = udn.metadata?.namespace || 'default';
+        return `udn-${namespace}-${name}`;
+    };
+
+    const getUdnTopologyAndRole = (udn: UserDefinedNetwork): { topology: string; role: string } => {
+        // UserDefinedNetworkSpec: topology, layer2, layer3 are at spec level (not spec.network)
+        const topology = udn.spec?.topology || 'Unknown';
+        const role =
+            topology === 'Layer2' ? (udn.spec?.layer2?.role || 'Unknown')
+                : topology === 'Layer3' ? (udn.spec?.layer3?.role || 'Unknown')
+                    : 'Unknown';
+        return { topology, role };
+    };
+
+    const getAttachmentNodeId = (node: AttachmentNode) =>
+        node.udnId != null ? `attachment-udn-${node.udnId}` : `attachment-${node.cudn}`;
+
+    type NetworkColumnItem = { kind: 'cudn'; item: ClusterUserDefinedNetwork } | { kind: 'udn'; item: UserDefinedNetwork };
+    const getNetworkNodeId = (n: NetworkColumnItem) =>
+        n.kind === 'cudn' ? `cudn-${n.item.metadata?.name}` : getUdnNodeId(n.item);
+    const CUDN_NODE_COLOR = '#CC0099';
+    const UDN_NODE_COLOR = '#0084A8';
 
     const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
         interface: {
@@ -341,6 +374,47 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 );
             }
         },
+        udn: {
+            label: 'UDN',
+            renderDetails: (node) => {
+                const udn = node.raw as UserDefinedNetwork;
+                const namespace = udn?.metadata?.namespace || '';
+                const { topology, role } = getUdnTopologyAndRole(udn);
+                const name = udn?.metadata?.name || '';
+                const nadInNs = name && namespace ? nads.find((nad: NetworkAttachmentDefinition) => nad.metadata?.namespace === namespace && nad.metadata?.name === name) : undefined;
+                return (
+                    <DescriptionList isCompact>
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>Topology</DescriptionListTerm>
+                            <DescriptionListDescription>{topology}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>Namespace</DescriptionListTerm>
+                            <DescriptionListDescription>
+                                <a href={`/k8s/ns/${namespace}`} className="pf-v6-c-button pf-m-link pf-m-inline">{namespace}</a>
+                            </DescriptionListDescription>
+                        </DescriptionListGroup>
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>Role</DescriptionListTerm>
+                            <DescriptionListDescription>{role}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                        {nadInNs && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>NetworkAttachmentDefinition</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    <a
+                                        href={`/k8s/ns/${namespace}/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/${name}`}
+                                        className="pf-v6-c-button pf-m-link pf-m-inline"
+                                    >
+                                        {name}
+                                    </a>
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                    </DescriptionList>
+                );
+            }
+        },
         attachment: {
             label: 'Attachment',
             buildBadges: (node) => (node.isSynthetic ? ['synthetic', 'derived'] : [])
@@ -542,7 +616,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const resolveNodeId = (iface: any, type: string) => {
         if (type === 'ovn-mapping') return `ovn-${iface.localnet}`;
         if (type === 'cudn') return `cudn-${iface.metadata?.name}`;
-        if (type === 'attachment') return `attachment-${iface.cudn}`;
+        if (type === 'udn') return getUdnNodeId(iface);
+        if (type === 'attachment') return getAttachmentNodeId(iface);
         if (type === 'nad') return getNadNodeId(iface);
         // Special handling for ovs-interface with same name as a bridge
         if (type === 'ovs-interface' && explicitBridgeNames.has(iface.name)) {
@@ -585,6 +660,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const otherInterfaces = interfaces.filter((iface: Interface) => !['ethernet', 'bond', 'vlan', 'mac-vlan', 'vrf'].includes(iface.type) && !isBridge(iface) && iface.type !== 'ovs-interface');
 
     // Define columns with their data
+    const networkItems: NetworkColumnItem[] = [...cudns.map((c): NetworkColumnItem => ({ kind: 'cudn', item: c })), ...udns.map((u): NetworkColumnItem => ({ kind: 'udn', item: u }))];
     const columns = [
         { name: 'Physical Interfaces', data: ethInterfaces, key: 'eth' },
         { name: 'Bonds', data: bondInterfaces, key: 'bond' },
@@ -592,13 +668,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         { name: 'Bridges', data: bridgeInterfaces, key: 'bridge' },
         { name: 'Logical Interfaces', data: logicalInterfaces, key: 'logical' },
         { name: 'Layer 3', data: [...bridgeMappings, ...vrfInterfaces], key: 'l3' },
-        { name: 'Networks', data: cudns, key: 'cudn' },
+        { name: 'Networks', data: networkItems, key: 'cudn' },
     ];
 
     // Filter columns based on showHiddenColumns
     const visibleColumns = showHiddenColumns ? columns : columns.filter(col => col.data.length > 0 && col.key !== 'logical');
 
-    // Attachments (from CUDN status) - AGGREGATED
+    // Attachments (from CUDN status + one per UDN for controller-created NAD)
     const attachmentNodes: AttachmentNode[] = [];
     cudns.forEach((cudn: ClusterUserDefinedNetwork) => {
         const condition = cudn.status?.conditions?.find((c) => c.type === 'NetworkCreated' && c.status === 'True');
@@ -608,13 +684,25 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 const namespaces = match[1].split(',').map((ns: string) => ns.trim()).sort();
                 if (namespaces.length > 0) {
                     attachmentNodes.push({
-                        name: cudn.metadata?.name || '', // Name same as CUDN
+                        name: cudn.metadata?.name || '',
                         type: 'attachment',
-                        namespaces: namespaces, // List of namespaces
+                        namespaces: namespaces,
                         cudn: cudn.metadata?.name || ''
                     });
                 }
             }
+        }
+    });
+    udns.forEach((udn: UserDefinedNetwork) => {
+        const ns = udn.metadata?.namespace || 'default';
+        const name = udn.metadata?.name || '';
+        if (name) {
+            attachmentNodes.push({
+                name,
+                type: 'attachment',
+                namespaces: [ns],
+                udnId: `${ns}-${name}`
+            });
         }
     });
 
@@ -633,6 +721,51 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             if (configMatch) return configMatch;
         }
         return undefined;
+    };
+
+    /** Upstream node ids for a NAD: bridge name (when type=bridge/cnv-bridge) and/or ovn-${physicalNetworkName}. */
+    const getNadUpstreamNodeIds = (nad: NetworkAttachmentDefinition): string[] => {
+        const rawConfig = nad.spec?.config;
+        const config = parseNadConfig(rawConfig);
+        const upstream: string[] = [];
+
+        if (config) {
+            const nadType = typeof config.type === 'string' ? config.type : '';
+            if ((nadType === 'bridge' || nadType === 'cnv-bridge') && typeof config.bridge === 'string') {
+                upstream.push(config.bridge);
+            }
+            if (typeof config.physicalNetworkName === 'string') {
+                upstream.push(`ovn-${config.physicalNetworkName}`);
+            }
+        }
+
+        if (upstream.length > 0) return upstream;
+
+        // Fallback: extract bridge/type from raw config string when parse fails (e.g. multiline YAML, encoding)
+        const configStr = typeof rawConfig === 'string' ? rawConfig : '';
+        if (!configStr) return [];
+        const typeMatch = configStr.match(/"type"\s*:\s*"([^"]+)"/);
+        const bridgeMatch = configStr.match(/"bridge"\s*:\s*"([^"]+)"/);
+        const nadType = typeMatch ? typeMatch[1] : '';
+        const bridgeName = bridgeMatch ? bridgeMatch[1] : '';
+        if ((nadType === 'bridge' || nadType === 'cnv-bridge') && bridgeName) {
+            upstream.push(bridgeName);
+        }
+        const physMatch = configStr.match(/"physicalNetworkName"\s*:\s*"([^"]+)"/);
+        if (physMatch && physMatch[1]) {
+            upstream.push(`ovn-${physMatch[1]}`);
+        }
+        return upstream;
+    };
+
+    /** Upstream node ids used for drawing edges. When the NAD is CUDN-backed, we do not link to bridge-mapping (ovn-*). */
+    const getNadUpstreamNodeIdsForEdges = (nad: NetworkAttachmentDefinition): string[] => {
+        const upstream = getNadUpstreamNodeIds(nad);
+        const cudnName = findCudnNameForNad(nad);
+        if (cudnName) {
+            return upstream.filter((id) => !id.startsWith('ovn-'));
+        }
+        return upstream;
     };
 
     // Path-aware gravity calculation to minimize edge crossings
@@ -668,7 +801,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     });
 
     attachmentNodes.forEach((node: AttachmentNode) => {
-        addConnectionEdge(`cudn-${node.cudn}`, `attachment-${node.cudn}`);
+        const sourceId = node.cudn != null ? `cudn-${node.cudn}` : `udn-${node.udnId}`;
+        addConnectionEdge(sourceId, getAttachmentNodeId(node));
     });
 
     if (showNads) {
@@ -678,6 +812,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             if (cudnName) {
                 addConnectionEdge(`cudn-${cudnName}`, nadNodeId);
             }
+            const udnForNad = udns.find((u: UserDefinedNetwork) => u.metadata?.namespace === nad.metadata?.namespace && u.metadata?.name === nad.metadata?.name);
+            if (udnForNad) {
+                addConnectionEdge(getUdnNodeId(udnForNad), nadNodeId);
+            }
+            getNadUpstreamNodeIdsForEdges(nad).forEach((upstreamId) => addConnectionEdge(upstreamId, nadNodeId));
         });
     }
 
@@ -931,6 +1070,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     });
 
+    // UDNs sort below CUDNs in the Networks column
+    Object.keys(gravityById).filter((id) => id.startsWith('udn-')).forEach((id) => {
+        gravityById[id] = (gravityById[id] ?? 10000) + 50000;
+    });
+
     const getGravity = (id: string) => gravityById[id] || 10000;
     const sortByGravity = <T,>(items: T[], getId: (item: T) => string) => items.slice().sort((a, b) => {
         const gravityDiff = getGravity(getId(a)) - getGravity(getId(b));
@@ -948,7 +1092,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const sortedLogicalInterfaces = sortByGravity(logicalInterfaces, (iface) => iface.name);
     const sortedBridgeMappings = sortByGravity(bridgeMappings, (mapping) => `ovn-${mapping.localnet || ''}`);
     const sortedCudns = sortByGravity(cudns, (cudn) => `cudn-${cudn.metadata?.name || ''}`);
-    const sortedAttachmentNodes = sortByGravity(attachmentNodes, (node) => `attachment-${node.cudn}`);
+    const sortedNetworkItems = sortByGravity(networkItems, getNetworkNodeId);
+    const sortedAttachmentNodes = sortByGravity(attachmentNodes, getAttachmentNodeId);
     const sortedNads = sortByGravity(nads, (nad) => getNadNodeId(nad));
     const sortedOtherInterfaces = sortByGravity(otherInterfaces, (iface) => iface.name);
 
@@ -1025,11 +1170,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     }
 
-    if (showHiddenColumns || cudns.length > 0) {
-        sortedCudns.forEach((cudn: ClusterUserDefinedNetwork, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'cudn');
-            nodePositions[`cudn-${cudn.metadata?.name}`] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
+    if (showHiddenColumns || networkItems.length > 0) {
+        const colOffset = visibleColumns.findIndex(col => col.key === 'cudn');
+        if (colOffset >= 0) {
+            sortedNetworkItems.forEach((n: NetworkColumnItem, index: number) => {
+                nodePositions[getNetworkNodeId(n)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+            });
+        }
     }
 
     // Helper to calculate attachment node height
@@ -1093,14 +1240,17 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             }
         });
 
-        // 4. Attachments (CUDN -> Attachment)
+        // 3b. UDNs (namespace-scoped; no OVN bridge-mapping link)
+        udns.forEach((udn: UserDefinedNetwork) => addNode(getUdnNodeId(udn)));
+
+        // 4. Attachments (CUDN/UDN -> Attachment)
         attachmentNodes.forEach((node: AttachmentNode) => {
-            const attachmentNodeId = `attachment-${node.cudn}`;
-            const cudnNodeId = `cudn-${node.cudn}`;
-            addEdge(cudnNodeId, attachmentNodeId); // Flow: CUDN -> Attachment
+            const attachmentNodeId = getAttachmentNodeId(node);
+            const sourceNodeId = node.cudn != null ? `cudn-${node.cudn}` : `udn-${node.udnId}`;
+            addEdge(sourceNodeId, attachmentNodeId); // Flow: CUDN/UDN -> Attachment
         });
 
-        // 5. NADs (optional CUDN -> NAD)
+        // 5. NADs (optional CUDN -> NAD, and upstream bridge / bridge-mapping -> NAD)
         if (showNads) {
             nads.forEach((nad: NetworkAttachmentDefinition) => {
                 const nadNodeId = getNadNodeId(nad);
@@ -1109,6 +1259,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 if (cudnName) {
                     addEdge(`cudn-${cudnName}`, nadNodeId);
                 }
+                const udnForNad = udns.find((u: UserDefinedNetwork) => u.metadata?.namespace === nad.metadata?.namespace && u.metadata?.name === nad.metadata?.name);
+                if (udnForNad) {
+                    addEdge(getUdnNodeId(udnForNad), nadNodeId);
+                }
+                getNadUpstreamNodeIdsForEdges(nad).forEach((upstreamId) => addEdge(upstreamId, nadNodeId));
             });
         }
 
@@ -1176,7 +1331,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
 
         return g;
-    }, [interfaces, bridgeMappings, cudns, attachmentNodes, nads, showNads]);
+    }, [interfaces, bridgeMappings, cudns, udns, attachmentNodes, nads, showNads]);
 
     // Path Traversal
     const [highlightedPath, setHighlightedPath] = React.useState<Set<string>>(new Set());
@@ -1214,7 +1369,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const attachmentColOffset = visibleColumns.length; // Attachments always after visible columns
     sortedAttachmentNodes.forEach((node: AttachmentNode) => {
         const height = getAttachmentHeight(node);
-        nodePositions[`attachment-${node.cudn}`] = { x: padding + (attachmentColOffset * colSpacing), y: currentAttachmentY };
+        nodePositions[getAttachmentNodeId(node)] = { x: padding + (attachmentColOffset * colSpacing), y: currentAttachmentY };
         currentAttachmentY += height + 20; // Add gap
     });
 
@@ -1233,7 +1388,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         logicalInterfaces.length,
         bridgeMappings.length,
         vrfInterfaces.length,
-        cudns.length,
+        networkItems.length,
         showNads ? nads.length : 0,
         Math.ceil(otherInterfaces.length / 4) + 2
     );
@@ -1258,6 +1413,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             case 'ovn-mapping': return <RouteIcon />;
             case 'vrf': return <InfrastructureIcon />;
             case 'cudn': return <NetworkIcon />;
+            case 'udn': return <NetworkIcon />;
             case 'attachment': return <MigrationIcon />;
             case 'vlan': return <TagIcon />;
             case 'mac-vlan': return <TagIcon />;
@@ -1434,7 +1590,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 ? 'vrf'
                 : type === 'cudn'
                     ? 'cudn'
-                    : type === 'attachment'
+                    : type === 'udn'
+                        ? 'udn'
+                        : type === 'attachment'
                         ? 'attachment'
                         : type === 'nad'
                             ? 'nad'
@@ -1490,6 +1648,22 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 resourceRef = {
                     apiVersion: iface.apiVersion || '',
                     kind: iface.kind || 'ClusterUserDefinedNetwork',
+                    name: iface.metadata.name,
+                    namespace: iface.metadata.namespace
+                };
+            }
+        } else if (type === 'udn') {
+            const ns = iface.metadata?.namespace || '';
+            const { topology, role } = getUdnTopologyAndRole(iface as UserDefinedNetwork);
+            label = iface.metadata?.name || '';
+            title = iface.metadata?.name || '';
+            subtitle = `UserDefinedNetwork · ${ns} · ${topology} · ${role}`;
+            graphDisplayLabel = ns ? `UDN · ${ns}` : 'UDN';
+            state = `${topology} · ${role}`;
+            if (iface.metadata?.name) {
+                resourceRef = {
+                    apiVersion: iface.apiVersion || '',
+                    kind: iface.kind || 'UserDefinedNetwork',
                     name: iface.metadata.name,
                     namespace: iface.metadata.namespace
                 };
@@ -1558,7 +1732,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         const displayState = viewNode.state;
         let extraInfo = null;
         const nodeHeight = heightOverride || itemHeight;
-        const gravityValue = getGravity(viewNode.id);
 
         if (type === 'ovn-mapping') {
             // Already handled in buildNodeViewModel.
@@ -1589,20 +1762,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 <text x={10} y={45} fontSize="10" fill="#eee">{displayType}</text>
                 {type !== 'attachment' && displayState && <text x={10} y={60} fontSize="10" fill="#eee">{displayState}</text>}
                 {extraInfo}
-                {type !== 'ovn-mapping' && type !== 'cudn' && type !== 'attachment' && (
+                {type !== 'ovn-mapping' && type !== 'cudn' && type !== 'udn' && type !== 'attachment' && (
                     <circle cx={itemWidth - 15} cy={15} r={5} fill={iface.state === 'up' ? '#4CAF50' : '#F44336'} />
                 )}
-                {/* Gravity value badge - small, dimmed number in bottom-right corner */}
-                <text
-                    x={itemWidth - 8}
-                    y={nodeHeight - 8}
-                    fontSize="9"
-                    fill="rgba(255, 255, 255, 0.4)"
-                    textAnchor="end"
-                    style={{ fontFamily: 'monospace' }}
-                >
-                    {gravityValue}
-                </text>
             </g>
         );
     };
@@ -1923,19 +2085,35 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     });
                                 })}
                                 {attachmentNodes.map((node: AttachmentNode) => {
-                                    // Connect CUDN to Attachment (Left to Right)
-                                    if (nodePositions[`cudn-${node.cudn}`]) {
-                                        // Draw FROM CUDN TO Attachment
-                                        return renderConnector(`cudn-${node.cudn}`, `attachment-${node.cudn}`);
+                                    const sourceId = node.cudn != null ? `cudn-${node.cudn}` : `udn-${node.udnId}`;
+                                    const attachmentId = getAttachmentNodeId(node);
+                                    if (nodePositions[sourceId] && nodePositions[attachmentId]) {
+                                        return renderConnector(sourceId, attachmentId);
                                     }
                                     return null;
                                 })}
-                                {showNads && nads.map((nad: NetworkAttachmentDefinition) => {
+                                {showNads && nads.flatMap((nad: NetworkAttachmentDefinition) => {
+                                    const nadNodeId = getNadNodeId(nad);
+                                    const connectors: React.ReactNode[] = [];
                                     const cudnName = findCudnNameForNad(nad);
                                     if (cudnName && nodePositions[`cudn-${cudnName}`]) {
-                                        return renderConnector(`cudn-${cudnName}`, getNadNodeId(nad));
+                                        connectors.push(<React.Fragment key={`nad-${nadNodeId}-cudn`}>{renderConnector(`cudn-${cudnName}`, nadNodeId)}</React.Fragment>);
                                     }
-                                    return null;
+                                    const udnForNad = udns.find((u: UserDefinedNetwork) => u.metadata?.namespace === nad.metadata?.namespace && u.metadata?.name === nad.metadata?.name);
+                                    if (udnForNad && nodePositions[getUdnNodeId(udnForNad)]) {
+                                        connectors.push(<React.Fragment key={`nad-${nadNodeId}-udn`}>{renderConnector(getUdnNodeId(udnForNad), nadNodeId)}</React.Fragment>);
+                                    }
+                                    getNadUpstreamNodeIdsForEdges(nad).forEach((upstreamId) => {
+                                        const renderFromId = nodePositions[upstreamId]
+                                            ? upstreamId
+                                            : !upstreamId.startsWith('ovn-') && nodePositions[`interface-${upstreamId}`]
+                                                ? `interface-${upstreamId}`
+                                                : null;
+                                        if (renderFromId) {
+                                            connectors.push(<React.Fragment key={`nad-${nadNodeId}-up-${upstreamId}`}>{renderConnector(renderFromId, nadNodeId)}</React.Fragment>);
+                                        }
+                                    });
+                                    return connectors;
                                 })}
 
                                 {/* Render visible columns dynamically */}
@@ -2012,11 +2190,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                         })}
                                                 </>
                                             )}
-                                            {col.key === 'cudn' && sortedCudns
-                                                .filter((cudn: ClusterUserDefinedNetwork) => nodePositions[`cudn-${cudn.metadata?.name}`])
-                                                .map((cudn: ClusterUserDefinedNetwork, renderIndex: number) => {
-                                                    const pos = nodePositions[`cudn-${cudn.metadata?.name}`];
-                                                    return renderInterfaceNode(cudn, pos.x, padding + (renderIndex * (itemHeight + 20)), '#CC0099', 'cudn');
+                                            {col.key === 'cudn' && sortedNetworkItems
+                                                .filter((n: NetworkColumnItem) => nodePositions[getNetworkNodeId(n)])
+                                                .map((n: NetworkColumnItem, renderIndex: number) => {
+                                                    const pos = nodePositions[getNetworkNodeId(n)];
+                                                    const color = n.kind === 'cudn' ? CUDN_NODE_COLOR : UDN_NODE_COLOR;
+                                                    return renderInterfaceNode(n.item, pos.x, padding + (renderIndex * (itemHeight + 20)), color, n.kind);
                                                 })}
                                         </React.Fragment>
                                     );
@@ -2024,9 +2203,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
                                 {/* Layer 7: Attachments (from CUDN status) */}
                                 <text x={padding + (attachmentColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">Attachments</text>
-                                {sortedAttachmentNodes.map((node: AttachmentNode) =>
-                                    nodePositions[`attachment-${node.cudn}`] && renderInterfaceNode(node, nodePositions[`attachment-${node.cudn}`].x, nodePositions[`attachment-${node.cudn}`].y, 'var(--pf-global--palette--gold-400)', 'attachment', getAttachmentHeight(node))
-                                )}
+                                {sortedAttachmentNodes.map((node: AttachmentNode) => {
+                                    const pos = nodePositions[getAttachmentNodeId(node)];
+                                    return pos && renderInterfaceNode(node, pos.x, pos.y, 'var(--pf-global--palette--gold-400)', 'attachment', getAttachmentHeight(node));
+                                })}
 
                                 {showNads && (
                                     <>

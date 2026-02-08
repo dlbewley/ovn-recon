@@ -40,7 +40,7 @@ test: ## Run tests
 	npm run test
 
 image: ## Build the container image
-	$(CONTAINER_ENGINE) build -t $(IMAGE_NAME):$(IMAGE_TAG) .
+	$(CONTAINER_ENGINE) build --platform linux/amd64 -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
 push: image ## Tag and push the image to the registry
 	@echo "Pushing to $(REMOTE_IMAGE)"

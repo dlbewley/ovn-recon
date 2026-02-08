@@ -36,6 +36,17 @@ export interface NodeNetworkState extends K8sResourceCommon {
     };
 }
 
+export interface UserDefinedNetwork extends K8sResourceCommon {
+    spec?: {
+        topology?: string; // 'Layer2' | 'Layer3' (UserDefinedNetworkSpec has topology at spec level)
+        layer2?: { role?: 'Primary' | 'Secondary'; subnets?: string[] };
+        layer3?: { role?: 'Primary' | 'Secondary'; subnets?: string[] };
+    };
+    status?: {
+        conditions?: { type: string; status: string; message?: string }[];
+    };
+}
+
 export interface ClusterUserDefinedNetwork extends K8sResourceCommon {
     spec?: {
         network?: {
