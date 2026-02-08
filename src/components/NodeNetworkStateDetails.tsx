@@ -4,7 +4,7 @@ import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbI
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { Helmet } from 'react-helmet';
 import NodeVisualization from './NodeVisualization';
-import { NodeNetworkState, ClusterUserDefinedNetwork, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
+import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
 
 interface NodeNetworkStateDetailsProps {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,6 +49,15 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
             group: 'k8s.ovn.org',
             version: 'v1',
             kind: 'ClusterUserDefinedNetwork',
+        },
+        isList: true,
+    });
+
+    const [udns] = useK8sWatchResource<UserDefinedNetwork[]>({
+        groupVersionKind: {
+            group: 'k8s.ovn.org',
+            version: 'v1',
+            kind: 'UserDefinedNetwork',
         },
         isList: true,
     });
@@ -120,7 +129,7 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
                 <Title headingLevel="h1" className="pf-u-mt-lg">Node Network Topology: {displayName}</Title>
             </PageSection>
             <PageSection isFilled>
-                <NodeVisualization nns={nns} cudns={cudns} nads={nads} routeAdvertisements={routeAdvertisements} />
+                <NodeVisualization nns={nns} cudns={cudns} udns={udns} nads={nads} routeAdvertisements={routeAdvertisements} />
             </PageSection>
         </>
     );
