@@ -1658,7 +1658,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             label = iface.metadata?.name || '';
             title = iface.metadata?.name || '';
             subtitle = `UserDefinedNetwork · ${ns} · ${topology} · ${role}`;
-            graphDisplayLabel = 'UDN';
+            graphDisplayLabel = ns ? `UDN · ${ns}` : 'UDN';
             state = `${topology} · ${role}`;
             if (iface.metadata?.name) {
                 resourceRef = {
