@@ -8,6 +8,15 @@ import { CodeEditor, Language } from '@patternfly/react-code-editor';
 import * as yaml from 'js-yaml';
 
 import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, Interface, OvnBridgeMapping, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
+import {
+    findCudnNameForNad,
+    findRouteAdvertisementForVrf,
+    getCudnAssociatedNamespaces,
+    getCudnsSelectedByRouteAdvertisement,
+    getNadUpstreamNodeIdsForEdges,
+    getRouteAdvertisementsMatchingCudn,
+    parseNadConfig
+} from './nodeVisualizationSelectors';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -64,21 +73,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         buildLinks?: (node: NodeViewModel) => NodeLink[];
         renderDetails?: (node: NodeViewModel) => React.ReactNode;
     }
-
-    /** Parse NAD spec.config; accepts string (JSON) or already-parsed object from the API. */
-    const parseNadConfig = (config: string | Record<string, unknown> | undefined): Record<string, unknown> | null => {
-        if (config == null) return null;
-        if (typeof config === 'object' && config !== null && !Array.isArray(config)) {
-            return config as Record<string, unknown>;
-        }
-        if (typeof config !== 'string') return null;
-        try {
-            const parsed = JSON.parse(config);
-            return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : null;
-        } catch {
-            return null;
-        }
-    };
 
     const getResourceLinks = (ref: ResourceRef): NodeLink[] => {
         const resourceId = ref.apiVersion ? `${ref.apiVersion.replace('/', '~')}~${ref.kind}` : ref.kind;
@@ -224,49 +218,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             label: 'CUDN',
             renderDetails: (node) => {
                 const topology = node.raw?.spec?.network?.topology;
-                const matchingRAs = (topology === 'Layer2' || topology === 'Layer3') && routeAdvertisements ? routeAdvertisements.filter(ra => {
-                    return ra.spec?.networkSelectors?.some(selector => {
-                        const selectorSpec = selector.clusterUserDefinedNetworkSelector?.networkSelector;
-                        if (!selectorSpec) return false;
-
-                        // Check matchLabels
-                        if (selectorSpec.matchLabels) {
-                            const matchLabels = selectorSpec.matchLabels;
-                            const cudnLabels = node.raw?.metadata?.labels;
-                            if (!cudnLabels) return false;
-                            if (!Object.entries(matchLabels).every(([key, value]) => cudnLabels[key] === value)) {
-                                return false;
-                            }
-                        }
-
-                        // Check matchExpressions
-                        if (selectorSpec.matchExpressions) {
-                            const matchExpressions = selectorSpec.matchExpressions;
-                            const cudnLabels = node.raw?.metadata?.labels || {};
-
-                            const expressionsMatch = matchExpressions.every((expr: { key: string; operator: string; values: string[] }) => {
-                                const labelValue = cudnLabels[expr.key];
-                                if (expr.operator === 'In') {
-                                    return expr.values.includes(labelValue);
-                                }
-                                if (expr.operator === 'NotIn') {
-                                    return !expr.values.includes(labelValue);
-                                }
-                                if (expr.operator === 'Exists') {
-                                    return Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
-                                }
-                                if (expr.operator === 'DoesNotExist') {
-                                    return !Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
-                                }
-                                return false; // Unsupported operator
-                            });
-
-                            if (!expressionsMatch) return false;
-                        }
-
-                        return true;
-                    });
-                }) : [];
+                const matchingRAs =
+                    (topology === 'Layer2' || topology === 'Layer3')
+                        ? getRouteAdvertisementsMatchingCudn(routeAdvertisements, node.raw as ClusterUserDefinedNetwork)
+                        : [];
+                const associatedNamespaces = getCudnAssociatedNamespaces(node.raw as ClusterUserDefinedNetwork);
 
                 return (
                     <DescriptionList isCompact>
@@ -306,37 +262,25 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                             </DescriptionListGroup>
                         )}
 
-                        {(() => {
-                            const condition = node.raw?.status?.conditions?.find((c: { type: string; status: string }) => c.type === 'NetworkCreated' && c.status === 'True');
-                            if (condition && condition.message) {
-                                const match = condition.message.match(/\[(.*?)\]/);
-                                if (match && match[1]) {
-                                    const namespaces = match[1].split(',').map((ns: string) => ns.trim()).sort();
-                                    if (namespaces.length > 0) {
-                                        return (
-                                            <DescriptionListGroup>
-                                                <DescriptionListTerm>Associated Namespaces</DescriptionListTerm>
-                                                <DescriptionListDescription>
-                                                    <ul className="pf-v6-c-list">
-                                                        {namespaces.map((ns: string) => (
-                                                            <li key={ns}>
-                                                                <a
-                                                                    href={`/k8s/ns/${ns}/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/${node.raw.metadata.name}`}
-                                                                    className="pf-v6-c-button pf-m-link pf-m-inline"
-                                                                >
-                                                                    {ns}
-                                                                </a>
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </DescriptionListDescription>
-                                            </DescriptionListGroup>
-                                        );
-                                    }
-                                }
-                            }
-                            return null;
-                        })()}
+                        {associatedNamespaces.length > 0 && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Associated Namespaces</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    <ul className="pf-v6-c-list">
+                                        {associatedNamespaces.map((ns: string) => (
+                                            <li key={ns}>
+                                                <a
+                                                    href={`/k8s/ns/${ns}/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/${node.raw.metadata.name}`}
+                                                    className="pf-v6-c-button pf-m-link pf-m-inline"
+                                                >
+                                                    {ns}
+                                                </a>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
 
                         {matchingRAs.length > 0 && (
                             <DescriptionListGroup>
@@ -444,11 +388,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         vrf: {
             label: 'VRF',
             renderDetails: (node) => {
-                const ra = routeAdvertisements?.find(r => {
-                    const raName = r.metadata?.name || '';
-                    const truncatedRaName = raName.substring(0, 15);
-                    return raName === node.raw.name || truncatedRaName === node.raw.name;
-                });
+                const ra = findRouteAdvertisementForVrf(routeAdvertisements, node.raw.name);
+                const matchedCudns = getCudnsSelectedByRouteAdvertisement(ra, cudns);
 
                 return (
                     <DescriptionList isCompact>
@@ -481,63 +422,25 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         </ul>
                                     </DescriptionListDescription>
                                 </DescriptionListGroup>
-                                {(() => {
-                                    const matchedCudns = cudns.filter(cudn => {
-                                        const topology = cudn.spec?.network?.topology;
-                                        if (topology !== 'Layer2' && topology !== 'Layer3') return false;
-
-                                        return ra.spec?.networkSelectors?.some(selector => {
-                                            const selectorSpec = selector.clusterUserDefinedNetworkSelector?.networkSelector;
-                                            if (!selectorSpec) return false;
-                                            const cudnLabels = cudn.metadata?.labels || {};
-
-                                            // Check matchLabels
-                                            if (selectorSpec.matchLabels) {
-                                                if (!Object.entries(selectorSpec.matchLabels).every(([key, value]) => cudnLabels[key] === value)) {
-                                                    return false;
-                                                }
-                                            }
-
-                                            // Check matchExpressions
-                                            if (selectorSpec.matchExpressions) {
-                                                const expressionsMatch = selectorSpec.matchExpressions.every((expr: { key: string; operator: string; values: string[] }) => {
-                                                    const labelValue = cudnLabels[expr.key];
-                                                    if (expr.operator === 'In') return expr.values.includes(labelValue);
-                                                    if (expr.operator === 'NotIn') return !expr.values.includes(labelValue);
-                                                    if (expr.operator === 'Exists') return Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
-                                                    if (expr.operator === 'DoesNotExist') return !Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
-                                                    return false;
-                                                });
-                                                if (!expressionsMatch) return false;
-                                            }
-
-                                            return true;
-                                        });
-                                    });
-
-                                    if (matchedCudns.length > 0) {
-                                        return (
-                                            <DescriptionListGroup>
-                                                <DescriptionListTerm>Matched CUDNs</DescriptionListTerm>
-                                                <DescriptionListDescription>
-                                                    <ul className="pf-v6-c-list">
-                                                        {matchedCudns.map(cudn => (
-                                                            <li key={cudn.metadata?.name}>
-                                                                <a
-                                                                    href={`/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/${cudn.metadata?.name}`}
-                                                                    className="pf-v6-c-button pf-m-link pf-m-inline"
-                                                                >
-                                                                    {cudn.metadata?.name}
-                                                                </a>
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </DescriptionListDescription>
-                                            </DescriptionListGroup>
-                                        );
-                                    }
-                                    return null;
-                                })()}
+                                {matchedCudns.length > 0 && (
+                                    <DescriptionListGroup>
+                                        <DescriptionListTerm>Matched CUDNs</DescriptionListTerm>
+                                        <DescriptionListDescription>
+                                            <ul className="pf-v6-c-list">
+                                                {matchedCudns.map(cudn => (
+                                                    <li key={cudn.metadata?.name}>
+                                                        <a
+                                                            href={`/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/${cudn.metadata?.name}`}
+                                                            className="pf-v6-c-button pf-m-link pf-m-inline"
+                                                        >
+                                                            {cudn.metadata?.name}
+                                                        </a>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </DescriptionListDescription>
+                                    </DescriptionListGroup>
+                                )}
                             </>
                         )}
 
@@ -677,20 +580,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Attachments (from CUDN status + one per UDN for controller-created NAD)
     const attachmentNodes: AttachmentNode[] = [];
     cudns.forEach((cudn: ClusterUserDefinedNetwork) => {
-        const condition = cudn.status?.conditions?.find((c) => c.type === 'NetworkCreated' && c.status === 'True');
-        if (condition && condition.message) {
-            const match = condition.message.match(/\[(.*?)\]/);
-            if (match && match[1]) {
-                const namespaces = match[1].split(',').map((ns: string) => ns.trim()).sort();
-                if (namespaces.length > 0) {
-                    attachmentNodes.push({
-                        name: cudn.metadata?.name || '',
-                        type: 'attachment',
-                        namespaces: namespaces,
-                        cudn: cudn.metadata?.name || ''
-                    });
-                }
-            }
+        const namespaces = getCudnAssociatedNamespaces(cudn);
+        if (namespaces.length > 0) {
+            attachmentNodes.push({
+                name: cudn.metadata?.name || '',
+                type: 'attachment',
+                namespaces,
+                cudn: cudn.metadata?.name || ''
+            });
         }
     });
     udns.forEach((udn: UserDefinedNetwork) => {
@@ -705,68 +602,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             });
         }
     });
-
-    const getNadNetworkName = (nad: NetworkAttachmentDefinition) => {
-        const config = parseNadConfig(nad.spec?.config);
-        if (typeof config?.name === 'string') return config.name;
-        return undefined;
-    };
-
-    const findCudnNameForNad = (nad: NetworkAttachmentDefinition) => {
-        const nadConfigName = getNadNetworkName(nad);
-        const directMatch = nad.metadata?.name && cudns.find((cudn) => cudn.metadata?.name === nad.metadata?.name)?.metadata?.name;
-        if (directMatch) return directMatch;
-        if (nadConfigName) {
-            const configMatch = cudns.find((cudn) => cudn.metadata?.name === nadConfigName)?.metadata?.name;
-            if (configMatch) return configMatch;
-        }
-        return undefined;
-    };
-
-    /** Upstream node ids for a NAD: bridge name (when type=bridge/cnv-bridge) and/or ovn-${physicalNetworkName}. */
-    const getNadUpstreamNodeIds = (nad: NetworkAttachmentDefinition): string[] => {
-        const rawConfig = nad.spec?.config;
-        const config = parseNadConfig(rawConfig);
-        const upstream: string[] = [];
-
-        if (config) {
-            const nadType = typeof config.type === 'string' ? config.type : '';
-            if ((nadType === 'bridge' || nadType === 'cnv-bridge') && typeof config.bridge === 'string') {
-                upstream.push(config.bridge);
-            }
-            if (typeof config.physicalNetworkName === 'string') {
-                upstream.push(`ovn-${config.physicalNetworkName}`);
-            }
-        }
-
-        if (upstream.length > 0) return upstream;
-
-        // Fallback: extract bridge/type from raw config string when parse fails (e.g. multiline YAML, encoding)
-        const configStr = typeof rawConfig === 'string' ? rawConfig : '';
-        if (!configStr) return [];
-        const typeMatch = configStr.match(/"type"\s*:\s*"([^"]+)"/);
-        const bridgeMatch = configStr.match(/"bridge"\s*:\s*"([^"]+)"/);
-        const nadType = typeMatch ? typeMatch[1] : '';
-        const bridgeName = bridgeMatch ? bridgeMatch[1] : '';
-        if ((nadType === 'bridge' || nadType === 'cnv-bridge') && bridgeName) {
-            upstream.push(bridgeName);
-        }
-        const physMatch = configStr.match(/"physicalNetworkName"\s*:\s*"([^"]+)"/);
-        if (physMatch && physMatch[1]) {
-            upstream.push(`ovn-${physMatch[1]}`);
-        }
-        return upstream;
-    };
-
-    /** Upstream node ids used for drawing edges. When the NAD is CUDN-backed, we do not link to bridge-mapping (ovn-*). */
-    const getNadUpstreamNodeIdsForEdges = (nad: NetworkAttachmentDefinition): string[] => {
-        const upstream = getNadUpstreamNodeIds(nad);
-        const cudnName = findCudnNameForNad(nad);
-        if (cudnName) {
-            return upstream.filter((id) => !id.startsWith('ovn-'));
-        }
-        return upstream;
-    };
 
     // Path-aware gravity calculation to minimize edge crossings
     // Build connection graph for path finding
@@ -808,7 +643,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     if (showNads) {
         nads.forEach((nad: NetworkAttachmentDefinition) => {
             const nadNodeId = getNadNodeId(nad);
-            const cudnName = findCudnNameForNad(nad);
+            const cudnName = findCudnNameForNad(nad, cudns);
             if (cudnName) {
                 addConnectionEdge(`cudn-${cudnName}`, nadNodeId);
             }
@@ -816,74 +651,18 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             if (udnForNad) {
                 addConnectionEdge(getUdnNodeId(udnForNad), nadNodeId);
             }
-            getNadUpstreamNodeIdsForEdges(nad).forEach((upstreamId) => addConnectionEdge(upstreamId, nadNodeId));
+            getNadUpstreamNodeIdsForEdges(nad, cudns).forEach((upstreamId) => addConnectionEdge(upstreamId, nadNodeId));
         });
     }
 
     // VRF -> CUDN linkages
     if (routeAdvertisements) {
         vrfInterfaces.forEach((vrf) => {
-            // Find the RA that likely created this VRF
-            // Heuristic: RA name is often the VRF name (truncated if long)
-            const ra = routeAdvertisements.find(r => {
-                const raName = r.metadata?.name || '';
-                // Simple check: is RA name (truncated) == vrf name?
-                // OVN often truncates to 15 chars for interfaces.
-                // Assuming vrf.name matches truncated ra.name or full ra.name
-                const truncatedRaName = raName.substring(0, 15);
-                return raName === vrf.name || truncatedRaName === vrf.name;
+            const ra = findRouteAdvertisementForVrf(routeAdvertisements, vrf.name);
+            getCudnsSelectedByRouteAdvertisement(ra, cudns).forEach((cudn) => {
+                const cudnNodeId = `cudn-${cudn.metadata?.name}`;
+                addConnectionEdge(vrf.name, cudnNodeId);
             });
-
-            if (ra) {
-                // Find all CUDNs selected by this RA
-                cudns.forEach(cudn => {
-                    const topology = cudn.spec?.network?.topology;
-                    if (topology === 'Layer2' || topology === 'Layer3') {
-                        // Check if RA selects this CUDN
-                        const isSelected = ra.spec?.networkSelectors?.some(selector => {
-                            const selectorSpec = selector.clusterUserDefinedNetworkSelector?.networkSelector;
-                            if (!selectorSpec) return false;
-
-                            const cudnLabels = cudn.metadata?.labels || {};
-
-                            // Check matchLabels
-                            if (selectorSpec.matchLabels) {
-                                if (!Object.entries(selectorSpec.matchLabels).every(([key, value]) => cudnLabels[key] === value)) {
-                                    return false;
-                                }
-                            }
-
-                            // Check matchExpressions
-                            if (selectorSpec.matchExpressions) {
-                                const expressionsMatch = selectorSpec.matchExpressions.every((expr: { key: string; operator: string; values: string[] }) => {
-                                    const labelValue = cudnLabels[expr.key];
-                                    if (expr.operator === 'In') {
-                                        return expr.values.includes(labelValue);
-                                    }
-                                    if (expr.operator === 'NotIn') {
-                                        return !expr.values.includes(labelValue);
-                                    }
-                                    if (expr.operator === 'Exists') {
-                                        return Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
-                                    }
-                                    if (expr.operator === 'DoesNotExist') {
-                                        return !Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
-                                    }
-                                    return false;
-                                });
-                                if (!expressionsMatch) return false;
-                            }
-
-                            return true;
-                        });
-
-                        if (isSelected) {
-                            const cudnNodeId = `cudn-${cudn.metadata?.name}`;
-                            addConnectionEdge(vrf.name, cudnNodeId);
-                        }
-                    }
-                });
-            }
         });
     }
 
@@ -1255,7 +1034,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             nads.forEach((nad: NetworkAttachmentDefinition) => {
                 const nadNodeId = getNadNodeId(nad);
                 addNode(nadNodeId);
-                const cudnName = findCudnNameForNad(nad);
+                const cudnName = findCudnNameForNad(nad, cudns);
                 if (cudnName) {
                     addEdge(`cudn-${cudnName}`, nadNodeId);
                 }
@@ -1263,70 +1042,18 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 if (udnForNad) {
                     addEdge(getUdnNodeId(udnForNad), nadNodeId);
                 }
-                getNadUpstreamNodeIdsForEdges(nad).forEach((upstreamId) => addEdge(upstreamId, nadNodeId));
+                getNadUpstreamNodeIdsForEdges(nad, cudns).forEach((upstreamId) => addEdge(upstreamId, nadNodeId));
             });
         }
 
         // 6. VRF -> CUDN (logic duplicated from graph building above - ideally should be shared)
         if (routeAdvertisements) {
             vrfInterfaces.forEach((vrf) => {
-                const ra = routeAdvertisements.find(r => {
-                    const raName = r.metadata?.name || '';
-                    const truncatedRaName = raName.substring(0, 15);
-                    return raName === vrf.name || truncatedRaName === vrf.name;
+                const ra = findRouteAdvertisementForVrf(routeAdvertisements, vrf.name);
+                getCudnsSelectedByRouteAdvertisement(ra, cudns).forEach((cudn) => {
+                    const cudnNodeId = `cudn-${cudn.metadata?.name}`;
+                    addEdge(resolveNodeId(vrf, vrf.type), cudnNodeId);
                 });
-
-                if (ra) {
-                    cudns.forEach(cudn => {
-                        const topology = cudn.spec?.network?.topology;
-                        if (topology === 'Layer2' || topology === 'Layer3') {
-                            const isSelected = ra.spec?.networkSelectors?.some(selector => {
-                                const selectorSpec = selector.clusterUserDefinedNetworkSelector?.networkSelector;
-                                if (!selectorSpec) return false;
-
-                                const cudnLabels = cudn.metadata?.labels || {};
-
-                                // Check matchLabels
-                                if (selectorSpec.matchLabels) {
-                                    if (!Object.entries(selectorSpec.matchLabels).every(([key, value]) => cudnLabels[key] === value)) {
-                                        return false;
-                                    }
-                                }
-
-                                // Check matchExpressions
-                                if (selectorSpec.matchExpressions) {
-                                    const expressionsMatch = selectorSpec.matchExpressions.every((expr: { key: string; operator: string; values: string[] }) => {
-                                        const labelValue = cudnLabels[expr.key];
-                                        if (expr.operator === 'In') {
-                                            return expr.values.includes(labelValue);
-                                        }
-                                        if (expr.operator === 'NotIn') {
-                                            return !expr.values.includes(labelValue);
-                                        }
-                                        if (expr.operator === 'Exists') {
-                                            return Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
-                                        }
-                                        if (expr.operator === 'DoesNotExist') {
-                                            return !Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
-                                        }
-                                        return false;
-                                    });
-                                    if (!expressionsMatch) return false;
-                                }
-
-                                return true;
-                            });
-
-                            if (isSelected) {
-                                const cudnNodeId = `cudn-${cudn.metadata?.name}`;
-                                if (isSelected) {
-                                    const cudnNodeId = `cudn-${cudn.metadata?.name}`;
-                                    addEdge(resolveNodeId(vrf, vrf.type), cudnNodeId);
-                                }
-                            }
-                        }
-                    });
-                }
             });
         }
 
@@ -2030,56 +1757,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 {/* Link VRF to CUDN */}
                                 {vrfInterfaces.map(vrf => {
                                     if (!routeAdvertisements) return null;
-                                    const ra = routeAdvertisements.find(r => {
-                                        const raName = r.metadata?.name || '';
-                                        const truncatedRaName = raName.substring(0, 15);
-                                        return raName === vrf.name || truncatedRaName === vrf.name;
-                                    });
+                                    const ra = findRouteAdvertisementForVrf(routeAdvertisements, vrf.name);
                                     if (!ra) return null;
 
-                                    return cudns.map(cudn => {
-                                        const topology = cudn.spec?.network?.topology;
-                                        if (topology === 'Layer2' || topology === 'Layer3') {
-                                            const isSelected = ra.spec?.networkSelectors?.some(selector => {
-                                                const selectorSpec = selector.clusterUserDefinedNetworkSelector?.networkSelector;
-                                                if (!selectorSpec) return false;
-
-                                                const cudnLabels = cudn.metadata?.labels || {};
-
-                                                // Check matchLabels
-                                                if (selectorSpec.matchLabels) {
-                                                    if (!Object.entries(selectorSpec.matchLabels).every(([key, value]) => cudnLabels[key] === value)) {
-                                                        return false;
-                                                    }
-                                                }
-
-                                                // Check matchExpressions
-                                                if (selectorSpec.matchExpressions) {
-                                                    const expressionsMatch = selectorSpec.matchExpressions.every((expr: { key: string; operator: string; values: string[] }) => {
-                                                        const labelValue = cudnLabels[expr.key];
-                                                        if (expr.operator === 'In') {
-                                                            return expr.values.includes(labelValue);
-                                                        }
-                                                        if (expr.operator === 'NotIn') {
-                                                            return !expr.values.includes(labelValue);
-                                                        }
-                                                        if (expr.operator === 'Exists') {
-                                                            return Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
-                                                        }
-                                                        if (expr.operator === 'DoesNotExist') {
-                                                            return !Object.prototype.hasOwnProperty.call(cudnLabels, expr.key);
-                                                        }
-                                                        return false;
-                                                    });
-                                                    if (!expressionsMatch) return false;
-                                                }
-
-                                                return true;
-                                            });
-
-                                            if (isSelected && nodePositions[vrf.name] && nodePositions[`cudn-${cudn.metadata?.name}`]) {
-                                                return renderConnector(vrf.name, `cudn-${cudn.metadata?.name}`);
-                                            }
+                                    return getCudnsSelectedByRouteAdvertisement(ra, cudns).map((cudn) => {
+                                        if (nodePositions[vrf.name] && nodePositions[`cudn-${cudn.metadata?.name}`]) {
+                                            return renderConnector(vrf.name, `cudn-${cudn.metadata?.name}`);
                                         }
                                         return null;
                                     });
@@ -2095,7 +1778,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 {showNads && nads.flatMap((nad: NetworkAttachmentDefinition) => {
                                     const nadNodeId = getNadNodeId(nad);
                                     const connectors: React.ReactNode[] = [];
-                                    const cudnName = findCudnNameForNad(nad);
+                                    const cudnName = findCudnNameForNad(nad, cudns);
                                     if (cudnName && nodePositions[`cudn-${cudnName}`]) {
                                         connectors.push(<React.Fragment key={`nad-${nadNodeId}-cudn`}>{renderConnector(`cudn-${cudnName}`, nadNodeId)}</React.Fragment>);
                                     }
@@ -2103,7 +1786,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     if (udnForNad && nodePositions[getUdnNodeId(udnForNad)]) {
                                         connectors.push(<React.Fragment key={`nad-${nadNodeId}-udn`}>{renderConnector(getUdnNodeId(udnForNad), nadNodeId)}</React.Fragment>);
                                     }
-                                    getNadUpstreamNodeIdsForEdges(nad).forEach((upstreamId) => {
+                                    getNadUpstreamNodeIdsForEdges(nad, cudns).forEach((upstreamId) => {
                                         const renderFromId = nodePositions[upstreamId]
                                             ? upstreamId
                                             : !upstreamId.startsWith('ovn-') && nodePositions[`interface-${upstreamId}`]
