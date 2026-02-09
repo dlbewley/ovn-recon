@@ -9,14 +9,13 @@ import * as yaml from 'js-yaml';
 
 import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, Interface, OvnBridgeMapping, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
 import {
-    findCudnNameForNad,
     findRouteAdvertisementForVrf,
     getCudnAssociatedNamespaces,
     getCudnsSelectedByRouteAdvertisement,
-    getNadUpstreamNodeIdsForEdges,
     getRouteAdvertisementsMatchingCudn,
     parseNadConfig
 } from './nodeVisualizationSelectors';
+import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -603,6 +602,22 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     });
 
+    const topologyEdges = buildTopologyEdges({
+        interfaces,
+        vrfInterfaces,
+        bridgeMappings,
+        cudns,
+        udns,
+        attachmentNodes,
+        nads,
+        routeAdvertisements,
+        showNads,
+        resolveNodeId,
+        getAttachmentNodeId,
+        getUdnNodeId,
+        getNadNodeId
+    });
+
     // Path-aware gravity calculation to minimize edge crossings
     // Build connection graph for path finding
     const connectionGraph: Record<string, string[]> = {};
@@ -612,59 +627,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         if (!connectionGraph[source].includes(target)) connectionGraph[source].push(target);
         if (!connectionGraph[target].includes(source)) connectionGraph[target].push(source);
     };
-
-    // Build graph from all relationships
-    interfaces.forEach((iface: Interface) => {
-        const master = iface.controller || iface.master;
-        if (master) addConnectionEdge(iface.name, master);
-        const baseIface = iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'];
-        if (baseIface) addConnectionEdge(baseIface, iface.name);
-    });
-
-    bridgeMappings.forEach((mapping: OvnBridgeMapping) => {
-        const ovnNodeId = `ovn-${mapping.localnet}`;
-        if (mapping.bridge) addConnectionEdge(mapping.bridge, ovnNodeId);
-    });
-
-    cudns.forEach((cudn: ClusterUserDefinedNetwork) => {
-        const cudnNodeId = `cudn-${cudn.metadata?.name}`;
-        const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
-        if (physicalNetworkName) {
-            const ovnNodeId = `ovn-${physicalNetworkName}`;
-            addConnectionEdge(ovnNodeId, cudnNodeId);
-        }
-    });
-
-    attachmentNodes.forEach((node: AttachmentNode) => {
-        const sourceId = node.cudn != null ? `cudn-${node.cudn}` : `udn-${node.udnId}`;
-        addConnectionEdge(sourceId, getAttachmentNodeId(node));
-    });
-
-    if (showNads) {
-        nads.forEach((nad: NetworkAttachmentDefinition) => {
-            const nadNodeId = getNadNodeId(nad);
-            const cudnName = findCudnNameForNad(nad, cudns);
-            if (cudnName) {
-                addConnectionEdge(`cudn-${cudnName}`, nadNodeId);
-            }
-            const udnForNad = udns.find((u: UserDefinedNetwork) => u.metadata?.namespace === nad.metadata?.namespace && u.metadata?.name === nad.metadata?.name);
-            if (udnForNad) {
-                addConnectionEdge(getUdnNodeId(udnForNad), nadNodeId);
-            }
-            getNadUpstreamNodeIdsForEdges(nad, cudns).forEach((upstreamId) => addConnectionEdge(upstreamId, nadNodeId));
-        });
-    }
-
-    // VRF -> CUDN linkages
-    if (routeAdvertisements) {
-        vrfInterfaces.forEach((vrf) => {
-            const ra = findRouteAdvertisementForVrf(routeAdvertisements, vrf.name);
-            getCudnsSelectedByRouteAdvertisement(ra, cudns).forEach((cudn) => {
-                const cudnNodeId = `cudn-${cudn.metadata?.name}`;
-                addConnectionEdge(vrf.name, cudnNodeId);
-            });
-        });
-    }
+    topologyEdges.forEach((edge) => addConnectionEdge(edge.source, edge.target));
 
     // Find longest paths from physical interfaces through to attachments
     // This finds paths that go left-to-right through columns to minimize edge crossings
@@ -980,85 +943,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             if (!g.nodes[target].upstream.includes(source)) g.nodes[target].upstream.push(source);
         };
 
-        // 1. Interfaces (Physical, Bond, VLAN, Bridge, Logical)
-        interfaces.forEach((iface: Interface) => {
-            addNode(resolveNodeId(iface, iface.type));
-            // Upstream: master/controller
-            const master = iface.controller || iface.master;
-            if (master) {
-                // Master usually refers to a bridge or bond.
-                // If master is 'br-ex', we typically want to point to the Bridge 'br-ex' (id: 'br-ex')
-                // NOT the interface 'br-ex' (id: 'interface-br-ex').
-                // Since resolveNodeId returns 'br-ex' for Bridge types (since iface.name is br-ex and type is bridge), and masters are just names...
-                // Connection targets usually refer to the "main" entity (bridge/bond).
-                addNode(master); // Assume master is a bridge or bond ID (simple name)
-                addEdge(resolveNodeId(iface, iface.type), master);
-            }
-
-            // Upstream: base-iface (VLAN/MAC-VLAN)
-            const baseIface = iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'];
-            if (baseIface) {
-                addNode(baseIface);
-                addEdge(baseIface, resolveNodeId(iface, iface.type)); // Correct direction: Base -> VLAN
-            }
-        });
-
-        // 2. Bridge Mappings (Bridge -> OVN Localnet)
-        bridgeMappings.forEach((mapping: OvnBridgeMapping) => {
-            const ovnNodeId = `ovn-${mapping.localnet}`;
-            if (mapping.bridge) addEdge(mapping.bridge, ovnNodeId);
-        });
-
-        // 3. CUDNs (OVN Localnet -> CUDN)
-        cudns.forEach((cudn: ClusterUserDefinedNetwork) => {
-            const cudnNodeId = `cudn-${cudn.metadata?.name}`;
-            const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
-            if (physicalNetworkName) {
-                const ovnNodeId = `ovn-${physicalNetworkName}`;
-                addEdge(ovnNodeId, cudnNodeId); // Flow: OVN -> CUDN
-            }
-        });
-
-        // 3b. UDNs (namespace-scoped; no OVN bridge-mapping link)
-        udns.forEach((udn: UserDefinedNetwork) => addNode(getUdnNodeId(udn)));
-
-        // 4. Attachments (CUDN/UDN -> Attachment)
-        attachmentNodes.forEach((node: AttachmentNode) => {
-            const attachmentNodeId = getAttachmentNodeId(node);
-            const sourceNodeId = node.cudn != null ? `cudn-${node.cudn}` : `udn-${node.udnId}`;
-            addEdge(sourceNodeId, attachmentNodeId); // Flow: CUDN/UDN -> Attachment
-        });
-
-        // 5. NADs (optional CUDN -> NAD, and upstream bridge / bridge-mapping -> NAD)
-        if (showNads) {
-            nads.forEach((nad: NetworkAttachmentDefinition) => {
-                const nadNodeId = getNadNodeId(nad);
-                addNode(nadNodeId);
-                const cudnName = findCudnNameForNad(nad, cudns);
-                if (cudnName) {
-                    addEdge(`cudn-${cudnName}`, nadNodeId);
-                }
-                const udnForNad = udns.find((u: UserDefinedNetwork) => u.metadata?.namespace === nad.metadata?.namespace && u.metadata?.name === nad.metadata?.name);
-                if (udnForNad) {
-                    addEdge(getUdnNodeId(udnForNad), nadNodeId);
-                }
-                getNadUpstreamNodeIdsForEdges(nad, cudns).forEach((upstreamId) => addEdge(upstreamId, nadNodeId));
-            });
-        }
-
-        // 6. VRF -> CUDN (logic duplicated from graph building above - ideally should be shared)
-        if (routeAdvertisements) {
-            vrfInterfaces.forEach((vrf) => {
-                const ra = findRouteAdvertisementForVrf(routeAdvertisements, vrf.name);
-                getCudnsSelectedByRouteAdvertisement(ra, cudns).forEach((cudn) => {
-                    const cudnNodeId = `cudn-${cudn.metadata?.name}`;
-                    addEdge(resolveNodeId(vrf, vrf.type), cudnNodeId);
-                });
-            });
-        }
+        topologyEdges.forEach((edge) => addEdge(edge.source, edge.target));
 
         return g;
-    }, [interfaces, bridgeMappings, cudns, udns, attachmentNodes, nads, showNads]);
+    }, [topologyEdges]);
 
     // Path Traversal
     const [highlightedPath, setHighlightedPath] = React.useState<Set<string>>(new Set());
@@ -1724,79 +1612,27 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 onClick={handleBackgroundClick}
                             >
                                 {/* Connectors */}
-                                {interfaces.map((iface: Interface) => {
-                                    const master = iface.controller || iface.master;
-                                    if (master && nodePositions[master]) {
-                                        return renderConnector(iface.name, master);
-                                    }
-                                    return null;
-                                })}
-                                {/* VLAN and MAC-VLAN to base-iface connectors */}
-                                {vlanInterfaces.map((iface: Interface) => {
-                                    const baseIface = iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'];
-                                    if (baseIface && nodePositions[baseIface]) {
-                                        return renderConnector(baseIface, iface.name);
-                                    }
-                                    return null;
-                                })}
-                                {bridgeMappings.map((mapping: OvnBridgeMapping) => {
-                                    if (mapping.bridge && nodePositions[mapping.bridge]) {
-                                        return renderConnector(mapping.bridge, `ovn-${mapping.localnet}`);
-                                    }
-                                    return null;
-                                })}
-                                {cudns.map((cudn: ClusterUserDefinedNetwork) => {
-                                    // Connect CUDN to OVN Mapping
-                                    const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
-                                    if (physicalNetworkName && nodePositions[`ovn-${physicalNetworkName}`]) {
-                                        // Draw FROM OVN Mapping TO CUDN (Left to Right)
-                                        return renderConnector(`ovn-${physicalNetworkName}`, `cudn-${cudn.metadata?.name}`);
-                                    }
-                                    return null;
-                                })}
-                                {/* Link VRF to CUDN */}
-                                {vrfInterfaces.map(vrf => {
-                                    if (!routeAdvertisements) return null;
-                                    const ra = findRouteAdvertisementForVrf(routeAdvertisements, vrf.name);
-                                    if (!ra) return null;
+                                {topologyEdges.map((edge: TopologyEdge) => {
+                                    const renderSourceId = nodePositions[edge.source]
+                                        ? edge.source
+                                        : !edge.source.startsWith('ovn-') && nodePositions[`interface-${edge.source}`]
+                                            ? `interface-${edge.source}`
+                                            : null;
+                                    const renderTargetId = nodePositions[edge.target]
+                                        ? edge.target
+                                        : !edge.target.startsWith('ovn-') && nodePositions[`interface-${edge.target}`]
+                                            ? `interface-${edge.target}`
+                                            : null;
 
-                                    return getCudnsSelectedByRouteAdvertisement(ra, cudns).map((cudn) => {
-                                        if (nodePositions[vrf.name] && nodePositions[`cudn-${cudn.metadata?.name}`]) {
-                                            return renderConnector(vrf.name, `cudn-${cudn.metadata?.name}`);
-                                        }
+                                    if (!renderSourceId || !renderTargetId) {
                                         return null;
-                                    });
-                                })}
-                                {attachmentNodes.map((node: AttachmentNode) => {
-                                    const sourceId = node.cudn != null ? `cudn-${node.cudn}` : `udn-${node.udnId}`;
-                                    const attachmentId = getAttachmentNodeId(node);
-                                    if (nodePositions[sourceId] && nodePositions[attachmentId]) {
-                                        return renderConnector(sourceId, attachmentId);
                                     }
-                                    return null;
-                                })}
-                                {showNads && nads.flatMap((nad: NetworkAttachmentDefinition) => {
-                                    const nadNodeId = getNadNodeId(nad);
-                                    const connectors: React.ReactNode[] = [];
-                                    const cudnName = findCudnNameForNad(nad, cudns);
-                                    if (cudnName && nodePositions[`cudn-${cudnName}`]) {
-                                        connectors.push(<React.Fragment key={`nad-${nadNodeId}-cudn`}>{renderConnector(`cudn-${cudnName}`, nadNodeId)}</React.Fragment>);
-                                    }
-                                    const udnForNad = udns.find((u: UserDefinedNetwork) => u.metadata?.namespace === nad.metadata?.namespace && u.metadata?.name === nad.metadata?.name);
-                                    if (udnForNad && nodePositions[getUdnNodeId(udnForNad)]) {
-                                        connectors.push(<React.Fragment key={`nad-${nadNodeId}-udn`}>{renderConnector(getUdnNodeId(udnForNad), nadNodeId)}</React.Fragment>);
-                                    }
-                                    getNadUpstreamNodeIdsForEdges(nad, cudns).forEach((upstreamId) => {
-                                        const renderFromId = nodePositions[upstreamId]
-                                            ? upstreamId
-                                            : !upstreamId.startsWith('ovn-') && nodePositions[`interface-${upstreamId}`]
-                                                ? `interface-${upstreamId}`
-                                                : null;
-                                        if (renderFromId) {
-                                            connectors.push(<React.Fragment key={`nad-${nadNodeId}-up-${upstreamId}`}>{renderConnector(renderFromId, nadNodeId)}</React.Fragment>);
-                                        }
-                                    });
-                                    return connectors;
+
+                                    return (
+                                        <React.Fragment key={`edge-${edge.source}-${edge.target}`}>
+                                            {renderConnector(renderSourceId, renderTargetId)}
+                                        </React.Fragment>
+                                    );
                                 })}
 
                                 {/* Render visible columns dynamically */}

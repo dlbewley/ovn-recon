@@ -6,8 +6,8 @@ This file tracks phased execution for the node visualization refactor and maps e
 
 | Phase | Scope | Beads Issue | Status |
 |---|---|---|---|
-| Phase 1 | Relationship selector extraction (no behavior change) | `ovn-recon-53e` | `IN_PROGRESS` |
-| Phase 2 | Canonical topology model (single nodes/edges pipeline) | `ovn-recon-nyd` | `OPEN` |
+| Phase 1 | Relationship selector extraction (no behavior change) | `ovn-recon-53e` | `CLOSED` |
+| Phase 2 | Canonical topology model (single nodes/edges pipeline) | `ovn-recon-nyd` | `IN_PROGRESS` |
 | Phase 3 | Type-driven drawer tabs | `ovn-recon-5c5` | `OPEN` |
 | Phase 4 | Layout extraction and tests | `ovn-recon-6se` | `OPEN` |
 
