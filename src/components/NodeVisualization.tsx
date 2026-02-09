@@ -16,6 +16,7 @@ import {
     parseNadConfig
 } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
+import { computeGravityById, sortByGravity } from './nodeVisualizationLayout';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -629,226 +630,31 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         getNadNodeId
     });
 
-    // Path-aware gravity calculation to minimize edge crossings
-    // Build connection graph for path finding
-    const connectionGraph: Record<string, string[]> = {};
-    const addConnectionEdge = (source: string, target: string) => {
-        if (!connectionGraph[source]) connectionGraph[source] = [];
-        if (!connectionGraph[target]) connectionGraph[target] = [];
-        if (!connectionGraph[source].includes(target)) connectionGraph[source].push(target);
-        if (!connectionGraph[target].includes(source)) connectionGraph[target].push(source);
-    };
-    topologyEdges.forEach((edge) => addConnectionEdge(edge.source, edge.target));
-
-    // Find longest paths from physical interfaces through to attachments
-    // This finds paths that go left-to-right through columns to minimize edge crossings
-    const findLongestPath = (startNode: string, visited: Set<string> = new Set(), path: string[] = []): string[] => {
-        if (visited.has(startNode)) return path;
-        visited.add(startNode);
-        const currentPath = [...path, startNode];
-        const neighbors = connectionGraph[startNode] || [];
-
-        if (neighbors.length === 0) {
-            return currentPath;
-        }
-
-        let longestPath = currentPath;
-        for (const neighbor of neighbors) {
-            if (!currentPath.includes(neighbor)) {
-                const subPath = findLongestPath(neighbor, new Set(visited), currentPath);
-                if (subPath.length > longestPath.length) {
-                    longestPath = subPath;
-                }
-            }
-        }
-
-        return longestPath;
-    };
-
-    // Find longest paths starting from physical interfaces
-    // We find the longest path from each physical interface to prioritize those paths
-    const allPaths: string[][] = [];
-    const physicalInterfaceNames = new Set([
-        ...ethInterfaces.map(i => i.name),
-        ...bondInterfaces.map(i => i.name),
-        ...vrfInterfaces.map(i => i.name),
-        ...vlanInterfaces.map(i => i.name),
-        ...bridgeInterfaces.map(i => i.name)
-    ]);
-
-    physicalInterfaceNames.forEach(ifaceName => {
-        if (connectionGraph[ifaceName]) {
-            const path = findLongestPath(ifaceName);
-            if (path.length >= 2) {
-                allPaths.push(path);
-            }
-        }
+    const gravityById = computeGravityById({
+        topologyEdges,
+        interfaces,
+        physicalNodeIds: new Set([
+            ...ethInterfaces.map((i) => i.name),
+            ...bondInterfaces.map((i) => i.name),
+            ...vrfInterfaces.map((i) => i.name),
+            ...vlanInterfaces.map((i) => i.name),
+            ...bridgeInterfaces.map((i) => i.name)
+        ]),
+        importantNodes: new Set<string>(['br-ex'])
     });
 
-    // Identify important starting nodes (like 'br-ex') that should prioritize their paths
-    const importantNodes = new Set<string>(['br-ex']);
-
-    // Mark paths that contain important nodes (before sorting)
-    const pathsWithImportantNodes = new Set<number>();
-    allPaths.forEach((path, pathIndex) => {
-        if (path.some(nodeId => importantNodes.has(nodeId))) {
-            pathsWithImportantNodes.add(pathIndex);
-        }
-    });
-
-    // Create path metadata to preserve index after sorting
-    const pathMetadata = allPaths.map((path, index) => ({
-        path,
-        index,
-        hasImportantNode: pathsWithImportantNodes.has(index),
-        length: path.length
-    }));
-
-    // Sort paths by: 1) contains important node, 2) length (longer paths are more important)
-    pathMetadata.sort((a, b) => {
-        if (a.hasImportantNode !== b.hasImportantNode) {
-            return a.hasImportantNode ? -1 : 1; // Paths with important nodes come first
-        }
-        return b.length - a.length; // Then by length
-    });
-
-    // Update allPaths to match sorted order
-    allPaths.length = 0;
-    allPaths.push(...pathMetadata.map(m => m.path));
-
-    // Assign path-based gravity: nodes in longer paths get lower gravity
-    // Nodes earlier in longer paths get even lower gravity
-    // Nodes in paths with important nodes get additional priority
-    const gravityById: Record<string, number> = {};
-    const pathMembership: Record<string, { pathLength: number; position: number; hasImportantNode: boolean }[]> = {};
-
-    pathMetadata.forEach((meta) => {
-        const pathLength = meta.path.length;
-        const hasImportantNode = meta.hasImportantNode;
-        meta.path.forEach((nodeId, position) => {
-            if (!pathMembership[nodeId]) {
-                pathMembership[nodeId] = [];
-            }
-            pathMembership[nodeId].push({ pathLength, position, hasImportantNode });
-        });
-    });
-
-    // Calculate gravity: prioritize nodes in longer paths, earlier in those paths
-    // Give additional priority to nodes in paths containing important nodes
-    Object.keys(pathMembership).forEach(nodeId => {
-        const memberships = pathMembership[nodeId];
-        // Find the best path: prefer paths with important nodes, then longest, then earliest position
-        const bestPath = memberships.reduce((best, current) => {
-            if (current.hasImportantNode && !best.hasImportantNode) return current;
-            if (!current.hasImportantNode && best.hasImportantNode) return best;
-            if (current.pathLength > best.pathLength) return current;
-            if (current.pathLength < best.pathLength) return best;
-            return current.position < best.position ? current : best;
-        });
-        // Gravity = 1000 - (pathLength * 100) - position
-        // Additional -500 bonus for paths with important nodes
-        const importantBonus = bestPath.hasImportantNode ? 500 : 0;
-        const pathGravity = 1000 - (bestPath.pathLength * 100) - bestPath.position - importantBonus;
-        gravityById[nodeId] = pathGravity;
-    });
-
-    // For nodes not in any path, use connection count as fallback
-    Object.keys(connectionGraph).forEach(nodeId => {
-        if (!gravityById[nodeId]) {
-            const connectionCount = connectionGraph[nodeId]?.length || 0;
-            gravityById[nodeId] = 10000 + connectionCount; // High gravity (low priority) for unconnected nodes
-        }
-    });
-
-    // Find all nodes in the important path: nodes connected to important nodes
-    // This includes physical interfaces that are slaves of 'br-ex' (dynamically identified, no hardcoding)
-    const nodesInImportantPath = new Set<string>();
-    const findImportantPathNodes = (nodeId: string, visited: Set<string> = new Set(), depth: number = 0) => {
-        if (visited.has(nodeId) || depth > 5) return; // Limit depth to avoid infinite loops
-        visited.add(nodeId);
-        nodesInImportantPath.add(nodeId);
-
-        const neighbors = connectionGraph[nodeId] || [];
-        neighbors.forEach(neighbor => {
-            if (!visited.has(neighbor)) {
-                findImportantPathNodes(neighbor, new Set(visited), depth + 1);
-            }
-        });
-    };
-
-    // Start from important nodes and find all connected nodes in their paths
-    importantNodes.forEach(nodeId => {
-        nodesInImportantPath.add(nodeId); // Include the important node itself
-        if (connectionGraph[nodeId]) {
-            findImportantPathNodes(nodeId);
-        }
-    });
-
-    // Find physical interfaces that are slaves of 'br-ex' (dynamically, no hardcoding)
-    const physicalInterfacesSlaveToBrEx = new Set<string>();
-    interfaces.forEach((iface: Interface) => {
-        const master = iface.controller || iface.master;
-        if (master === 'br-ex') {
-            physicalInterfacesSlaveToBrEx.add(iface.name);
-        }
-    });
-
-    // Give highest priority to physical interfaces that are slaves of 'br-ex'
-    physicalInterfacesSlaveToBrEx.forEach(ifaceName => {
-        gravityById[ifaceName] = 25; // Very low gravity = very high priority (even higher than br-ex)
-    });
-
-    // Give priority to all nodes in the important path
-    // This ensures the entire path from physical interface (slave of br-ex) -> br-ex -> physnet -> machinenet aligns
-    nodesInImportantPath.forEach(nodeId => {
-        if (importantNodes.has(nodeId)) {
-            // Important nodes themselves get highest priority (but not higher than their slaves)
-            if (!physicalInterfacesSlaveToBrEx.has(nodeId)) {
-                gravityById[nodeId] = 50; // Very low gravity = very high priority
-            }
-        } else if (physicalInterfacesSlaveToBrEx.has(nodeId)) {
-            // Already handled above, skip
-        } else if (gravityById[nodeId] && gravityById[nodeId] >= 10000) {
-            // Very high gravity (not in path), give big boost
-            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 5000);
-        } else if (gravityById[nodeId] && gravityById[nodeId] >= 1000) {
-            // Medium-high gravity, give medium boost
-            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 500);
-        } else if (gravityById[nodeId] && gravityById[nodeId] >= 100) {
-            // Medium gravity, give small boost
-            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 50);
-        } else if (!gravityById[nodeId]) {
-            // Not in any path but in important path, give medium priority
-            gravityById[nodeId] = 200;
-        }
-    });
-
-    // UDNs sort below CUDNs in the Networks column
-    Object.keys(gravityById).filter((id) => id.startsWith('udn-')).forEach((id) => {
-        gravityById[id] = (gravityById[id] ?? 10000) + 50000;
-    });
-
-    const getGravity = (id: string) => gravityById[id] || 10000;
-    const sortByGravity = <T,>(items: T[], getId: (item: T) => string) => items.slice().sort((a, b) => {
-        const gravityDiff = getGravity(getId(a)) - getGravity(getId(b));
-        if (gravityDiff !== 0) return gravityDiff;
-        const aId = getId(a);
-        const bId = getId(b);
-        return aId.localeCompare(bId);
-    });
-
-    const sortedEthInterfaces = sortByGravity(ethInterfaces, (iface) => iface.name);
-    const sortedBondInterfaces = sortByGravity(bondInterfaces, (iface) => iface.name);
-    const sortedVrfInterfaces = sortByGravity(vrfInterfaces, (iface) => iface.name);
-    const sortedVlanInterfaces = sortByGravity(vlanInterfaces, (iface) => iface.name);
-    const sortedBridgeInterfaces = sortByGravity(bridgeInterfaces, (iface) => iface.name);
-    const sortedLogicalInterfaces = sortByGravity(logicalInterfaces, (iface) => iface.name);
-    const sortedBridgeMappings = sortByGravity(bridgeMappings, (mapping) => `ovn-${mapping.localnet || ''}`);
-    const sortedCudns = sortByGravity(cudns, (cudn) => `cudn-${cudn.metadata?.name || ''}`);
-    const sortedNetworkItems = sortByGravity(networkItems, getNetworkNodeId);
-    const sortedAttachmentNodes = sortByGravity(attachmentNodes, getAttachmentNodeId);
-    const sortedNads = sortByGravity(nads, (nad) => getNadNodeId(nad));
-    const sortedOtherInterfaces = sortByGravity(otherInterfaces, (iface) => iface.name);
+    const sortedEthInterfaces = sortByGravity(ethInterfaces, (iface) => iface.name, gravityById);
+    const sortedBondInterfaces = sortByGravity(bondInterfaces, (iface) => iface.name, gravityById);
+    const sortedVrfInterfaces = sortByGravity(vrfInterfaces, (iface) => iface.name, gravityById);
+    const sortedVlanInterfaces = sortByGravity(vlanInterfaces, (iface) => iface.name, gravityById);
+    const sortedBridgeInterfaces = sortByGravity(bridgeInterfaces, (iface) => iface.name, gravityById);
+    const sortedLogicalInterfaces = sortByGravity(logicalInterfaces, (iface) => iface.name, gravityById);
+    const sortedBridgeMappings = sortByGravity(bridgeMappings, (mapping) => `ovn-${mapping.localnet || ''}`, gravityById);
+    const sortedCudns = sortByGravity(cudns, (cudn) => `cudn-${cudn.metadata?.name || ''}`, gravityById);
+    const sortedNetworkItems = sortByGravity(networkItems, getNetworkNodeId, gravityById);
+    const sortedAttachmentNodes = sortByGravity(attachmentNodes, getAttachmentNodeId, gravityById);
+    const sortedNads = sortByGravity(nads, (nad) => getNadNodeId(nad), gravityById);
+    const sortedOtherInterfaces = sortByGravity(otherInterfaces, (iface) => iface.name, gravityById);
 
     // Calculate positions with dynamic column visibility
     const nodePositions: { [name: string]: { x: number, y: number } } = {};
