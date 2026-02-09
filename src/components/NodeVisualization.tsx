@@ -71,6 +71,15 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         buildBadges?: (node: NodeViewModel) => string[];
         buildLinks?: (node: NodeViewModel) => NodeLink[];
         renderDetails?: (node: NodeViewModel) => React.ReactNode;
+        tabs?: DrawerTabId[];
+    }
+
+    type DrawerTabId = 'summary' | 'details' | 'links' | 'yaml';
+
+    interface DrawerTabDefinition {
+        id: DrawerTabId;
+        title: string;
+        render: (node: NodeViewModel) => React.ReactNode;
     }
 
     const getResourceLinks = (ref: ResourceRef): NodeLink[] => {
@@ -451,6 +460,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             label: 'Other'
         }
     };
+
+    const DEFAULT_DRAWER_TABS: DrawerTabId[] = ['summary', 'details', 'links', 'yaml'];
 
     interface GraphNode {
         id: string;
@@ -1158,24 +1169,19 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // State for Popover
     const [activeNode, setActiveNode] = React.useState<NodeViewModel | null>(null);
     const [anchorElement, setAnchorElement] = React.useState<HTMLElement | null>(null);
-    const [activePopoverTab, setActivePopoverTab] = React.useState<string | number>('summary');
+    const [activePopoverTab, setActivePopoverTab] = React.useState<DrawerTabId>('summary');
 
     const handleNodeClick = (event: React.MouseEvent, node: NodeViewModel) => {
         event.stopPropagation(); // Prevent clearing highlight when clicking a node
         setAnchorElement(event.currentTarget as HTMLElement);
 
-        // Preserve tab selection when switching between nodes
         const wasDrawerOpen = activeNode !== null;
-        const isSwitchingNodes = wasDrawerOpen && activeNode?.id !== node.id;
 
         setActiveNode(node);
 
-        // Only reset to summary if drawer was closed (opening for first time)
-        // If switching between nodes, preserve the current tab selection
         if (!wasDrawerOpen) {
-            setActivePopoverTab('summary');
+            setActivePopoverTab(getDrawerTabsForNode(node)[0]?.id || 'summary');
         }
-        // If switching nodes, activePopoverTab remains unchanged
 
         // Highlight Path
         const path = getFlowPath(node.id);
@@ -1337,6 +1343,156 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         return baseNode;
     };
 
+    const drawerTabsById: Record<DrawerTabId, DrawerTabDefinition> = {
+        summary: {
+            id: 'summary',
+            title: 'Summary',
+            render: (node) => (
+                <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
+                    <DescriptionList isCompact>
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>Type</DescriptionListTerm>
+                            <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>CUDN</DescriptionListTerm>
+                            <DescriptionListDescription>{node.badges?.find((badge) => badge.startsWith('CUDN:'))?.split(':')[1] || 'N/A'}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                        {node.state && node.kind !== 'vrf' && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>State</DescriptionListTerm>
+                                <DescriptionListDescription>{node.state}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {node.kind === 'interface' && node.raw && node.raw.type === 'vlan' && node.raw.vlan && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Localnet VLAN {node.raw.vlan.id}</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    Base: {node.raw.vlan['base-iface']} <br />
+                                    ID: {node.raw.vlan.id}
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                    </DescriptionList>
+                </div>
+            )
+        },
+        details: {
+            id: 'details',
+            title: 'Details',
+            render: (node) => (
+                <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
+                    {nodeKindRegistry[node.kind]?.renderDetails?.(node) || (
+                        <DescriptionList isCompact>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>No details available</DescriptionListTerm>
+                            </DescriptionListGroup>
+                        </DescriptionList>
+                    )}
+                </div>
+            )
+        },
+        links: {
+            id: 'links',
+            title: 'Links',
+            render: (node) => (
+                <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
+                    {node.links && node.links.length > 0 ? (
+                        <DescriptionList isCompact>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Available Links</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    <ul className="pf-v6-c-list">
+                                        {node.links.map((link) => (
+                                            <li key={link.href}>
+                                                <a href={link.href} target="_blank" rel="noopener noreferrer">
+                                                    {link.label}
+                                                </a>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        </DescriptionList>
+                    ) : (
+                        <div style={{ color: 'var(--pf-global--Color--200)' }}>No links available.</div>
+                    )}
+                </div>
+            )
+        },
+        yaml: {
+            id: 'yaml',
+            title: 'YAML',
+            render: (node) => (
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+                    {node.raw && (
+                        <>
+                            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
+                                <CodeEditor
+                                    isDarkTheme
+                                    isLineNumbersVisible
+                                    isReadOnly
+                                    code={yaml.dump(node.raw)}
+                                    language={Language.yaml}
+                                    height="100%"
+                                    style={{ height: '100%' }}
+                                />
+                            </div>
+                            <div style={{ flex: '0 0 auto', padding: 'var(--pf-global--spacer--md)', backgroundColor: 'var(--pf-global--BackgroundColor--100)' }}>
+                                <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-global--spacer--sm)' }} />
+                                <a
+                                    href={(() => {
+                                        if (node.resourceRef) {
+                                            const resourceId = node.resourceRef.apiVersion
+                                                ? `${node.resourceRef.apiVersion.replace('/', '~')}~${node.resourceRef.kind}`
+                                                : node.resourceRef.kind;
+                                            const base = node.resourceRef.namespace
+                                                ? `/k8s/ns/${node.resourceRef.namespace}`
+                                                : '/k8s/cluster';
+                                            return `${window.location.origin}${base}/${resourceId}/${node.resourceRef.name}/yaml`;
+                                        }
+                                        const namespace = node.raw?.metadata?.namespace;
+                                        const resourceId = node.kind === 'other' || node.kind === 'interface' || node.kind === 'ovn-mapping'
+                                            ? 'nodenetworkstates.nmstate.io'
+                                            : 'clusteruserdefinednetworks.k8s.cni.cncf.io';
+                                        const base = namespace ? `/k8s/ns/${namespace}` : '/k8s/cluster';
+                                        return `${window.location.origin}${base}/${resourceId}/${node.raw.metadata?.name}/yaml`;
+                                    })()}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    View Resource in Console
+                                </a>
+                            </div>
+                        </>
+                    )}
+                    {!node.raw && (
+                        <span style={{ fontSize: '0.9em', color: 'var(--pf-global--Color--200)', padding: '16px' }}>No YAML content available.</span>
+                    )}
+                </div>
+            )
+        }
+    };
+
+    const getDrawerTabsForNode = (node: NodeViewModel): DrawerTabDefinition[] => {
+        const configuredTabs = nodeKindRegistry[node.kind]?.tabs || DEFAULT_DRAWER_TABS;
+        return configuredTabs.map((tabId) => drawerTabsById[tabId]);
+    };
+
+    const activeNodeTabs = React.useMemo(
+        () => (activeNode ? getDrawerTabsForNode(activeNode) : []),
+        [activeNode]
+    );
+
+    React.useEffect(() => {
+        if (!activeNode || activeNodeTabs.length === 0) {
+            return;
+        }
+        if (!activeNodeTabs.some((tab) => tab.id === activePopoverTab)) {
+            setActivePopoverTab(activeNodeTabs[0].id);
+        }
+    }, [activeNode, activeNodeTabs, activePopoverTab]);
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const renderInterfaceNode = (iface: any, x: number, y: number, color: string, typeOverride?: string, heightOverride?: number) => {
         const type = typeOverride || iface.type;
@@ -1417,131 +1573,21 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                     <div style={{ flex: '0 0 auto', zIndex: 10, boxShadow: '0 1px 2px 0 rgba(0,0,0,0.1)' }}>
                         <Tabs
                             activeKey={activePopoverTab}
-                            onSelect={(_event, key) => setActivePopoverTab(key)}
+                            onSelect={(_event, key) => {
+                                if (typeof key === 'string') {
+                                    setActivePopoverTab(key as DrawerTabId);
+                                }
+                            }}
                             isFilled
                             className="node-details-tabs"
                         >
-                            <Tab eventKey="summary" title={<TabTitleText>Summary</TabTitleText>} />
-                            <Tab eventKey="details" title={<TabTitleText>Details</TabTitleText>} />
-                            <Tab eventKey="links" title={<TabTitleText>Links</TabTitleText>} />
-                            <Tab eventKey="yaml" title={<TabTitleText>YAML</TabTitleText>} />
+                            {activeNodeTabs.map((tab) => (
+                                <Tab key={tab.id} eventKey={tab.id} title={<TabTitleText>{tab.title}</TabTitleText>} />
+                            ))}
                         </Tabs>
                     </div>
                     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                        {activePopoverTab === 'summary' && (
-                            <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
-                                <DescriptionList isCompact>
-                                    <DescriptionListGroup>
-                                        <DescriptionListTerm>Type</DescriptionListTerm>
-                                        <DescriptionListDescription>{activeNode.subtitle}</DescriptionListDescription>
-                                    </DescriptionListGroup>
-                                    <DescriptionListGroup>
-                                        <DescriptionListTerm>CUDN</DescriptionListTerm>
-                                        <DescriptionListDescription>{activeNode.badges?.find((b) => b.startsWith('CUDN:'))?.split(':')[1] || 'N/A'}</DescriptionListDescription>
-                                    </DescriptionListGroup>
-                                    {activeNode.state && activeNode.kind !== 'vrf' && (
-                                        <DescriptionListGroup>
-                                            <DescriptionListTerm>State</DescriptionListTerm>
-                                            <DescriptionListDescription>{activeNode.state}</DescriptionListDescription>
-                                        </DescriptionListGroup>
-                                    )}
-                                    {activeNode.kind === 'interface' && activeNode.raw && activeNode.raw.type === 'vlan' && activeNode.raw.vlan && (
-                                        <DescriptionListGroup>
-                                            <DescriptionListTerm>Localnet VLAN {activeNode.raw.vlan.id}</DescriptionListTerm>
-                                            <DescriptionListDescription>
-                                                Base: {activeNode.raw.vlan['base-iface']} <br />
-                                                ID: {activeNode.raw.vlan.id}
-                                            </DescriptionListDescription>
-                                        </DescriptionListGroup>
-                                    )}
-                                </DescriptionList>
-                            </div>
-                        )}
-                        {activePopoverTab === 'details' && (
-                            <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
-                                {nodeKindRegistry[activeNode.kind]?.renderDetails?.(activeNode) || (
-                                    <DescriptionList isCompact>
-                                        <DescriptionListGroup>
-                                            <DescriptionListTerm>No details available</DescriptionListTerm>
-                                        </DescriptionListGroup>
-                                    </DescriptionList>
-                                )}
-                            </div>
-                        )}
-                        {activePopoverTab === 'links' && (
-                            <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
-                                {activeNode.links && activeNode.links.length > 0 ? (
-                                    <DescriptionList isCompact>
-                                        <DescriptionListGroup>
-                                            <DescriptionListTerm>Available Links</DescriptionListTerm>
-                                            <DescriptionListDescription>
-                                                <ul className="pf-v6-c-list">
-                                                    {activeNode.links.map((link) => (
-                                                        <li key={link.href}>
-                                                            <a href={link.href} target="_blank" rel="noopener noreferrer">
-                                                                {link.label}
-                                                            </a>
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </DescriptionListDescription>
-                                        </DescriptionListGroup>
-                                    </DescriptionList>
-                                ) : (
-                                    <div style={{ color: 'var(--pf-global--Color--200)' }}>No links available.</div>
-                                )}
-                            </div>
-                        )}
-                        {activePopoverTab === 'yaml' && (
-                            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-                                {activeNode.raw && (
-                                    <>
-                                        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
-                                            <CodeEditor
-                                                isDarkTheme
-                                                isLineNumbersVisible
-                                                isReadOnly
-                                                code={yaml.dump(activeNode.raw)}
-                                                language={Language.yaml}
-                                                height="100%"
-                                                style={{ height: '100%' }}
-                                            />
-                                        </div>
-                                        <div style={{ flex: '0 0 auto', padding: 'var(--pf-global--spacer--md)', backgroundColor: 'var(--pf-global--BackgroundColor--100)' }}>
-                                            <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-global--spacer--sm)' }} />
-                                            <a
-                                                href={(() => {
-                                                    // Use resourceRef if available for consistent link generation
-                                                    if (activeNode.resourceRef) {
-                                                        const resourceId = activeNode.resourceRef.apiVersion
-                                                            ? `${activeNode.resourceRef.apiVersion.replace('/', '~')}~${activeNode.resourceRef.kind}`
-                                                            : activeNode.resourceRef.kind;
-                                                        const base = activeNode.resourceRef.namespace
-                                                            ? `/k8s/ns/${activeNode.resourceRef.namespace}`
-                                                            : '/k8s/cluster';
-                                                        return `${window.location.origin}${base}/${resourceId}/${activeNode.resourceRef.name}/yaml`;
-                                                    }
-                                                    // Fallback: use same logic as getResourceLinks() for cluster-scoped resources
-                                                    const namespace = activeNode.raw?.metadata?.namespace;
-                                                    const resourceId = activeNode.kind === 'other' || activeNode.kind === 'interface' || activeNode.kind === 'ovn-mapping'
-                                                        ? 'nodenetworkstates.nmstate.io'
-                                                        : 'clusteruserdefinednetworks.k8s.cni.cncf.io';
-                                                    const base = namespace ? `/k8s/ns/${namespace}` : '/k8s/cluster';
-                                                    return `${window.location.origin}${base}/${resourceId}/${activeNode.raw.metadata?.name}/yaml`;
-                                                })()}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                            >
-                                                View Resource in Console
-                                            </a>
-                                        </div>
-                                    </>
-                                )}
-                                {!activeNode.raw && (
-                                    <span style={{ fontSize: '0.9em', color: 'var(--pf-global--Color--200)', padding: '16px' }}>No YAML content available.</span>
-                                )}
-                            </div>
-                        )}
+                        {activeNodeTabs.find((tab) => tab.id === activePopoverTab)?.render(activeNode)}
                     </div>
                 </div>
             )}
