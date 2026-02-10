@@ -1,5 +1,6 @@
 import {
     ClusterUserDefinedNetwork,
+    Interface,
     NetworkAttachmentDefinition,
     RouteAdvertisements
 } from '../types';
@@ -8,6 +9,10 @@ interface MatchExpression {
     key: string;
     operator: string;
     values?: string[];
+}
+
+export interface VrfConnectionInfo {
+    brIntPorts: Interface[];
 }
 
 const matchesLabelSelector = (
@@ -88,6 +93,24 @@ export const getCudnsSelectedByRouteAdvertisement = (
     }
 
     return cudns.filter((cudn) => routeAdvertisementSelectsCudn(routeAdvertisement, cudn));
+};
+
+export const getVrfConnectionInfo = (
+    vrfInterface: Interface,
+    interfaces: Interface[]
+): VrfConnectionInfo => {
+    const vrfPorts = new Set<string>(
+        Array.isArray(vrfInterface.vrf?.port)
+            ? vrfInterface.vrf.port
+            : typeof vrfInterface.vrf?.port === 'string'
+                ? [vrfInterface.vrf.port]
+                : []
+    );
+
+    const brIntCandidates = interfaces.filter((iface) => (iface.controller || iface.master) === 'br-int');
+    const brIntPorts = brIntCandidates.filter((iface) => vrfPorts.has(iface.name));
+
+    return { brIntPorts };
 };
 
 export const getCudnAssociatedNamespaces = (cudn: ClusterUserDefinedNetwork): string[] => {

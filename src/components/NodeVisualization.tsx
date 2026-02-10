@@ -13,6 +13,7 @@ import {
     getCudnAssociatedNamespaces,
     getCudnsSelectedByRouteAdvertisement,
     getRouteAdvertisementsMatchingCudn,
+    getVrfConnectionInfo,
     parseNadConfig
 } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
@@ -127,38 +128,71 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
         interface: {
             label: 'Interface',
-            renderDetails: (node) => (
-                <DescriptionList isCompact>
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>Type</DescriptionListTerm>
-                        <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
-                    </DescriptionListGroup>
-                    {node.state && (
+            renderDetails: (node) => {
+                const isBridgeNode = node.raw?.type === 'linux-bridge' || node.raw?.type === 'ovs-bridge';
+                const rawPorts = node.raw?.bridge?.port || node.raw?.bridge?.ports || node.raw?.ports || [];
+                const bridgePorts = Array.isArray(rawPorts)
+                    ? rawPorts
+                        .map((port: unknown) => {
+                            if (typeof port === 'string') return port;
+                            if (port && typeof port === 'object' && 'name' in (port as Record<string, unknown>)) {
+                                const name = (port as Record<string, unknown>).name;
+                                return typeof name === 'string' ? name : '';
+                            }
+                            return '';
+                        })
+                        .filter(Boolean)
+                    : [];
+
+                return (
+                    <DescriptionList isCompact>
                         <DescriptionListGroup>
-                            <DescriptionListTerm>State</DescriptionListTerm>
-                            <DescriptionListDescription>{node.state}</DescriptionListDescription>
+                            <DescriptionListTerm>Type</DescriptionListTerm>
+                            <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
                         </DescriptionListGroup>
-                    )}
-                    {node.raw?.mac_address && (
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>MAC Address</DescriptionListTerm>
-                            <DescriptionListDescription>{node.raw.mac_address}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                    )}
-                    {node.raw?.mtu && (
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>MTU</DescriptionListTerm>
-                            <DescriptionListDescription>{node.raw.mtu}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                    )}
-                    {node.raw?.ipv4?.address && node.raw.ipv4.address.length > 0 && (
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>IPv4</DescriptionListTerm>
-                            <DescriptionListDescription>{node.raw.ipv4.address[0].ip}/{node.raw.ipv4.address[0].prefix_length}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                    )}
-                </DescriptionList>
-            )
+                        {node.state && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>State</DescriptionListTerm>
+                                <DescriptionListDescription>{node.state}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {node.raw?.mac_address && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>MAC Address</DescriptionListTerm>
+                                <DescriptionListDescription>{node.raw.mac_address}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {node.raw?.mtu && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>MTU</DescriptionListTerm>
+                                <DescriptionListDescription>{node.raw.mtu}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {node.raw?.ipv4?.address && node.raw.ipv4.address.length > 0 && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>IPv4</DescriptionListTerm>
+                                <DescriptionListDescription>{node.raw.ipv4.address[0].ip}/{node.raw.ipv4.address[0].prefix_length}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                        {isBridgeNode && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Ports</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    {bridgePorts.length > 0 ? (
+                                        <ul className="pf-v6-c-list">
+                                            {bridgePorts.map((portName) => (
+                                                <li key={portName}>{portName}</li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <span style={{ color: 'var(--pf-global--Color--200)' }}>No bridge ports reported in NNS.</span>
+                                    )}
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
+                    </DescriptionList>
+                );
+            }
         },
         'ovn-mapping': {
             label: 'OVN Mapping',
@@ -399,21 +433,30 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             renderDetails: (node) => {
                 const ra = findRouteAdvertisementForVrf(routeAdvertisements, node.raw.name);
                 const matchedCudns = getCudnsSelectedByRouteAdvertisement(ra, cudns);
+                const { brIntPorts } = getVrfConnectionInfo(node.raw as Interface, interfaces);
 
                 return (
                     <DescriptionList isCompact>
-                        {node.raw?.vrf?.port && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>OVN Port</DescriptionListTerm>
-                                <DescriptionListDescription>{Array.isArray(node.raw.vrf.port) ? node.raw.vrf.port.join(', ') : node.raw.vrf.port}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
                         {node.raw?.vrf?.['route-table-id'] && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>Route Table</DescriptionListTerm>
                                 <DescriptionListDescription>{node.raw.vrf['route-table-id']}</DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>br-int Ports</DescriptionListTerm>
+                            <DescriptionListDescription>
+                                {brIntPorts.length > 0 ? (
+                                    <ul className="pf-v6-c-list">
+                                        {brIntPorts.map((iface) => (
+                                            <li key={iface.name}>{iface.name}</li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <span style={{ color: 'var(--pf-global--Color--200)' }}>No matching br-int ports inferred from NNS.</span>
+                                )}
+                            </DescriptionListDescription>
+                        </DescriptionListGroup>
                         {ra && (
                             <>
                                 <DescriptionListGroup>
@@ -1172,7 +1215,23 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                         </DescriptionListGroup>
                         <DescriptionListGroup>
                             <DescriptionListTerm>CUDN</DescriptionListTerm>
-                            <DescriptionListDescription>{node.badges?.find((badge) => badge.startsWith('CUDN:'))?.split(':')[1] || 'N/A'}</DescriptionListDescription>
+                            <DescriptionListDescription>
+                                {(() => {
+                                    if (node.kind === 'cudn') {
+                                        return node.label || 'N/A';
+                                    }
+                                    if (node.kind === 'vrf') {
+                                        const ra = findRouteAdvertisementForVrf(routeAdvertisements, node.raw?.name || '');
+                                        const matchedCudnNames = getCudnsSelectedByRouteAdvertisement(ra, cudns)
+                                            .map((cudn) => cudn.metadata?.name)
+                                            .filter(Boolean)
+                                            .join(', ');
+                                        return matchedCudnNames || 'N/A';
+                                    }
+                                    const badgeCudn = node.badges?.find((badge) => badge.startsWith('CUDN:'))?.split(':')[1];
+                                    return badgeCudn || 'N/A';
+                                })()}
+                            </DescriptionListDescription>
                         </DescriptionListGroup>
                         {node.state && node.kind !== 'vrf' && (
                             <DescriptionListGroup>
