@@ -75,6 +75,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         label: string;
         buildBadges?: (node: NodeViewModel) => string[];
         buildLinks?: (node: NodeViewModel) => NodeLink[];
+        renderSummary?: (node: NodeViewModel) => React.ReactNode;
         renderDetails?: (node: NodeViewModel) => React.ReactNode;
         tabs?: DrawerTabId[];
     }
@@ -128,9 +129,37 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const CUDN_NODE_COLOR = '#CC0099';
     const UDN_NODE_COLOR = '#0084A8';
 
+    const renderBaseSummary = (node: NodeViewModel, extras?: React.ReactNode) => (
+        <DescriptionList isCompact>
+            <DescriptionListGroup>
+                <DescriptionListTerm>Type</DescriptionListTerm>
+                <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
+            </DescriptionListGroup>
+            {node.state && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>State</DescriptionListTerm>
+                    <DescriptionListDescription>{node.state}</DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {extras}
+        </DescriptionList>
+    );
+
     const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
         interface: {
             label: 'Interface',
+            renderSummary: (node) => renderBaseSummary(
+                node,
+                node.raw?.type === 'vlan' && node.raw?.vlan ? (
+                    <DescriptionListGroup>
+                        <DescriptionListTerm>Localnet VLAN {node.raw.vlan.id}</DescriptionListTerm>
+                        <DescriptionListDescription>
+                            Base: {node.raw.vlan['base-iface']} <br />
+                            ID: {node.raw.vlan.id}
+                        </DescriptionListDescription>
+                    </DescriptionListGroup>
+                ) : undefined
+            ),
             renderDetails: (node) => {
                 const isBridgeNode = node.raw?.type === 'linux-bridge' || node.raw?.type === 'ovs-bridge';
                 const rawPorts = node.raw?.bridge?.port || node.raw?.bridge?.ports || node.raw?.ports || [];
@@ -262,6 +291,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         },
         cudn: {
             label: 'CUDN',
+            renderSummary: (node) => renderBaseSummary(
+                node,
+                <DescriptionListGroup>
+                    <DescriptionListTerm>CUDN</DescriptionListTerm>
+                    <DescriptionListDescription>{node.label}</DescriptionListDescription>
+                </DescriptionListGroup>
+            ),
             renderDetails: (node) => {
                 const topology = node.raw?.spec?.network?.topology;
                 const matchingRAs =
@@ -388,6 +424,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                             <DescriptionListTerm>Role</DescriptionListTerm>
                             <DescriptionListDescription>{role}</DescriptionListDescription>
                         </DescriptionListGroup>
+                        {(topology === 'Layer2' || topology === 'Layer3') && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Subnets</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    {(topology === 'Layer2' ? udn?.spec?.layer2?.subnets : udn?.spec?.layer3?.subnets)?.join(', ') || '-'}
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
                         {nadInNs && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>NetworkAttachmentDefinition</DescriptionListTerm>
@@ -433,6 +477,22 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         },
         vrf: {
             label: 'VRF',
+            renderSummary: (node) => {
+                const ra = findRouteAdvertisementForVrf(routeAdvertisements, node.raw?.name || '');
+                const matchedCudnNames = getCudnsSelectedByRouteAdvertisement(ra, cudns)
+                    .map((cudn) => cudn.metadata?.name)
+                    .filter(Boolean);
+
+                return renderBaseSummary(
+                    node,
+                    <DescriptionListGroup>
+                        <DescriptionListTerm>Matched CUDNs</DescriptionListTerm>
+                        <DescriptionListDescription>
+                            {matchedCudnNames.length > 0 ? matchedCudnNames.join(', ') : 'N/A'}
+                        </DescriptionListDescription>
+                    </DescriptionListGroup>
+                );
+            },
             renderDetails: (node) => {
                 const ra = findRouteAdvertisementForVrf(routeAdvertisements, node.raw.name);
                 const matchedCudns = getCudnsSelectedByRouteAdvertisement(ra, cudns);
@@ -1247,50 +1307,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             title: 'Summary',
             render: (node) => (
                 <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
-                    <DescriptionList isCompact>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>Type</DescriptionListTerm>
-                            <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                        {(() => {
-                            let cudnValue: string | null = null;
-                            if (node.kind === 'cudn') {
-                                cudnValue = node.label || null;
-                            } else if (node.kind === 'vrf') {
-                                const ra = findRouteAdvertisementForVrf(routeAdvertisements, node.raw?.name || '');
-                                const matchedCudnNames = getCudnsSelectedByRouteAdvertisement(ra, cudns)
-                                    .map((cudn) => cudn.metadata?.name)
-                                    .filter(Boolean)
-                                    .join(', ');
-                                cudnValue = matchedCudnNames || 'N/A';
-                            } else {
-                                const badgeCudn = node.badges?.find((badge) => badge.startsWith('CUDN:'))?.split(':')[1];
-                                cudnValue = badgeCudn || null;
-                            }
-
-                            return cudnValue ? (
-                                <DescriptionListGroup>
-                                    <DescriptionListTerm>CUDN</DescriptionListTerm>
-                                    <DescriptionListDescription>{cudnValue}</DescriptionListDescription>
-                                </DescriptionListGroup>
-                            ) : null;
-                        })()}
-                        {node.state && node.kind !== 'vrf' && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>State</DescriptionListTerm>
-                                <DescriptionListDescription>{node.state}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {node.kind === 'interface' && node.raw && node.raw.type === 'vlan' && node.raw.vlan && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Localnet VLAN {node.raw.vlan.id}</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    Base: {node.raw.vlan['base-iface']} <br />
-                                    ID: {node.raw.vlan.id}
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                    </DescriptionList>
+                    {nodeKindRegistry[node.kind]?.renderSummary?.(node) || renderBaseSummary(node)}
                 </div>
             )
         },
