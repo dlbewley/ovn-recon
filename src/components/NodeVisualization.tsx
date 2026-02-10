@@ -145,6 +145,15 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         </DescriptionList>
     );
 
+    const getMacAddress = (raw: unknown): string | undefined => {
+        if (!raw || typeof raw !== 'object') {
+            return undefined;
+        }
+        const record = raw as Record<string, unknown>;
+        const macAddress = record.mac_address ?? record['mac-address'];
+        return typeof macAddress === 'string' ? macAddress : undefined;
+    };
+
     const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
         interface: {
             label: 'Interface',
@@ -162,6 +171,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             ),
             renderDetails: (node) => {
                 const isBridgeNode = node.raw?.type === 'linux-bridge' || node.raw?.type === 'ovs-bridge';
+                const macAddress = getMacAddress(node.raw);
                 const rawPorts = node.raw?.bridge?.port || node.raw?.bridge?.ports || node.raw?.ports || [];
                 const bridgePorts = Array.isArray(rawPorts)
                     ? rawPorts
@@ -188,10 +198,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 <DescriptionListDescription>{node.state}</DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
-                        {node.raw?.mac_address && (
+                        {macAddress && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>MAC Address</DescriptionListTerm>
-                                <DescriptionListDescription>{node.raw.mac_address}</DescriptionListDescription>
+                                <DescriptionListDescription>{macAddress}</DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
                         {node.raw?.mtu && (
@@ -497,9 +507,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 const ra = findRouteAdvertisementForVrf(routeAdvertisements, node.raw.name);
                 const matchedCudns = getCudnsSelectedByRouteAdvertisement(ra, cudns);
                 const { brIntPorts } = getVrfConnectionInfo(node.raw as Interface, interfaces);
+                const macAddress = getMacAddress(node.raw);
 
                 return (
                     <DescriptionList isCompact>
+                        {macAddress && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>MAC Address</DescriptionListTerm>
+                                <DescriptionListDescription>{macAddress}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
                         {node.raw?.vrf?.['route-table-id'] && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>Route Table</DescriptionListTerm>
