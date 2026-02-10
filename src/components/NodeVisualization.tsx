@@ -310,6 +310,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             ),
             renderDetails: (node) => {
                 const topology = node.raw?.spec?.network?.topology;
+                const hasRole = topology === 'Layer2' || topology === 'Layer3' || topology === 'Localnet';
+                const role =
+                    topology === 'Layer2' ? node.raw?.spec?.network?.layer2?.role
+                        : topology === 'Layer3' ? node.raw?.spec?.network?.layer3?.role
+                            : topology === 'Localnet' ? (node.raw?.spec?.network?.localnet?.role || node.raw?.spec?.network?.localNet?.role || 'Secondary')
+                            : undefined;
                 const matchingRAs =
                     (topology === 'Layer2' || topology === 'Layer3')
                         ? getRouteAdvertisementsMatchingCudn(routeAdvertisements, node.raw as ClusterUserDefinedNetwork)
@@ -322,6 +328,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                             <DescriptionListTerm>Topology</DescriptionListTerm>
                             <DescriptionListDescription>{topology || 'Unknown'}</DescriptionListDescription>
                         </DescriptionListGroup>
+
+                        {hasRole && (
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>Role</DescriptionListTerm>
+                                <DescriptionListDescription>{role || 'Unknown'}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        )}
 
                         {(topology === 'Layer2' || topology === 'Layer3') && (
                             <DescriptionListGroup>
@@ -356,7 +369,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
                         {associatedNamespaces.length > 0 && (
                             <DescriptionListGroup>
-                                <DescriptionListTerm>Associated Namespaces</DescriptionListTerm>
+                                <DescriptionListTerm>Namespaces</DescriptionListTerm>
                                 <DescriptionListDescription>
                                     <ul className="pf-v6-c-list">
                                         {associatedNamespaces.map((ns: string) => (
@@ -425,14 +438,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                             <DescriptionListDescription>{topology}</DescriptionListDescription>
                         </DescriptionListGroup>
                         <DescriptionListGroup>
+                            <DescriptionListTerm>Role</DescriptionListTerm>
+                            <DescriptionListDescription>{role}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                        <DescriptionListGroup>
                             <DescriptionListTerm>Namespace</DescriptionListTerm>
                             <DescriptionListDescription>
                                 <a href={`/k8s/ns/${namespace}`} className="pf-v6-c-button pf-m-link pf-m-inline">{namespace}</a>
                             </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>Role</DescriptionListTerm>
-                            <DescriptionListDescription>{role}</DescriptionListDescription>
                         </DescriptionListGroup>
                         {(topology === 'Layer2' || topology === 'Layer3') && (
                             <DescriptionListGroup>
