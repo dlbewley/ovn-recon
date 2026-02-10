@@ -1,6 +1,7 @@
 import {
     ClusterUserDefinedNetwork,
     Interface,
+    NodeNetworkState,
     NetworkAttachmentDefinition,
     RouteAdvertisements
 } from '../types';
@@ -13,6 +14,15 @@ interface MatchExpression {
 
 export interface VrfConnectionInfo {
     brIntPorts: Interface[];
+}
+
+export interface VrfAssociatedRoute {
+    destination: string;
+    nextHopAddress?: string;
+    nextHopInterface?: string;
+    tableId?: string;
+    metric?: string;
+    protocol?: string;
 }
 
 const matchesLabelSelector = (
@@ -111,6 +121,107 @@ export const getVrfConnectionInfo = (
     const brIntPorts = brIntCandidates.filter((iface) => vrfPorts.has(iface.name));
 
     return { brIntPorts };
+};
+
+const toStringValue = (value: unknown): string | undefined => {
+    if (value == null) return undefined;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    return undefined;
+};
+
+const getRouteTableId = (route: Record<string, unknown>): string | undefined =>
+    toStringValue(
+        route['table-id'] ??
+        route.tableId ??
+        route.table ??
+        route['route-table-id']
+    );
+
+const getRouteNextHopInterface = (route: Record<string, unknown>): string | undefined =>
+    toStringValue(
+        route['next-hop-interface'] ??
+        route.nextHopInterface ??
+        route['outgoing-interface'] ??
+        route.oif ??
+        route.dev
+    );
+
+const normalizeRoute = (route: unknown): VrfAssociatedRoute | null => {
+    if (!route || typeof route !== 'object') {
+        return null;
+    }
+    const raw = route as Record<string, unknown>;
+    const destination = toStringValue(raw.destination ?? raw.dst);
+    if (!destination) {
+        return null;
+    }
+
+    return {
+        destination,
+        nextHopAddress: toStringValue(raw['next-hop-address'] ?? raw.nextHopAddress ?? raw.gateway ?? raw.via),
+        nextHopInterface: getRouteNextHopInterface(raw),
+        tableId: getRouteTableId(raw),
+        metric: toStringValue(raw.metric),
+        protocol: toStringValue(raw.protocol)
+    };
+};
+
+const collectNnsRoutes = (nns: NodeNetworkState): VrfAssociatedRoute[] => {
+    const currentState = nns.status?.currentState as Record<string, unknown> | undefined;
+    if (!currentState) {
+        return [];
+    }
+
+    const candidateLists: unknown[] = [];
+    const routes = currentState.routes as Record<string, unknown> | unknown[] | undefined;
+    if (Array.isArray(routes)) {
+        candidateLists.push(routes);
+    } else if (routes && typeof routes === 'object') {
+        candidateLists.push(
+            (routes as Record<string, unknown>).running,
+            (routes as Record<string, unknown>).config
+        );
+    }
+    candidateLists.push(
+        (currentState as Record<string, unknown>)['routes.running'],
+        (currentState as Record<string, unknown>)['routes.config']
+    );
+
+    const normalized = candidateLists
+        .flatMap((list) => (Array.isArray(list) ? list : []))
+        .map(normalizeRoute)
+        .filter((route): route is VrfAssociatedRoute => route !== null);
+
+    const dedupedByKey = new Map<string, VrfAssociatedRoute>();
+    normalized.forEach((route) => {
+        const key = `${route.destination}|${route.nextHopAddress || ''}|${route.nextHopInterface || ''}|${route.tableId || ''}`;
+        if (!dedupedByKey.has(key)) {
+            dedupedByKey.set(key, route);
+        }
+    });
+
+    return Array.from(dedupedByKey.values());
+};
+
+export const getVrfRoutesForInterface = (
+    vrfInterface: Interface,
+    nns: NodeNetworkState
+): VrfAssociatedRoute[] => {
+    const vrfTableId = toStringValue(vrfInterface.vrf?.['route-table-id']);
+    const vrfPorts = new Set<string>(
+        Array.isArray(vrfInterface.vrf?.port)
+            ? vrfInterface.vrf.port
+            : typeof vrfInterface.vrf?.port === 'string'
+                ? [vrfInterface.vrf.port]
+                : []
+    );
+
+    return collectNnsRoutes(nns).filter((route) => {
+        const byTable = vrfTableId ? route.tableId === vrfTableId : false;
+        const byPort = route.nextHopInterface ? vrfPorts.has(route.nextHopInterface) : false;
+        return byTable || byPort;
+    });
 };
 
 export const getCudnAssociatedNamespaces = (cudn: ClusterUserDefinedNetwork): string[] => {
