@@ -13,6 +13,8 @@ import {
     getCudnAssociatedNamespaces,
     getCudnsSelectedByRouteAdvertisement,
     getRouteAdvertisementsMatchingCudn,
+    getVrfRoutesForInterface,
+    VrfAssociatedRoute,
     getVrfConnectionInfo,
     parseNadConfig
 } from './nodeVisualizationSelectors';
@@ -64,6 +66,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         links?: NodeLink[];
         resourceRef?: ResourceRef;
         isSynthetic?: boolean;
+        vrfRoutes?: VrfAssociatedRoute[];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         raw?: any;
     }
@@ -444,13 +447,46 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                             </DescriptionListGroup>
                         )}
                         <DescriptionListGroup>
+                            <DescriptionListTerm>Routes</DescriptionListTerm>
+                            <DescriptionListDescription>
+                                {node.vrfRoutes && node.vrfRoutes.length > 0 ? (
+                                    <ul className="pf-v6-c-list">
+                                        {node.vrfRoutes.map((route, index) => (
+                                            <li key={`${route.destination}-${route.nextHopAddress || ''}-${route.nextHopInterface || ''}-${index}`}>
+                                                {route.destination}
+                                                {route.nextHopAddress ? ` via ${route.nextHopAddress}` : ''}
+                                                {route.nextHopInterface ? ` dev ${route.nextHopInterface}` : ''}
+                                                {route.metric ? ` metric ${route.metric}` : ''}
+                                                {route.protocol ? ` proto ${route.protocol}` : ''}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <span style={{ color: 'var(--pf-global--Color--200)' }}>No associated routes found in NNS.</span>
+                                )}
+                            </DescriptionListDescription>
+                        </DescriptionListGroup>
+                        <DescriptionListGroup>
                             <DescriptionListTerm>br-int Ports</DescriptionListTerm>
                             <DescriptionListDescription>
                                 {brIntPorts.length > 0 ? (
                                     <ul className="pf-v6-c-list">
-                                        {brIntPorts.map((iface) => (
-                                            <li key={iface.name}>{iface.name}</li>
-                                        ))}
+                                        {brIntPorts.map((iface) => {
+                                            const ipv4Addresses = iface.ipv4?.address || [];
+                                            return (
+                                                <li key={iface.name}>
+                                                    {iface.name}
+                                                    {ipv4Addresses.length > 0
+                                                        ? ` ${ipv4Addresses
+                                                            .map((addr: Record<string, unknown>) => {
+                                                                const prefixLength = addr.prefix_length ?? addr['prefix-length'];
+                                                                return `${String(addr.ip)}/${String(prefixLength)}`;
+                                                            })
+                                                            .join(', ')}`
+                                                        : ''}
+                                                </li>
+                                            );
+                                        })}
                                     </ul>
                                 ) : (
                                     <span style={{ color: 'var(--pf-global--Color--200)' }}>No matching br-int ports inferred from NNS.</span>
@@ -1088,6 +1124,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         let namespaces: string[] | undefined;
         let resourceRef: ResourceRef | undefined;
         let isSynthetic = false;
+        let vrfRoutes: VrfAssociatedRoute[] | undefined;
 
         if (type === 'ovn-mapping') {
             label = iface.localnet;
@@ -1104,6 +1141,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             if (iface.vrf?.port) details.push(`${Array.isArray(iface.vrf.port) ? iface.vrf.port.join(', ') : iface.vrf.port}`);
             if (iface.vrf?.['route-table-id']) details.push(`Tbl ${iface.vrf['route-table-id']}`);
             state = details.length > 0 ? details.join(' ') : iface.state;
+            vrfRoutes = getVrfRoutesForInterface(iface as Interface, nns);
         } else if (type === 'cudn') {
             label = iface.metadata?.name || '';
             title = iface.metadata?.name || '';
@@ -1185,6 +1223,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             namespaces,
             resourceRef,
             isSynthetic,
+            vrfRoutes,
             raw: iface
         };
 
@@ -1213,26 +1252,29 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                             <DescriptionListTerm>Type</DescriptionListTerm>
                             <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
                         </DescriptionListGroup>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>CUDN</DescriptionListTerm>
-                            <DescriptionListDescription>
-                                {(() => {
-                                    if (node.kind === 'cudn') {
-                                        return node.label || 'N/A';
-                                    }
-                                    if (node.kind === 'vrf') {
-                                        const ra = findRouteAdvertisementForVrf(routeAdvertisements, node.raw?.name || '');
-                                        const matchedCudnNames = getCudnsSelectedByRouteAdvertisement(ra, cudns)
-                                            .map((cudn) => cudn.metadata?.name)
-                                            .filter(Boolean)
-                                            .join(', ');
-                                        return matchedCudnNames || 'N/A';
-                                    }
-                                    const badgeCudn = node.badges?.find((badge) => badge.startsWith('CUDN:'))?.split(':')[1];
-                                    return badgeCudn || 'N/A';
-                                })()}
-                            </DescriptionListDescription>
-                        </DescriptionListGroup>
+                        {(() => {
+                            let cudnValue: string | null = null;
+                            if (node.kind === 'cudn') {
+                                cudnValue = node.label || null;
+                            } else if (node.kind === 'vrf') {
+                                const ra = findRouteAdvertisementForVrf(routeAdvertisements, node.raw?.name || '');
+                                const matchedCudnNames = getCudnsSelectedByRouteAdvertisement(ra, cudns)
+                                    .map((cudn) => cudn.metadata?.name)
+                                    .filter(Boolean)
+                                    .join(', ');
+                                cudnValue = matchedCudnNames || 'N/A';
+                            } else {
+                                const badgeCudn = node.badges?.find((badge) => badge.startsWith('CUDN:'))?.split(':')[1];
+                                cudnValue = badgeCudn || null;
+                            }
+
+                            return cudnValue ? (
+                                <DescriptionListGroup>
+                                    <DescriptionListTerm>CUDN</DescriptionListTerm>
+                                    <DescriptionListDescription>{cudnValue}</DescriptionListDescription>
+                                </DescriptionListGroup>
+                            ) : null;
+                        })()}
                         {node.state && node.kind !== 'vrf' && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>State</DescriptionListTerm>
