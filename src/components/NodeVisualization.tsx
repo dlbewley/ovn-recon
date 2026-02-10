@@ -650,7 +650,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Simple layout logic
     const width = 1600; // Increased width for new columns
     // const height = 800; // Unused
-    const padding = 10; // Reduced padding to minimize whitespace
+    const padding = 20; // Keep headers visible while remaining top-left aligned
     const itemHeight = 80;
     const itemWidth = 160;
     const colSpacing = 220;
@@ -1578,6 +1578,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 width="100%"
                                 height={calculatedHeight}
                                 viewBox={viewBox ? `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}` : `0 0 ${width} ${calculatedHeight}`}
+                                preserveAspectRatio="xMinYMin meet"
                                 style={{
                                     border: '1px solid var(--pf-global--BorderColor--100)',
                                     background: 'var(--pf-global--BackgroundColor--200)',
