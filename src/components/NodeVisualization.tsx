@@ -663,26 +663,34 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // const currentColIndex = 0; // Unused
 
     if (showHiddenColumns || ethInterfaces.length > 0) {
-        sortedEthInterfaces.forEach((iface: Interface, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'eth');
-            nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
+        const colOffset = visibleColumns.findIndex(col => col.key === 'eth');
+        if (colOffset >= 0) {
+            // Defensive guard: avoid assigning off-canvas positions for hidden columns.
+            // Hidden columns previously produced x<0 nodes and phantom connectors.
+            sortedEthInterfaces.forEach((iface: Interface, index: number) => {
+                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+            });
+        }
     }
 
     if (showHiddenColumns || bondInterfaces.length > 0) {
-        sortedBondInterfaces.forEach((iface: Interface, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'bond');
-            nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
+        const colOffset = visibleColumns.findIndex(col => col.key === 'bond');
+        if (colOffset >= 0) {
+            sortedBondInterfaces.forEach((iface: Interface, index: number) => {
+                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+            });
+        }
     }
 
 
 
     if (showHiddenColumns || vlanInterfaces.length > 0) {
-        sortedVlanInterfaces.forEach((iface: Interface, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'vlan');
-            nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
+        const colOffset = visibleColumns.findIndex(col => col.key === 'vlan');
+        if (colOffset >= 0) {
+            sortedVlanInterfaces.forEach((iface: Interface, index: number) => {
+                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+            });
+        }
     }
 
     if (showHiddenColumns || bridgeInterfaces.length > 0) {
@@ -695,10 +703,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     }
 
     if (showHiddenColumns || logicalInterfaces.length > 0) {
-        sortedLogicalInterfaces.forEach((iface: Interface, index: number) => {
-            const colOffset = visibleColumns.findIndex(col => col.key === 'logical');
-            nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
+        const colOffset = visibleColumns.findIndex(col => col.key === 'logical');
+        if (colOffset >= 0) {
+            sortedLogicalInterfaces.forEach((iface: Interface, index: number) => {
+                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
+            });
+        }
     }
 
     // Combine Bridge Mappings and VRFs in 'l3' column
