@@ -52,6 +52,13 @@ bd sync               # Sync with git
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 
+### PR Command Note
+
+When creating PRs with `gh pr create`, do not include Markdown backticks in an inline `--body` string because the shell can interpret them.
+
+- Prefer `gh pr create --body-file <path>` for multiline content
+- If using `--body`, avoid backticks or escape them explicitly
+
 ## Rebuild and Deploy
 
 During development, changes can be built and deployed to cluster with the following commands. Once complete the console should be reloaded to see the changes.
