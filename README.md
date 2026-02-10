@@ -32,6 +32,9 @@ The plugin watches these resources in real-time and renders an interactive topol
 
 ## Installation
 
+> [!WARNING]
+> **Experimental / No warranty.** This project is experimental, community-maintained, and is **not endorsed or supported by Red Hat**. It is provided "as is" with no warranty. Installing or using it may affect your cluster; you assume all risk. Test in a non-production environment first. The authors are not responsible for any damage, downtime, or data loss.
+
 ### Operator Installation (recommended)
 
 
