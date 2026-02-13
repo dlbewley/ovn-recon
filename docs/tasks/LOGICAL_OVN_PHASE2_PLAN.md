@@ -152,6 +152,7 @@ This Phase 2 work runs in parallel with ongoing Phase 1 improvements:
 - Choose and document snapshot delivery mechanism (API endpoint, CR, or other).
 - Define payload limits and behavior for dense topologies.
 - Define schema versioning and compatibility expectations between collector and UI.
+  - Day-1 decision: serve cached snapshot JSON over HTTP from collector.
 
 ### 3. Freshness and Failure Semantics
 - Define probe interval and timeout budgets.
@@ -167,6 +168,7 @@ This Phase 2 work runs in parallel with ongoing Phase 1 improvements:
 - Preferred deployment model: collector as its own deployment (not sidecar).
 - Keep design open for daemonset evolution (likely for per-node OVN-IC perspective collection).
 - Add `OvnRecon` feature gate to optionally enable Phase 2 logical topology features.
+  - Day-1 decision: collector namespace matches console plugin namespace (`spec.targetNamespace`).
 
 ### 6. Observability and Diagnostics
 - Define collector metrics and key error counters.
@@ -182,6 +184,36 @@ This Phase 2 work runs in parallel with ongoing Phase 1 improvements:
 - Define staged rollout plan for enabling Phase 2 in clusters.
 - Define rollback path that preserves Phase 1 behavior.
 - Add a Phase 1 regression checklist as a release gate for Phase 2 changes.
+
+## Day-1 Decisions (Locked)
+
+### Snapshot Serving Path
+- Initial implementation serves cached `LogicalTopologySnapshot` JSON over HTTP from the collector.
+- UI consumes this HTTP endpoint for `/ovn-recon/ovn/:name` rendering.
+- Alternative transport options (CR/API aggregation) remain future enhancements.
+
+### Initial OvnRecon Phase 2 Config Shape
+- Add Phase 2 feature gate under `OvnRecon` to enable/disable logical topology features.
+- Add collector image config under `OvnRecon`:
+  - `repository`: `quay.io/dbewley/ocn-collector`
+  - `tag`: default to same value used for console plugin image tag
+  - `pullPolicy`: default to same value used for console plugin image pullPolicy
+- Collector deployment namespace defaults to `spec.targetNamespace` (same namespace as console plugin deployment).
+- Deployment mode starts as standalone Deployment, with explicit future path to DaemonSet mode.
+
+### Node Perspective Resolution
+- `/ovn-recon/ovn/:name` is treated as node-scoped logical perspective input.
+- Collector and UI contracts must include explicit behavior for:
+  - missing node
+  - unreachable probe target
+  - stale snapshot for a specific node
+
+### Probe Command Matrix
+- Before implementation, define and commit an MVP probe matrix listing:
+  - commands run
+  - namespace/pod/container target
+  - output parser path
+  - required RBAC verb/resource bindings
 
 ## Initial Beads Backlog Mapping
 Created bead issues:
