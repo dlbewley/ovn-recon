@@ -46,8 +46,9 @@ The project direction is updated as follows:
 
 ### Navigation
 - Keep existing `/ovn-recon/node-network-state/:name` unchanged.
-- Add a new Phase 2 route (proposed: `/ovn-recon/logical-topology`).
-- Add link(s) from `/ovn-recon/node-network-state` list screen to open the logical view.
+- Add a node-scoped Phase 2 route to support OVN-IC view differences per host.
+  - Proposed route: `/ovn-recon/ovn/:name`
+- Add a per-row link from `/ovn-recon/node-network-state` list screen to open the logical view for that host (likely a third table column).
 
 ## Technical Approach
 
@@ -98,7 +99,7 @@ Collector placement and boundaries:
 - Emit snapshot contract from Go code path (file or API/CR producer).
 
 ### Milestone 2: Alternate View Scaffold
-- Add new route/page and navigation entry from node list.
+- Add new node-scoped route/page and navigation entry from node list.
 - Implement placeholder logical topology page shell with PatternFly layout.
 
 ### Milestone 3: Graph Rendering MVP
@@ -136,8 +137,9 @@ Created bead issues:
 | Port spike resource modeling/parsing into typed Go pipelines | task | `ovn-recon-e18.8` |
 
 ## Acceptance Criteria (Phase 2 initial release)
-- Node list screen exposes a clear entry to logical topology view.
+- Node list screen exposes a per-node entry to logical topology view (for example, a third table column).
 - Existing physical node visualization path remains intact and functional.
+- Logical route is node-scoped (for example `/ovn-recon/ovn/:name`) to account for OVN-IC host perspective differences.
 - Logical view renders from `LogicalTopologySnapshot` contract.
 - Logical view handles larger graphs better than the current strict columnar strategy.
 - Documentation includes architecture, test fixtures, and known limits.
