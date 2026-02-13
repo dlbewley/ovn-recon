@@ -108,6 +108,8 @@ Collector placement and boundaries:
 ### Milestone 1.5: CI Build and Operator Wiring
 - Create collector-focused GitHub workflow for build/test/image push.
 - Update operator deployment flow so collector image is part of managed resources.
+- Start with collector as standalone Deployment and preserve path to optional DaemonSet mode for per-node OVN-IC collection.
+- Add `OvnRecon` feature gate to enable/disable Phase 2 logical topology features.
 - Update `/Users/dale/src/ovn-recon/OPERATOR.md` with collector image, deployment model, and operational notes.
 - Ensure repository CI covers collector and operator integration paths.
 
@@ -135,6 +137,52 @@ This Phase 2 work runs in parallel with ongoing Phase 1 improvements:
 - Shared selector/model helpers are allowed only when contract is clear.
 - UI entry points should let users choose physical vs logical without ambiguity.
 
+## Pre-Implementation Checklist
+
+### 1. Security and RBAC
+- Define collector RBAC for:
+  - read access to required resources
+  - pod `exec` access in:
+    - `openshift-ovn-kubernetes`
+    - `openshift-frr-k8s`
+- Keep namespace targets configurable for future expansion.
+- Document ServiceAccount, Roles/ClusterRoles, and bindings used by collector runtime.
+
+### 2. Snapshot Transport and Contract Discipline
+- Choose and document snapshot delivery mechanism (API endpoint, CR, or other).
+- Define payload limits and behavior for dense topologies.
+- Define schema versioning and compatibility expectations between collector and UI.
+
+### 3. Freshness and Failure Semantics
+- Define probe interval and timeout budgets.
+- Define staleness thresholds surfaced in UI.
+- Define degraded-mode behavior for partial probe failures.
+
+### 4. Performance Budgets
+- Establish target topology sizes (nodes, routers, switches, ports, edges).
+- Set collector resource budgets (CPU/memory requests/limits).
+- Set UI render interaction budget for large graphs.
+
+### 5. Operator Integration Shape
+- Preferred deployment model: collector as its own deployment (not sidecar).
+- Keep design open for daemonset evolution (likely for per-node OVN-IC perspective collection).
+- Add `OvnRecon` feature gate to optionally enable Phase 2 logical topology features.
+
+### 6. Observability and Diagnostics
+- Define collector metrics and key error counters.
+- Add structured logging fields (node/source/snapshot identifiers).
+- Define health/readiness behavior and minimal diagnostics endpoint.
+
+### 7. Test and Release Gates
+- Add fixture/golden tests for parser and snapshot stability.
+- Add CI checks for collector build and operator integration.
+- Reuse existing Phase 1 tag/release conventions for collector image release flow.
+
+### 8. Rollout and Rollback
+- Define staged rollout plan for enabling Phase 2 in clusters.
+- Define rollback path that preserves Phase 1 behavior.
+- Add a Phase 1 regression checklist as a release gate for Phase 2 changes.
+
 ## Initial Beads Backlog Mapping
 Created bead issues:
 
@@ -150,6 +198,9 @@ Created bead issues:
 | Port spike resource modeling/parsing into typed Go pipelines | task | `ovn-recon-e18.8` |
 | Add collector CI workflow for build/push | task | `ovn-recon-e18.9` |
 | Integrate collector image into operator deployment and docs | task | `ovn-recon-e18.10` |
+| Specify snapshot transport, freshness semantics, and performance budgets | task | `ovn-recon-e18.13` |
+| Define collector RBAC and configurable target namespaces | task | `ovn-recon-e18.14` |
+| Add Phase 2 feature gate to OvnRecon API and operator behavior | task | `ovn-recon-e18.15` |
 
 ## Acceptance Criteria (Phase 2 initial release)
 - Node list screen exposes a per-node entry to logical topology view (for example, a third table column).
