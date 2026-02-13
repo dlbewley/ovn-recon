@@ -2,11 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/dlbewley/ovn-recon/collector/internal/snapshot"
 )
@@ -14,11 +14,13 @@ import (
 const snapshotsPrefix = "/api/v1/snapshots/"
 
 // Server wraps HTTP handlers for the OVN collector.
-type Server struct{}
+type Server struct {
+	store snapshot.Store
+}
 
 // New creates a collector HTTP server.
-func New() *Server {
-	return &Server{}
+func New(store snapshot.Store) *Server {
+	return &Server{store: store}
 }
 
 // Handler returns the collector HTTP handler.
@@ -53,19 +55,15 @@ func (s *Server) handleSnapshotByNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload := snapshot.LogicalTopologySnapshot{
-		Metadata: snapshot.Metadata{
-			SchemaVersion: "v1alpha1",
-			GeneratedAt:   time.Now().UTC(),
-			SourceHealth:  "degraded",
-			NodeName:      nodeName,
-		},
-		Warnings: []snapshot.Warning{
-			{
-				Code:    "COLLECTOR_STUB",
-				Message: "collector skeleton endpoint is active; OVN probing not implemented yet",
-			},
-		},
+	payload, err := s.store.GetByNode(r.Context(), nodeName)
+	if err != nil {
+		if errors.Is(err, snapshot.ErrNotFound) {
+			http.Error(w, "snapshot not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("failed to read snapshot for node %q: %v", nodeName, err)
+		http.Error(w, fmt.Sprintf("failed to load snapshot: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")

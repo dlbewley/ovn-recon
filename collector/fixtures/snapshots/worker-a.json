@@ -1,0 +1,21 @@
+{
+  "metadata": {
+    "schemaVersion": "v1alpha1",
+    "generatedAt": "2026-01-01T00:05:00Z",
+    "sourceHealth": "healthy",
+    "nodeName": "worker-a"
+  },
+  "nodes": [
+    {"id": "lr-cluster", "kind": "logical_router", "label": "cluster-router"},
+    {"id": "ls-red", "kind": "logical_switch", "label": "red-net"},
+    {"id": "lsp-red-a", "kind": "logical_switch_port", "label": "pod-a"}
+  ],
+  "edges": [
+    {"id": "e1", "source": "lr-cluster", "target": "ls-red", "kind": "router_to_switch"},
+    {"id": "e2", "source": "ls-red", "target": "lsp-red-a", "kind": "switch_to_port"}
+  ],
+  "groups": [
+    {"id": "g-red", "label": "Namespace red", "nodeIds": ["ls-red", "lsp-red-a"]}
+  ],
+  "warnings": []
+}

@@ -1,0 +1,31 @@
+{
+  "metadata": {
+    "schemaVersion": "v1alpha1",
+    "generatedAt": "2026-01-01T00:15:00Z",
+    "sourceHealth": "degraded",
+    "nodeName": "worker-parse-edge"
+  },
+  "nodes": [
+    {"id": "lr-edge", "kind": "logical_router", "label": "edge-router"},
+    {"id": "ls-edge", "kind": "logical_switch", "label": "edge-net"}
+  ],
+  "edges": [
+    {
+      "id": "e-edge",
+      "source": "lr-edge",
+      "target": "ls-edge",
+      "kind": "router_to_switch",
+      "data": {
+        "rawFieldRecovered": true,
+        "normalizationPath": "single_quote_fix"
+      }
+    }
+  ],
+  "groups": [],
+  "warnings": [
+    {
+      "code": "PARSER_NORMALIZED",
+      "message": "Input required normalization due to inconsistent OVN command output"
+    }
+  ]
+}
