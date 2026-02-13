@@ -76,6 +76,12 @@ Collector placement and boundaries:
   - render and interact with topology
   - avoid direct `ovn-*ctl` command execution/parsing
 
+### 2.1 Collector Build and Release Requirements
+- Add collector build targets (`Makefile`) under `/Users/dale/src/ovn-recon/collector/`.
+- Add collector container build definition (`Dockerfile`) under `/Users/dale/src/ovn-recon/collector/`.
+- Add GitHub Actions workflow in `/Users/dale/src/ovn-recon/.github/workflows/` for collector image build/push.
+- Configure collector image destination to `quay.io/dbewley/ovn-collector` (repository to be created).
+
 ### 3. Rendering Stack
 - Preferred renderer: `@patternfly/react-topology` for OpenShift/PatternFly consistency.
 - Layout strategy: start with hierarchical/grouped layout; evaluate ELK for dense graphs.
@@ -97,6 +103,13 @@ Collector placement and boundaries:
 - Scaffold `/Users/dale/src/ovn-recon/collector/` module and container build.
 - Implement initial probe pipeline for a minimal OVN resource subset.
 - Emit snapshot contract from Go code path (file or API/CR producer).
+- Add collector `Makefile` and `Dockerfile` to support local and CI image builds.
+
+### Milestone 1.5: CI Build and Operator Wiring
+- Create collector-focused GitHub workflow for build/test/image push.
+- Update operator deployment flow so collector image is part of managed resources.
+- Update `/Users/dale/src/ovn-recon/OPERATOR.md` with collector image, deployment model, and operational notes.
+- Ensure repository CI covers collector and operator integration paths.
 
 ### Milestone 2: Alternate View Scaffold
 - Add new node-scoped route/page and navigation entry from node list.
@@ -135,6 +148,8 @@ Created bead issues:
 | Scale/perf hardening and regression test coverage | task | `ovn-recon-e18.5` |
 | Scaffold Go collector component and container image | task | `ovn-recon-e18.6` |
 | Port spike resource modeling/parsing into typed Go pipelines | task | `ovn-recon-e18.8` |
+| Add collector CI workflow for build/push | task | `ovn-recon-e18.9` |
+| Integrate collector image into operator deployment and docs | task | `ovn-recon-e18.10` |
 
 ## Acceptance Criteria (Phase 2 initial release)
 - Node list screen exposes a per-node entry to logical topology view (for example, a third table column).
@@ -143,3 +158,5 @@ Created bead issues:
 - Logical view renders from `LogicalTopologySnapshot` contract.
 - Logical view handles larger graphs better than the current strict columnar strategy.
 - Documentation includes architecture, test fixtures, and known limits.
+- Collector has repository-local build assets (`Makefile`, `Dockerfile`) and CI workflow.
+- Operator deployment flow and `OPERATOR.md` include collector image integration details.
