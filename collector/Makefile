@@ -33,7 +33,7 @@ run: ## Run collector locally
 	go run ./cmd/ovn-collector
 
 image: ## Build collector container image
-	$(CONTAINER_ENGINE) build -t $(IMG) .
+	$(CONTAINER_ENGINE) build --platform linux/amd64 -t $(IMG) .
 
 push: image ## Push collector container image
 	$(CONTAINER_ENGINE) push $(IMG)
