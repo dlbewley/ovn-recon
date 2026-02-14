@@ -7,6 +7,20 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/exec
+  verbs:
+  - create
+- apiGroups:
+  - ""
+  resources:
   - serviceaccounts
   - services
   verbs:
