@@ -195,7 +195,7 @@ This Phase 2 work runs in parallel with ongoing Phase 1 improvements:
 ### Initial OvnRecon Phase 2 Config Shape
 - Add Phase 2 feature gate under `OvnRecon` to enable/disable logical topology features.
 - Add collector image config under `OvnRecon`:
-  - `repository`: `quay.io/dbewley/ocn-collector`
+  - `repository`: `quay.io/dbewley/ovn-collector`
   - `tag`: default to same value used for console plugin image tag
   - `pullPolicy`: default to same value used for console plugin image pullPolicy
 - Collector deployment namespace defaults to `spec.targetNamespace` (same namespace as console plugin deployment).

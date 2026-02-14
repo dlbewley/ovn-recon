@@ -31,7 +31,7 @@ import (
 	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
 )
 
-const defaultCollectorRepository = "quay.io/dbewley/ocn-collector"
+const defaultCollectorRepository = "quay.io/dbewley/ovn-collector"
 
 // DesiredDeployment renders the Deployment for a given OvnRecon instance.
 func DesiredDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deployment {

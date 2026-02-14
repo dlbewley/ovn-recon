@@ -46,7 +46,7 @@ spec:
                   pullPolicy:
                     type: string
                   repository:
-                    default: quay.io/dbewley/ocn-collector
+                    default: quay.io/dbewley/ovn-collector
                     type: string
                   tag:
                     type: string

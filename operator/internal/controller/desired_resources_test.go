@@ -20,7 +20,7 @@ func TestCollectorImageInheritance(t *testing.T) {
 		},
 	}
 
-	if got := collectorImageRepositoryFor(cr); got != "quay.io/dbewley/ocn-collector" {
+	if got := collectorImageRepositoryFor(cr); got != "quay.io/dbewley/ovn-collector" {
 		t.Fatalf("unexpected collector repository: %s", got)
 	}
 	if got := collectorImageTagFor(cr); got != "v1.2.3" {

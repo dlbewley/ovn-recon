@@ -51,7 +51,7 @@ type ImageSpec struct {
 }
 
 type CollectorImageSpec struct {
-	// +kubebuilder:default=quay.io/dbewley/ocn-collector
+	// +kubebuilder:default=quay.io/dbewley/ovn-collector
 	Repository string `json:"repository,omitempty"`
 	Tag        string `json:"tag,omitempty"`
 	PullPolicy string `json:"pullPolicy,omitempty"`

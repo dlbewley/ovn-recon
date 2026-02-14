@@ -15,7 +15,7 @@ spec:
     # tag: latest
     pullPolicy: IfNotPresent
   collectorImage:
-    repository: quay.io/dbewley/ocn-collector
+    repository: quay.io/dbewley/ovn-collector
     # tag: latest            # defaults to image.tag when omitted (operator behavior)
     # pullPolicy: IfNotPresent # defaults to image.pullPolicy when omitted (operator behavior)
   consolePlugin:
