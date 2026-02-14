@@ -7,6 +7,7 @@ See also [OLM-BUNDLE-GUIDE.md](../docs/OLM-BUNDLE-GUIDE.md).
 ## Features
 
 - **Automated Deployment**: Manages the plugin backend (Deployment and Service).
+- **Optional Logical Topology Collector**: Supports an `ovn-collector` feature gate for enabling collector-backed logical topology capabilities.
 - **Console Integration**: Automatically creates `ConsolePlugin` resources and patches the OpenShift Console operator to enable the plugin.
 - **Security Hardened**: Runs as non-root with minimal capabilities and mandatory seccomp profiles.
 - **Observability**: Uses standard Kubernetes Status Conditions and Events for clear state reporting.
@@ -27,8 +28,18 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 | `image.repository`| `string` | `quay.io/dbewley/ovn-recon` | The container image repository. |
 | `image.tag` | `string` | `latest` | The container image tag. |
 | `image.pullPolicy`| `string` | `IfNotPresent` | Kubernetes ImagePullPolicy. |
+| `featureGates.ovn-collector` | `bool` | `false` | Enables logical topology features backed by the collector service. |
+| `collectorImage.repository`| `string` | `quay.io/dbewley/ocn-collector` | OVN collector image repository. |
+| `collectorImage.tag` | `string` | _inherits `image.tag`_ | OVN collector image tag. |
+| `collectorImage.pullPolicy`| `string` | _inherits `image.pullPolicy`_ | OVN collector image pull policy. |
 | `consolePlugin.displayName` | `string` | `OVN Recon` | The name displayed in the OpenShift console. |
 | `consolePlugin.enabled` | `bool` | `true` | If true, the operator will patch the OpenShift Console configuration to enable the plugin. |
+
+### Feature Gate Notes
+
+- `featureGates.ovn-collector` is intended to gate Phase 2 logical topology capabilities.
+- Collector deployment targets the same namespace as `targetNamespace`.
+- Current implementation focus in this change set is API/schema/documentation exposure; controller reconciliation wiring is tracked separately.
 
 ### Status Conditions
 

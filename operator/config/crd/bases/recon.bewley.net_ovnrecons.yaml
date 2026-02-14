@@ -39,12 +39,33 @@ spec:
           spec:
             description: OvnReconSpec defines the desired state of OvnRecon.
             properties:
+              collectorImage:
+                description: CollectorImage configuration for the OVN collector container
+                  image.
+                properties:
+                  pullPolicy:
+                    type: string
+                  repository:
+                    default: quay.io/dbewley/ocn-collector
+                    type: string
+                  tag:
+                    type: string
+                type: object
               consolePlugin:
                 description: ConsolePlugin configuration
                 properties:
                   displayName:
                     type: string
                   enabled:
+                    type: boolean
+                type: object
+              featureGates:
+                description: FeatureGates controls optional OVN Recon capabilities.
+                properties:
+                  ovn-collector:
+                    default: false
+                    description: OVNCollector enables logical topology features backed
+                      by the collector service.
                     type: boolean
                 type: object
               image:

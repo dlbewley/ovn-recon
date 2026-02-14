@@ -36,6 +36,12 @@ type OvnReconSpec struct {
 
 	// ConsolePlugin configuration
 	ConsolePlugin ConsolePluginSpec `json:"consolePlugin,omitempty"`
+
+	// FeatureGates controls optional OVN Recon capabilities.
+	FeatureGates FeatureGateSpec `json:"featureGates,omitempty"`
+
+	// CollectorImage configuration for the OVN collector container image.
+	CollectorImage CollectorImageSpec `json:"collectorImage,omitempty"`
 }
 
 type ImageSpec struct {
@@ -44,9 +50,22 @@ type ImageSpec struct {
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 
+type CollectorImageSpec struct {
+	// +kubebuilder:default=quay.io/dbewley/ocn-collector
+	Repository string `json:"repository,omitempty"`
+	Tag        string `json:"tag,omitempty"`
+	PullPolicy string `json:"pullPolicy,omitempty"`
+}
+
 type ConsolePluginSpec struct {
 	DisplayName string `json:"displayName,omitempty"`
 	Enabled     bool   `json:"enabled,omitempty"`
+}
+
+type FeatureGateSpec struct {
+	// OVNCollector enables logical topology features backed by the collector service.
+	// +kubebuilder:default=false
+	OVNCollector bool `json:"ovn-collector,omitempty"`
 }
 
 // OvnReconStatus defines the observed state of OvnRecon.
