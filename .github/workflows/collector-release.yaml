@@ -48,10 +48,6 @@ jobs:
             echo "EXPIRY_LABEL=" >> $GITHUB_ENV
           fi
 
-      - name: Set up QEMU
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/setup-buildx-action@v3
@@ -69,7 +65,7 @@ jobs:
         run: |
           echo "Building version $VERSION with $EXPIRY_LABEL"
           docker buildx build \
-            --platform linux/amd64,linux/arm64 \
+            --platform linux/amd64 \
             $EXPIRY_LABEL \
             -t quay.io/dbewley/ovn-collector:$VERSION \
             --push \
