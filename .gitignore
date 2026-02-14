@@ -25,3 +25,6 @@ build.log
 # IDEs
 .idea/
 .vscode/
+
+# Explorations
+_spike/
