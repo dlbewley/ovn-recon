@@ -2,6 +2,7 @@
 node_modules/
 
 # Build output
+collector/bin/
 dist/
 operator/bundle/
 operator/dist/
