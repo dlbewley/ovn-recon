@@ -48,6 +48,7 @@ import (
 const (
 	finalizerName    = "ovnrecon.bewley.net/finalizer"
 	defaultNamespace = "ovn-recon"
+	defaultImageRepository = "quay.io/dbewley/ovn-recon"
 	defaultImageTag  = "latest"
 )
 

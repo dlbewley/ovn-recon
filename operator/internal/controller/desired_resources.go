@@ -43,11 +43,8 @@ func DesiredDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deployment {
 	appLabels := labelsForOvnReconWithVersion(ovnRecon.Name, imageTag)
 	operatorAnnotations := operatorVersionAnnotations()
 
-	pullPolicy := corev1.PullIfNotPresent
-	if ovnRecon.Spec.Image.PullPolicy != "" {
-		pullPolicy = corev1.PullPolicy(ovnRecon.Spec.Image.PullPolicy)
-	}
-	image := ovnRecon.Spec.Image.Repository
+	pullPolicy := imagePullPolicyFor(ovnRecon)
+	image := imageRepositoryFor(ovnRecon)
 	if imageTag != "" {
 		image = fmt.Sprintf("%s:%s", image, imageTag)
 	}
@@ -353,10 +350,7 @@ func collectorImagePullPolicyFor(ovnRecon *reconv1alpha1.OvnRecon) corev1.PullPo
 	if ovnRecon.Spec.CollectorImage.PullPolicy != "" {
 		return corev1.PullPolicy(ovnRecon.Spec.CollectorImage.PullPolicy)
 	}
-	if ovnRecon.Spec.Image.PullPolicy != "" {
-		return corev1.PullPolicy(ovnRecon.Spec.Image.PullPolicy)
-	}
-	return corev1.PullIfNotPresent
+	return imagePullPolicyFor(ovnRecon)
 }
 
 func collectorProbeNamespacesFor(ovnRecon *reconv1alpha1.OvnRecon) []string {
@@ -410,4 +404,18 @@ func mergeStringMap(dst, src map[string]string) map[string]string {
 		dst[k] = v
 	}
 	return dst
+}
+
+func imageRepositoryFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+	if ovnRecon.Spec.Image.Repository != "" {
+		return ovnRecon.Spec.Image.Repository
+	}
+	return defaultImageRepository
+}
+
+func imagePullPolicyFor(ovnRecon *reconv1alpha1.OvnRecon) corev1.PullPolicy {
+	if ovnRecon.Spec.Image.PullPolicy != "" {
+		return corev1.PullPolicy(ovnRecon.Spec.Image.PullPolicy)
+	}
+	return corev1.PullIfNotPresent
 }

@@ -8,6 +8,37 @@ import (
 	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
 )
 
+func TestPluginImageDefaults(t *testing.T) {
+	cr := &reconv1alpha1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+	}
+
+	if got := imageRepositoryFor(cr); got != "quay.io/dbewley/ovn-recon" {
+		t.Fatalf("unexpected plugin repository default: %s", got)
+	}
+	if got := imageTagFor(cr); got != "latest" {
+		t.Fatalf("unexpected plugin tag default: %s", got)
+	}
+	if got := imagePullPolicyFor(cr); got != corev1.PullIfNotPresent {
+		t.Fatalf("unexpected plugin pullPolicy default: %s", got)
+	}
+}
+
+func TestDesiredDeploymentUsesPluginImageFallbacks(t *testing.T) {
+	cr := &reconv1alpha1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+	}
+
+	deployment := DesiredDeployment(cr)
+	container := deployment.Spec.Template.Spec.Containers[0]
+	if container.Image != "quay.io/dbewley/ovn-recon:latest" {
+		t.Fatalf("unexpected plugin image: %s", container.Image)
+	}
+	if container.ImagePullPolicy != corev1.PullIfNotPresent {
+		t.Fatalf("unexpected plugin pullPolicy: %s", container.ImagePullPolicy)
+	}
+}
+
 func TestCollectorImageInheritance(t *testing.T) {
 	cr := &reconv1alpha1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "test"},
