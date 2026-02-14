@@ -22,6 +22,40 @@ The project direction is updated as follows:
 - The spike architecture is desktop-oriented (kubeconfig/local cache assumptions) while Phase 2 requires in-cluster, ServiceAccount-based runtime.
 - The current repo already has significant Go operational surface (`/Users/dale/src/ovn-recon/operator/`), making Go a better fit for image build, deployment, and maintenance consistency.
 
+## Implementation Update (2026-02-13)
+
+### Completed so far
+- Collector scaffold exists and builds:
+  - `/Users/dale/src/ovn-recon/collector/go.mod`
+  - `/Users/dale/src/ovn-recon/collector/Makefile`
+  - `/Users/dale/src/ovn-recon/collector/Dockerfile`
+  - `/Users/dale/src/ovn-recon/collector/cmd/ovn-collector/main.go`
+- File-backed HTTP snapshot serving is implemented:
+  - `GET /api/v1/snapshots/:nodeName`
+  - fallback to `default.json` when node snapshot is absent
+- Canonical contract artifacts are in place:
+  - Go types in `/Users/dale/src/ovn-recon/collector/internal/snapshot/types.go`
+  - JSON schema in `/Users/dale/src/ovn-recon/collector/api/logical-topology-snapshot.schema.json`
+  - TypeScript types in `/Users/dale/src/ovn-recon/src/types.ts`
+- Fixture corpus exists for baseline/dense/parser-edge scenarios under:
+  - `/Users/dale/src/ovn-recon/collector/fixtures/snapshots/`
+- Node-scoped logical route and list entry are implemented and feature-gated:
+  - route: `/ovn-recon/ovn/:name`
+  - list column is conditional on `ovn-collector` gate
+- Operator API/schema and behavior now include:
+  - `spec.featureGates.ovn-collector`
+  - `spec.collectorImage.{repository,tag,pullPolicy}`
+  - collector Deployment+Service reconciliation behind feature gate
+  - collector tag/pullPolicy inheritance from plugin image defaults
+- Collector CI workflow is added:
+  - `/Users/dale/src/ovn-recon/.github/workflows/collector-release.yaml`
+  - follows existing `v*` tag semantics and prerelease expiry label pattern
+
+### Learned revisions
+- Repository name normalized to `quay.io/dbewley/ovn-collector` (not `ocn-collector`).
+- Feature-gated UI is practical and necessary; route and list link should remain hidden unless enabled.
+- Local full operator test suites require envtest binaries and Docker; focused package tests remain useful for iteration.
+
 ## Product Scope
 
 ### In Scope
@@ -98,12 +132,14 @@ Collector placement and boundaries:
 - Draft `LogicalTopologySnapshot` schema.
 - Define boundaries between data collection and rendering.
 - Capture acceptance criteria and fixtures, including fixtures derived from Python spike outputs.
+Status: completed.
 
 ### Milestone 1: Collector Skeleton (Go)
 - Scaffold `/Users/dale/src/ovn-recon/collector/` module and container build.
 - Implement initial probe pipeline for a minimal OVN resource subset.
 - Emit snapshot contract from Go code path (file or API/CR producer).
 - Add collector `Makefile` and `Dockerfile` to support local and CI image builds.
+Status: completed for scaffold + file-backed snapshot serving; live OVN probing remains pending.
 
 ### Milestone 1.5: CI Build and Operator Wiring
 - Create collector-focused GitHub workflow for build/test/image push.
@@ -112,10 +148,12 @@ Collector placement and boundaries:
 - Add `OvnRecon` feature gate to enable/disable Phase 2 logical topology features.
 - Update `/Users/dale/src/ovn-recon/OPERATOR.md` with collector image, deployment model, and operational notes.
 - Ensure repository CI covers collector and operator integration paths.
+Status: mostly completed; follow-up controller/manifests work continues in remaining operator tasks.
 
 ### Milestone 2: Alternate View Scaffold
 - Add new node-scoped route/page and navigation entry from node list.
 - Implement placeholder logical topology page shell with PatternFly layout.
+Status: completed and feature-gated behind `ovn-collector`.
 
 ### Milestone 3: Graph Rendering MVP
 - Implement renderer integration using snapshot fixtures.
@@ -216,23 +254,24 @@ This Phase 2 work runs in parallel with ongoing Phase 1 improvements:
   - required RBAC verb/resource bindings
 
 ## Initial Beads Backlog Mapping
-Created bead issues:
+Current Phase 2 bead status:
 
-| Work Item | Proposed Type | Planned Issue ID |
-|---|---|---|
-| Phase 2 epic: Logical OVN topology alternative view | epic | `ovn-recon-e18` |
-| Define snapshot schema and fixture pack | task | `ovn-recon-e18.1` |
-| Add route and node-list entry point for logical view | task | `ovn-recon-e18.2` |
-| Implement logical topology renderer MVP | task | `ovn-recon-e18.3` |
-| Build real data snapshot integration path | task | `ovn-recon-e18.4` |
-| Scale/perf hardening and regression test coverage | task | `ovn-recon-e18.5` |
-| Scaffold Go collector component and container image | task | `ovn-recon-e18.6` |
-| Port spike resource modeling/parsing into typed Go pipelines | task | `ovn-recon-e18.8` |
-| Add collector CI workflow for build/push | task | `ovn-recon-e18.9` |
-| Integrate collector image into operator deployment and docs | task | `ovn-recon-e18.10` |
-| Specify snapshot transport, freshness semantics, and performance budgets | task | `ovn-recon-e18.13` |
-| Define collector RBAC and configurable target namespaces | task | `ovn-recon-e18.14` |
-| Add Phase 2 feature gate to OvnRecon API and operator behavior | task | `ovn-recon-e18.15` |
+| Work Item | Type | Issue ID | Status |
+|---|---|---|---|
+| Phase 2 epic: Logical OVN topology alternative view | epic | `ovn-recon-e18` | `OPEN` |
+| Define snapshot schema and fixture pack | task | `ovn-recon-e18.1` | `CLOSED` |
+| Add route and node-list entry point for logical view | task | `ovn-recon-e18.2` | `CLOSED` |
+| Implement logical topology renderer MVP | task | `ovn-recon-e18.3` | `OPEN` |
+| Build real data snapshot integration path | task | `ovn-recon-e18.4` | `OPEN` |
+| Scale/perf hardening and regression test coverage | task | `ovn-recon-e18.5` | `OPEN` |
+| Scaffold Go collector component and container image | task | `ovn-recon-e18.6` | `CLOSED` |
+| Port spike resource modeling/parsing into typed Go pipelines | task | `ovn-recon-e18.8` | `OPEN` |
+| Add collector CI workflow for build/push | task | `ovn-recon-e18.9` | `CLOSED` |
+| Integrate collector image into operator deployment and docs | task | `ovn-recon-e18.10` | `CLOSED` |
+| Specify snapshot transport, freshness semantics, and performance budgets | task | `ovn-recon-e18.13` | `OPEN` |
+| Define collector RBAC and configurable target namespaces | task | `ovn-recon-e18.14` | `OPEN` |
+| Add Phase 2 feature gate to OvnRecon API and operator behavior | task | `ovn-recon-e18.15` | `CLOSED` |
+| Define MVP node probe command matrix and error semantics | task | `ovn-recon-e18.16` | `OPEN` |
 
 ## Acceptance Criteria (Phase 2 initial release)
 - Node list screen exposes a per-node entry to logical topology view (for example, a third table column).
