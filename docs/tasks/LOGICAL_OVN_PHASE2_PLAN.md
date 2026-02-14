@@ -252,6 +252,8 @@ This Phase 2 work runs in parallel with ongoing Phase 1 improvements:
   - namespace/pod/container target
   - output parser path
   - required RBAC verb/resource bindings
+- Implemented in:
+  - `/Users/dale/src/ovn-recon/docs/tasks/OVN_COLLECTOR_PROBE_MATRIX.md`
 
 ## Initial Beads Backlog Mapping
 Current Phase 2 bead status:

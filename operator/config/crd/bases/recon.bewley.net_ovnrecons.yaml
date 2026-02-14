@@ -51,6 +51,15 @@ spec:
                   tag:
                     type: string
                 type: object
+              collectorProbeNamespaces:
+                default:
+                - openshift-ovn-kubernetes
+                - openshift-frr-k8s
+                description: CollectorProbeNamespaces defines namespaces where collector
+                  is allowed to probe OVN pods.
+                items:
+                  type: string
+                type: array
               consolePlugin:
                 description: ConsolePlugin configuration
                 properties:

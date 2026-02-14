@@ -32,6 +32,7 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 | `collectorImage.repository`| `string` | `quay.io/dbewley/ovn-collector` | OVN collector image repository. |
 | `collectorImage.tag` | `string` | _inherits `image.tag`_ | OVN collector image tag. |
 | `collectorImage.pullPolicy`| `string` | _inherits `image.pullPolicy`_ | OVN collector image pull policy. |
+| `collectorProbeNamespaces` | `[]string` | `["openshift-ovn-kubernetes","openshift-frr-k8s"]` | Namespaces where collector is granted pod read/exec access. |
 | `consolePlugin.displayName` | `string` | `OVN Recon` | The name displayed in the OpenShift console. |
 | `consolePlugin.enabled` | `bool` | `true` | If true, the operator will patch the OpenShift Console configuration to enable the plugin. |
 
@@ -40,6 +41,7 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 - `featureGates.ovn-collector` is intended to gate Phase 2 logical topology capabilities.
 - Collector deployment targets the same namespace as `targetNamespace`.
 - When enabled, the operator reconciles collector Deployment and Service resources named `<ovnrecon-name>-collector`.
+- When enabled, the operator also reconciles collector ServiceAccount/ClusterRole and RoleBindings in each `collectorProbeNamespaces` entry.
 - Current default mode is standalone Deployment; DaemonSet support is a planned future evolution for per-node collection scale.
 
 ### Status Conditions

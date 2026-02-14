@@ -73,6 +73,9 @@ func TestCollectorDesiredResourcesNamesAndPorts(t *testing.T) {
 	if len(dep.Spec.Template.Spec.Containers) != 1 {
 		t.Fatalf("expected one collector container")
 	}
+	if dep.Spec.Template.Spec.ServiceAccountName != "ovn-recon-collector" {
+		t.Fatalf("unexpected collector service account: %s", dep.Spec.Template.Spec.ServiceAccountName)
+	}
 	if dep.Spec.Template.Spec.Containers[0].Name != "ovn-collector" {
 		t.Fatalf("unexpected collector container name: %s", dep.Spec.Template.Spec.Containers[0].Name)
 	}
@@ -86,5 +89,29 @@ func TestCollectorDesiredResourcesNamesAndPorts(t *testing.T) {
 	}
 	if svc.Spec.Ports[0].Port != 8090 {
 		t.Fatalf("unexpected collector service port")
+	}
+}
+
+func TestCollectorProbeNamespacesDefaultsAndOverrides(t *testing.T) {
+	defaultCR := &reconv1alpha1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+	}
+	defaults := collectorProbeNamespacesFor(defaultCR)
+	if len(defaults) != 2 {
+		t.Fatalf("expected 2 default probe namespaces, got %d", len(defaults))
+	}
+	if defaults[0] != "openshift-ovn-kubernetes" || defaults[1] != "openshift-frr-k8s" {
+		t.Fatalf("unexpected default probe namespaces: %#v", defaults)
+	}
+
+	overrideCR := &reconv1alpha1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1alpha1.OvnReconSpec{
+			CollectorProbeNamespaces: []string{"custom-a", "custom-b"},
+		},
+	}
+	overrides := collectorProbeNamespacesFor(overrideCR)
+	if len(overrides) != 2 || overrides[0] != "custom-a" || overrides[1] != "custom-b" {
+		t.Fatalf("unexpected override probe namespaces: %#v", overrides)
 	}
 }

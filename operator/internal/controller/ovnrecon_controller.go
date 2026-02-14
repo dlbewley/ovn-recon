@@ -39,6 +39,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
@@ -62,6 +63,9 @@ type OvnReconReconciler struct {
 // +kubebuilder:rbac:groups=recon.bewley.net,resources=ovnrecons/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=operator.openshift.io,resources=consoles,verbs=get;list;watch;update;patch
 
@@ -137,6 +141,12 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// 2.5 Reconcile collector resources behind feature gate.
 	if collectorFeatureEnabled(ovnRecon) {
+		if err := r.reconcileCollectorAccessControls(ctx, ovnRecon); err != nil {
+			log.Error(err, "Failed to reconcile collector access controls")
+			r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "CollectorRBACReconcileFailed", err.Error())
+			r.updateCondition(ctx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorRBACReconcileFailed", err.Error())
+			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		}
 		if err := r.reconcileCollectorDeployment(ctx, ovnRecon); err != nil {
 			log.Error(err, "Failed to reconcile collector Deployment")
 			r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "CollectorDeploymentReconcileFailed", err.Error())
@@ -153,6 +163,10 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	} else {
 		if err := r.deleteCollectorResources(ctx, ovnRecon); err != nil {
 			log.Error(err, "Failed to delete collector resources while feature gate is disabled")
+			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		}
+		if err := r.deleteCollectorAccessControls(ctx, ovnRecon); err != nil {
+			log.Error(err, "Failed to delete collector RBAC while feature gate is disabled")
 			return reconcile.Result{RequeueAfter: time.Second * 30}, err
 		}
 		r.updateCondition(ctx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorFeatureDisabled", "Collector feature gate is disabled")
@@ -292,6 +306,78 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 	return err
 }
 
+func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	saName := collectorServiceAccountName(ovnRecon)
+
+	serviceAccount := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      saName,
+			Namespace: namespace,
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, serviceAccount, func() error {
+		serviceAccount.Labels = mergeStringMap(serviceAccount.Labels, labelsForOvnRecon(ovnRecon.Name))
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: collectorClusterRoleName(ovnRecon),
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, clusterRole, func() error {
+		clusterRole.Labels = mergeStringMap(clusterRole.Labels, labelsForOvnRecon(ovnRecon.Name))
+		clusterRole.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"pods"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"pods/exec"},
+				Verbs:     []string{"create"},
+			},
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	probeNamespaces := collectorProbeNamespacesFor(ovnRecon)
+	for _, probeNamespace := range probeNamespaces {
+		roleBinding := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      collectorRoleBindingName(ovnRecon),
+				Namespace: probeNamespace,
+			},
+		}
+		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roleBinding, func() error {
+			roleBinding.Labels = mergeStringMap(roleBinding.Labels, labelsForOvnRecon(ovnRecon.Name))
+			roleBinding.Subjects = []rbacv1.Subject{
+				{
+					Kind:      rbacv1.ServiceAccountKind,
+					Name:      saName,
+					Namespace: namespace,
+				},
+			}
+			roleBinding.RoleRef = rbacv1.RoleRef{
+				APIGroup: rbacv1.GroupName,
+				Kind:     "ClusterRole",
+				Name:     collectorClusterRoleName(ovnRecon),
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (r *OvnReconReconciler) reconcileCollectorService(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 	name := collectorName(ovnRecon)
@@ -311,6 +397,43 @@ func (r *OvnReconReconciler) reconcileCollectorService(ctx context.Context, ovnR
 		return nil
 	})
 	return err
+}
+
+func (r *OvnReconReconciler) deleteCollectorAccessControls(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+
+	serviceAccount := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      collectorServiceAccountName(ovnRecon),
+			Namespace: namespace,
+		},
+	}
+	if err := r.Delete(ctx, serviceAccount); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: collectorClusterRoleName(ovnRecon),
+		},
+	}
+	if err := r.Delete(ctx, clusterRole); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	for _, probeNamespace := range collectorProbeNamespacesFor(ovnRecon) {
+		roleBinding := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      collectorRoleBindingName(ovnRecon),
+				Namespace: probeNamespace,
+			},
+		}
+		if err := r.Delete(ctx, roleBinding); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -398,6 +521,18 @@ func targetNamespace(ovnRecon *reconv1alpha1.OvnRecon) string {
 
 func collectorName(ovnRecon *reconv1alpha1.OvnRecon) string {
 	return ovnRecon.Name + "-collector"
+}
+
+func collectorServiceAccountName(ovnRecon *reconv1alpha1.OvnRecon) string {
+	return collectorName(ovnRecon)
+}
+
+func collectorClusterRoleName(ovnRecon *reconv1alpha1.OvnRecon) string {
+	return collectorName(ovnRecon)
+}
+
+func collectorRoleBindingName(ovnRecon *reconv1alpha1.OvnRecon) string {
+	return collectorName(ovnRecon)
 }
 
 func collectorFeatureEnabled(ovnRecon *reconv1alpha1.OvnRecon) bool {
@@ -615,6 +750,9 @@ func (r *OvnReconReconciler) deleteNamespacedResources(ctx context.Context, ovnR
 	}
 
 	if err := r.deleteCollectorResources(ctx, ovnRecon); err != nil {
+		return err
+	}
+	if err := r.deleteCollectorAccessControls(ctx, ovnRecon); err != nil {
 		return err
 	}
 

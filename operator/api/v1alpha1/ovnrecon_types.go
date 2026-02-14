@@ -42,6 +42,10 @@ type OvnReconSpec struct {
 
 	// CollectorImage configuration for the OVN collector container image.
 	CollectorImage CollectorImageSpec `json:"collectorImage,omitempty"`
+
+	// CollectorProbeNamespaces defines namespaces where collector is allowed to probe OVN pods.
+	// +kubebuilder:default:={"openshift-ovn-kubernetes","openshift-frr-k8s"}
+	CollectorProbeNamespaces []string `json:"collectorProbeNamespaces,omitempty"`
 }
 
 type ImageSpec struct {

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,8 @@ import (
 )
 
 const defaultCollectorRepository = "quay.io/dbewley/ovn-collector"
+
+var defaultCollectorProbeNamespaces = []string{"openshift-ovn-kubernetes", "openshift-frr-k8s"}
 
 // DesiredDeployment renders the Deployment for a given OvnRecon instance.
 func DesiredDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deployment {
@@ -197,6 +200,7 @@ func DesiredCollectorDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deploy
 					},
 				},
 				Spec: corev1.PodSpec{
+					ServiceAccountName: collectorServiceAccountName(ovnRecon),
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: pointer.Bool(true),
 						SeccompProfile: &corev1.SeccompProfile{
@@ -207,6 +211,12 @@ func DesiredCollectorDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deploy
 						Name:            "ovn-collector",
 						Image:           image,
 						ImagePullPolicy: pullPolicy,
+						Env: []corev1.EnvVar{
+							{
+								Name:  "COLLECTOR_TARGET_NAMESPACES",
+								Value: strings.Join(collectorProbeNamespacesFor(ovnRecon), ","),
+							},
+						},
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: 8090,
 							Name:          "http",
@@ -347,6 +357,13 @@ func collectorImagePullPolicyFor(ovnRecon *reconv1alpha1.OvnRecon) corev1.PullPo
 		return corev1.PullPolicy(ovnRecon.Spec.Image.PullPolicy)
 	}
 	return corev1.PullIfNotPresent
+}
+
+func collectorProbeNamespacesFor(ovnRecon *reconv1alpha1.OvnRecon) []string {
+	if len(ovnRecon.Spec.CollectorProbeNamespaces) == 0 {
+		return append([]string{}, defaultCollectorProbeNamespaces...)
+	}
+	return append([]string{}, ovnRecon.Spec.CollectorProbeNamespaces...)
 }
 
 // DesiredConsolePlugin renders the ConsolePlugin for a given OvnRecon instance.
