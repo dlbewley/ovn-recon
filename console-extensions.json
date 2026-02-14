@@ -27,6 +27,15 @@
         }
     },
     {
+        "type": "console.page/route",
+        "properties": {
+            "path": "/ovn-recon/ovn/:name",
+            "component": {
+                "$codeRef": "NodeLogicalTopologyDetails"
+            }
+        }
+    },
+    {
         "type": "console.navigation/href",
         "properties": {
             "id": "node-network-state-nav",

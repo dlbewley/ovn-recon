@@ -132,3 +132,16 @@ export interface LogicalTopologySnapshot {
     groups: LogicalTopologyGroup[];
     warnings: LogicalTopologyWarning[];
 }
+
+export interface OvnRecon extends K8sResourceCommon {
+    spec?: {
+        featureGates?: {
+            'ovn-collector'?: boolean;
+            [key: string]: boolean | undefined;
+        };
+        features?: {
+            'ovn-collector'?: boolean;
+            [key: string]: boolean | undefined;
+        };
+    };
+}

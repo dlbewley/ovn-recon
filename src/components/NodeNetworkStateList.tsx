@@ -5,8 +5,10 @@ import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { Helmet } from 'react-helmet';
 import { Link } from 'react-router-dom';
+import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 
 const NodeNetworkStateList: React.FC = () => {
+    const { enabled: ovnCollectorEnabled, loaded: featureLoaded } = useOvnCollectorFeatureGate();
     const [nodeNetworkStates, loaded, loadError] = useK8sWatchResource<NodeNetworkState[]>({
         groupVersionKind: {
             group: 'nmstate.io',
@@ -16,7 +18,7 @@ const NodeNetworkStateList: React.FC = () => {
         isList: true,
     });
 
-    const columns = ['Name', 'NNS'];
+    const columns = ovnCollectorEnabled ? ['Name', 'NNS', 'Logical OVN'] : ['Name', 'NNS'];
 
     return (
         <>
@@ -39,7 +41,7 @@ const NodeNetworkStateList: React.FC = () => {
                                 </Tr>
                             </Thead>
                             <Tbody>
-                                {loaded && nodeNetworkStates?.map((nns, rowIndex) => {
+                                {loaded && featureLoaded && nodeNetworkStates?.map((nns, rowIndex) => {
                                     const nnsName = nns.metadata?.name || '';
                                     const resourcePath = `/k8s/cluster/nmstate.io~v1beta1~NodeNetworkState/${nnsName}`;
                                     return (
@@ -54,17 +56,24 @@ const NodeNetworkStateList: React.FC = () => {
                                                     NodeNetworkState
                                                 </a>
                                             </Td>
+                                            {ovnCollectorEnabled && (
+                                                <Td dataLabel={columns[2]}>
+                                                    <Link to={`/ovn-recon/ovn/${nnsName}`}>
+                                                        Logical Topology
+                                                    </Link>
+                                                </Td>
+                                            )}
                                         </Tr>
                                     );
                                 })}
-                                {!loaded && !loadError && (
+                                {(!loaded || !featureLoaded) && !loadError && (
                                     <Tr>
-                                        <Td colSpan={2}>Loading...</Td>
+                                        <Td colSpan={columns.length}>Loading...</Td>
                                     </Tr>
                                 )}
                                 {loadError && (
                                     <Tr>
-                                        <Td colSpan={2}>Error loading NodeNetworkStates: {loadError.message}</Td>
+                                        <Td colSpan={columns.length}>Error loading NodeNetworkStates: {loadError.message}</Td>
                                     </Tr>
                                 )}
                             </Tbody>
