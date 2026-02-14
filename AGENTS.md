@@ -68,6 +68,7 @@ Please allow up to 2 minutes for the command completion.
 ```bash
 source setup_env.sh && \
    make build push && \
+   make -c collector build push && \
    oc rollout restart deployment/$APP_NAME -n "$APP_NAMESPACE" && \
    oc wait --for=condition=ready pod -l "$APP_SELECTOR" -n "$APP_NAMESPACE" --timeout=60s
 ```

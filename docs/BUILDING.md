@@ -164,6 +164,7 @@ During development, rebuild and redeploy with:
 ```bash
 source setup_env.sh && \
     make install build image push && \
+    make -c collector install build image push && \
     oc rollout restart deployment/$APP_NAME -n $APP_NAMESPACE && \
     oc wait --for=condition=ready pod -l "$APP_SELECTOR" -n "$APP_NAMESPACE" --timeout=60s
 ```

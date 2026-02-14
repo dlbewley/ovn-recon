@@ -48,14 +48,13 @@ jobs:
             echo "EXPIRY_LABEL=" >> $GITHUB_ENV
           fi
 
-      - name: Build Collector Image
+      - name: Set up QEMU
         if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          echo "Building version $VERSION with $EXPIRY_LABEL"
-          docker build $EXPIRY_LABEL -t quay.io/dbewley/ovn-collector:$VERSION collector
-          if [[ "$VERSION" != *"-"* ]]; then
-            docker tag quay.io/dbewley/ovn-collector:$VERSION quay.io/dbewley/ovn-collector:latest
-          fi
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to Quay.io
         if: startsWith(github.ref, 'refs/tags/v')
@@ -65,10 +64,18 @@ jobs:
           username: ${{ secrets.QUAY_USER }}
           password: ${{ secrets.QUAY_TOKEN }}
 
-      - name: Push Collector Image
+      - name: Build Collector Image
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          docker push quay.io/dbewley/ovn-collector:$VERSION
+          echo "Building version $VERSION with $EXPIRY_LABEL"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            $EXPIRY_LABEL \
+            -t quay.io/dbewley/ovn-collector:$VERSION \
+            --push \
+            collector
           if [[ "$VERSION" != *"-"* ]]; then
-            docker push quay.io/dbewley/ovn-collector:latest
+            docker buildx imagetools create \
+              --tag quay.io/dbewley/ovn-collector:latest \
+              quay.io/dbewley/ovn-collector:$VERSION
           fi
