@@ -12,6 +12,7 @@ operator/bin/
 operator/.cache/
 operator/testbin/
 operator/cover.out
+.gocache/
 
 # Local configuration
 setup_env.sh
