@@ -12,6 +12,11 @@ import (
 )
 
 const snapshotsPrefix = "/api/v1/snapshots/"
+const (
+	headerSnapshotGeneratedAt  = "X-OVN-Recon-Snapshot-Generated-At"
+	headerSnapshotSourceHealth = "X-OVN-Recon-Snapshot-Source-Health"
+	headerSnapshotNodeName     = "X-OVN-Recon-Snapshot-Node-Name"
+)
 
 // Server wraps HTTP handlers for the OVN collector.
 type Server struct {
@@ -67,6 +72,16 @@ func (s *Server) handleSnapshotByNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if !payload.Metadata.GeneratedAt.IsZero() {
+		w.Header().Set(headerSnapshotGeneratedAt, payload.Metadata.GeneratedAt.UTC().Format("2006-01-02T15:04:05Z07:00"))
+	}
+	if payload.Metadata.SourceHealth != "" {
+		w.Header().Set(headerSnapshotSourceHealth, payload.Metadata.SourceHealth)
+	}
+	if payload.Metadata.NodeName != "" {
+		w.Header().Set(headerSnapshotNodeName, payload.Metadata.NodeName)
+	}
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		log.Printf("failed to encode snapshot payload for node %q: %v", nodeName, err)
 		http.Error(w, fmt.Sprintf("failed to encode payload: %v", err), http.StatusInternalServerError)

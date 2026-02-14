@@ -34,13 +34,18 @@ import {
 import { LogicalTopologyEdge, LogicalTopologyNode, LogicalTopologySnapshot } from '../types';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { getLogicalTopologyFixture } from './logicalTopologyFixtures';
+import {
+    filterLogicalEdges,
+    filterLogicalNodes,
+    freshnessFromAge,
+    layoutLogicalNodes,
+    logicalNodeKinds,
+    parseSnapshotAgeMs,
+    Point,
+    SnapshotFreshnessState,
+} from './logicalTopologyModel';
 
-interface Point {
-    x: number;
-    y: number;
-}
-
-const kindOrder = ['logical_router', 'logical_switch', 'logical_switch_port'];
+const REFRESH_INTERVAL_MS = 30000;
 
 const getNodeColor = (kind: string): string => {
     if (kind === 'logical_router') return '#0066CC';
@@ -49,32 +54,31 @@ const getNodeColor = (kind: string): string => {
     return '#6A6E73';
 };
 
-const layoutNodes = (nodes: LogicalTopologyNode[]): Record<string, Point> => {
-    const kinds = Array.from(new Set(nodes.map((node) => node.kind))).sort((a, b) => {
-        const aIndex = kindOrder.indexOf(a);
-        const bIndex = kindOrder.indexOf(b);
-        if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
-        if (aIndex === -1) return 1;
-        if (bIndex === -1) return -1;
-        return aIndex - bIndex;
-    });
+const formatUtcTimestamp = (value: string): string => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'unknown';
+    return date.toLocaleString();
+};
 
-    const byKind = kinds.reduce((acc, kind) => {
-        acc[kind] = nodes.filter((node) => node.kind === kind).sort((a, b) => a.label.localeCompare(b.label));
-        return acc;
-    }, {} as Record<string, LogicalTopologyNode[]>);
+const formatAge = (ageMs: number): string => {
+    if (ageMs < 1000) return 'just now';
+    const minutes = Math.floor(ageMs / 60000);
+    const seconds = Math.floor((ageMs % 60000) / 1000);
+    if (minutes <= 0) return `${seconds}s ago`;
+    return `${minutes}m ${seconds}s ago`;
+};
 
-    const positions: Record<string, Point> = {};
-    kinds.forEach((kind, kindIndex) => {
-        byKind[kind].forEach((node, nodeIndex) => {
-            positions[node.id] = {
-                x: 160 + kindIndex * 260,
-                y: 120 + nodeIndex * 110,
-            };
-        });
-    });
+const freshnessVariant = (state: SnapshotFreshnessState): 'success' | 'warning' | 'danger' => {
+    if (state === 'critical') return 'danger';
+    if (state === 'warning') return 'warning';
+    return 'success';
+};
 
-    return positions;
+const freshnessTitle = (state: SnapshotFreshnessState): string => {
+    if (state === 'critical') return 'Snapshot is stale';
+    if (state === 'warning') return 'Snapshot age exceeds warning threshold';
+    if (state === 'unknown') return 'Snapshot freshness unknown';
+    return 'Snapshot is fresh';
 };
 
 const NodeLogicalTopologyDetails: React.FC = () => {
@@ -82,8 +86,10 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     const { enabled, loaded: gateLoaded, loadError: gateError } = useOvnCollectorFeatureGate();
 
     const [snapshot, setSnapshot] = React.useState<LogicalTopologySnapshot | null>(null);
+    const [isLoading, setIsLoading] = React.useState<boolean>(false);
     const [snapshotError, setSnapshotError] = React.useState<string>('');
     const [sourceLabel, setSourceLabel] = React.useState<'collector' | 'fixture' | ''>('');
+    const [lastLoadedAt, setLastLoadedAt] = React.useState<number>(Date.now());
     const [search, setSearch] = React.useState<string>('');
     const [kindFilter, setKindFilter] = React.useState<string>('all');
     const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
@@ -92,68 +98,87 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     const [isDragging, setIsDragging] = React.useState<boolean>(false);
     const [lastPointer, setLastPointer] = React.useState<Point | null>(null);
 
+    const loadSnapshot = React.useCallback(async (allowFixtureFallback: boolean) => {
+        if (!enabled || !name) return;
+
+        setIsLoading(true);
+        setSnapshotError('');
+
+        try {
+            const response = await fetch(`/api/v1/snapshots/${name}`);
+            if (!response.ok) throw new Error(`Collector returned ${response.status}`);
+            const payload = await response.json() as LogicalTopologySnapshot;
+            setSnapshot(payload);
+            setSourceLabel('collector');
+            setLastLoadedAt(Date.now());
+        } catch (error) {
+            if (!allowFixtureFallback) {
+                setSnapshotError(error instanceof Error ? error.message : 'Failed to load logical topology');
+                setSourceLabel('');
+                setSnapshot(null);
+                setIsLoading(false);
+                return;
+            }
+
+            const fixture = getLogicalTopologyFixture(name);
+            if (fixture) {
+                setSnapshot(fixture);
+                setSourceLabel('fixture');
+                setSnapshotError(`Collector unavailable for ${name}; showing fixture data.`);
+                setLastLoadedAt(Date.now());
+            } else {
+                setSnapshot(null);
+                setSourceLabel('');
+                setSnapshotError(error instanceof Error ? error.message : 'Failed to load logical topology');
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    }, [enabled, name]);
+
     React.useEffect(() => {
         if (!enabled || !name) return;
 
-        let cancelled = false;
-        const loadSnapshot = async () => {
-            setSnapshotError('');
-            try {
-                const response = await fetch(`/api/v1/snapshots/${name}`);
-                if (!response.ok) throw new Error(`Collector returned ${response.status}`);
-                const payload = await response.json() as LogicalTopologySnapshot;
-                if (!cancelled) {
-                    setSnapshot(payload);
-                    setSourceLabel('collector');
-                }
-            } catch (error) {
-                const fixture = getLogicalTopologyFixture(name);
-                if (!cancelled && fixture) {
-                    setSnapshot(fixture);
-                    setSourceLabel('fixture');
-                    setSnapshotError(`Collector unavailable for ${name}; using fixture data.`);
-                } else if (!cancelled) {
-                    setSnapshot(null);
-                    setSnapshotError(error instanceof Error ? error.message : 'Failed to load logical topology');
-                }
-            }
+        loadSnapshot(true);
+        const timer = window.setInterval(() => {
+            loadSnapshot(true);
+        }, REFRESH_INTERVAL_MS);
+
+        return () => {
+            window.clearInterval(timer);
         };
+    }, [enabled, name, loadSnapshot]);
 
-        loadSnapshot();
-        return () => { cancelled = true; };
-    }, [enabled, name]);
+    const snapshotAgeMs = React.useMemo(() => {
+        if (!snapshot?.metadata?.generatedAt) return null;
+        return parseSnapshotAgeMs(snapshot.metadata.generatedAt);
+    }, [snapshot, lastLoadedAt]);
 
-    const filteredNodes = React.useMemo(() => {
-        if (!snapshot) return [];
-        const query = search.trim().toLowerCase();
-        return snapshot.nodes.filter((node) => {
-            const matchesKind = kindFilter === 'all' || node.kind === kindFilter;
-            const matchesSearch = query === ''
-                || node.label.toLowerCase().includes(query)
-                || node.id.toLowerCase().includes(query)
-                || node.kind.toLowerCase().includes(query);
-            return matchesKind && matchesSearch;
-        });
-    }, [snapshot, search, kindFilter]);
+    const freshnessState = React.useMemo(
+        () => freshnessFromAge(snapshotAgeMs),
+        [snapshotAgeMs],
+    );
+
+    const filteredNodes = React.useMemo(
+        () => filterLogicalNodes(snapshot, search, kindFilter),
+        [snapshot, search, kindFilter],
+    );
 
     const visibleNodeIds = React.useMemo(() => new Set(filteredNodes.map((node) => node.id)), [filteredNodes]);
 
-    const filteredEdges = React.useMemo(() => {
-        if (!snapshot) return [];
-        return snapshot.edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target));
-    }, [snapshot, visibleNodeIds]);
+    const filteredEdges = React.useMemo(
+        () => filterLogicalEdges(snapshot, visibleNodeIds),
+        [snapshot, visibleNodeIds],
+    );
 
-    const positions = React.useMemo(() => layoutNodes(filteredNodes), [filteredNodes]);
+    const positions = React.useMemo(() => layoutLogicalNodes(filteredNodes), [filteredNodes]);
 
     const selectedNode = React.useMemo(
         () => filteredNodes.find((node) => node.id === selectedNodeId) || null,
         [filteredNodes, selectedNodeId],
     );
 
-    const kinds = React.useMemo(() => {
-        if (!snapshot) return [];
-        return Array.from(new Set(snapshot.nodes.map((node) => node.kind))).sort();
-    }, [snapshot]);
+    const kinds = React.useMemo(() => logicalNodeKinds(snapshot), [snapshot]);
 
     const zoomIn = () => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))));
     const zoomOut = () => setZoom((value) => Math.max(0.4, Number((value - 0.1).toFixed(2))));
@@ -269,9 +294,37 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                             <CardTitle>Logical Topology Graph</CardTitle>
                             <CardBody>
                                 <AlertGroup isToast={false}>
+                                    {isLoading && (
+                                        <Alert variant="info" isInline title="Refreshing logical topology snapshot..." />
+                                    )}
                                     {snapshotError && (
                                         <Alert variant="warning" isInline title={snapshotError} />
                                     )}
+                                    {snapshot && (
+                                        <Alert
+                                            variant={freshnessVariant(freshnessState)}
+                                            isInline
+                                            title={freshnessTitle(freshnessState)}
+                                        >
+                                            <div>Generated: {formatUtcTimestamp(snapshot.metadata.generatedAt)}</div>
+                                            {snapshotAgeMs != null && <div>Age: {formatAge(snapshotAgeMs)}</div>}
+                                        </Alert>
+                                    )}
+                                    {snapshot?.metadata?.sourceHealth && snapshot.metadata.sourceHealth !== 'healthy' && (
+                                        <Alert
+                                            variant="warning"
+                                            isInline
+                                            title={`Collector source health: ${snapshot.metadata.sourceHealth}`}
+                                        />
+                                    )}
+                                    {snapshot?.warnings?.map((warning) => (
+                                        <Alert
+                                            key={warning.code}
+                                            variant="warning"
+                                            isInline
+                                            title={`${warning.code}: ${warning.message}`}
+                                        />
+                                    ))}
                                     {sourceLabel && (
                                         <Alert
                                             variant={sourceLabel === 'collector' ? 'success' : 'info'}
@@ -306,6 +359,11 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                     <FlexItem><Button variant="secondary" onClick={zoomOut}>-</Button></FlexItem>
                                     <FlexItem><Button variant="secondary" onClick={zoomIn}>+</Button></FlexItem>
                                     <FlexItem><Button variant="link" onClick={resetView}>Reset view</Button></FlexItem>
+                                    <FlexItem>
+                                        <Button variant="tertiary" onClick={() => loadSnapshot(false)} isDisabled={isLoading}>
+                                            Refresh now
+                                        </Button>
+                                    </FlexItem>
                                 </Flex>
 
                                 <div

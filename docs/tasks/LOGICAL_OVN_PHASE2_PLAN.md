@@ -50,6 +50,23 @@ The project direction is updated as follows:
 - Collector CI workflow is added:
   - `/Users/dale/src/ovn-recon/.github/workflows/collector-release.yaml`
   - follows existing `v*` tag semantics and prerelease expiry label pattern
+- Runtime semantics documentation is added:
+  - `/Users/dale/src/ovn-recon/docs/tasks/OVN_COLLECTOR_RUNTIME_SEMANTICS.md`
+  - defines snapshot transport headers, freshness thresholds, degraded-state rules, and initial performance budgets
+- Go parsing pipeline now covers core OVN logical resources:
+  - `Logical_Router`
+  - `Logical_Router_Port`
+  - `Logical_Switch`
+  - `Logical_Switch_Port`
+  - including normalization fallback for single-quote pseudo-JSON output and tests for degraded command failure behavior
+- Logical topology UI now surfaces snapshot freshness/staleness and health/warnings:
+  - periodic refresh
+  - manual refresh action
+  - stale/error alerts derived from snapshot metadata and warnings
+- Logical topology model/layout logic is now extracted and regression-tested:
+  - `/Users/dale/src/ovn-recon/src/components/logicalTopologyModel.ts`
+  - `/Users/dale/src/ovn-recon/src/components/logicalTopologyModel.test.ts`
+  - dense topology layout wraps same-kind nodes into sub-columns for improved usability
 
 ### Learned revisions
 - Repository name normalized to `quay.io/dbewley/ovn-collector` (not `ocn-collector`).
@@ -263,17 +280,17 @@ Current Phase 2 bead status:
 | Phase 2 epic: Logical OVN topology alternative view | epic | `ovn-recon-e18` | `OPEN` |
 | Define snapshot schema and fixture pack | task | `ovn-recon-e18.1` | `CLOSED` |
 | Add route and node-list entry point for logical view | task | `ovn-recon-e18.2` | `CLOSED` |
-| Implement logical topology renderer MVP | task | `ovn-recon-e18.3` | `OPEN` |
-| Build real data snapshot integration path | task | `ovn-recon-e18.4` | `OPEN` |
-| Scale/perf hardening and regression test coverage | task | `ovn-recon-e18.5` | `OPEN` |
+| Implement logical topology renderer MVP | task | `ovn-recon-e18.3` | `CLOSED` |
+| Build real data snapshot integration path | task | `ovn-recon-e18.4` | `CLOSED` |
+| Scale/perf hardening and regression test coverage | task | `ovn-recon-e18.5` | `CLOSED` |
 | Scaffold Go collector component and container image | task | `ovn-recon-e18.6` | `CLOSED` |
-| Port spike resource modeling/parsing into typed Go pipelines | task | `ovn-recon-e18.8` | `OPEN` |
+| Port spike resource modeling/parsing into typed Go pipelines | task | `ovn-recon-e18.8` | `CLOSED` |
 | Add collector CI workflow for build/push | task | `ovn-recon-e18.9` | `CLOSED` |
 | Integrate collector image into operator deployment and docs | task | `ovn-recon-e18.10` | `CLOSED` |
-| Specify snapshot transport, freshness semantics, and performance budgets | task | `ovn-recon-e18.13` | `OPEN` |
-| Define collector RBAC and configurable target namespaces | task | `ovn-recon-e18.14` | `OPEN` |
+| Specify snapshot transport, freshness semantics, and performance budgets | task | `ovn-recon-e18.13` | `CLOSED` |
+| Define collector RBAC and configurable target namespaces | task | `ovn-recon-e18.14` | `CLOSED` |
 | Add Phase 2 feature gate to OvnRecon API and operator behavior | task | `ovn-recon-e18.15` | `CLOSED` |
-| Define MVP node probe command matrix and error semantics | task | `ovn-recon-e18.16` | `OPEN` |
+| Define MVP node probe command matrix and error semantics | task | `ovn-recon-e18.16` | `CLOSED` |
 
 ## Acceptance Criteria (Phase 2 initial release)
 - Node list screen exposes a per-node entry to logical topology view (for example, a third table column).

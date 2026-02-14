@@ -7,11 +7,12 @@ This component provides a Go-based server-side collector for Phase 2 logical OVN
 This scaffold includes:
 - `cmd/ovn-collector` entrypoint
 - `internal/snapshot` canonical payload types and file store
+- `internal/probe` typed OVN parser + snapshot assembly pipeline
 - HTTP endpoints for health/readiness and node-scoped snapshot retrieval
 - fixture corpus under `fixtures/snapshots`
 - collector-local `Makefile` and `Dockerfile`
 
-The OVN probing pipeline and Kubernetes exec integration are not implemented yet.
+Kubernetes exec integration is not wired yet; the OVN parsing/snapshot assembly pipeline is implemented and unit tested.
 
 ## Endpoints
 
@@ -24,6 +25,12 @@ Example:
 ```bash
 curl -s http://localhost:8090/api/v1/snapshots/worker-a
 ```
+
+Response headers:
+- `Cache-Control: no-store`
+- `X-OVN-Recon-Snapshot-Generated-At` (when metadata includes `generatedAt`)
+- `X-OVN-Recon-Snapshot-Source-Health`
+- `X-OVN-Recon-Snapshot-Node-Name`
 
 ## Snapshot Source
 
@@ -64,3 +71,8 @@ Planned collector behavior requires read + pod exec access in:
 - `openshift-frr-k8s`
 
 Namespace targets should remain configurable.
+
+## Runtime Semantics
+
+Design notes for snapshot transport/freshness/degraded behavior and initial budgets:
+- `/Users/dale/src/ovn-recon/docs/tasks/OVN_COLLECTOR_RUNTIME_SEMANTICS.md`
