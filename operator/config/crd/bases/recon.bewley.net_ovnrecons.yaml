@@ -39,9 +39,39 @@ spec:
           spec:
             description: OvnReconSpec defines the desired state of OvnRecon.
             properties:
+              collector:
+                description: Collector configuration.
+                properties:
+                  enabled:
+                    description: Enabled toggles logical topology features backed by
+                      the collector service.
+                    type: boolean
+                  image:
+                    description: Image configuration for the OVN collector container
+                      image.
+                    properties:
+                      pullPolicy:
+                        type: string
+                      repository:
+                        default: quay.io/dbewley/ovn-collector
+                        type: string
+                      tag:
+                        type: string
+                    type: object
+                  probeNamespaces:
+                    default:
+                    - openshift-ovn-kubernetes
+                    - openshift-frr-k8s
+                    description: ProbeNamespaces defines namespaces where collector
+                      is allowed to probe OVN pods.
+                    items:
+                      type: string
+                    type: array
+                type: object
               collectorImage:
-                description: CollectorImage configuration for the OVN collector container
-                  image.
+                description: |-
+                  Deprecated: use collector.image instead.
+                  CollectorImage configuration for the OVN collector container image.
                 properties:
                   pullPolicy:
                     type: string
@@ -55,8 +85,9 @@ spec:
                 default:
                 - openshift-ovn-kubernetes
                 - openshift-frr-k8s
-                description: CollectorProbeNamespaces defines namespaces where collector
-                  is allowed to probe OVN pods.
+                description: |-
+                  Deprecated: use collector.probeNamespaces instead.
+                  CollectorProbeNamespaces defines namespaces where collector is allowed to probe OVN pods.
                 items:
                   type: string
                 type: array
@@ -67,9 +98,24 @@ spec:
                     type: string
                   enabled:
                     type: boolean
+                  image:
+                    description: Image configuration for the plugin container.
+                    properties:
+                      pullPolicy:
+                        default: IfNotPresent
+                        type: string
+                      repository:
+                        default: quay.io/dbewley/ovn-recon
+                        type: string
+                      tag:
+                        default: latest
+                        type: string
+                    type: object
                 type: object
               featureGates:
-                description: FeatureGates controls optional OVN Recon capabilities.
+                description: |-
+                  Deprecated: use collector.enabled instead.
+                  FeatureGates controls optional OVN Recon capabilities.
                 properties:
                   ovn-collector:
                     default: false
@@ -78,7 +124,9 @@ spec:
                     type: boolean
                 type: object
               image:
-                description: Image configuration for the plugin container
+                description: |-
+                  Deprecated: use consolePlugin.image instead.
+                  Image configuration for the plugin container.
                 properties:
                   pullPolicy:
                     default: IfNotPresent

@@ -332,6 +332,9 @@ func DesiredService(ovnRecon *reconv1alpha1.OvnRecon) *corev1.Service {
 }
 
 func collectorImageRepositoryFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+	if ovnRecon.Spec.Collector.Image.Repository != "" {
+		return ovnRecon.Spec.Collector.Image.Repository
+	}
 	if ovnRecon.Spec.CollectorImage.Repository != "" {
 		return ovnRecon.Spec.CollectorImage.Repository
 	}
@@ -339,6 +342,9 @@ func collectorImageRepositoryFor(ovnRecon *reconv1alpha1.OvnRecon) string {
 }
 
 func collectorImageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+	if ovnRecon.Spec.Collector.Image.Tag != "" {
+		return ovnRecon.Spec.Collector.Image.Tag
+	}
 	if ovnRecon.Spec.CollectorImage.Tag != "" {
 		return ovnRecon.Spec.CollectorImage.Tag
 	}
@@ -347,6 +353,9 @@ func collectorImageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
 }
 
 func collectorImagePullPolicyFor(ovnRecon *reconv1alpha1.OvnRecon) corev1.PullPolicy {
+	if ovnRecon.Spec.Collector.Image.PullPolicy != "" {
+		return corev1.PullPolicy(ovnRecon.Spec.Collector.Image.PullPolicy)
+	}
 	if ovnRecon.Spec.CollectorImage.PullPolicy != "" {
 		return corev1.PullPolicy(ovnRecon.Spec.CollectorImage.PullPolicy)
 	}
@@ -354,6 +363,9 @@ func collectorImagePullPolicyFor(ovnRecon *reconv1alpha1.OvnRecon) corev1.PullPo
 }
 
 func collectorProbeNamespacesFor(ovnRecon *reconv1alpha1.OvnRecon) []string {
+	if len(ovnRecon.Spec.Collector.ProbeNamespaces) != 0 {
+		return append([]string{}, ovnRecon.Spec.Collector.ProbeNamespaces...)
+	}
 	if len(ovnRecon.Spec.CollectorProbeNamespaces) == 0 {
 		return append([]string{}, defaultCollectorProbeNamespaces...)
 	}
@@ -407,6 +419,9 @@ func mergeStringMap(dst, src map[string]string) map[string]string {
 }
 
 func imageRepositoryFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+	if ovnRecon.Spec.ConsolePlugin.Image.Repository != "" {
+		return ovnRecon.Spec.ConsolePlugin.Image.Repository
+	}
 	if ovnRecon.Spec.Image.Repository != "" {
 		return ovnRecon.Spec.Image.Repository
 	}
@@ -414,6 +429,9 @@ func imageRepositoryFor(ovnRecon *reconv1alpha1.OvnRecon) string {
 }
 
 func imagePullPolicyFor(ovnRecon *reconv1alpha1.OvnRecon) corev1.PullPolicy {
+	if ovnRecon.Spec.ConsolePlugin.Image.PullPolicy != "" {
+		return corev1.PullPolicy(ovnRecon.Spec.ConsolePlugin.Image.PullPolicy)
+	}
 	if ovnRecon.Spec.Image.PullPolicy != "" {
 		return corev1.PullPolicy(ovnRecon.Spec.Image.PullPolicy)
 	}

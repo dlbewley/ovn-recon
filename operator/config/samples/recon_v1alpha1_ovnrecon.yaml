@@ -8,19 +8,19 @@ metadata:
   name: ovn-recon
 spec:
   targetNamespace: ovn-recon
-  featureGates:
-    ovn-collector: false
-  image:
-    repository: quay.io/dbewley/ovn-recon
-    # tag: latest
-    pullPolicy: IfNotPresent
-  collectorImage:
-    repository: quay.io/dbewley/ovn-collector
-    # tag: latest            # defaults to image.tag when omitted (operator behavior)
-    # pullPolicy: IfNotPresent # defaults to image.pullPolicy when omitted (operator behavior)
-  collectorProbeNamespaces:
-    - openshift-ovn-kubernetes
-    - openshift-frr-k8s
   consolePlugin:
     displayName: "OVN Recon"
     enabled: true
+    image:
+      repository: quay.io/dbewley/ovn-recon
+      # tag: latest
+      pullPolicy: IfNotPresent
+  collector:
+    enabled: false
+    image:
+      repository: quay.io/dbewley/ovn-collector
+      # tag: latest             # defaults to consolePlugin.image.tag when omitted
+      # pullPolicy: IfNotPresent # defaults to consolePlugin.image.pullPolicy when omitted
+    probeNamespaces:
+      - openshift-ovn-kubernetes
+      - openshift-frr-k8s

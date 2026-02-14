@@ -46,10 +46,10 @@ import (
 )
 
 const (
-	finalizerName    = "ovnrecon.bewley.net/finalizer"
-	defaultNamespace = "ovn-recon"
+	finalizerName          = "ovnrecon.bewley.net/finalizer"
+	defaultNamespace       = "ovn-recon"
 	defaultImageRepository = "quay.io/dbewley/ovn-recon"
-	defaultImageTag  = "latest"
+	defaultImageTag        = "latest"
 )
 
 // OvnReconReconciler reconciles a OvnRecon object
@@ -539,10 +539,16 @@ func collectorRoleBindingName(ovnRecon *reconv1alpha1.OvnRecon) string {
 }
 
 func collectorFeatureEnabled(ovnRecon *reconv1alpha1.OvnRecon) bool {
+	if ovnRecon.Spec.Collector.Enabled != nil {
+		return *ovnRecon.Spec.Collector.Enabled
+	}
 	return ovnRecon.Spec.FeatureGates.OVNCollector
 }
 
 func imageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+	if ovnRecon.Spec.ConsolePlugin.Image.Tag != "" {
+		return ovnRecon.Spec.ConsolePlugin.Image.Tag
+	}
 	if ovnRecon.Spec.Image.Tag != "" {
 		return ovnRecon.Spec.Image.Tag
 	}

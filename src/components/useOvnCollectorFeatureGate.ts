@@ -10,6 +10,11 @@ interface UseOvnCollectorFeatureGateResult {
 }
 
 const isCollectorFeatureEnabled = (instance: OvnRecon): boolean => {
+    const gateFromCollector = instance.spec?.collector?.enabled;
+    if (typeof gateFromCollector === 'boolean') {
+        return gateFromCollector;
+    }
+
     const gateFromFeatureGates = instance.spec?.featureGates?.['ovn-collector'];
     if (gateFromFeatureGates === true) {
         return true;

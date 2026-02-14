@@ -8,7 +8,7 @@ This matrix defines the initial command targets, parser paths, and RBAC expectat
 - Probe namespaces (default):
   - `openshift-ovn-kubernetes`
   - `openshift-frr-k8s`
-- Probe namespace list is configurable via `spec.collectorProbeNamespaces`.
+- Probe namespace list is configurable via `spec.collector.probeNamespaces` (legacy `spec.collectorProbeNamespaces` is also accepted for compatibility).
 
 ## Command Matrix (MVP)
 

@@ -25,23 +25,33 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `targetNamespace` | `string` | `ovn-recon` | The namespace where namespaced resources (Deployment, Service) are created. |
-| `image.repository`| `string` | `quay.io/dbewley/ovn-recon` | The container image repository. |
-| `image.tag` | `string` | `latest` | The container image tag. |
-| `image.pullPolicy`| `string` | `IfNotPresent` | Kubernetes ImagePullPolicy. |
-| `featureGates.ovn-collector` | `bool` | `false` | Enables logical topology features backed by the collector service. |
-| `collectorImage.repository`| `string` | `quay.io/dbewley/ovn-collector` | OVN collector image repository. |
-| `collectorImage.tag` | `string` | _inherits `image.tag`_ | OVN collector image tag. |
-| `collectorImage.pullPolicy`| `string` | _inherits `image.pullPolicy`_ | OVN collector image pull policy. |
-| `collectorProbeNamespaces` | `[]string` | `["openshift-ovn-kubernetes","openshift-frr-k8s"]` | Namespaces where collector is granted pod read/exec access. |
 | `consolePlugin.displayName` | `string` | `OVN Recon` | The name displayed in the OpenShift console. |
 | `consolePlugin.enabled` | `bool` | `true` | If true, the operator will patch the OpenShift Console configuration to enable the plugin. |
+| `consolePlugin.image.repository`| `string` | `quay.io/dbewley/ovn-recon` | Plugin backend image repository. |
+| `consolePlugin.image.tag` | `string` | `latest` | Plugin backend image tag. |
+| `consolePlugin.image.pullPolicy`| `string` | `IfNotPresent` | Plugin backend ImagePullPolicy. |
+| `collector.enabled` | `bool` | `false` | Enables logical topology features backed by the collector service. |
+| `collector.image.repository`| `string` | `quay.io/dbewley/ovn-collector` | OVN collector image repository. |
+| `collector.image.tag` | `string` | _inherits `consolePlugin.image.tag`_ | OVN collector image tag. |
+| `collector.image.pullPolicy`| `string` | _inherits `consolePlugin.image.pullPolicy`_ | OVN collector image pull policy. |
+| `collector.probeNamespaces` | `[]string` | `["openshift-ovn-kubernetes","openshift-frr-k8s"]` | Namespaces where collector is granted pod read/exec access. |
+
+### Migration Notes
+
+- New hierarchical fields are preferred: `consolePlugin.image.*`, `collector.enabled`, `collector.image.*`, and `collector.probeNamespaces`.
+- Legacy fields are still accepted for compatibility in `v1alpha1`:
+  - `image.*` (use `consolePlugin.image.*`)
+  - `featureGates.ovn-collector` (use `collector.enabled`)
+  - `collectorImage.*` (use `collector.image.*`)
+  - `collectorProbeNamespaces` (use `collector.probeNamespaces`)
+- If both new and legacy fields are set, the new hierarchical fields win.
 
 ### Feature Gate Notes
 
-- `featureGates.ovn-collector` is intended to gate Phase 2 logical topology capabilities.
+- `collector.enabled` is intended to gate Phase 2 logical topology capabilities.
 - Collector deployment targets the same namespace as `targetNamespace`.
 - When enabled, the operator reconciles collector Deployment and Service resources named `<ovnrecon-name>-collector`.
-- When enabled, the operator also reconciles collector ServiceAccount/ClusterRole and RoleBindings in each `collectorProbeNamespaces` entry.
+- When enabled, the operator also reconciles collector ServiceAccount/ClusterRole and RoleBindings in each `collector.probeNamespaces` entry.
 - Current default mode is standalone Deployment; DaemonSet support is a planned future evolution for per-node collection scale.
 
 ### Status Conditions

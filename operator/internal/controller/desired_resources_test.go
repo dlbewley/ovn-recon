@@ -43,10 +43,12 @@ func TestCollectorImageInheritance(t *testing.T) {
 	cr := &reconv1alpha1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "test"},
 		Spec: reconv1alpha1.OvnReconSpec{
-			Image: reconv1alpha1.ImageSpec{
-				Repository: "quay.io/dbewley/ovn-recon",
-				Tag:        "v1.2.3",
-				PullPolicy: string(corev1.PullAlways),
+			ConsolePlugin: reconv1alpha1.ConsolePluginSpec{
+				Image: reconv1alpha1.ImageSpec{
+					Repository: "quay.io/dbewley/ovn-recon",
+					Tag:        "v1.2.3",
+					PullPolicy: string(corev1.PullAlways),
+				},
 			},
 		},
 	}
@@ -66,14 +68,18 @@ func TestCollectorImageOverrides(t *testing.T) {
 	cr := &reconv1alpha1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "test"},
 		Spec: reconv1alpha1.OvnReconSpec{
-			Image: reconv1alpha1.ImageSpec{
-				Tag:        "v1.2.3",
-				PullPolicy: string(corev1.PullIfNotPresent),
+			ConsolePlugin: reconv1alpha1.ConsolePluginSpec{
+				Image: reconv1alpha1.ImageSpec{
+					Tag:        "v1.2.3",
+					PullPolicy: string(corev1.PullIfNotPresent),
+				},
 			},
-			CollectorImage: reconv1alpha1.CollectorImageSpec{
-				Repository: "quay.io/acme/custom-collector",
-				Tag:        "collector-tag",
-				PullPolicy: string(corev1.PullNever),
+			Collector: reconv1alpha1.CollectorSpec{
+				Image: reconv1alpha1.CollectorImageSpec{
+					Repository: "quay.io/acme/custom-collector",
+					Tag:        "collector-tag",
+					PullPolicy: string(corev1.PullNever),
+				},
 			},
 		},
 	}
@@ -138,11 +144,116 @@ func TestCollectorProbeNamespacesDefaultsAndOverrides(t *testing.T) {
 	overrideCR := &reconv1alpha1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
 		Spec: reconv1alpha1.OvnReconSpec{
-			CollectorProbeNamespaces: []string{"custom-a", "custom-b"},
+			Collector: reconv1alpha1.CollectorSpec{
+				ProbeNamespaces: []string{"custom-a", "custom-b"},
+			},
 		},
 	}
 	overrides := collectorProbeNamespacesFor(overrideCR)
 	if len(overrides) != 2 || overrides[0] != "custom-a" || overrides[1] != "custom-b" {
 		t.Fatalf("unexpected override probe namespaces: %#v", overrides)
+	}
+}
+
+func TestHierarchicalFieldsTakePrecedenceOverLegacy(t *testing.T) {
+	cr := &reconv1alpha1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+		Spec: reconv1alpha1.OvnReconSpec{
+			ConsolePlugin: reconv1alpha1.ConsolePluginSpec{
+				Image: reconv1alpha1.ImageSpec{
+					Repository: "quay.io/example/new-plugin",
+					Tag:        "new-tag",
+					PullPolicy: string(corev1.PullAlways),
+				},
+			},
+			Collector: reconv1alpha1.CollectorSpec{
+				Image: reconv1alpha1.CollectorImageSpec{
+					Repository: "quay.io/example/new-collector",
+					Tag:        "collector-new-tag",
+					PullPolicy: string(corev1.PullNever),
+				},
+				ProbeNamespaces: []string{"new-ns"},
+			},
+			Image: reconv1alpha1.ImageSpec{
+				Repository: "quay.io/example/legacy-plugin",
+				Tag:        "legacy-tag",
+				PullPolicy: string(corev1.PullIfNotPresent),
+			},
+			CollectorImage: reconv1alpha1.CollectorImageSpec{
+				Repository: "quay.io/example/legacy-collector",
+				Tag:        "collector-legacy-tag",
+				PullPolicy: string(corev1.PullIfNotPresent),
+			},
+			CollectorProbeNamespaces: []string{"legacy-ns"},
+		},
+	}
+
+	if got := imageRepositoryFor(cr); got != "quay.io/example/new-plugin" {
+		t.Fatalf("unexpected plugin repository precedence: %s", got)
+	}
+	if got := imageTagFor(cr); got != "new-tag" {
+		t.Fatalf("unexpected plugin tag precedence: %s", got)
+	}
+	if got := imagePullPolicyFor(cr); got != corev1.PullAlways {
+		t.Fatalf("unexpected plugin pullPolicy precedence: %s", got)
+	}
+	if got := collectorImageRepositoryFor(cr); got != "quay.io/example/new-collector" {
+		t.Fatalf("unexpected collector repository precedence: %s", got)
+	}
+	if got := collectorImageTagFor(cr); got != "collector-new-tag" {
+		t.Fatalf("unexpected collector tag precedence: %s", got)
+	}
+	if got := collectorImagePullPolicyFor(cr); got != corev1.PullNever {
+		t.Fatalf("unexpected collector pullPolicy precedence: %s", got)
+	}
+	if got := collectorProbeNamespacesFor(cr); len(got) != 1 || got[0] != "new-ns" {
+		t.Fatalf("unexpected collector probe namespace precedence: %#v", got)
+	}
+}
+
+func TestCollectorEnabledPrefersHierarchicalOverFeatureGate(t *testing.T) {
+	trueValue := true
+	falseValue := false
+
+	newDisabledLegacyEnabled := &reconv1alpha1.OvnRecon{
+		Spec: reconv1alpha1.OvnReconSpec{
+			Collector: reconv1alpha1.CollectorSpec{
+				Enabled: &falseValue,
+			},
+			FeatureGates: reconv1alpha1.FeatureGateSpec{
+				OVNCollector: true,
+			},
+		},
+	}
+	if collectorFeatureEnabled(newDisabledLegacyEnabled) {
+		t.Fatalf("collector.enabled=false should override legacy feature gate")
+	}
+
+	newUnsetLegacyEnabled := &reconv1alpha1.OvnRecon{
+		Spec: reconv1alpha1.OvnReconSpec{
+			Collector: reconv1alpha1.CollectorSpec{
+				Enabled: nil,
+			},
+			FeatureGates: reconv1alpha1.FeatureGateSpec{
+				OVNCollector: true,
+			},
+		},
+	}
+	if !collectorFeatureEnabled(newUnsetLegacyEnabled) {
+		t.Fatalf("legacy feature gate should be honored when collector.enabled is unset")
+	}
+
+	newEnabledLegacyDisabled := &reconv1alpha1.OvnRecon{
+		Spec: reconv1alpha1.OvnReconSpec{
+			Collector: reconv1alpha1.CollectorSpec{
+				Enabled: &trueValue,
+			},
+			FeatureGates: reconv1alpha1.FeatureGateSpec{
+				OVNCollector: false,
+			},
+		},
+	}
+	if !collectorFeatureEnabled(newEnabledLegacyDisabled) {
+		t.Fatalf("collector.enabled=true should override legacy feature gate")
 	}
 }

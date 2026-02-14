@@ -31,18 +31,25 @@ type OvnReconSpec struct {
 	// +kubebuilder:default=ovn-recon
 	TargetNamespace string `json:"targetNamespace,omitempty"`
 
-	// Image configuration for the plugin container
-	Image ImageSpec `json:"image,omitempty"`
-
 	// ConsolePlugin configuration
 	ConsolePlugin ConsolePluginSpec `json:"consolePlugin,omitempty"`
 
+	// Collector configuration.
+	Collector CollectorSpec `json:"collector,omitempty"`
+
+	// Deprecated: use consolePlugin.image instead.
+	// Image configuration for the plugin container.
+	Image ImageSpec `json:"image,omitempty"`
+
+	// Deprecated: use collector.enabled instead.
 	// FeatureGates controls optional OVN Recon capabilities.
 	FeatureGates FeatureGateSpec `json:"featureGates,omitempty"`
 
+	// Deprecated: use collector.image instead.
 	// CollectorImage configuration for the OVN collector container image.
 	CollectorImage CollectorImageSpec `json:"collectorImage,omitempty"`
 
+	// Deprecated: use collector.probeNamespaces instead.
 	// CollectorProbeNamespaces defines namespaces where collector is allowed to probe OVN pods.
 	// +kubebuilder:default:={"openshift-ovn-kubernetes","openshift-frr-k8s"}
 	CollectorProbeNamespaces []string `json:"collectorProbeNamespaces,omitempty"`
@@ -52,7 +59,7 @@ type ImageSpec struct {
 	// +kubebuilder:default=quay.io/dbewley/ovn-recon
 	Repository string `json:"repository,omitempty"`
 	// +kubebuilder:default=latest
-	Tag        string `json:"tag,omitempty"`
+	Tag string `json:"tag,omitempty"`
 	// +kubebuilder:default=IfNotPresent
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
@@ -67,6 +74,21 @@ type CollectorImageSpec struct {
 type ConsolePluginSpec struct {
 	DisplayName string `json:"displayName,omitempty"`
 	Enabled     bool   `json:"enabled,omitempty"`
+
+	// Image configuration for the plugin container.
+	Image ImageSpec `json:"image,omitempty"`
+}
+
+type CollectorSpec struct {
+	// Enabled toggles logical topology features backed by the collector service.
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// Image configuration for the OVN collector container image.
+	Image CollectorImageSpec `json:"image,omitempty"`
+
+	// ProbeNamespaces defines namespaces where collector is allowed to probe OVN pods.
+	// +kubebuilder:default:={"openshift-ovn-kubernetes","openshift-frr-k8s"}
+	ProbeNamespaces []string `json:"probeNamespaces,omitempty"`
 }
 
 type FeatureGateSpec struct {

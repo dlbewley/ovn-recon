@@ -135,6 +135,9 @@ export interface LogicalTopologySnapshot {
 
 export interface OvnRecon extends K8sResourceCommon {
     spec?: {
+        collector?: {
+            enabled?: boolean;
+        };
         featureGates?: {
             'ovn-collector'?: boolean;
             [key: string]: boolean | undefined;

@@ -268,13 +268,15 @@ metadata:
   name: ovn-recon
   namespace: ovn-recon
 spec:
-  image:
-    repository: quay.io/dbewley/ovn-recon
-    tag: latest
-    pullPolicy: IfNotPresent
   consolePlugin:
     displayName: "OVN Recon"
     enabled: true
+    image:
+      repository: quay.io/dbewley/ovn-recon
+      tag: latest
+      pullPolicy: IfNotPresent
+  collector:
+    enabled: false
 ```
 
 Apply it:
