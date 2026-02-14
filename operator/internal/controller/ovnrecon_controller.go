@@ -135,6 +135,29 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	r.updateCondition(ctx, ovnRecon, "ServiceReady", metav1.ConditionTrue, "ServiceReady", "Service is ready")
 
+	// 2.5 Reconcile collector resources behind feature gate.
+	if collectorFeatureEnabled(ovnRecon) {
+		if err := r.reconcileCollectorDeployment(ctx, ovnRecon); err != nil {
+			log.Error(err, "Failed to reconcile collector Deployment")
+			r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "CollectorDeploymentReconcileFailed", err.Error())
+			r.updateCondition(ctx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorDeploymentReconcileFailed", err.Error())
+			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		}
+		if err := r.reconcileCollectorService(ctx, ovnRecon); err != nil {
+			log.Error(err, "Failed to reconcile collector Service")
+			r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "CollectorServiceReconcileFailed", err.Error())
+			r.updateCondition(ctx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorServiceReconcileFailed", err.Error())
+			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		}
+		r.updateCondition(ctx, ovnRecon, "CollectorReady", metav1.ConditionTrue, "CollectorReady", "Collector resources are reconciled")
+	} else {
+		if err := r.deleteCollectorResources(ctx, ovnRecon); err != nil {
+			log.Error(err, "Failed to delete collector resources while feature gate is disabled")
+			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		}
+		r.updateCondition(ctx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorFeatureDisabled", "Collector feature gate is disabled")
+	}
+
 	// 3. Reconcile ConsolePlugin
 	if err := r.reconcileConsolePlugin(ctx, ovnRecon); err != nil {
 		log.Error(err, "Failed to reconcile ConsolePlugin")
@@ -248,6 +271,48 @@ func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *rec
 	return err
 }
 
+func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	name := collectorName(ovnRecon)
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
+		desired := DesiredCollectorDeployment(ovnRecon)
+		deployment.Labels = mergeStringMap(deployment.Labels, desired.Labels)
+		deployment.Annotations = mergeStringMap(deployment.Annotations, desired.Annotations)
+		deployment.Spec = desired.Spec
+		return nil
+	})
+	return err
+}
+
+func (r *OvnReconReconciler) reconcileCollectorService(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	name := collectorName(ovnRecon)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
+		desired := DesiredCollectorService(ovnRecon)
+		service.Labels = mergeStringMap(service.Labels, desired.Labels)
+		service.Annotations = mergeStringMap(service.Annotations, desired.Annotations)
+		service.Spec = desired.Spec
+		return nil
+	})
+	return err
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *OvnReconReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
@@ -329,6 +394,14 @@ func targetNamespace(ovnRecon *reconv1alpha1.OvnRecon) string {
 		return ovnRecon.Spec.TargetNamespace
 	}
 	return defaultNamespace
+}
+
+func collectorName(ovnRecon *reconv1alpha1.OvnRecon) string {
+	return ovnRecon.Name + "-collector"
+}
+
+func collectorFeatureEnabled(ovnRecon *reconv1alpha1.OvnRecon) bool {
+	return ovnRecon.Spec.FeatureGates.OVNCollector
 }
 
 func imageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
@@ -534,6 +607,37 @@ func (r *OvnReconReconciler) deleteNamespacedResources(ctx context.Context, ovnR
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ovnRecon.Name,
+			Namespace: namespace,
+		},
+	}
+	if err := r.Delete(ctx, service); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	if err := r.deleteCollectorResources(ctx, ovnRecon); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *OvnReconReconciler) deleteCollectorResources(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	name := collectorName(ovnRecon)
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+	if err := r.Delete(ctx, deployment); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
 			Namespace: namespace,
 		},
 	}

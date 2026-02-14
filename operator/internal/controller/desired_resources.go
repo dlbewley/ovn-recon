@@ -31,6 +31,8 @@ import (
 	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
 )
 
+const defaultCollectorRepository = "quay.io/dbewley/ocn-collector"
+
 // DesiredDeployment renders the Deployment for a given OvnRecon instance.
 func DesiredDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deployment {
 	namespace := targetNamespace(ovnRecon)
@@ -149,6 +151,149 @@ func DesiredDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deployment {
 	}
 }
 
+// DesiredCollectorDeployment renders the collector Deployment for a given OvnRecon instance.
+func DesiredCollectorDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deployment {
+	namespace := targetNamespace(ovnRecon)
+	imageTag := collectorImageTagFor(ovnRecon)
+	name := collectorName(ovnRecon)
+	appLabels := labelsForOvnReconWithVersion(ovnRecon.Name, imageTag)
+	appLabels["app.kubernetes.io/component"] = "collector"
+	operatorAnnotations := operatorVersionAnnotations()
+
+	pullPolicy := collectorImagePullPolicyFor(ovnRecon)
+	image := collectorImageRepositoryFor(ovnRecon)
+	if imageTag != "" {
+		image = fmt.Sprintf("%s:%s", image, imageTag)
+	}
+	replicas := int32(1)
+
+	return &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "apps/v1",
+			Kind:       "Deployment",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   namespace,
+			Labels:      appLabels,
+			Annotations: operatorAnnotations,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app.kubernetes.io/name":      "ovn-recon",
+					"app.kubernetes.io/instance":  ovnRecon.Name,
+					"app.kubernetes.io/component": "collector",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app.kubernetes.io/name":       "ovn-recon",
+						"app.kubernetes.io/instance":   ovnRecon.Name,
+						"app.kubernetes.io/managed-by": "ovn-recon-operator",
+						"app.kubernetes.io/component":  "collector",
+					},
+				},
+				Spec: corev1.PodSpec{
+					SecurityContext: &corev1.PodSecurityContext{
+						RunAsNonRoot: pointer.Bool(true),
+						SeccompProfile: &corev1.SeccompProfile{
+							Type: corev1.SeccompProfileTypeRuntimeDefault,
+						},
+					},
+					Containers: []corev1.Container{{
+						Name:            "ovn-collector",
+						Image:           image,
+						ImagePullPolicy: pullPolicy,
+						Ports: []corev1.ContainerPort{{
+							ContainerPort: 8090,
+							Name:          "http",
+							Protocol:      corev1.ProtocolTCP,
+						}},
+						SecurityContext: &corev1.SecurityContext{
+							AllowPrivilegeEscalation: pointer.Bool(false),
+							Capabilities: &corev1.Capabilities{
+								Drop: []corev1.Capability{"ALL"},
+							},
+							ReadOnlyRootFilesystem: pointer.Bool(false),
+							RunAsNonRoot:           pointer.Bool(true),
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("50m"),
+								corev1.ResourceMemory: resource.MustParse("64Mi"),
+							},
+							Limits: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("500m"),
+								corev1.ResourceMemory: resource.MustParse("512Mi"),
+							},
+						},
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path: "/healthz",
+									Port: intstr.FromInt32(8090),
+								},
+							},
+							InitialDelaySeconds: 10,
+							PeriodSeconds:       10,
+							TimeoutSeconds:      3,
+							FailureThreshold:    3,
+						},
+						ReadinessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path: "/readyz",
+									Port: intstr.FromInt32(8090),
+								},
+							},
+							InitialDelaySeconds: 5,
+							PeriodSeconds:       5,
+							TimeoutSeconds:      3,
+							FailureThreshold:    3,
+						},
+					}},
+				},
+			},
+		},
+	}
+}
+
+// DesiredCollectorService renders the collector Service for a given OvnRecon instance.
+func DesiredCollectorService(ovnRecon *reconv1alpha1.OvnRecon) *corev1.Service {
+	namespace := targetNamespace(ovnRecon)
+	name := collectorName(ovnRecon)
+	appLabels := labelsForOvnReconWithVersion(ovnRecon.Name, collectorImageTagFor(ovnRecon))
+	appLabels["app.kubernetes.io/component"] = "collector"
+
+	return &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Service",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   namespace,
+			Labels:      appLabels,
+			Annotations: operatorVersionAnnotations(),
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app.kubernetes.io/name":      "ovn-recon",
+				"app.kubernetes.io/instance":  ovnRecon.Name,
+				"app.kubernetes.io/component": "collector",
+			},
+			Ports: []corev1.ServicePort{{
+				Port:       8090,
+				TargetPort: intstr.FromInt32(8090),
+				Name:       "http",
+			}},
+		},
+	}
+}
+
 // DesiredService renders the Service for a given OvnRecon instance.
 func DesiredService(ovnRecon *reconv1alpha1.OvnRecon) *corev1.Service {
 	namespace := targetNamespace(ovnRecon)
@@ -177,6 +322,31 @@ func DesiredService(ovnRecon *reconv1alpha1.OvnRecon) *corev1.Service {
 			}},
 		},
 	}
+}
+
+func collectorImageRepositoryFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+	if ovnRecon.Spec.CollectorImage.Repository != "" {
+		return ovnRecon.Spec.CollectorImage.Repository
+	}
+	return defaultCollectorRepository
+}
+
+func collectorImageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+	if ovnRecon.Spec.CollectorImage.Tag != "" {
+		return ovnRecon.Spec.CollectorImage.Tag
+	}
+	// Inherit plugin image tag behavior by default.
+	return imageTagFor(ovnRecon)
+}
+
+func collectorImagePullPolicyFor(ovnRecon *reconv1alpha1.OvnRecon) corev1.PullPolicy {
+	if ovnRecon.Spec.CollectorImage.PullPolicy != "" {
+		return corev1.PullPolicy(ovnRecon.Spec.CollectorImage.PullPolicy)
+	}
+	if ovnRecon.Spec.Image.PullPolicy != "" {
+		return corev1.PullPolicy(ovnRecon.Spec.Image.PullPolicy)
+	}
+	return corev1.PullIfNotPresent
 }
 
 // DesiredConsolePlugin renders the ConsolePlugin for a given OvnRecon instance.

@@ -39,7 +39,7 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 
 - `featureGates.ovn-collector` is intended to gate Phase 2 logical topology capabilities.
 - Collector deployment targets the same namespace as `targetNamespace`.
-- Current implementation focus in this change set is API/schema/documentation exposure; controller reconciliation wiring is tracked separately.
+- When enabled, the operator reconciles collector Deployment and Service resources named `<ovnrecon-name>-collector`.
 
 ### Status Conditions
 
