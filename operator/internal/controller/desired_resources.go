@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -80,6 +81,16 @@ func DesiredDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deployment {
 					Containers: []corev1.Container{{
 						Name:  "ovn-recon",
 						Image: image,
+						Env: []corev1.EnvVar{
+							{
+								Name:  "OVN_RECON_NGINX_ERROR_LOG_LEVEL",
+								Value: consolePluginErrorLogLevelFor(ovnRecon),
+							},
+							{
+								Name:  "OVN_RECON_NGINX_ACCESS_LOG",
+								Value: consolePluginAccessLogDirectiveFor(ovnRecon),
+							},
+						},
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: 9443,
 							Name:          "https",
@@ -212,6 +223,14 @@ func DesiredCollectorDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deploy
 							{
 								Name:  "COLLECTOR_TARGET_NAMESPACES",
 								Value: strings.Join(collectorProbeNamespacesFor(ovnRecon), ","),
+							},
+							{
+								Name:  "COLLECTOR_LOG_LEVEL",
+								Value: collectorLogLevelFor(ovnRecon),
+							},
+							{
+								Name:  "COLLECTOR_INCLUDE_PROBE_OUTPUT",
+								Value: strconv.FormatBool(collectorIncludeProbeOutputFor(ovnRecon)),
 							},
 						},
 						Ports: []corev1.ContainerPort{{
@@ -370,6 +389,34 @@ func collectorProbeNamespacesFor(ovnRecon *reconv1alpha1.OvnRecon) []string {
 		return append([]string{}, defaultCollectorProbeNamespaces...)
 	}
 	return append([]string{}, ovnRecon.Spec.CollectorProbeNamespaces...)
+}
+
+func collectorLogLevelFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+	if strings.TrimSpace(ovnRecon.Spec.Collector.Logging.Level) != "" {
+		return strings.ToLower(strings.TrimSpace(ovnRecon.Spec.Collector.Logging.Level))
+	}
+	return "info"
+}
+
+func collectorIncludeProbeOutputFor(ovnRecon *reconv1alpha1.OvnRecon) bool {
+	return ovnRecon.Spec.Collector.Logging.IncludeProbeOutput
+}
+
+func consolePluginErrorLogLevelFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+	level := strings.ToLower(strings.TrimSpace(ovnRecon.Spec.ConsolePlugin.Logging.Level))
+	switch level {
+	case "error", "warn", "info", "debug":
+		return level
+	default:
+		return "info"
+	}
+}
+
+func consolePluginAccessLogDirectiveFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+	if ovnRecon.Spec.ConsolePlugin.Logging.AccessLog.Enabled {
+		return "/dev/stdout main"
+	}
+	return "off"
 }
 
 // DesiredConsolePlugin renders the ConsolePlugin for a given OvnRecon instance.

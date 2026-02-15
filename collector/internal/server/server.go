@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -66,7 +66,7 @@ func (s *Server) handleSnapshotByNode(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "snapshot not found", http.StatusNotFound)
 			return
 		}
-		log.Printf("failed to read snapshot for node %q: %v", nodeName, err)
+		slog.Error("failed to read snapshot", "node", nodeName, "error", err)
 		http.Error(w, fmt.Sprintf("failed to load snapshot: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -83,7 +83,7 @@ func (s *Server) handleSnapshotByNode(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(headerSnapshotNodeName, payload.Metadata.NodeName)
 	}
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		log.Printf("failed to encode snapshot payload for node %q: %v", nodeName, err)
+		slog.Error("failed to encode snapshot payload", "node", nodeName, "error", err)
 		http.Error(w, fmt.Sprintf("failed to encode payload: %v", err), http.StatusInternalServerError)
 		return
 	}

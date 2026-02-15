@@ -37,6 +37,37 @@ func TestDesiredDeploymentUsesPluginImageFallbacks(t *testing.T) {
 	if container.ImagePullPolicy != corev1.PullIfNotPresent {
 		t.Fatalf("unexpected plugin pullPolicy: %s", container.ImagePullPolicy)
 	}
+	if got, ok := envValue(container.Env, "OVN_RECON_NGINX_ERROR_LOG_LEVEL"); !ok || got != "info" {
+		t.Fatalf("expected default nginx error log level env=info, got %q (present=%v)", got, ok)
+	}
+	if got, ok := envValue(container.Env, "OVN_RECON_NGINX_ACCESS_LOG"); !ok || got != "off" {
+		t.Fatalf("expected default nginx access log env=off, got %q (present=%v)", got, ok)
+	}
+}
+
+func TestConsolePluginLoggingEnvOverrides(t *testing.T) {
+	cr := &reconv1alpha1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1alpha1.OvnReconSpec{
+			ConsolePlugin: reconv1alpha1.ConsolePluginSpec{
+				Logging: reconv1alpha1.ConsolePluginLoggingSpec{
+					Level: "debug",
+					AccessLog: reconv1alpha1.AccessLogSpec{
+						Enabled: true,
+					},
+				},
+			},
+		},
+	}
+
+	deployment := DesiredDeployment(cr)
+	container := deployment.Spec.Template.Spec.Containers[0]
+	if got, ok := envValue(container.Env, "OVN_RECON_NGINX_ERROR_LOG_LEVEL"); !ok || got != "debug" {
+		t.Fatalf("expected nginx error log level env=debug, got %q (present=%v)", got, ok)
+	}
+	if got, ok := envValue(container.Env, "OVN_RECON_NGINX_ACCESS_LOG"); !ok || got != "/dev/stdout main" {
+		t.Fatalf("expected nginx access log env=\"/dev/stdout main\", got %q (present=%v)", got, ok)
+	}
 }
 
 func TestCollectorImageInheritance(t *testing.T) {
@@ -119,6 +150,12 @@ func TestCollectorDesiredResourcesNamesAndPorts(t *testing.T) {
 	if dep.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort != 8090 {
 		t.Fatalf("unexpected collector port")
 	}
+	if got, ok := envValue(dep.Spec.Template.Spec.Containers[0].Env, "COLLECTOR_LOG_LEVEL"); !ok || got != "info" {
+		t.Fatalf("expected default collector log level env=info, got %q (present=%v)", got, ok)
+	}
+	if got, ok := envValue(dep.Spec.Template.Spec.Containers[0].Env, "COLLECTOR_INCLUDE_PROBE_OUTPUT"); !ok || got != "false" {
+		t.Fatalf("expected default include-probe-output env=false, got %q (present=%v)", got, ok)
+	}
 
 	svc := DesiredCollectorService(cr)
 	if svc.Name != "ovn-recon-collector" {
@@ -126,6 +163,30 @@ func TestCollectorDesiredResourcesNamesAndPorts(t *testing.T) {
 	}
 	if svc.Spec.Ports[0].Port != 8090 {
 		t.Fatalf("unexpected collector service port")
+	}
+}
+
+func TestCollectorLoggingEnvOverrides(t *testing.T) {
+	cr := &reconv1alpha1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1alpha1.OvnReconSpec{
+			Collector: reconv1alpha1.CollectorSpec{
+				Logging: reconv1alpha1.CollectorLoggingSpec{
+					Level:              "trace",
+					IncludeProbeOutput: true,
+				},
+			},
+		},
+	}
+
+	dep := DesiredCollectorDeployment(cr)
+	env := dep.Spec.Template.Spec.Containers[0].Env
+
+	if got, ok := envValue(env, "COLLECTOR_LOG_LEVEL"); !ok || got != "trace" {
+		t.Fatalf("expected collector log level env=trace, got %q (present=%v)", got, ok)
+	}
+	if got, ok := envValue(env, "COLLECTOR_INCLUDE_PROBE_OUTPUT"); !ok || got != "true" {
+		t.Fatalf("expected include-probe-output env=true, got %q (present=%v)", got, ok)
 	}
 }
 
@@ -256,4 +317,13 @@ func TestCollectorEnabledPrefersHierarchicalOverFeatureGate(t *testing.T) {
 	if !collectorFeatureEnabled(newEnabledLegacyDisabled) {
 		t.Fatalf("collector.enabled=true should override legacy feature gate")
 	}
+}
+
+func envValue(envVars []corev1.EnvVar, name string) (string, bool) {
+	for _, env := range envVars {
+		if env.Name == name {
+			return env.Value, true
+		}
+	}
+	return "", false
 }

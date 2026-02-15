@@ -1,8 +1,10 @@
 package probe
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -123,5 +125,65 @@ func TestCollectSnapshotDegradesOnCommandFailure(t *testing.T) {
 	}
 	if len(snapshot.Warnings) == 0 {
 		t.Fatalf("expected warnings for command failure")
+	}
+}
+
+func TestCollectSnapshotWithOptionsLogsProbeOutputWhenEnabled(t *testing.T) {
+	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
+	runner := &fakeRunner{
+		outputs: map[string]string{
+			strings.Join(logicalRouterCommand, " "):     `{"headings":["_uuid","name","ports"],"data":[[["uuid","lr-1"],"cluster-router",["set",[["uuid","lrp-1"]]]]]}`,
+			strings.Join(logicalRouterPortCommand, " "): `{"headings":["_uuid","name"],"data":[[["uuid","lrp-1"],"rtos-red"]]}`,
+			strings.Join(logicalSwitchCommand, " "):     `{"headings":["_uuid","name","ports"],"data":[[["uuid","ls-1"],"red-net",["set",[["uuid","lsp-r"],["uuid","lsp-pod"]]]]]}`,
+			strings.Join(logicalSwitchPortCommand, " "): `{"headings":["_uuid","name","type","options"],"data":[[["uuid","lsp-r"],"red-router-port","router",["map",[["router-port","rtos-red"]]]],[["uuid","lsp-pod"],"pod-a","",["map",[]]]]}`,
+		},
+	}
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	_, err := CollectSnapshotWithOptions(context.Background(), runner, "worker-a", now, CollectOptions{
+		Logger:             logger,
+		IncludeProbeOutput: true,
+	})
+	if err != nil {
+		t.Fatalf("collect snapshot failed: %v", err)
+	}
+
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, `"output"`) {
+		t.Fatalf("expected output field in logs when includeProbeOutput=true, got: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, "cluster-router") {
+		t.Fatalf("expected raw probe output content in logs when includeProbeOutput=true, got: %s", logOutput)
+	}
+}
+
+func TestCollectSnapshotWithOptionsOmitsProbeOutputByDefault(t *testing.T) {
+	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
+	runner := &fakeRunner{
+		outputs: map[string]string{
+			strings.Join(logicalRouterCommand, " "):     `{"headings":["_uuid","name","ports"],"data":[[["uuid","lr-1"],"cluster-router",["set",[["uuid","lrp-1"]]]]]}`,
+			strings.Join(logicalRouterPortCommand, " "): `{"headings":["_uuid","name"],"data":[[["uuid","lrp-1"],"rtos-red"]]}`,
+			strings.Join(logicalSwitchCommand, " "):     `{"headings":["_uuid","name","ports"],"data":[[["uuid","ls-1"],"red-net",["set",[["uuid","lsp-r"],["uuid","lsp-pod"]]]]]}`,
+			strings.Join(logicalSwitchPortCommand, " "): `{"headings":["_uuid","name","type","options"],"data":[[["uuid","lsp-r"],"red-router-port","router",["map",[["router-port","rtos-red"]]]],[["uuid","lsp-pod"],"pod-a","",["map",[]]]]}`,
+		},
+	}
+
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	_, err := CollectSnapshotWithOptions(context.Background(), runner, "worker-a", now, CollectOptions{
+		Logger:             logger,
+		IncludeProbeOutput: false,
+	})
+	if err != nil {
+		t.Fatalf("collect snapshot failed: %v", err)
+	}
+
+	logOutput := buf.String()
+	if strings.Contains(logOutput, `"output":"`) {
+		t.Fatalf("expected no raw output field in logs when includeProbeOutput=false, got: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, `"outputBytes"`) {
+		t.Fatalf("expected outputBytes field in logs when includeProbeOutput=false, got: %s", logOutput)
 	}
 }

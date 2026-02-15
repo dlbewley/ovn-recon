@@ -3,8 +3,10 @@ package probe
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dlbewley/ovn-recon/collector/internal/snapshot"
@@ -17,6 +19,40 @@ var (
 	logicalSwitchPortCommand = []string{"ovn-nbctl", "--format=json", "list", "Logical_Switch_Port"}
 )
 
+var (
+	defaultCollectOptionsMu sync.RWMutex
+	defaultCollectOptions   = CollectOptions{
+		Logger:             slog.Default(),
+		IncludeProbeOutput: false,
+	}
+)
+
+// CollectOptions controls collector probe logging behavior.
+type CollectOptions struct {
+	Logger             *slog.Logger
+	IncludeProbeOutput bool
+}
+
+// SetDefaultCollectOptions updates process-wide defaults for probe collection logging.
+func SetDefaultCollectOptions(opts CollectOptions) {
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
+	}
+	defaultCollectOptionsMu.Lock()
+	defaultCollectOptions = opts
+	defaultCollectOptionsMu.Unlock()
+}
+
+func getDefaultCollectOptions() CollectOptions {
+	defaultCollectOptionsMu.RLock()
+	opts := defaultCollectOptions
+	defaultCollectOptionsMu.RUnlock()
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
+	}
+	return opts
+}
+
 // Runner executes OVN commands.
 type Runner interface {
 	Run(ctx context.Context, command []string) (string, error)
@@ -24,7 +60,12 @@ type Runner interface {
 
 // CollectSnapshot builds a logical topology snapshot from OVN NB command outputs.
 func CollectSnapshot(ctx context.Context, runner Runner, nodeName string, now time.Time) (snapshot.LogicalTopologySnapshot, error) {
-	routers, routerPorts, switches, switchPorts, warnings, err := collectResources(ctx, runner)
+	return CollectSnapshotWithOptions(ctx, runner, nodeName, now, getDefaultCollectOptions())
+}
+
+// CollectSnapshotWithOptions builds a logical topology snapshot with explicit logging options.
+func CollectSnapshotWithOptions(ctx context.Context, runner Runner, nodeName string, now time.Time, opts CollectOptions) (snapshot.LogicalTopologySnapshot, error) {
+	routers, routerPorts, switches, switchPorts, warnings, err := collectResources(ctx, runner, opts)
 	if err != nil {
 		return snapshot.LogicalTopologySnapshot{}, err
 	}
@@ -49,7 +90,11 @@ func CollectSnapshot(ctx context.Context, runner Runner, nodeName string, now ti
 	}, nil
 }
 
-func collectResources(ctx context.Context, runner Runner) ([]LogicalRouter, []LogicalRouterPort, []LogicalSwitch, []LogicalSwitchPort, []snapshot.Warning, error) {
+func collectResources(ctx context.Context, runner Runner, opts CollectOptions) ([]LogicalRouter, []LogicalRouterPort, []LogicalSwitch, []LogicalSwitchPort, []snapshot.Warning, error) {
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	warnings := []snapshot.Warning{}
 	addedWarnings := map[string]bool{}
 
@@ -62,64 +107,88 @@ func collectResources(ctx context.Context, runner Runner) ([]LogicalRouter, []Lo
 	}
 
 	routers := []LogicalRouter{}
+	logger.Debug("running OVN probe command", "resource", "Logical_Router", "command", strings.Join(logicalRouterCommand, " "))
 	rawRouters, err := runner.Run(ctx, logicalRouterCommand)
 	if err != nil {
+		logger.Warn("OVN probe command failed", "resource", "Logical_Router", "error", err)
 		appendWarning("COMMAND_FAILED", fmt.Sprintf("Logical_Router command failed: %v", err))
 	} else {
+		logProbeOutput(logger, opts.IncludeProbeOutput, logicalRouterCommand, rawRouters)
 		parsedRouters, normalized, parseErr := ParseLogicalRouters(rawRouters)
 		if parseErr != nil {
+			logger.Warn("OVN probe parser failed", "resource", "Logical_Router", "error", parseErr)
+			logProbeParseContext(logger, opts.IncludeProbeOutput, rawRouters)
 			appendWarning("PARSER_FAILED", fmt.Sprintf("Logical_Router parse failed: %v", parseErr))
 		} else {
 			routers = parsedRouters
 			if normalized {
+				logger.Debug("OVN probe parser normalized input", "resource", "Logical_Router")
 				appendWarning("PARSER_NORMALIZED", "Input required normalization due to inconsistent OVN command output")
 			}
 		}
 	}
 
 	routerPorts := []LogicalRouterPort{}
+	logger.Debug("running OVN probe command", "resource", "Logical_Router_Port", "command", strings.Join(logicalRouterPortCommand, " "))
 	rawRouterPorts, err := runner.Run(ctx, logicalRouterPortCommand)
 	if err != nil {
+		logger.Warn("OVN probe command failed", "resource", "Logical_Router_Port", "error", err)
 		appendWarning("COMMAND_FAILED", fmt.Sprintf("Logical_Router_Port command failed: %v", err))
 	} else {
+		logProbeOutput(logger, opts.IncludeProbeOutput, logicalRouterPortCommand, rawRouterPorts)
 		parsedRouterPorts, normalized, parseErr := ParseLogicalRouterPorts(rawRouterPorts)
 		if parseErr != nil {
+			logger.Warn("OVN probe parser failed", "resource", "Logical_Router_Port", "error", parseErr)
+			logProbeParseContext(logger, opts.IncludeProbeOutput, rawRouterPorts)
 			appendWarning("PARSER_FAILED", fmt.Sprintf("Logical_Router_Port parse failed: %v", parseErr))
 		} else {
 			routerPorts = parsedRouterPorts
 			if normalized {
+				logger.Debug("OVN probe parser normalized input", "resource", "Logical_Router_Port")
 				appendWarning("PARSER_NORMALIZED", "Input required normalization due to inconsistent OVN command output")
 			}
 		}
 	}
 
 	switches := []LogicalSwitch{}
+	logger.Debug("running OVN probe command", "resource", "Logical_Switch", "command", strings.Join(logicalSwitchCommand, " "))
 	rawSwitches, err := runner.Run(ctx, logicalSwitchCommand)
 	if err != nil {
+		logger.Warn("OVN probe command failed", "resource", "Logical_Switch", "error", err)
 		appendWarning("COMMAND_FAILED", fmt.Sprintf("Logical_Switch command failed: %v", err))
 	} else {
+		logProbeOutput(logger, opts.IncludeProbeOutput, logicalSwitchCommand, rawSwitches)
 		parsedSwitches, normalized, parseErr := ParseLogicalSwitches(rawSwitches)
 		if parseErr != nil {
+			logger.Warn("OVN probe parser failed", "resource", "Logical_Switch", "error", parseErr)
+			logProbeParseContext(logger, opts.IncludeProbeOutput, rawSwitches)
 			appendWarning("PARSER_FAILED", fmt.Sprintf("Logical_Switch parse failed: %v", parseErr))
 		} else {
 			switches = parsedSwitches
 			if normalized {
+				logger.Debug("OVN probe parser normalized input", "resource", "Logical_Switch")
 				appendWarning("PARSER_NORMALIZED", "Input required normalization due to inconsistent OVN command output")
 			}
 		}
 	}
 
 	switchPorts := []LogicalSwitchPort{}
+	logger.Debug("running OVN probe command", "resource", "Logical_Switch_Port", "command", strings.Join(logicalSwitchPortCommand, " "))
 	rawSwitchPorts, err := runner.Run(ctx, logicalSwitchPortCommand)
 	if err != nil {
+		logger.Warn("OVN probe command failed", "resource", "Logical_Switch_Port", "error", err)
 		appendWarning("COMMAND_FAILED", fmt.Sprintf("Logical_Switch_Port command failed: %v", err))
 	} else {
+		logProbeOutput(logger, opts.IncludeProbeOutput, logicalSwitchPortCommand, rawSwitchPorts)
 		parsedSwitchPorts, normalized, parseErr := ParseLogicalSwitchPorts(rawSwitchPorts)
 		if parseErr != nil {
+			logger.Warn("OVN probe parser failed", "resource", "Logical_Switch_Port", "error", parseErr)
+			logProbeParseContext(logger, opts.IncludeProbeOutput, rawSwitchPorts)
 			appendWarning("PARSER_FAILED", fmt.Sprintf("Logical_Switch_Port parse failed: %v", parseErr))
 		} else {
 			switchPorts = parsedSwitchPorts
 			if normalized {
+				logger.Debug("OVN probe parser normalized input", "resource", "Logical_Switch_Port")
 				appendWarning("PARSER_NORMALIZED", "Input required normalization due to inconsistent OVN command output")
 			}
 		}
@@ -264,4 +333,22 @@ func labelOrID(label, id string) string {
 
 func edgeKey(kind, source, target string) string {
 	return fmt.Sprintf("%s:%s:%s", kind, source, target)
+}
+
+func logProbeOutput(logger *slog.Logger, includeProbeOutput bool, command []string, output string) {
+	if includeProbeOutput {
+		// Intentionally log full probe output when explicitly enabled for debugging.
+		logger.Debug("OVN probe command output", "command", strings.Join(command, " "), "output", output)
+		return
+	}
+	logger.Debug("OVN probe command completed", "command", strings.Join(command, " "), "outputBytes", len(output))
+}
+
+func logProbeParseContext(logger *slog.Logger, includeProbeOutput bool, output string) {
+	if includeProbeOutput {
+		// Intentionally log full parse context when explicitly enabled for debugging.
+		logger.Debug("OVN probe parser input", "output", output)
+		return
+	}
+	logger.Debug("OVN probe parser input", "outputBytes", len(output))
 }
