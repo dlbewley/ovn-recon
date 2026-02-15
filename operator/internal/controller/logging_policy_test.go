@@ -223,3 +223,24 @@ func TestRecordEventHonorsMinTypeAndWarningAlways(t *testing.T) {
 		t.Fatalf("expected Warning event to emit")
 	}
 }
+
+func TestRecordEventWithNilRecorderDoesNotPanic(t *testing.T) {
+	t.Helper()
+
+	r := &OvnReconReconciler{}
+	policy := operatorEventPolicy{
+		minType:      corev1.EventTypeNormal,
+		dedupeWindow: time.Minute,
+	}
+	ovnRecon := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+	}
+
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("recordEvent should not panic when recorder is nil: %v", recovered)
+		}
+	}()
+
+	r.recordEvent(context.Background(), ovnRecon, policy, corev1.EventTypeWarning, "ServiceReconcileFailed", "boom")
+}

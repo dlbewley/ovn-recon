@@ -200,6 +200,10 @@ func (r *OvnReconReconciler) logMessage(ctx context.Context, policy operatorLogL
 }
 
 func (r *OvnReconReconciler) recordEvent(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon, policy operatorEventPolicy, eventType, reason, message string) {
+	if r.Recorder == nil {
+		// Recorder can be nil in unit tests that don't wire manager event recording.
+		return
+	}
 	if eventType == corev1.EventTypeWarning {
 		// Warning events are always emitted to avoid hiding failures.
 		r.Recorder.Event(ovnRecon, eventType, reason, message)
