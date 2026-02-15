@@ -19,7 +19,7 @@ Create stable, sanitized NodeNetworkState fixtures and fixture-backed tests so v
 
 ## Phases
 
-### Phase 1: Fixture Conventions and Initial Corpus (PENDING)
+### Phase 1: Fixture Conventions and Initial Corpus (COMPLETED)
 - Create `test/fixtures/nns/README.md` with:
   - sanitization rules
   - naming conventions
@@ -30,7 +30,7 @@ Create stable, sanitized NodeNetworkState fixtures and fixture-backed tests so v
   - mixed key styles (`mac-address`, `mac_address`, `prefix_length`, `prefix-length`)
   - missing/partial fields to validate graceful fallback
 
-### Phase 2: Selector/Model Tests (PENDING)
+### Phase 2: Selector/Model Tests (COMPLETED)
 - Add tests for:
   - `getVrfConnectionInfo`
   - `getVrfRoutesForInterface`
@@ -66,4 +66,3 @@ Create stable, sanitized NodeNetworkState fixtures and fixture-backed tests so v
 - Fixture corpus creation
 - Selector/model test migration
 - Drawer contract tests
-

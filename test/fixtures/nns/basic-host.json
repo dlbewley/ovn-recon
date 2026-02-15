@@ -1,0 +1,60 @@
+{
+  "apiVersion": "nmstate.io/v1",
+  "kind": "NodeNetworkState",
+  "metadata": {
+    "name": "worker-basic"
+  },
+  "status": {
+    "currentState": {
+      "interfaces": [
+        {
+          "name": "eno1",
+          "type": "ethernet",
+          "state": "up",
+          "master": "br-ex",
+          "mac-address": "02:aa:bb:cc:dd:01"
+        },
+        {
+          "name": "br-ex",
+          "type": "ovs-bridge",
+          "state": "up",
+          "bridge": {
+            "ports": [
+              {
+                "name": "eno1"
+              }
+            ]
+          }
+        },
+        {
+          "name": "br-int",
+          "type": "ovs-bridge",
+          "state": "up",
+          "bridge": {
+            "port": [
+              "ovn-k8s-mp0"
+            ]
+          }
+        },
+        {
+          "name": "ovn-k8s-mp0",
+          "type": "ovs-interface",
+          "state": "up",
+          "controller": "br-int"
+        }
+      ],
+      "ovn": {
+        "bridge-mappings": [
+          {
+            "localnet": "physnet",
+            "bridge": "br-ex"
+          },
+          {
+            "localnet": "physnet",
+            "bridge": "br-ex"
+          }
+        ]
+      }
+    }
+  }
+}
