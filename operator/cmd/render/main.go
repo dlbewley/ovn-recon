@@ -9,7 +9,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
+	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 	"github.com/dlbewley/ovn-recon-operator/internal/controller"
 )
 
@@ -19,7 +19,7 @@ func main() {
 	flag.Parse()
 
 	if inputPath == "" {
-		inputPath = filepath.Join("config", "samples", "recon_v1alpha1_ovnrecon.yaml")
+		inputPath = filepath.Join("config", "samples", "recon_v1beta1_ovnrecon.yaml")
 	}
 
 	data, err := readInput(inputPath)
@@ -27,7 +27,7 @@ func main() {
 		exitf("read input: %v", err)
 	}
 
-	var ovnRecon reconv1alpha1.OvnRecon
+	var ovnRecon reconv1beta1.OvnRecon
 	if err := yaml.Unmarshal(data, &ovnRecon); err != nil {
 		exitf("parse OvnRecon: %v", err)
 	}
@@ -35,7 +35,7 @@ func main() {
 		ovnRecon.Name = "ovn-recon"
 	}
 	if ovnRecon.APIVersion == "" {
-		ovnRecon.APIVersion = "recon.bewley.net/v1alpha1"
+		ovnRecon.APIVersion = "recon.bewley.net/v1beta1"
 	}
 	if ovnRecon.Kind == "" {
 		ovnRecon.Kind = "OvnRecon"

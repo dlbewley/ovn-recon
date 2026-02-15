@@ -43,7 +43,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
+	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 )
 
 const (
@@ -119,7 +119,7 @@ func parseOperatorLogLevel(raw string) operatorLogLevel {
 	}
 }
 
-func operatorLogLevelFor(ovnRecon *reconv1alpha1.OvnRecon) operatorLogLevel {
+func operatorLogLevelFor(ovnRecon *reconv1beta1.OvnRecon) operatorLogLevel {
 	if ovnRecon == nil {
 		return parseOperatorLogLevel(defaultOperatorLogLevel)
 	}
@@ -131,7 +131,7 @@ func withReconcilePhase(ctx context.Context, phase string) context.Context {
 	return log.IntoContext(ctx, logger)
 }
 
-func ovnReconRef(ovnRecon *reconv1alpha1.OvnRecon) string {
+func ovnReconRef(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon == nil {
 		return ""
 	}
@@ -148,7 +148,7 @@ func requestRef(req ctrl.Request) string {
 	return req.Namespace + "/" + req.Name
 }
 
-func resolveOperatorLogPolicy(current, primary *reconv1alpha1.OvnRecon) (operatorLogLevel, string, string) {
+func resolveOperatorLogPolicy(current, primary *reconv1beta1.OvnRecon) (operatorLogLevel, string, string) {
 	source := current
 	if primary != nil {
 		source = primary
@@ -165,7 +165,7 @@ func resolveOperatorLogPolicy(current, primary *reconv1alpha1.OvnRecon) (operato
 	return level, configuredLevel, ovnReconRef(source)
 }
 
-func resolveOperatorEventPolicy(current, primary *reconv1alpha1.OvnRecon) operatorEventPolicy {
+func resolveOperatorEventPolicy(current, primary *reconv1beta1.OvnRecon) operatorEventPolicy {
 	source := current
 	if primary != nil {
 		source = primary
@@ -199,7 +199,7 @@ func (r *OvnReconReconciler) logMessage(ctx context.Context, policy operatorLogL
 	log.FromContext(ctx).Info(message, args...)
 }
 
-func (r *OvnReconReconciler) recordEvent(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon, policy operatorEventPolicy, eventType, reason, message string) {
+func (r *OvnReconReconciler) recordEvent(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon, policy operatorEventPolicy, eventType, reason, message string) {
 	if eventType == corev1.EventTypeWarning {
 		// Warning events are always emitted to avoid hiding failures.
 		r.Recorder.Event(ovnRecon, eventType, reason, message)
@@ -215,7 +215,7 @@ func (r *OvnReconReconciler) recordEvent(ctx context.Context, ovnRecon *reconv1a
 	r.Recorder.Event(ovnRecon, eventType, reason, message)
 }
 
-func (r *OvnReconReconciler) shouldEmitNormalEvent(ovnRecon *reconv1alpha1.OvnRecon, policy operatorEventPolicy, reason, message string) bool {
+func (r *OvnReconReconciler) shouldEmitNormalEvent(ovnRecon *reconv1beta1.OvnRecon, policy operatorEventPolicy, reason, message string) bool {
 	now := time.Now()
 	key := fmt.Sprintf("%s|%s|%s", ovnReconRef(ovnRecon), reason, message)
 
@@ -267,7 +267,7 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Fetch the OvnRecon instance
 	fetchCtx := withReconcilePhase(ctx, "fetch")
-	ovnRecon := &reconv1alpha1.OvnRecon{}
+	ovnRecon := &reconv1beta1.OvnRecon{}
 	err := r.Get(fetchCtx, req.NamespacedName, ovnRecon)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -470,8 +470,8 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return reconcile.Result{}, nil
 }
 
-func (r *OvnReconReconciler) primaryInstance(ctx context.Context) (*reconv1alpha1.OvnRecon, error) {
-	list := &reconv1alpha1.OvnReconList{}
+func (r *OvnReconReconciler) primaryInstance(ctx context.Context) (*reconv1beta1.OvnRecon, error) {
+	list := &reconv1beta1.OvnReconList{}
 	if err := r.List(ctx, list); err != nil {
 		return nil, err
 	}
@@ -479,7 +479,7 @@ func (r *OvnReconReconciler) primaryInstance(ctx context.Context) (*reconv1alpha
 	return selectPrimaryInstance(list.Items), nil
 }
 
-func selectPrimaryInstance(items []reconv1alpha1.OvnRecon) *reconv1alpha1.OvnRecon {
+func selectPrimaryInstance(items []reconv1beta1.OvnRecon) *reconv1beta1.OvnRecon {
 	if len(items) == 0 {
 		return nil
 	}
@@ -499,7 +499,7 @@ func selectPrimaryInstance(items []reconv1alpha1.OvnRecon) *reconv1alpha1.OvnRec
 	return &items[0]
 }
 
-func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 
 	deployment := &appsv1.Deployment{
@@ -520,7 +520,7 @@ func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *
 	return err
 }
 
-func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 
 	service := &corev1.Service{
@@ -540,7 +540,7 @@ func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *rec
 	return err
 }
 
-func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 	name := collectorName(ovnRecon)
 
@@ -561,7 +561,7 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 	return err
 }
 
-func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 	saName := collectorServiceAccountName(ovnRecon)
 
@@ -633,7 +633,7 @@ func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Contex
 	return nil
 }
 
-func (r *OvnReconReconciler) reconcileCollectorService(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) reconcileCollectorService(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 	name := collectorName(ovnRecon)
 
@@ -654,7 +654,7 @@ func (r *OvnReconReconciler) reconcileCollectorService(ctx context.Context, ovnR
 	return err
 }
 
-func (r *OvnReconReconciler) deleteCollectorAccessControls(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) deleteCollectorAccessControls(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 
 	serviceAccount := &corev1.ServiceAccount{
@@ -694,7 +694,7 @@ func (r *OvnReconReconciler) deleteCollectorAccessControls(ctx context.Context, 
 // SetupWithManager sets up the controller with the Manager.
 func (r *OvnReconReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&reconv1alpha1.OvnRecon{}).
+		For(&reconv1beta1.OvnRecon{}).
 		Named("ovnrecon").
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
@@ -767,37 +767,37 @@ func sanitizeLabelValue(value string) string {
 	return val
 }
 
-func targetNamespace(ovnRecon *reconv1alpha1.OvnRecon) string {
+func targetNamespace(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.TargetNamespace != "" {
 		return ovnRecon.Spec.TargetNamespace
 	}
 	return defaultNamespace
 }
 
-func collectorName(ovnRecon *reconv1alpha1.OvnRecon) string {
+func collectorName(ovnRecon *reconv1beta1.OvnRecon) string {
 	return ovnRecon.Name + "-collector"
 }
 
-func collectorServiceAccountName(ovnRecon *reconv1alpha1.OvnRecon) string {
+func collectorServiceAccountName(ovnRecon *reconv1beta1.OvnRecon) string {
 	return collectorName(ovnRecon)
 }
 
-func collectorClusterRoleName(ovnRecon *reconv1alpha1.OvnRecon) string {
+func collectorClusterRoleName(ovnRecon *reconv1beta1.OvnRecon) string {
 	return collectorName(ovnRecon)
 }
 
-func collectorRoleBindingName(ovnRecon *reconv1alpha1.OvnRecon) string {
+func collectorRoleBindingName(ovnRecon *reconv1beta1.OvnRecon) string {
 	return collectorName(ovnRecon)
 }
 
-func collectorFeatureEnabled(ovnRecon *reconv1alpha1.OvnRecon) bool {
+func collectorFeatureEnabled(ovnRecon *reconv1beta1.OvnRecon) bool {
 	if ovnRecon.Spec.Collector.Enabled != nil {
 		return *ovnRecon.Spec.Collector.Enabled
 	}
 	return ovnRecon.Spec.FeatureGates.OVNCollector
 }
 
-func imageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+func imageTagFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.ConsolePlugin.Image.Tag != "" {
 		return ovnRecon.Spec.ConsolePlugin.Image.Tag
 	}
@@ -824,7 +824,7 @@ func operatorVersionAnnotations() map[string]string {
 	}
 }
 
-func (r *OvnReconReconciler) reconcileConsolePlugin(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) reconcileConsolePlugin(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	operatorAnnotations := operatorVersionAnnotations()
 	plugin := &unstructured.Unstructured{}
 	plugin.SetGroupVersionKind(schema.GroupVersionKind{
@@ -851,7 +851,7 @@ func (r *OvnReconReconciler) reconcileConsolePlugin(ctx context.Context, ovnReco
 	return err
 }
 
-func (r *OvnReconReconciler) reconcileConsoleOperator(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) (bool, error) {
+func (r *OvnReconReconciler) reconcileConsoleOperator(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) (bool, error) {
 	console := &unstructured.Unstructured{}
 	console.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "operator.openshift.io",
@@ -916,7 +916,7 @@ func (r *OvnReconReconciler) reconcileConsoleOperator(ctx context.Context, ovnRe
 	return true, nil // Plugin is in the list, assume enabled
 }
 
-func (r *OvnReconReconciler) checkDeploymentReady(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) (bool, error) {
+func (r *OvnReconReconciler) checkDeploymentReady(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) (bool, error) {
 	deployment := &appsv1.Deployment{}
 	err := r.Get(ctx, types.NamespacedName{
 		Name:      ovnRecon.Name,
@@ -935,7 +935,7 @@ func (r *OvnReconReconciler) checkDeploymentReady(ctx context.Context, ovnRecon 
 	return false, nil
 }
 
-func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) (reconcile.Result, error) {
+func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) (reconcile.Result, error) {
 	log := log.FromContext(ctx)
 
 	if controllerutil.ContainsFinalizer(ovnRecon, finalizerName) {
@@ -979,7 +979,7 @@ func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *recon
 	return reconcile.Result{}, nil
 }
 
-func (r *OvnReconReconciler) ensureTargetNamespaceExists(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) ensureTargetNamespaceExists(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	ns := &corev1.Namespace{}
 	err := r.Get(ctx, client.ObjectKey{Name: targetNamespace(ovnRecon)}, ns)
 	if err == nil {
@@ -988,7 +988,7 @@ func (r *OvnReconReconciler) ensureTargetNamespaceExists(ctx context.Context, ov
 	return err
 }
 
-func (r *OvnReconReconciler) deleteNamespacedResources(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) deleteNamespacedResources(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1020,7 +1020,7 @@ func (r *OvnReconReconciler) deleteNamespacedResources(ctx context.Context, ovnR
 	return nil
 }
 
-func (r *OvnReconReconciler) deleteCollectorResources(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) deleteCollectorResources(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 	name := collectorName(ovnRecon)
 
@@ -1047,7 +1047,7 @@ func (r *OvnReconReconciler) deleteCollectorResources(ctx context.Context, ovnRe
 	return nil
 }
 
-func (r *OvnReconReconciler) removePluginFromConsole(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) removePluginFromConsole(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	console := &unstructured.Unstructured{}
 	console.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "operator.openshift.io",
@@ -1090,7 +1090,7 @@ func (r *OvnReconReconciler) removePluginFromConsole(ctx context.Context, ovnRec
 	return nil
 }
 
-func (r *OvnReconReconciler) updateCondition(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon, conditionType string, status metav1.ConditionStatus, reason, message string) bool {
+func (r *OvnReconReconciler) updateCondition(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon, conditionType string, status metav1.ConditionStatus, reason, message string) bool {
 	now := metav1.Now()
 	condition := metav1.Condition{
 		Type:               conditionType,

@@ -315,7 +315,7 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 
 .PHONY: render
 render: ## Render YAML for the sample OvnRecon resource.
-	@go run ./cmd/render -f config/samples/recon_v1alpha1_ovnrecon.yaml
+	@go run ./cmd/render -f config/samples/recon_v1beta1_ovnrecon.yaml
 
 .PHONY: bundle-build
 bundle-build: ## Build the bundle image.

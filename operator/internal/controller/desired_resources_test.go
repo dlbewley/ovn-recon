@@ -5,11 +5,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"testing"
 
-	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
+	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 )
 
 func TestPluginImageDefaults(t *testing.T) {
-	cr := &reconv1alpha1.OvnRecon{
+	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "test"},
 	}
 
@@ -25,7 +25,7 @@ func TestPluginImageDefaults(t *testing.T) {
 }
 
 func TestDesiredDeploymentUsesPluginImageFallbacks(t *testing.T) {
-	cr := &reconv1alpha1.OvnRecon{
+	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
 	}
 
@@ -46,13 +46,13 @@ func TestDesiredDeploymentUsesPluginImageFallbacks(t *testing.T) {
 }
 
 func TestConsolePluginLoggingEnvOverrides(t *testing.T) {
-	cr := &reconv1alpha1.OvnRecon{
+	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
-		Spec: reconv1alpha1.OvnReconSpec{
-			ConsolePlugin: reconv1alpha1.ConsolePluginSpec{
-				Logging: reconv1alpha1.ConsolePluginLoggingSpec{
+		Spec: reconv1beta1.OvnReconSpec{
+			ConsolePlugin: reconv1beta1.ConsolePluginSpec{
+				Logging: reconv1beta1.ConsolePluginLoggingSpec{
 					Level: "debug",
-					AccessLog: reconv1alpha1.AccessLogSpec{
+					AccessLog: reconv1beta1.AccessLogSpec{
 						Enabled: true,
 					},
 				},
@@ -71,11 +71,11 @@ func TestConsolePluginLoggingEnvOverrides(t *testing.T) {
 }
 
 func TestCollectorImageInheritance(t *testing.T) {
-	cr := &reconv1alpha1.OvnRecon{
+	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "test"},
-		Spec: reconv1alpha1.OvnReconSpec{
-			ConsolePlugin: reconv1alpha1.ConsolePluginSpec{
-				Image: reconv1alpha1.ImageSpec{
+		Spec: reconv1beta1.OvnReconSpec{
+			ConsolePlugin: reconv1beta1.ConsolePluginSpec{
+				Image: reconv1beta1.ImageSpec{
 					Repository: "quay.io/dbewley/ovn-recon",
 					Tag:        "v1.2.3",
 					PullPolicy: string(corev1.PullAlways),
@@ -96,17 +96,17 @@ func TestCollectorImageInheritance(t *testing.T) {
 }
 
 func TestCollectorImageOverrides(t *testing.T) {
-	cr := &reconv1alpha1.OvnRecon{
+	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "test"},
-		Spec: reconv1alpha1.OvnReconSpec{
-			ConsolePlugin: reconv1alpha1.ConsolePluginSpec{
-				Image: reconv1alpha1.ImageSpec{
+		Spec: reconv1beta1.OvnReconSpec{
+			ConsolePlugin: reconv1beta1.ConsolePluginSpec{
+				Image: reconv1beta1.ImageSpec{
 					Tag:        "v1.2.3",
 					PullPolicy: string(corev1.PullIfNotPresent),
 				},
 			},
-			Collector: reconv1alpha1.CollectorSpec{
-				Image: reconv1alpha1.CollectorImageSpec{
+			Collector: reconv1beta1.CollectorSpec{
+				Image: reconv1beta1.CollectorImageSpec{
 					Repository: "quay.io/acme/custom-collector",
 					Tag:        "collector-tag",
 					PullPolicy: string(corev1.PullNever),
@@ -127,9 +127,9 @@ func TestCollectorImageOverrides(t *testing.T) {
 }
 
 func TestCollectorDesiredResourcesNamesAndPorts(t *testing.T) {
-	cr := &reconv1alpha1.OvnRecon{
+	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
-		Spec: reconv1alpha1.OvnReconSpec{
+		Spec: reconv1beta1.OvnReconSpec{
 			TargetNamespace: "ovn-recon",
 		},
 	}
@@ -167,11 +167,11 @@ func TestCollectorDesiredResourcesNamesAndPorts(t *testing.T) {
 }
 
 func TestCollectorLoggingEnvOverrides(t *testing.T) {
-	cr := &reconv1alpha1.OvnRecon{
+	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
-		Spec: reconv1alpha1.OvnReconSpec{
-			Collector: reconv1alpha1.CollectorSpec{
-				Logging: reconv1alpha1.CollectorLoggingSpec{
+		Spec: reconv1beta1.OvnReconSpec{
+			Collector: reconv1beta1.CollectorSpec{
+				Logging: reconv1beta1.CollectorLoggingSpec{
 					Level:              "trace",
 					IncludeProbeOutput: true,
 				},
@@ -191,7 +191,7 @@ func TestCollectorLoggingEnvOverrides(t *testing.T) {
 }
 
 func TestCollectorProbeNamespacesDefaultsAndOverrides(t *testing.T) {
-	defaultCR := &reconv1alpha1.OvnRecon{
+	defaultCR := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
 	}
 	defaults := collectorProbeNamespacesFor(defaultCR)
@@ -202,10 +202,10 @@ func TestCollectorProbeNamespacesDefaultsAndOverrides(t *testing.T) {
 		t.Fatalf("unexpected default probe namespaces: %#v", defaults)
 	}
 
-	overrideCR := &reconv1alpha1.OvnRecon{
+	overrideCR := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
-		Spec: reconv1alpha1.OvnReconSpec{
-			Collector: reconv1alpha1.CollectorSpec{
+		Spec: reconv1beta1.OvnReconSpec{
+			Collector: reconv1beta1.CollectorSpec{
 				ProbeNamespaces: []string{"custom-a", "custom-b"},
 			},
 		},
@@ -217,30 +217,30 @@ func TestCollectorProbeNamespacesDefaultsAndOverrides(t *testing.T) {
 }
 
 func TestHierarchicalFieldsTakePrecedenceOverLegacy(t *testing.T) {
-	cr := &reconv1alpha1.OvnRecon{
+	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "test"},
-		Spec: reconv1alpha1.OvnReconSpec{
-			ConsolePlugin: reconv1alpha1.ConsolePluginSpec{
-				Image: reconv1alpha1.ImageSpec{
+		Spec: reconv1beta1.OvnReconSpec{
+			ConsolePlugin: reconv1beta1.ConsolePluginSpec{
+				Image: reconv1beta1.ImageSpec{
 					Repository: "quay.io/example/new-plugin",
 					Tag:        "new-tag",
 					PullPolicy: string(corev1.PullAlways),
 				},
 			},
-			Collector: reconv1alpha1.CollectorSpec{
-				Image: reconv1alpha1.CollectorImageSpec{
+			Collector: reconv1beta1.CollectorSpec{
+				Image: reconv1beta1.CollectorImageSpec{
 					Repository: "quay.io/example/new-collector",
 					Tag:        "collector-new-tag",
 					PullPolicy: string(corev1.PullNever),
 				},
 				ProbeNamespaces: []string{"new-ns"},
 			},
-			Image: reconv1alpha1.ImageSpec{
+			Image: reconv1beta1.ImageSpec{
 				Repository: "quay.io/example/legacy-plugin",
 				Tag:        "legacy-tag",
 				PullPolicy: string(corev1.PullIfNotPresent),
 			},
-			CollectorImage: reconv1alpha1.CollectorImageSpec{
+			CollectorImage: reconv1beta1.CollectorImageSpec{
 				Repository: "quay.io/example/legacy-collector",
 				Tag:        "collector-legacy-tag",
 				PullPolicy: string(corev1.PullIfNotPresent),
@@ -276,12 +276,12 @@ func TestCollectorEnabledPrefersHierarchicalOverFeatureGate(t *testing.T) {
 	trueValue := true
 	falseValue := false
 
-	newDisabledLegacyEnabled := &reconv1alpha1.OvnRecon{
-		Spec: reconv1alpha1.OvnReconSpec{
-			Collector: reconv1alpha1.CollectorSpec{
+	newDisabledLegacyEnabled := &reconv1beta1.OvnRecon{
+		Spec: reconv1beta1.OvnReconSpec{
+			Collector: reconv1beta1.CollectorSpec{
 				Enabled: &falseValue,
 			},
-			FeatureGates: reconv1alpha1.FeatureGateSpec{
+			FeatureGates: reconv1beta1.FeatureGateSpec{
 				OVNCollector: true,
 			},
 		},
@@ -290,12 +290,12 @@ func TestCollectorEnabledPrefersHierarchicalOverFeatureGate(t *testing.T) {
 		t.Fatalf("collector.enabled=false should override legacy feature gate")
 	}
 
-	newUnsetLegacyEnabled := &reconv1alpha1.OvnRecon{
-		Spec: reconv1alpha1.OvnReconSpec{
-			Collector: reconv1alpha1.CollectorSpec{
+	newUnsetLegacyEnabled := &reconv1beta1.OvnRecon{
+		Spec: reconv1beta1.OvnReconSpec{
+			Collector: reconv1beta1.CollectorSpec{
 				Enabled: nil,
 			},
-			FeatureGates: reconv1alpha1.FeatureGateSpec{
+			FeatureGates: reconv1beta1.FeatureGateSpec{
 				OVNCollector: true,
 			},
 		},
@@ -304,12 +304,12 @@ func TestCollectorEnabledPrefersHierarchicalOverFeatureGate(t *testing.T) {
 		t.Fatalf("legacy feature gate should be honored when collector.enabled is unset")
 	}
 
-	newEnabledLegacyDisabled := &reconv1alpha1.OvnRecon{
-		Spec: reconv1alpha1.OvnReconSpec{
-			Collector: reconv1alpha1.CollectorSpec{
+	newEnabledLegacyDisabled := &reconv1beta1.OvnRecon{
+		Spec: reconv1beta1.OvnReconSpec{
+			Collector: reconv1beta1.CollectorSpec{
 				Enabled: &trueValue,
 			},
-			FeatureGates: reconv1alpha1.FeatureGateSpec{
+			FeatureGates: reconv1beta1.FeatureGateSpec{
 				OVNCollector: false,
 			},
 		},

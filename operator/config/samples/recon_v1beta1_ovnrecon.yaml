@@ -1,0 +1,39 @@
+apiVersion: recon.bewley.net/v1beta1
+kind: OvnRecon
+metadata:
+  labels:
+    app.kubernetes.io/name: ovn-recon
+    app.kubernetes.io/instance: ovn-recon
+    app.kubernetes.io/managed-by: kustomize
+  name: ovn-recon
+spec:
+  targetNamespace: ovn-recon
+  operator:
+    logging:
+      level: info
+      events:
+        minType: Normal
+        dedupeWindow: 5m
+  consolePlugin:
+    displayName: "OVN Recon"
+    enabled: true
+    image:
+      repository: quay.io/dbewley/ovn-recon
+      # tag: latest
+      pullPolicy: IfNotPresent
+    logging:
+      level: info
+      accessLog:
+        enabled: false
+  collector:
+    enabled: false
+    image:
+      repository: quay.io/dbewley/ovn-collector
+      # tag: latest             # defaults to consolePlugin.image.tag when omitted
+      # pullPolicy: IfNotPresent # defaults to consolePlugin.image.pullPolicy when omitted
+    probeNamespaces:
+      - openshift-ovn-kubernetes
+      - openshift-frr-k8s
+    logging:
+      level: info
+      includeProbeOutput: false

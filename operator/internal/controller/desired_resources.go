@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
-	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
+	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 )
 
 const defaultCollectorRepository = "quay.io/dbewley/ovn-collector"
@@ -38,7 +38,7 @@ const defaultCollectorRepository = "quay.io/dbewley/ovn-collector"
 var defaultCollectorProbeNamespaces = []string{"openshift-ovn-kubernetes", "openshift-frr-k8s"}
 
 // DesiredDeployment renders the Deployment for a given OvnRecon instance.
-func DesiredDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deployment {
+func DesiredDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deployment {
 	namespace := targetNamespace(ovnRecon)
 	imageTag := imageTagFor(ovnRecon)
 	appLabels := labelsForOvnReconWithVersion(ovnRecon.Name, imageTag)
@@ -163,7 +163,7 @@ func DesiredDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deployment {
 }
 
 // DesiredCollectorDeployment renders the collector Deployment for a given OvnRecon instance.
-func DesiredCollectorDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deployment {
+func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deployment {
 	namespace := targetNamespace(ovnRecon)
 	imageTag := collectorImageTagFor(ovnRecon)
 	name := collectorName(ovnRecon)
@@ -288,7 +288,7 @@ func DesiredCollectorDeployment(ovnRecon *reconv1alpha1.OvnRecon) *appsv1.Deploy
 }
 
 // DesiredCollectorService renders the collector Service for a given OvnRecon instance.
-func DesiredCollectorService(ovnRecon *reconv1alpha1.OvnRecon) *corev1.Service {
+func DesiredCollectorService(ovnRecon *reconv1beta1.OvnRecon) *corev1.Service {
 	namespace := targetNamespace(ovnRecon)
 	name := collectorName(ovnRecon)
 	appLabels := labelsForOvnReconWithVersion(ovnRecon.Name, collectorImageTagFor(ovnRecon))
@@ -321,7 +321,7 @@ func DesiredCollectorService(ovnRecon *reconv1alpha1.OvnRecon) *corev1.Service {
 }
 
 // DesiredService renders the Service for a given OvnRecon instance.
-func DesiredService(ovnRecon *reconv1alpha1.OvnRecon) *corev1.Service {
+func DesiredService(ovnRecon *reconv1beta1.OvnRecon) *corev1.Service {
 	namespace := targetNamespace(ovnRecon)
 	appLabels := labelsForOvnReconWithVersion(ovnRecon.Name, imageTagFor(ovnRecon))
 	annotations := mergeStringMap(nil, operatorVersionAnnotations())
@@ -350,7 +350,7 @@ func DesiredService(ovnRecon *reconv1alpha1.OvnRecon) *corev1.Service {
 	}
 }
 
-func collectorImageRepositoryFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+func collectorImageRepositoryFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.Collector.Image.Repository != "" {
 		return ovnRecon.Spec.Collector.Image.Repository
 	}
@@ -360,7 +360,7 @@ func collectorImageRepositoryFor(ovnRecon *reconv1alpha1.OvnRecon) string {
 	return defaultCollectorRepository
 }
 
-func collectorImageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+func collectorImageTagFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.Collector.Image.Tag != "" {
 		return ovnRecon.Spec.Collector.Image.Tag
 	}
@@ -371,7 +371,7 @@ func collectorImageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
 	return imageTagFor(ovnRecon)
 }
 
-func collectorImagePullPolicyFor(ovnRecon *reconv1alpha1.OvnRecon) corev1.PullPolicy {
+func collectorImagePullPolicyFor(ovnRecon *reconv1beta1.OvnRecon) corev1.PullPolicy {
 	if ovnRecon.Spec.Collector.Image.PullPolicy != "" {
 		return corev1.PullPolicy(ovnRecon.Spec.Collector.Image.PullPolicy)
 	}
@@ -381,7 +381,7 @@ func collectorImagePullPolicyFor(ovnRecon *reconv1alpha1.OvnRecon) corev1.PullPo
 	return imagePullPolicyFor(ovnRecon)
 }
 
-func collectorProbeNamespacesFor(ovnRecon *reconv1alpha1.OvnRecon) []string {
+func collectorProbeNamespacesFor(ovnRecon *reconv1beta1.OvnRecon) []string {
 	if len(ovnRecon.Spec.Collector.ProbeNamespaces) != 0 {
 		return append([]string{}, ovnRecon.Spec.Collector.ProbeNamespaces...)
 	}
@@ -391,18 +391,18 @@ func collectorProbeNamespacesFor(ovnRecon *reconv1alpha1.OvnRecon) []string {
 	return append([]string{}, ovnRecon.Spec.CollectorProbeNamespaces...)
 }
 
-func collectorLogLevelFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+func collectorLogLevelFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	if strings.TrimSpace(ovnRecon.Spec.Collector.Logging.Level) != "" {
 		return strings.ToLower(strings.TrimSpace(ovnRecon.Spec.Collector.Logging.Level))
 	}
 	return "info"
 }
 
-func collectorIncludeProbeOutputFor(ovnRecon *reconv1alpha1.OvnRecon) bool {
+func collectorIncludeProbeOutputFor(ovnRecon *reconv1beta1.OvnRecon) bool {
 	return ovnRecon.Spec.Collector.Logging.IncludeProbeOutput
 }
 
-func consolePluginErrorLogLevelFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+func consolePluginErrorLogLevelFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	level := strings.ToLower(strings.TrimSpace(ovnRecon.Spec.ConsolePlugin.Logging.Level))
 	switch level {
 	case "error", "warn", "info", "debug":
@@ -412,7 +412,7 @@ func consolePluginErrorLogLevelFor(ovnRecon *reconv1alpha1.OvnRecon) string {
 	}
 }
 
-func consolePluginAccessLogDirectiveFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+func consolePluginAccessLogDirectiveFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.ConsolePlugin.Logging.AccessLog.Enabled {
 		return "/dev/stdout main"
 	}
@@ -420,7 +420,7 @@ func consolePluginAccessLogDirectiveFor(ovnRecon *reconv1alpha1.OvnRecon) string
 }
 
 // DesiredConsolePlugin renders the ConsolePlugin for a given OvnRecon instance.
-func DesiredConsolePlugin(ovnRecon *reconv1alpha1.OvnRecon) *unstructured.Unstructured {
+func DesiredConsolePlugin(ovnRecon *reconv1beta1.OvnRecon) *unstructured.Unstructured {
 	displayName := ovnRecon.Spec.ConsolePlugin.DisplayName
 	if displayName == "" {
 		displayName = "OVN Recon"
@@ -465,7 +465,7 @@ func mergeStringMap(dst, src map[string]string) map[string]string {
 	return dst
 }
 
-func imageRepositoryFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+func imageRepositoryFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.ConsolePlugin.Image.Repository != "" {
 		return ovnRecon.Spec.ConsolePlugin.Image.Repository
 	}
@@ -475,7 +475,7 @@ func imageRepositoryFor(ovnRecon *reconv1alpha1.OvnRecon) string {
 	return defaultImageRepository
 }
 
-func imagePullPolicyFor(ovnRecon *reconv1alpha1.OvnRecon) corev1.PullPolicy {
+func imagePullPolicyFor(ovnRecon *reconv1beta1.OvnRecon) corev1.PullPolicy {
 	if ovnRecon.Spec.ConsolePlugin.Image.PullPolicy != "" {
 		return corev1.PullPolicy(ovnRecon.Spec.ConsolePlugin.Image.PullPolicy)
 	}

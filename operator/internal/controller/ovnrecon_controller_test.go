@@ -27,7 +27,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
+	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 )
 
 var _ = Describe("OvnRecon Controller", func() {
@@ -40,13 +40,13 @@ var _ = Describe("OvnRecon Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		ovnrecon := &reconv1alpha1.OvnRecon{}
+		ovnrecon := &reconv1beta1.OvnRecon{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind OvnRecon")
 			err := k8sClient.Get(ctx, typeNamespacedName, ovnrecon)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &reconv1alpha1.OvnRecon{
+				resource := &reconv1beta1.OvnRecon{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
@@ -59,7 +59,7 @@ var _ = Describe("OvnRecon Controller", func() {
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &reconv1alpha1.OvnRecon{}
+			resource := &reconv1beta1.OvnRecon{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 

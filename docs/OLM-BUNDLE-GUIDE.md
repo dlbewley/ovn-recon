@@ -244,7 +244,7 @@ To inspect the resources the controller would create for a given `OvnRecon` CR, 
 
 ```bash
 cd operator
-go run ./cmd/render -f config/samples/recon_v1alpha1_ovnrecon.yaml
+go run ./cmd/render -f config/samples/recon_v1beta1_ovnrecon.yaml
 ```
 
 You can also render from a live CR:
@@ -262,7 +262,7 @@ Consider these as the source of truth for refreshing the manual installation [ma
 After the operator is installed, create an instance:
 
 ```yaml
-apiVersion: recon.bewley.net/v1alpha1
+apiVersion: recon.bewley.net/v1beta1
 kind: OvnRecon
 metadata:
   name: ovn-recon
@@ -292,7 +292,7 @@ spec:
 Apply it:
 
 ```bash
-kubectl apply -f config/samples/recon_v1alpha1_ovnrecon.yaml
+kubectl apply -f config/samples/recon_v1beta1_ovnrecon.yaml
 ```
 
 ## Troubleshooting

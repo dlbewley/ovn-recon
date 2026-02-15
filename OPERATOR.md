@@ -18,7 +18,7 @@ See also [OLM-BUNDLE-GUIDE.md](../docs/OLM-BUNDLE-GUIDE.md).
 
 ## API Reference (`OvnRecon` CRD)
 
-The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`, Version: `v1alpha1`, Scope: `Cluster`).
+The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`, Preferred Version: `v1beta1`, Scope: `Cluster`).
 
 ### Spec Configuration
 
@@ -46,7 +46,9 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 ### Migration Notes
 
 - New hierarchical fields are preferred: `consolePlugin.image.*`, `collector.enabled`, `collector.image.*`, and `collector.probeNamespaces`.
-- Legacy fields are still accepted for compatibility in `v1alpha1`:
+- `v1beta1` is the storage version. `v1alpha1` remains served for compatibility.
+- The CRD uses API-server conversion strategy `None` (schema parity between versions), so reads/writes in either served version are accepted.
+- Legacy fields are still accepted for compatibility in both served versions:
   - `image.*` (use `consolePlugin.image.*`)
   - `featureGates.ovn-collector` (use `collector.enabled`)
   - `collectorImage.*` (use `collector.image.*`)
@@ -98,9 +100,9 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
    make run
    ```
 
-3. **Deploy Sample** [recon_v1alpha1_ovnrecon.yaml](config/samples/recon_v1alpha1_ovnrecon.yaml):
+3. **Deploy Sample** [recon_v1beta1_ovnrecon.yaml](config/samples/recon_v1beta1_ovnrecon.yaml):
    ```bash
-   kubectl apply -f config/samples/recon_v1alpha1_ovnrecon.yaml
+   oc apply -f config/samples/recon_v1beta1_ovnrecon.yaml
    ```
 
 ### Deployment (Cluster Mode)
@@ -116,7 +118,8 @@ make deploy IMG=quay.io/dbewley/ovn-recon-operator:latest
 ## Development Guide
 
 ### Repository Structure
-- `api/v1alpha1/`: API definitions (`ovnrecon_types.go`).
+- `api/v1beta1/`: Preferred API definitions (`ovnrecon_types.go`).
+- `api/v1alpha1/`: Served compatibility API definitions.
 - `internal/controller/`: Reconciliation logic (`ovnrecon_controller.go`).
 - `config/`: Kustomize manifests for deployment, RBAC, and CRDs.
 - `.github/workflows/`: CI/CD pipelines for building and releasing.

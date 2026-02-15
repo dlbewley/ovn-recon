@@ -6,7 +6,7 @@ This document defines the current `reason` values emitted by the `ovn-recon` ope
 
 - Applies to Kubernetes Events emitted by the operator controller.
 - Applies to status condition `reason` fields set on `OvnRecon`.
-- Covers behavior in the current `v1alpha1` operator line.
+- Covers behavior in the current `v1beta1` operator line (`v1alpha1` remains served for compatibility).
 
 ## Current Reason Catalog
 
@@ -54,4 +54,3 @@ Any non-additive reason change must include:
    - `/Users/dale/src/ovn-recon/operator/internal/controller/reason_catalog_test.go`
 
 When practical, provide a short compatibility window by emitting the old and new reason in adjacent releases or by documenting an equivalent mapping.
-

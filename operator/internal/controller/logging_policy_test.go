@@ -9,27 +9,27 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 
-	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
+	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 )
 
 func TestResolveOperatorLogPolicyUsesPrimaryWhenPresent(t *testing.T) {
 	t.Helper()
 
-	current := &reconv1alpha1.OvnRecon{
+	current := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "secondary"},
-		Spec: reconv1alpha1.OvnReconSpec{
-			Operator: reconv1alpha1.OperatorSpec{
-				Logging: reconv1alpha1.OperatorLoggingSpec{
+		Spec: reconv1beta1.OvnReconSpec{
+			Operator: reconv1beta1.OperatorSpec{
+				Logging: reconv1beta1.OperatorLoggingSpec{
 					Level: "info",
 				},
 			},
 		},
 	}
-	primary := &reconv1alpha1.OvnRecon{
+	primary := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "primary"},
-		Spec: reconv1alpha1.OvnReconSpec{
-			Operator: reconv1alpha1.OperatorSpec{
-				Logging: reconv1alpha1.OperatorLoggingSpec{
+		Spec: reconv1beta1.OvnReconSpec{
+			Operator: reconv1beta1.OperatorSpec{
+				Logging: reconv1beta1.OperatorLoggingSpec{
 					Level: "debug",
 				},
 			},
@@ -51,7 +51,7 @@ func TestResolveOperatorLogPolicyUsesPrimaryWhenPresent(t *testing.T) {
 func TestResolveOperatorLogPolicyDefaultsToInfoWhenUnset(t *testing.T) {
 	t.Helper()
 
-	current := &reconv1alpha1.OvnRecon{
+	current := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
 	}
 
@@ -74,7 +74,7 @@ func TestSelectPrimaryInstanceUsesOldestThenName(t *testing.T) {
 	oldest := now.Add(-2 * time.Hour)
 	newer := now.Add(-1 * time.Hour)
 
-	items := []reconv1alpha1.OvnRecon{
+	items := []reconv1beta1.OvnRecon{
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              "zeta",
@@ -107,12 +107,12 @@ func TestSelectPrimaryInstanceUsesOldestThenName(t *testing.T) {
 func TestResolveOperatorEventPolicyUsesPrimaryWhenPresent(t *testing.T) {
 	t.Helper()
 
-	current := &reconv1alpha1.OvnRecon{
+	current := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "secondary"},
-		Spec: reconv1alpha1.OvnReconSpec{
-			Operator: reconv1alpha1.OperatorSpec{
-				Logging: reconv1alpha1.OperatorLoggingSpec{
-					Events: reconv1alpha1.OperatorEventsSpec{
+		Spec: reconv1beta1.OvnReconSpec{
+			Operator: reconv1beta1.OperatorSpec{
+				Logging: reconv1beta1.OperatorLoggingSpec{
+					Events: reconv1beta1.OperatorEventsSpec{
 						MinType:      "Warning",
 						DedupeWindow: "1m",
 					},
@@ -120,12 +120,12 @@ func TestResolveOperatorEventPolicyUsesPrimaryWhenPresent(t *testing.T) {
 			},
 		},
 	}
-	primary := &reconv1alpha1.OvnRecon{
+	primary := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "primary"},
-		Spec: reconv1alpha1.OvnReconSpec{
-			Operator: reconv1alpha1.OperatorSpec{
-				Logging: reconv1alpha1.OperatorLoggingSpec{
-					Events: reconv1alpha1.OperatorEventsSpec{
+		Spec: reconv1beta1.OvnReconSpec{
+			Operator: reconv1beta1.OperatorSpec{
+				Logging: reconv1beta1.OperatorLoggingSpec{
+					Events: reconv1beta1.OperatorEventsSpec{
 						MinType:      "Normal",
 						DedupeWindow: "10m",
 					},
@@ -146,12 +146,12 @@ func TestResolveOperatorEventPolicyUsesPrimaryWhenPresent(t *testing.T) {
 func TestResolveOperatorEventPolicyDefaultsAndInvalidValues(t *testing.T) {
 	t.Helper()
 
-	current := &reconv1alpha1.OvnRecon{
+	current := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
-		Spec: reconv1alpha1.OvnReconSpec{
-			Operator: reconv1alpha1.OperatorSpec{
-				Logging: reconv1alpha1.OperatorLoggingSpec{
-					Events: reconv1alpha1.OperatorEventsSpec{
+		Spec: reconv1beta1.OvnReconSpec{
+			Operator: reconv1beta1.OperatorSpec{
+				Logging: reconv1beta1.OperatorLoggingSpec{
+					Events: reconv1beta1.OperatorEventsSpec{
 						MinType:      "normal",
 						DedupeWindow: "not-a-duration",
 					},
@@ -177,7 +177,7 @@ func TestShouldEmitNormalEventDedupe(t *testing.T) {
 		minType:      corev1.EventTypeNormal,
 		dedupeWindow: time.Minute,
 	}
-	ovnRecon := &reconv1alpha1.OvnRecon{
+	ovnRecon := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
 	}
 
@@ -203,7 +203,7 @@ func TestRecordEventHonorsMinTypeAndWarningAlways(t *testing.T) {
 		minType:      corev1.EventTypeWarning,
 		dedupeWindow: time.Minute,
 	}
-	ovnRecon := &reconv1alpha1.OvnRecon{
+	ovnRecon := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
 	}
 
