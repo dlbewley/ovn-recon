@@ -177,5 +177,5 @@ Current logging/debuggability bead status:
 | Implement collector log level and probe-output controls | task | `ovn-recon-35u.4` | `CLOSED` |
 | Implement console plugin (nginx) logging controls | task | `ovn-recon-35u.5` | `CLOSED` |
 | Add logging/event behavior tests including reason-catalog stability checks | task | `ovn-recon-35u.6` | `CLOSED` |
-| Publish and maintain event reason catalog with compatibility notes | task | `ovn-recon-35u.7` | `IN_PROGRESS` |
-| Update troubleshooting docs with logging debug playbooks | task | `ovn-recon-35u.8` | `OPEN` |
+| Publish and maintain event reason catalog with compatibility notes | task | `ovn-recon-35u.7` | `CLOSED` |
+| Update troubleshooting docs with logging debug playbooks | task | `ovn-recon-35u.8` | `IN_PROGRESS` |
