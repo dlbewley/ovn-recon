@@ -56,6 +56,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     interface NodeViewModel {
         id: string;
         kind: NodeKind;
+        iconType: string;
         label: string;
         title: string;
         subtitle: string;
@@ -1305,6 +1306,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         const baseNode: NodeViewModel = {
             id: nodeId,
             kind,
+            iconType: type,
             label,
             title,
             subtitle,
@@ -1520,9 +1522,18 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             <DrawerHead>
                 <Flex direction={{ default: 'column' }}>
                     <FlexItem>
-                        <Title headingLevel="h2" size="xl">
-                            {activeNode?.title}
-                        </Title>
+                        <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsSm' }}>
+                            <FlexItem>
+                                <span style={{ display: 'inline-flex' }}>
+                                    {activeNode ? getIcon(activeNode.iconType) : null}
+                                </span>
+                            </FlexItem>
+                            <FlexItem>
+                                <Title headingLevel="h2" size="xl">
+                                    {activeNode?.title}
+                                </Title>
+                            </FlexItem>
+                        </Flex>
                     </FlexItem>
                     <FlexItem>
                         {activeNode?.subtitle && <span style={{ color: 'var(--pf-global--Color--200)', fontSize: '0.9em' }}>{activeNode.subtitle}</span>}
