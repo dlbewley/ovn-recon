@@ -13,6 +13,7 @@ operator/.cache/
 operator/testbin/
 operator/cover.out
 .gocache/
+.gopath/
 
 # Local configuration
 setup_env.sh

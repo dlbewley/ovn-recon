@@ -8,6 +8,12 @@ metadata:
   name: ovn-recon
 spec:
   targetNamespace: ovn-recon
+  operator:
+    logging:
+      level: info
+      events:
+        minType: Normal
+        dedupeWindow: 5m
   consolePlugin:
     displayName: "OVN Recon"
     enabled: true
@@ -15,6 +21,10 @@ spec:
       repository: quay.io/dbewley/ovn-recon
       # tag: latest
       pullPolicy: IfNotPresent
+    logging:
+      level: info
+      accessLog:
+        enabled: false
   collector:
     enabled: false
     image:
@@ -24,3 +34,6 @@ spec:
     probeNamespaces:
       - openshift-ovn-kubernetes
       - openshift-frr-k8s
+    logging:
+      level: info
+      includeProbeOutput: false

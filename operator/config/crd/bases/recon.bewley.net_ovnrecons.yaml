@@ -58,6 +58,22 @@ spec:
                       tag:
                         type: string
                     type: object
+                  logging:
+                    description: Logging controls for the collector service.
+                    properties:
+                      includeProbeOutput:
+                        default: false
+                        type: boolean
+                      level:
+                        default: info
+                        enum:
+                        - error
+                        - warn
+                        - info
+                        - debug
+                        - trace
+                        type: string
+                    type: object
                   probeNamespaces:
                     default:
                     - openshift-ovn-kubernetes
@@ -111,6 +127,24 @@ spec:
                         default: latest
                         type: string
                     type: object
+                  logging:
+                    description: Logging controls for the console plugin backend.
+                    properties:
+                      accessLog:
+                        properties:
+                          enabled:
+                            default: false
+                            type: boolean
+                        type: object
+                      level:
+                        default: info
+                        enum:
+                        - error
+                        - warn
+                        - info
+                        - debug
+                        type: string
+                    type: object
                 type: object
               featureGates:
                 description: |-
@@ -137,6 +171,37 @@ spec:
                   tag:
                     default: latest
                     type: string
+                type: object
+              operator:
+                description: Operator configuration.
+                properties:
+                  logging:
+                    description: Logging controls for the operator controller.
+                    properties:
+                      events:
+                        description: Events controls Kubernetes Event behavior from
+                          the operator.
+                        properties:
+                          dedupeWindow:
+                            default: 5m
+                            type: string
+                          minType:
+                            default: Normal
+                            enum:
+                            - Normal
+                            - Warning
+                            type: string
+                        type: object
+                      level:
+                        default: info
+                        enum:
+                        - error
+                        - warn
+                        - info
+                        - debug
+                        - trace
+                        type: string
+                    type: object
                 type: object
               targetNamespace:
                 default: ovn-recon

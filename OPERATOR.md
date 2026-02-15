@@ -25,16 +25,23 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `targetNamespace` | `string` | `ovn-recon` | The namespace where namespaced resources (Deployment, Service) are created. |
+| `operator.logging.level` | `string` | `info` | Operator log level. Allowed: `error`, `warn`, `info`, `debug`, `trace`. |
+| `operator.logging.events.minType` | `string` | `Normal` | Minimum Kubernetes event type emitted by the operator. Allowed: `Normal`, `Warning`. |
+| `operator.logging.events.dedupeWindow` | `string` | `5m` | Event deduplication window used by the operator event recorder. |
 | `consolePlugin.displayName` | `string` | `OVN Recon` | The name displayed in the OpenShift console. |
 | `consolePlugin.enabled` | `bool` | `true` | If true, the operator will patch the OpenShift Console configuration to enable the plugin. |
 | `consolePlugin.image.repository`| `string` | `quay.io/dbewley/ovn-recon` | Plugin backend image repository. |
 | `consolePlugin.image.tag` | `string` | `latest` | Plugin backend image tag. |
 | `consolePlugin.image.pullPolicy`| `string` | `IfNotPresent` | Plugin backend ImagePullPolicy. |
+| `consolePlugin.logging.level` | `string` | `info` | Console plugin backend log level. Allowed: `error`, `warn`, `info`, `debug`. |
+| `consolePlugin.logging.accessLog.enabled` | `bool` | `false` | Enables request access logging in the console plugin backend. |
 | `collector.enabled` | `bool` | `false` | Enables logical topology features backed by the collector service. |
 | `collector.image.repository`| `string` | `quay.io/dbewley/ovn-collector` | OVN collector image repository. |
 | `collector.image.tag` | `string` | _inherits `consolePlugin.image.tag`_ | OVN collector image tag. |
 | `collector.image.pullPolicy`| `string` | _inherits `consolePlugin.image.pullPolicy`_ | OVN collector image pull policy. |
 | `collector.probeNamespaces` | `[]string` | `["openshift-ovn-kubernetes","openshift-frr-k8s"]` | Namespaces where collector is granted pod read/exec access. |
+| `collector.logging.level` | `string` | `info` | Collector log level. Allowed: `error`, `warn`, `info`, `debug`, `trace`. |
+| `collector.logging.includeProbeOutput` | `bool` | `false` | Includes raw probe command output in collector logs when enabled. |
 
 ### Migration Notes
 
@@ -45,6 +52,10 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
   - `collectorImage.*` (use `collector.image.*`)
   - `collectorProbeNamespaces` (use `collector.probeNamespaces`)
 - If both new and legacy fields are set, the new hierarchical fields win.
+- If `operator.logging`, `consolePlugin.logging`, or `collector.logging` are omitted, runtime behavior matches prior defaults:
+  - operator and component log levels default to `info`
+  - operator events default to `minType=Normal` with `dedupeWindow=5m`
+  - plugin access logs and collector probe output logging remain disabled
 
 ### Feature Gate Notes
 

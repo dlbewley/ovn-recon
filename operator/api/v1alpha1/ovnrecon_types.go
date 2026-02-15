@@ -31,6 +31,9 @@ type OvnReconSpec struct {
 	// +kubebuilder:default=ovn-recon
 	TargetNamespace string `json:"targetNamespace,omitempty"`
 
+	// Operator configuration.
+	Operator OperatorSpec `json:"operator,omitempty"`
+
 	// ConsolePlugin configuration
 	ConsolePlugin ConsolePluginSpec `json:"consolePlugin,omitempty"`
 
@@ -71,12 +74,51 @@ type CollectorImageSpec struct {
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 
+type OperatorSpec struct {
+	// Logging controls for the operator controller.
+	Logging OperatorLoggingSpec `json:"logging,omitempty"`
+}
+
+type OperatorLoggingSpec struct {
+	// +kubebuilder:validation:Enum=error;warn;info;debug;trace
+	// +kubebuilder:default=info
+	Level string `json:"level,omitempty"`
+
+	// Events controls Kubernetes Event behavior from the operator.
+	Events OperatorEventsSpec `json:"events,omitempty"`
+}
+
+type OperatorEventsSpec struct {
+	// +kubebuilder:validation:Enum=Normal;Warning
+	// +kubebuilder:default=Normal
+	MinType string `json:"minType,omitempty"`
+
+	// +kubebuilder:default=5m
+	DedupeWindow string `json:"dedupeWindow,omitempty"`
+}
+
 type ConsolePluginSpec struct {
 	DisplayName string `json:"displayName,omitempty"`
 	Enabled     bool   `json:"enabled,omitempty"`
 
 	// Image configuration for the plugin container.
 	Image ImageSpec `json:"image,omitempty"`
+
+	// Logging controls for the console plugin backend.
+	Logging ConsolePluginLoggingSpec `json:"logging,omitempty"`
+}
+
+type ConsolePluginLoggingSpec struct {
+	// +kubebuilder:validation:Enum=error;warn;info;debug
+	// +kubebuilder:default=info
+	Level string `json:"level,omitempty"`
+
+	AccessLog AccessLogSpec `json:"accessLog,omitempty"`
+}
+
+type AccessLogSpec struct {
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 type CollectorSpec struct {
@@ -89,6 +131,18 @@ type CollectorSpec struct {
 	// ProbeNamespaces defines namespaces where collector is allowed to probe OVN pods.
 	// +kubebuilder:default:={"openshift-ovn-kubernetes","openshift-frr-k8s"}
 	ProbeNamespaces []string `json:"probeNamespaces,omitempty"`
+
+	// Logging controls for the collector service.
+	Logging CollectorLoggingSpec `json:"logging,omitempty"`
+}
+
+type CollectorLoggingSpec struct {
+	// +kubebuilder:validation:Enum=error;warn;info;debug;trace
+	// +kubebuilder:default=info
+	Level string `json:"level,omitempty"`
+
+	// +kubebuilder:default=false
+	IncludeProbeOutput bool `json:"includeProbeOutput,omitempty"`
 }
 
 type FeatureGateSpec struct {

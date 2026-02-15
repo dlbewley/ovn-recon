@@ -268,6 +268,9 @@ metadata:
   name: ovn-recon
   namespace: ovn-recon
 spec:
+  operator:
+    logging:
+      level: info
   consolePlugin:
     displayName: "OVN Recon"
     enabled: true
@@ -275,8 +278,15 @@ spec:
       repository: quay.io/dbewley/ovn-recon
       tag: latest
       pullPolicy: IfNotPresent
+    logging:
+      level: info
+      accessLog:
+        enabled: false
   collector:
     enabled: false
+    logging:
+      level: info
+      includeProbeOutput: false
 ```
 
 Apply it:
