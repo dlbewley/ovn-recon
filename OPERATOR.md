@@ -144,6 +144,7 @@ The operator image is automatically built and pushed to `quay.io/dbewley/ovn-rec
    ```bash
    oc get events --field-selector involvedObject.kind=OvnRecon
    ```
+   Event reason meanings and compatibility notes are documented in [docs/EVENT_REASON_CATALOG.md](docs/EVENT_REASON_CATALOG.md).
 
 3. **Check Logs**:
    ```bash

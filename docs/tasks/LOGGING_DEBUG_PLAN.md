@@ -171,11 +171,11 @@ Current logging/debuggability bead status:
 | Work Item | Type | Issue ID | Status |
 |---|---|---|---|
 | Logging/debuggability epic | epic | `ovn-recon-35u` | `OPEN` |
-| Add component-embedded logging API fields + CRD/docs defaults | task | `ovn-recon-35u.1` | `OPEN` |
-| Implement operator logging policy resolver + structured debug fields | task | `ovn-recon-35u.2` | `OPEN` |
-| Implement operator event dedupe and Normal event coverage | task | `ovn-recon-35u.3` | `OPEN` |
-| Implement collector log level and probe-output controls | task | `ovn-recon-35u.4` | `OPEN` |
-| Implement console plugin (nginx) logging controls | task | `ovn-recon-35u.5` | `OPEN` |
-| Add logging/event behavior tests including reason-catalog stability checks | task | `ovn-recon-35u.6` | `OPEN` |
-| Publish and maintain event reason catalog with compatibility notes | task | `ovn-recon-35u.7` | `OPEN` |
+| Add component-embedded logging API fields + CRD/docs defaults | task | `ovn-recon-35u.1` | `CLOSED` |
+| Implement operator logging policy resolver + structured debug fields | task | `ovn-recon-35u.2` | `CLOSED` |
+| Implement operator event dedupe and Normal event coverage | task | `ovn-recon-35u.3` | `CLOSED` |
+| Implement collector log level and probe-output controls | task | `ovn-recon-35u.4` | `CLOSED` |
+| Implement console plugin (nginx) logging controls | task | `ovn-recon-35u.5` | `CLOSED` |
+| Add logging/event behavior tests including reason-catalog stability checks | task | `ovn-recon-35u.6` | `CLOSED` |
+| Publish and maintain event reason catalog with compatibility notes | task | `ovn-recon-35u.7` | `IN_PROGRESS` |
 | Update troubleshooting docs with logging debug playbooks | task | `ovn-recon-35u.8` | `OPEN` |
