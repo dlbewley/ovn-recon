@@ -21,6 +21,10 @@ spec:
         control-plane: controller-manager
         app.kubernetes.io/name: ovn-recon-operator
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       # TODO(user): Uncomment the following code to configure the nodeAffinity expression
       # according to the platforms which are supported by your solution.
       # It is considered best practice to support multiple architectures. You can
@@ -52,7 +56,10 @@ spec:
         env:
           - name: OPERATOR_VERSION
             value: dev
-        ports: []
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
         livenessProbe:
           httpGet:
             path: /healthz
@@ -74,6 +81,11 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
         volumeMounts: []
       volumes: []
       serviceAccountName: controller-manager
