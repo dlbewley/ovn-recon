@@ -155,6 +155,35 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         return typeof macAddress === 'string' ? macAddress : undefined;
     };
 
+    const getAttachmentNamespaces = (node: NodeViewModel): string[] => (
+        Array.from(
+            new Set(
+                (node.namespaces || [])
+                    .map((ns) => ns?.trim())
+                    .filter((ns): ns is string => Boolean(ns))
+            )
+        )
+    );
+
+    const getAttachmentNadRefs = (node: NodeViewModel): Array<{ namespace: string; name: string }> => {
+        const nadName = node.label?.trim();
+        if (!nadName) {
+            return [];
+        }
+        const namespaces = new Set(getAttachmentNamespaces(node));
+        const refs = nads
+            .filter((nad) => {
+                const namespace = nad.metadata?.namespace || '';
+                return namespaces.has(namespace) && nad.metadata?.name === nadName;
+            })
+            .map((nad) => ({
+                namespace: nad.metadata?.namespace || '',
+                name: nad.metadata?.name || ''
+            }))
+            .filter((ref) => ref.namespace && ref.name);
+        return Array.from(new Map(refs.map((ref) => [`${ref.namespace}/${ref.name}`, ref])).values());
+    };
+
     const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
         interface: {
             label: 'Interface',
@@ -475,7 +504,65 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         },
         attachment: {
             label: 'Attachment',
-            buildBadges: (node) => (node.isSynthetic ? ['synthetic', 'derived'] : [])
+            buildBadges: (node) => (node.isSynthetic ? ['synthetic', 'derived'] : []),
+            buildLinks: (node) => {
+                const namespaceLinks = getAttachmentNamespaces(node).map((namespace) => ({
+                    label: `Namespace: ${namespace}`,
+                    href: `/k8s/ns/${namespace}`
+                }));
+                const nadLinks = getAttachmentNadRefs(node).map((ref) => ({
+                    label: `NAD: ${ref.namespace}/${ref.name}`,
+                    href: `/k8s/ns/${ref.namespace}/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/${ref.name}`
+                }));
+                return [...namespaceLinks, ...nadLinks];
+            },
+            renderDetails: (node) => {
+                const namespaces = getAttachmentNamespaces(node);
+                const nadRefs = getAttachmentNadRefs(node);
+                return (
+                    <DescriptionList isCompact>
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>Type</DescriptionListTerm>
+                            <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
+                        </DescriptionListGroup>
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>Namespaces</DescriptionListTerm>
+                            <DescriptionListDescription>
+                                {namespaces.length > 0 ? (
+                                    <ul className="pf-v6-c-list">
+                                        {namespaces.map((namespace) => (
+                                            <li key={namespace}>
+                                                <a href={`/k8s/ns/${namespace}`} className="pf-v6-c-button pf-m-link pf-m-inline">
+                                                    {namespace}
+                                                </a>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : 'No namespaces discovered.'}
+                            </DescriptionListDescription>
+                        </DescriptionListGroup>
+                        <DescriptionListGroup>
+                            <DescriptionListTerm>NetworkAttachmentDefinitions</DescriptionListTerm>
+                            <DescriptionListDescription>
+                                {nadRefs.length > 0 ? (
+                                    <ul className="pf-v6-c-list">
+                                        {nadRefs.map((ref) => (
+                                            <li key={`${ref.namespace}/${ref.name}`}>
+                                                <a
+                                                    href={`/k8s/ns/${ref.namespace}/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/${ref.name}`}
+                                                    className="pf-v6-c-button pf-m-link pf-m-inline"
+                                                >
+                                                    {ref.namespace}/{ref.name}
+                                                </a>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : 'No matching NetworkAttachmentDefinition found.'}
+                            </DescriptionListDescription>
+                        </DescriptionListGroup>
+                    </DescriptionList>
+                );
+            }
         },
         nad: {
             label: 'NAD',
