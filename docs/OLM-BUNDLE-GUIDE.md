@@ -4,6 +4,8 @@ This guide explains how to generate an OLM bundle for the OVN Recon Operator and
 
 This is automated by [github workflows](../.github/workflows/operator-release.yaml) and the manual process is not recently tested.
 
+For Community Operators catalog submission steps, see [Community Operators Submission Runbook](./COMMUNITY_OPERATORS_SUBMISSION.md).
+
 ## Prerequisites
 
 - Operator SDK v1.42.0+ installed
