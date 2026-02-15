@@ -73,6 +73,18 @@ The project direction is updated as follows:
 - Feature-gated UI is practical and necessary; route and list link should remain hidden unless enabled.
 - Local full operator test suites require envtest binaries and Docker; focused package tests remain useful for iteration.
 
+### Execution Update (2026-02-15)
+- Completed follow-on topology UX tasks:
+  - `ovn-recon-5w9`: drawer header now mirrors graph node icon mapping.
+  - `ovn-recon-f1i`: attachment nodes now expose namespace and NAD links in drawer links/details.
+- Completed fixture-backed test work:
+  - `ovn-recon-r8n`: NNS fixture corpus and selector/model coverage added.
+- In progress:
+  - `ovn-recon-bz6`: community-operators submission handoff.
+    - Runbook added: `/Users/dale/src/ovn-recon/docs/COMMUNITY_OPERATORS_SUBMISSION.md`
+    - Release artifact prep added in `/Users/dale/src/ovn-recon/.github/workflows/operator-release.yaml`
+    - Local staging helper added: `/Users/dale/src/ovn-recon/scripts/prepare-community-operators-submission.sh`
+
 ## Product Scope
 
 ### In Scope
