@@ -143,6 +143,32 @@ func TestResolveOperatorEventPolicyUsesPrimaryWhenPresent(t *testing.T) {
 	}
 }
 
+func TestResolveOperatorEventPolicyDefaultsAndInvalidValues(t *testing.T) {
+	t.Helper()
+
+	current := &reconv1alpha1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1alpha1.OvnReconSpec{
+			Operator: reconv1alpha1.OperatorSpec{
+				Logging: reconv1alpha1.OperatorLoggingSpec{
+					Events: reconv1alpha1.OperatorEventsSpec{
+						MinType:      "normal",
+						DedupeWindow: "not-a-duration",
+					},
+				},
+			},
+		},
+	}
+
+	policy := resolveOperatorEventPolicy(current, nil)
+	if policy.minType != corev1.EventTypeNormal {
+		t.Fatalf("expected default minType Normal for invalid value, got %q", policy.minType)
+	}
+	if policy.dedupeWindow != defaultEventDedupe {
+		t.Fatalf("expected default dedupe window %s, got %s", defaultEventDedupe, policy.dedupeWindow)
+	}
+}
+
 func TestShouldEmitNormalEventDedupe(t *testing.T) {
 	t.Helper()
 
