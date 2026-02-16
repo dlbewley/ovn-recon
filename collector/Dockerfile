@@ -1,20 +1,16 @@
-ARG TARGETPLATFORM
-
-FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
+FROM --platform=linux/amd64 golang:1.23-alpine AS builder
 
 WORKDIR /workspace
 
-ARG TARGETOS
-ARG TARGETARCH
-
 COPY go.mod ./
+COPY go.sum ./
 COPY cmd ./cmd
 COPY internal ./internal
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags='-s -w' -o /usr/local/bin/ovn-collector ./cmd/ovn-collector
 
-FROM --platform=$TARGETPLATFORM alpine:3.20
+FROM --platform=linux/amd64 alpine:3.20
 
 WORKDIR /app
 

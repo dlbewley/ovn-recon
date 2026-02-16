@@ -85,6 +85,16 @@ The project direction is updated as follows:
     - Release artifact prep added in `/Users/dale/src/ovn-recon/.github/workflows/operator-release.yaml`
     - Local staging helper added: `/Users/dale/src/ovn-recon/scripts/prepare-community-operators-submission.sh`
 
+### Execution Update (2026-02-16)
+- Completed live OVN probe runtime wiring in collector:
+  - in-cluster Kubernetes client initialization and namespace-targeted runner creation
+  - node-scoped pod exec command execution for OVN probe commands
+  - live-first snapshot serving with fallback to fixture/file snapshots and `LIVE_PROBE_FAILED` warning
+- Added collector runtime and server test coverage for live probe/fallback behavior.
+- Validated in-cluster behavior:
+  - collector logs now show active OVN probe execution per request
+  - `/api/v1/snapshots/:nodeName` returns live `sourceHealth=healthy` payloads for real nodes.
+
 ## Product Scope
 
 ### In Scope
@@ -168,7 +178,7 @@ Status: completed.
 - Implement initial probe pipeline for a minimal OVN resource subset.
 - Emit snapshot contract from Go code path (file or API/CR producer).
 - Add collector `Makefile` and `Dockerfile` to support local and CI image builds.
-Status: completed for scaffold + file-backed snapshot serving; live OVN probing remains pending.
+Status: completed.
 
 ### Milestone 1.5: CI Build and Operator Wiring
 - Create collector-focused GitHub workflow for build/test/image push.
@@ -192,6 +202,7 @@ Status: completed and feature-gated behind `ovn-collector`.
 ### Milestone 4: Real Data Integration
 - Integrate live snapshot producer path from Go collector.
 - Wire UI page to live snapshot and stale/error metadata.
+Status: completed.
 
 ### Milestone 5: Scale Hardening and Validation
 - Validate medium/large topology performance.
@@ -251,6 +262,19 @@ This Phase 2 work runs in parallel with ongoing Phase 1 improvements:
 - Define staged rollout plan for enabling Phase 2 in clusters.
 - Define rollback path that preserves Phase 1 behavior.
 - Add a Phase 1 regression checklist as a release gate for Phase 2 changes.
+
+## Phase 2 Live Probe Closure Checklist (2026-02-16)
+- Collector startup initializes in-cluster client and enables live probing when runtime config is valid.
+- Collector consumes `COLLECTOR_TARGET_NAMESPACES` and resolves node-scoped probe exec targets.
+- Server path attempts live collection first, then falls back to file snapshot with explicit degraded warning.
+- Collector image build is pinned for supported runtime architecture and includes `go.sum` in build context.
+- Unit tests cover:
+  - live collector success path
+  - live collector fallback path
+  - kube runner target resolution and validation.
+- In-cluster validation confirms:
+  - collector logs include per-request probe command execution
+  - logical topology endpoint returns non-fixture live graph data.
 
 ## Day-1 Decisions (Locked)
 

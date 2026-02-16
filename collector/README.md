@@ -8,11 +8,10 @@ This scaffold includes:
 - `cmd/ovn-collector` entrypoint
 - `internal/snapshot` canonical payload types and file store
 - `internal/probe` typed OVN parser + snapshot assembly pipeline
+- in-cluster pod exec runner for live OVN interrogation
 - HTTP endpoints for health/readiness and node-scoped snapshot retrieval
 - fixture corpus under `fixtures/snapshots`
 - collector-local `Makefile` and `Dockerfile`
-
-Kubernetes exec integration is not wired yet; the OVN parsing/snapshot assembly pipeline is implemented and unit tested.
 
 ## Endpoints
 
@@ -34,7 +33,8 @@ Response headers:
 
 ## Snapshot Source
 
-The server loads snapshot JSON from `SNAPSHOT_DIR`.
+The server first attempts live OVN collection using Kubernetes pod exec in `COLLECTOR_TARGET_NAMESPACES`.
+If live collection fails, it falls back to snapshot JSON from `SNAPSHOT_DIR` and adds a `LIVE_PROBE_FAILED` warning.
 
 - Default (local): `./fixtures/snapshots`
 - Default (container image): `/app/fixtures/snapshots`
