@@ -340,7 +340,11 @@ func DesiredService(ovnRecon *reconv1beta1.OvnRecon) *corev1.Service {
 			Annotations: annotations,
 		},
 		Spec: corev1.ServiceSpec{
-			Selector: labelsForOvnRecon(ovnRecon.Name),
+			Selector: map[string]string{
+				"app.kubernetes.io/name":      "ovn-recon",
+				"app.kubernetes.io/instance":  ovnRecon.Name,
+				"app.kubernetes.io/component": "plugin",
+			},
 			Ports: []corev1.ServicePort{{
 				Port:       9443,
 				TargetPort: intstr.FromInt32(9443),

@@ -166,6 +166,26 @@ func TestCollectorDesiredResourcesNamesAndPorts(t *testing.T) {
 	}
 }
 
+func TestPluginServiceSelectorTargetsPluginComponentOnly(t *testing.T) {
+	cr := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1beta1.OvnReconSpec{
+			TargetNamespace: "ovn-recon",
+		},
+	}
+
+	svc := DesiredService(cr)
+	if svc.Spec.Selector["app.kubernetes.io/name"] != "ovn-recon" {
+		t.Fatalf("unexpected selector app name: %#v", svc.Spec.Selector)
+	}
+	if svc.Spec.Selector["app.kubernetes.io/instance"] != "ovn-recon" {
+		t.Fatalf("unexpected selector instance: %#v", svc.Spec.Selector)
+	}
+	if svc.Spec.Selector["app.kubernetes.io/component"] != "plugin" {
+		t.Fatalf("expected plugin component selector, got %#v", svc.Spec.Selector)
+	}
+}
+
 func TestCollectorLoggingEnvOverrides(t *testing.T) {
 	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},

@@ -46,6 +46,30 @@ import {
 } from './logicalTopologyModel';
 
 const REFRESH_INTERVAL_MS = 30000;
+const COLLECTOR_SNAPSHOT_PROXY_PREFIX = '/api/proxy/plugin/ovn-recon/api/v1/snapshots';
+
+const resolveNodeName = (routeName?: string): string => {
+    const fromRoute = routeName?.trim();
+    if (fromRoute) {
+        return fromRoute;
+    }
+
+    if (typeof window === 'undefined') {
+        return '';
+    }
+
+    const path = window.location.pathname || '';
+    const match = path.match(/\/ovn-recon\/ovn\/([^/?#]+)/);
+    if (!match || !match[1]) {
+        return '';
+    }
+
+    try {
+        return decodeURIComponent(match[1]);
+    } catch {
+        return match[1];
+    }
+};
 
 const getNodeColor = (kind: string): string => {
     if (kind === 'logical_router') return '#0066CC';
@@ -82,7 +106,8 @@ const freshnessTitle = (state: SnapshotFreshnessState): string => {
 };
 
 const NodeLogicalTopologyDetails: React.FC = () => {
-    const { name = '' } = useParams<{ name: string }>();
+    const { name: routeName } = useParams<{ name?: string }>();
+    const name = React.useMemo(() => resolveNodeName(routeName), [routeName]);
     const { enabled, loaded: gateLoaded, loadError: gateError } = useOvnCollectorFeatureGate();
 
     const [snapshot, setSnapshot] = React.useState<LogicalTopologySnapshot | null>(null);
@@ -105,7 +130,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
         setSnapshotError('');
 
         try {
-            const response = await fetch(`/api/v1/snapshots/${name}`);
+            const response = await fetch(`${COLLECTOR_SNAPSHOT_PROXY_PREFIX}/${encodeURIComponent(name)}`);
             if (!response.ok) throw new Error(`Collector returned ${response.status}`);
             const payload = await response.json() as LogicalTopologySnapshot;
             setSnapshot(payload);
@@ -179,6 +204,11 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     );
 
     const kinds = React.useMemo(() => logicalNodeKinds(snapshot), [snapshot]);
+    const snapshotDefaultWarning = React.useMemo(
+        () => snapshot?.warnings?.find((warning) => warning.code === 'SNAPSHOT_DEFAULT'),
+        [snapshot],
+    );
+    const hasNoGraphData = snapshot != null && filteredNodes.length === 0;
 
     const zoomIn = () => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))));
     const zoomOut = () => setZoom((value) => Math.max(0.4, Number((value - 0.1).toFixed(2))));
@@ -331,6 +361,21 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             isInline
                                             title={`Data source: ${sourceLabel}`}
                                         />
+                                    )}
+                                    {hasNoGraphData && (
+                                        <Alert
+                                            variant="info"
+                                            isInline
+                                            title={
+                                                snapshotDefaultWarning
+                                                    ? `No node-specific topology snapshot found for ${name || 'this node'}.`
+                                                    : `No logical topology nodes returned for ${name || 'this node'}.`
+                                            }
+                                        >
+                                            {snapshotDefaultWarning
+                                                ? 'Collector is serving fallback data. Add a node snapshot file or enable live probe collection for this node.'
+                                                : 'The collector request succeeded, but the payload did not include any graph nodes.'}
+                                        </Alert>
                                     )}
                                 </AlertGroup>
 
