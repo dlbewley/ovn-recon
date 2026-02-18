@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dlbewley/ovn-recon/collector/api/logical-topology-snapshot.schema.json",
+  "title": "LogicalTopologySnapshot",
+  "type": "object",
+  "required": ["metadata", "nodes", "edges", "groups", "warnings"],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["schemaVersion", "generatedAt", "sourceHealth", "nodeName"],
+      "properties": {
+        "schemaVersion": {"type": "string"},
+        "generatedAt": {"type": "string", "format": "date-time"},
+        "sourceHealth": {"type": "string"},
+        "nodeName": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "label"],
+        "properties": {
+          "id": {"type": "string"},
+          "kind": {"type": "string"},
+          "label": {"type": "string"},
+          "data": {"type": "object", "additionalProperties": true}
+        },
+        "additionalProperties": false
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "source", "target", "kind"],
+        "properties": {
+          "id": {"type": "string"},
+          "source": {"type": "string"},
+          "target": {"type": "string"},
+          "kind": {"type": "string"},
+          "data": {"type": "object", "additionalProperties": true}
+        },
+        "additionalProperties": false
+      }
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "nodeIds"],
+        "properties": {
+          "id": {"type": "string"},
+          "label": {"type": "string"},
+          "nodeIds": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {"type": "string"},
+          "message": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -174,7 +174,37 @@ func LoadImageToKindClusterWithName(name string) error {
 	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
 	cmd := exec.Command("kind", kindOptions...)
 	_, err := Run(cmd)
-	return err
+	if err == nil {
+		return nil
+	}
+
+	// kind + podman can fail to resolve local images by reference even when present.
+	// Fallback to archive-based import in that case.
+	if !strings.EqualFold(os.Getenv("KIND_EXPERIMENTAL_PROVIDER"), "podman") {
+		return err
+	}
+
+	archive, createErr := os.CreateTemp("", "kind-image-*.tar")
+	if createErr != nil {
+		return fmt.Errorf("kind load docker-image failed: %w; create temp archive: %w", err, createErr)
+	}
+	archivePath := archive.Name()
+	if closeErr := archive.Close(); closeErr != nil {
+		return fmt.Errorf("kind load docker-image failed: %w; close temp archive: %w", err, closeErr)
+	}
+	defer os.Remove(archivePath)
+
+	saveCmd := exec.Command("podman", "save", "-o", archivePath, name)
+	if _, saveErr := Run(saveCmd); saveErr != nil {
+		return fmt.Errorf("kind load docker-image failed: %w; podman save fallback failed: %w", err, saveErr)
+	}
+
+	loadArchiveCmd := exec.Command("kind", "load", "image-archive", archivePath, "--name", cluster)
+	if _, loadErr := Run(loadArchiveCmd); loadErr != nil {
+		return fmt.Errorf("kind load docker-image failed: %w; image-archive fallback failed: %w", err, loadErr)
+	}
+
+	return nil
 }
 
 // GetNonEmptyLines converts given command output string into individual objects

@@ -21,64 +21,86 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
+	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 )
 
 var _ = Describe("OvnRecon Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
+		const targetNamespace = "ovn-recon-test"
 
 		ctx := context.Background()
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: "",
 		}
-		ovnrecon := &reconv1alpha1.OvnRecon{}
+		ovnrecon := &reconv1beta1.OvnRecon{}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind OvnRecon")
-			err := k8sClient.Get(ctx, typeNamespacedName, ovnrecon)
+			By("ensuring the target namespace exists")
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: targetNamespace,
+				},
+			}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: targetNamespace}, &corev1.Namespace{})
 			if err != nil && errors.IsNotFound(err) {
-				resource := &reconv1alpha1.OvnRecon{
+				Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+			}
+
+			By("creating the custom resource for the Kind OvnRecon")
+			err = k8sClient.Get(ctx, typeNamespacedName, ovnrecon)
+			if err != nil && errors.IsNotFound(err) {
+				resource := &reconv1beta1.OvnRecon{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
-						Namespace: "default",
+						Namespace: "",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: reconv1beta1.OvnReconSpec{
+						TargetNamespace: targetNamespace,
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &reconv1alpha1.OvnRecon{}
+			resource := &reconv1beta1.OvnRecon{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+			if err == nil {
+				By("cleaning up the specific OvnRecon resource instance")
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			}
 
-			By("Cleanup the specific resource instance OvnRecon")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			ns := &corev1.Namespace{}
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: targetNamespace}, ns)
+			if err == nil {
+				By("cleaning up the target namespace")
+				Expect(k8sClient.Delete(ctx, ns)).To(Succeed())
+			}
 		})
-		It("should successfully reconcile the resource", func() {
+		It("should return an OpenShift API error on envtest without panicking", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &OvnReconReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Recorder: record.NewFakeRecorder(10),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("ConsolePlugin"))
 		})
 	})
 })

@@ -91,3 +91,60 @@ export interface RouteAdvertisements extends K8sResourceCommon {
         }[];
     };
 }
+
+export interface LogicalTopologyMetadata {
+    schemaVersion: string;
+    generatedAt: string;
+    sourceHealth: string;
+    nodeName: string;
+}
+
+export interface LogicalTopologyWarning {
+    code: string;
+    message: string;
+}
+
+export interface LogicalTopologyNode {
+    id: string;
+    kind: string;
+    label: string;
+    data?: Record<string, unknown>;
+}
+
+export interface LogicalTopologyEdge {
+    id: string;
+    source: string;
+    target: string;
+    kind: string;
+    data?: Record<string, unknown>;
+}
+
+export interface LogicalTopologyGroup {
+    id: string;
+    label: string;
+    nodeIds: string[];
+}
+
+export interface LogicalTopologySnapshot {
+    metadata: LogicalTopologyMetadata;
+    nodes: LogicalTopologyNode[];
+    edges: LogicalTopologyEdge[];
+    groups: LogicalTopologyGroup[];
+    warnings: LogicalTopologyWarning[];
+}
+
+export interface OvnRecon extends K8sResourceCommon {
+    spec?: {
+        collector?: {
+            enabled?: boolean;
+        };
+        featureGates?: {
+            'ovn-collector'?: boolean;
+            [key: string]: boolean | undefined;
+        };
+        features?: {
+            'ovn-collector'?: boolean;
+            [key: string]: boolean | undefined;
+        };
+    };
+}

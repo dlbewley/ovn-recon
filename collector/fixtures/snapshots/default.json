@@ -1,0 +1,17 @@
+{
+  "metadata": {
+    "schemaVersion": "v1alpha1",
+    "generatedAt": "2026-01-01T00:00:00Z",
+    "sourceHealth": "degraded",
+    "nodeName": ""
+  },
+  "nodes": [],
+  "edges": [],
+  "groups": [],
+  "warnings": [
+    {
+      "code": "SNAPSHOT_DEFAULT",
+      "message": "No node-specific snapshot found; returning default payload"
+    }
+  ]
+}

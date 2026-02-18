@@ -4,7 +4,7 @@ metadata:
   name: ovn-recon-operator.v0.0.0
   annotations:
     alm-examples: |-
-      [{"apiVersion":"recon.bewley.net/v1alpha1","kind":"OvnRecon","metadata":{"name":"ovn-recon"},"spec":{"targetNamespace":"ovn-recon","image":{"repository":"quay.io/dbewley/ovn-recon","tag":"latest","pullPolicy":"IfNotPresent"},"consolePlugin":{"displayName":"OVN Recon","enabled":true}}}]
+      [{"apiVersion":"recon.bewley.net/v1beta1","kind":"OvnRecon","metadata":{"name":"ovn-recon"},"spec":{"targetNamespace":"ovn-recon","consolePlugin":{"displayName":"OVN Recon","enabled":true,"image":{"repository":"quay.io/dbewley/ovn-recon","tag":"latest","pullPolicy":"IfNotPresent"}},"collector":{"enabled":false,"image":{"repository":"quay.io/dbewley/ovn-collector"},"probeNamespaces":["openshift-ovn-kubernetes","openshift-frr-k8s"]}}}]
     capabilities: Basic Install
     categories: Networking
     containerImage: quay.io/dbewley/ovn-recon-operator:latest
@@ -20,7 +20,7 @@ spec:
       displayName: OVN Recon
       kind: OvnRecon
       name: ovnrecons.recon.bewley.net
-      version: v1alpha1
+      version: v1beta1
   description: |-
     OVN Recon Operator manages the OVN Recon OpenShift Console Plugin deployment and registration.
 

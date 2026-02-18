@@ -84,6 +84,7 @@ make undeploy
 
 ## Distribution
 For OLM bundle and catalog publishing, see `docs/OLM-BUNDLE-GUIDE.md`.
+For Community Operators submission packaging, see `docs/COMMUNITY_OPERATORS_SUBMISSION.md`.
 For local manifest inspection, use `make render`.
 
 ## Contributing

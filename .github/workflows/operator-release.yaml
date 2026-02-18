@@ -124,6 +124,29 @@ jobs:
           exit 1
         fi
 
+    - name: Prepare Community Operators Artifact
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        set -euo pipefail
+        PACKAGE_ROOT=community-operators/ovn-recon-operator
+        VERSION_DIR=${PACKAGE_ROOT}/${VERSION_NUM}
+        mkdir -p "${VERSION_DIR}"
+        cp -R operator/bundle/manifests "${VERSION_DIR}/"
+        cp -R operator/bundle/metadata "${VERSION_DIR}/"
+        cat > "${PACKAGE_ROOT}/ci.yaml" <<'EOF'
+        updateGraph: semver-mode
+        reviewers:
+          - dlbewley
+        EOF
+
+    - name: Upload Community Operators Artifact
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: actions/upload-artifact@v4
+      with:
+        name: community-operators-${{ env.VERSION }}
+        path: community-operators
+        if-no-files-found: error
+
     - name: Build Bundle Image
       if: startsWith(github.ref, 'refs/tags/v')
       run: |

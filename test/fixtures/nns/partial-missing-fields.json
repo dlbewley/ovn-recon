@@ -1,0 +1,47 @@
+{
+  "apiVersion": "nmstate.io/v1",
+  "kind": "NodeNetworkState",
+  "metadata": {
+    "name": "worker-partial"
+  },
+  "status": {
+    "currentState": {
+      "interfaces": [
+        {
+          "name": "vrf-edge",
+          "type": "vrf",
+          "state": "up",
+          "vrf": {
+            "port": "ovn-k8s-mp2"
+          }
+        },
+        {
+          "name": "br-int",
+          "type": "ovs-bridge",
+          "state": "up"
+        },
+        {
+          "name": "ovn-k8s-mp2",
+          "type": "ovs-interface",
+          "state": "up",
+          "controller": "br-int"
+        }
+      ],
+      "routes.running": [
+        {
+          "destination": "203.0.113.0/24",
+          "next-hop-interface": "ovn-k8s-mp2"
+        },
+        {
+          "table-id": 1002
+        }
+      ],
+      "routes.config": [
+        {
+          "destination": "203.0.113.0/24",
+          "nextHopInterface": "ovn-k8s-mp2"
+        }
+      ]
+    }
+  }
+}

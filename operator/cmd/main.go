@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
+	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 	"github.com/dlbewley/ovn-recon-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
@@ -51,6 +52,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(reconv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(reconv1beta1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

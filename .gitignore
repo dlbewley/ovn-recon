@@ -2,6 +2,7 @@
 node_modules/
 
 # Build output
+collector/bin/
 dist/
 operator/bundle/
 operator/dist/
@@ -11,6 +12,8 @@ operator/bin/
 operator/.cache/
 operator/testbin/
 operator/cover.out
+.gocache/
+.gopath/
 
 # Local configuration
 setup_env.sh
@@ -25,3 +28,6 @@ build.log
 # IDEs
 .idea/
 .vscode/
+
+# Explorations
+_spike/

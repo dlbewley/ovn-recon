@@ -7,6 +7,7 @@ See also [OLM-BUNDLE-GUIDE.md](../docs/OLM-BUNDLE-GUIDE.md).
 ## Features
 
 - **Automated Deployment**: Manages the plugin backend (Deployment and Service).
+- **Optional Logical Topology Collector**: Supports an `ovn-collector` feature gate for enabling collector-backed logical topology capabilities.
 - **Console Integration**: Automatically creates `ConsolePlugin` resources and patches the OpenShift Console operator to enable the plugin.
 - **Security Hardened**: Runs as non-root with minimal capabilities and mandatory seccomp profiles.
 - **Observability**: Uses standard Kubernetes Status Conditions and Events for clear state reporting.
@@ -17,18 +18,54 @@ See also [OLM-BUNDLE-GUIDE.md](../docs/OLM-BUNDLE-GUIDE.md).
 
 ## API Reference (`OvnRecon` CRD)
 
-The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`, Version: `v1alpha1`, Scope: `Cluster`).
+The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`, Preferred Version: `v1beta1`, Scope: `Cluster`).
 
 ### Spec Configuration
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `targetNamespace` | `string` | `ovn-recon` | The namespace where namespaced resources (Deployment, Service) are created. |
-| `image.repository`| `string` | `quay.io/dbewley/ovn-recon` | The container image repository. |
-| `image.tag` | `string` | `latest` | The container image tag. |
-| `image.pullPolicy`| `string` | `IfNotPresent` | Kubernetes ImagePullPolicy. |
+| `operator.logging.level` | `string` | `info` | Operator log level. Allowed: `error`, `warn`, `info`, `debug`, `trace`. |
+| `operator.logging.events.minType` | `string` | `Normal` | Minimum Kubernetes event type emitted by the operator. Allowed: `Normal`, `Warning`. |
+| `operator.logging.events.dedupeWindow` | `string` | `5m` | Event deduplication window used by the operator event recorder. |
 | `consolePlugin.displayName` | `string` | `OVN Recon` | The name displayed in the OpenShift console. |
 | `consolePlugin.enabled` | `bool` | `true` | If true, the operator will patch the OpenShift Console configuration to enable the plugin. |
+| `consolePlugin.image.repository`| `string` | `quay.io/dbewley/ovn-recon` | Plugin backend image repository. |
+| `consolePlugin.image.tag` | `string` | `latest` | Plugin backend image tag. |
+| `consolePlugin.image.pullPolicy`| `string` | `IfNotPresent` | Plugin backend ImagePullPolicy. |
+| `consolePlugin.logging.level` | `string` | `info` | Console plugin backend log level. Allowed: `error`, `warn`, `info`, `debug`. |
+| `consolePlugin.logging.accessLog.enabled` | `bool` | `false` | Enables request access logging in the console plugin backend. |
+| `collector.enabled` | `bool` | `false` | Enables logical topology features backed by the collector service. |
+| `collector.image.repository`| `string` | `quay.io/dbewley/ovn-collector` | OVN collector image repository. |
+| `collector.image.tag` | `string` | _inherits `consolePlugin.image.tag`_ | OVN collector image tag. |
+| `collector.image.pullPolicy`| `string` | _inherits `consolePlugin.image.pullPolicy`_ | OVN collector image pull policy. |
+| `collector.probeNamespaces` | `[]string` | `["openshift-ovn-kubernetes","openshift-frr-k8s"]` | Namespaces where collector is granted pod read/exec access. |
+| `collector.logging.level` | `string` | `info` | Collector log level. Allowed: `error`, `warn`, `info`, `debug`, `trace`. |
+| `collector.logging.includeProbeOutput` | `bool` | `false` | Includes raw probe command output in collector logs when enabled. |
+
+### Migration Notes
+
+- New hierarchical fields are preferred: `consolePlugin.image.*`, `collector.enabled`, `collector.image.*`, and `collector.probeNamespaces`.
+- `v1beta1` is the storage version. `v1alpha1` remains served for compatibility.
+- The CRD uses API-server conversion strategy `None` (schema parity between versions), so reads/writes in either served version are accepted.
+- Legacy fields are still accepted for compatibility in both served versions:
+  - `image.*` (use `consolePlugin.image.*`)
+  - `featureGates.ovn-collector` (use `collector.enabled`)
+  - `collectorImage.*` (use `collector.image.*`)
+  - `collectorProbeNamespaces` (use `collector.probeNamespaces`)
+- If both new and legacy fields are set, the new hierarchical fields win.
+- If `operator.logging`, `consolePlugin.logging`, or `collector.logging` are omitted, runtime behavior matches prior defaults:
+  - operator and component log levels default to `info`
+  - operator events default to `minType=Normal` with `dedupeWindow=5m`
+  - plugin access logs and collector probe output logging remain disabled
+
+### Feature Gate Notes
+
+- `collector.enabled` is intended to gate Phase 2 logical topology capabilities.
+- Collector deployment targets the same namespace as `targetNamespace`.
+- When enabled, the operator reconciles collector Deployment and Service resources named `<ovnrecon-name>-collector`.
+- When enabled, the operator also reconciles collector ServiceAccount/ClusterRole and RoleBindings in each `collector.probeNamespaces` entry.
+- Current default mode is standalone Deployment; DaemonSet support is a planned future evolution for per-node collection scale.
 
 ### Status Conditions
 
@@ -63,9 +100,9 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
    make run
    ```
 
-3. **Deploy Sample** [recon_v1alpha1_ovnrecon.yaml](config/samples/recon_v1alpha1_ovnrecon.yaml):
+3. **Deploy Sample** [recon_v1beta1_ovnrecon.yaml](config/samples/recon_v1beta1_ovnrecon.yaml):
    ```bash
-   kubectl apply -f config/samples/recon_v1alpha1_ovnrecon.yaml
+   oc apply -f config/samples/recon_v1beta1_ovnrecon.yaml
    ```
 
 ### Deployment (Cluster Mode)
@@ -81,7 +118,8 @@ make deploy IMG=quay.io/dbewley/ovn-recon-operator:latest
 ## Development Guide
 
 ### Repository Structure
-- `api/v1alpha1/`: API definitions (`ovnrecon_types.go`).
+- `api/v1beta1/`: Preferred API definitions (`ovnrecon_types.go`).
+- `api/v1alpha1/`: Served compatibility API definitions.
 - `internal/controller/`: Reconciliation logic (`ovnrecon_controller.go`).
 - `config/`: Kustomize manifests for deployment, RBAC, and CRDs.
 - `.github/workflows/`: CI/CD pipelines for building and releasing.
@@ -109,6 +147,7 @@ The operator image is automatically built and pushed to `quay.io/dbewley/ovn-rec
    ```bash
    oc get events --field-selector involvedObject.kind=OvnRecon
    ```
+   Event reason meanings and compatibility notes are documented in [docs/EVENT_REASON_CATALOG.md](docs/EVENT_REASON_CATALOG.md).
 
 3. **Check Logs**:
    ```bash

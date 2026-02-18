@@ -22,6 +22,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -39,15 +40,20 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
+	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 )
 
 const (
-	finalizerName    = "ovnrecon.bewley.net/finalizer"
-	defaultNamespace = "ovn-recon"
-	defaultImageTag  = "latest"
+	finalizerName           = "ovnrecon.bewley.net/finalizer"
+	defaultNamespace        = "ovn-recon"
+	defaultImageRepository  = "quay.io/dbewley/ovn-recon"
+	defaultImageTag         = "latest"
+	defaultOperatorLogLevel = "info"
+	defaultEventMinType     = corev1.EventTypeNormal
+	defaultEventDedupe      = 5 * time.Minute
 )
 
 // OvnReconReconciler reconciles a OvnRecon object
@@ -55,6 +61,188 @@ type OvnReconReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
+
+	eventDedupeMu sync.Mutex
+	eventDedupe   map[string]time.Time
+}
+
+type operatorLogLevel int
+
+const (
+	operatorLogLevelError operatorLogLevel = iota
+	operatorLogLevelWarn
+	operatorLogLevelInfo
+	operatorLogLevelDebug
+	operatorLogLevelTrace
+)
+
+type operatorEventPolicy struct {
+	minType      string
+	dedupeWindow time.Duration
+}
+
+func (l operatorLogLevel) String() string {
+	switch l {
+	case operatorLogLevelError:
+		return "error"
+	case operatorLogLevelWarn:
+		return "warn"
+	case operatorLogLevelInfo:
+		return "info"
+	case operatorLogLevelDebug:
+		return "debug"
+	case operatorLogLevelTrace:
+		return "trace"
+	default:
+		return defaultOperatorLogLevel
+	}
+}
+
+func (l operatorLogLevel) allows(messageLevel operatorLogLevel) bool {
+	return messageLevel <= l
+}
+
+func parseOperatorLogLevel(raw string) operatorLogLevel {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "error":
+		return operatorLogLevelError
+	case "warn":
+		return operatorLogLevelWarn
+	case "debug":
+		return operatorLogLevelDebug
+	case "trace":
+		return operatorLogLevelTrace
+	case "info":
+		fallthrough
+	default:
+		return operatorLogLevelInfo
+	}
+}
+
+func operatorLogLevelFor(ovnRecon *reconv1beta1.OvnRecon) operatorLogLevel {
+	if ovnRecon == nil {
+		return parseOperatorLogLevel(defaultOperatorLogLevel)
+	}
+	return parseOperatorLogLevel(ovnRecon.Spec.Operator.Logging.Level)
+}
+
+func withReconcilePhase(ctx context.Context, phase string) context.Context {
+	logger := log.FromContext(ctx).WithValues("phase", phase)
+	return log.IntoContext(ctx, logger)
+}
+
+func ovnReconRef(ovnRecon *reconv1beta1.OvnRecon) string {
+	if ovnRecon == nil {
+		return ""
+	}
+	if ovnRecon.Namespace == "" {
+		return ovnRecon.Name
+	}
+	return ovnRecon.Namespace + "/" + ovnRecon.Name
+}
+
+func requestRef(req ctrl.Request) string {
+	if req.Namespace == "" {
+		return req.Name
+	}
+	return req.Namespace + "/" + req.Name
+}
+
+func resolveOperatorLogPolicy(current, primary *reconv1beta1.OvnRecon) (operatorLogLevel, string, string) {
+	source := current
+	if primary != nil {
+		source = primary
+	}
+
+	level := operatorLogLevelFor(source)
+	configuredLevel := defaultOperatorLogLevel
+	if source != nil {
+		if raw := strings.TrimSpace(source.Spec.Operator.Logging.Level); raw != "" {
+			configuredLevel = raw
+		}
+	}
+
+	return level, configuredLevel, ovnReconRef(source)
+}
+
+func resolveOperatorEventPolicy(current, primary *reconv1beta1.OvnRecon) operatorEventPolicy {
+	source := current
+	if primary != nil {
+		source = primary
+	}
+
+	policy := operatorEventPolicy{
+		minType:      defaultEventMinType,
+		dedupeWindow: defaultEventDedupe,
+	}
+	if source == nil {
+		return policy
+	}
+
+	if strings.EqualFold(strings.TrimSpace(source.Spec.Operator.Logging.Events.MinType), corev1.EventTypeWarning) {
+		policy.minType = corev1.EventTypeWarning
+	}
+	if raw := strings.TrimSpace(source.Spec.Operator.Logging.Events.DedupeWindow); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
+			policy.dedupeWindow = parsed
+		}
+	}
+
+	return policy
+}
+
+func (r *OvnReconReconciler) logMessage(ctx context.Context, policy operatorLogLevel, level operatorLogLevel, message string, keysAndValues ...interface{}) {
+	if !policy.allows(level) {
+		return
+	}
+	args := append([]interface{}{"logLevel", level.String()}, keysAndValues...)
+	log.FromContext(ctx).Info(message, args...)
+}
+
+func (r *OvnReconReconciler) recordEvent(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon, policy operatorEventPolicy, eventType, reason, message string) {
+	if r.Recorder == nil {
+		// Recorder can be nil in unit tests that don't wire manager event recording.
+		return
+	}
+	if eventType == corev1.EventTypeWarning {
+		// Warning events are always emitted to avoid hiding failures.
+		r.Recorder.Event(ovnRecon, eventType, reason, message)
+		return
+	}
+	if policy.minType == corev1.EventTypeWarning {
+		return
+	}
+	if !r.shouldEmitNormalEvent(ovnRecon, policy, reason, message) {
+		return
+	}
+
+	r.Recorder.Event(ovnRecon, eventType, reason, message)
+}
+
+func (r *OvnReconReconciler) shouldEmitNormalEvent(ovnRecon *reconv1beta1.OvnRecon, policy operatorEventPolicy, reason, message string) bool {
+	now := time.Now()
+	key := fmt.Sprintf("%s|%s|%s", ovnReconRef(ovnRecon), reason, message)
+
+	r.eventDedupeMu.Lock()
+	defer r.eventDedupeMu.Unlock()
+
+	if r.eventDedupe == nil {
+		r.eventDedupe = make(map[string]time.Time)
+	}
+
+	if last, ok := r.eventDedupe[key]; ok && now.Sub(last) < policy.dedupeWindow {
+		return false
+	}
+
+	r.eventDedupe[key] = now
+	// Keep cache bounded by dropping stale entries opportunistically.
+	for candidate, ts := range r.eventDedupe {
+		if now.Sub(ts) > (policy.dedupeWindow * 2) {
+			delete(r.eventDedupe, candidate)
+		}
+	}
+
+	return true
 }
 
 // +kubebuilder:rbac:groups=recon.bewley.net,resources=ovnrecons,verbs=get;list;watch;create;update;patch;delete
@@ -62,47 +250,84 @@ type OvnReconReconciler struct {
 // +kubebuilder:rbac:groups=recon.bewley.net,resources=ovnrecons/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods/exec,verbs=create
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=operator.openshift.io,resources=consoles,verbs=get;list;watch;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	reconcileID := fmt.Sprintf("%d", time.Now().UnixNano())
+	logger := log.FromContext(ctx).WithValues(
+		"component", "operator",
+		"ovnrecon", requestRef(req),
+		"reconcileID", reconcileID,
+	)
+	ctx = log.IntoContext(ctx, logger)
 
 	// Fetch the OvnRecon instance
-	ovnRecon := &reconv1alpha1.OvnRecon{}
-	err := r.Get(ctx, req.NamespacedName, ovnRecon)
+	fetchCtx := withReconcilePhase(ctx, "fetch")
+	ovnRecon := &reconv1beta1.OvnRecon{}
+	err := r.Get(fetchCtx, req.NamespacedName, ovnRecon)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return reconcile.Result{}, nil
 		}
+		log.FromContext(fetchCtx).Error(err, "Failed to fetch OvnRecon")
 		return reconcile.Result{}, err
 	}
 
-	// Handle deletion
-	if !ovnRecon.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, ovnRecon)
-	}
-
-	primary, err := r.isPrimaryInstance(ctx, ovnRecon)
+	primaryCtx := withReconcilePhase(ctx, "primary-detection")
+	primary, err := r.primaryInstance(primaryCtx)
 	if err != nil {
-		log.Error(err, "Failed to determine primary OvnRecon instance")
+		log.FromContext(primaryCtx).Error(err, "Failed to determine primary OvnRecon instance")
 		return reconcile.Result{RequeueAfter: time.Second * 30}, err
 	}
-	if !primary {
-		r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "NotPrimary", "Another OvnRecon instance is already active")
-		r.updateCondition(ctx, ovnRecon, "Available", metav1.ConditionFalse, "NotPrimary", "Another OvnRecon instance is already active")
-		r.updateCondition(ctx, ovnRecon, "PluginEnabled", metav1.ConditionFalse, "NotPrimary", "Another OvnRecon instance is already active")
+	policy, configuredLevel, policySource := resolveOperatorLogPolicy(ovnRecon, primary)
+	eventPolicy := resolveOperatorEventPolicy(ovnRecon, primary)
+
+	policyCtx := withReconcilePhase(ctx, "policy")
+	r.logMessage(policyCtx, policy, operatorLogLevelDebug, "Resolved operator logging policy",
+		"configuredLevel", configuredLevel,
+		"effectiveLevel", policy.String(),
+		"source", policySource,
+	)
+	r.logMessage(policyCtx, policy, operatorLogLevelDebug, "Resolved operator event policy",
+		"minType", eventPolicy.minType,
+		"dedupeWindow", eventPolicy.dedupeWindow.String(),
+	)
+
+	// Handle deletion
+	if !ovnRecon.DeletionTimestamp.IsZero() {
+		deletionCtx := withReconcilePhase(ctx, "deletion")
+		r.logMessage(deletionCtx, policy, operatorLogLevelDebug, "Processing deletion")
+		return r.handleDeletion(deletionCtx, ovnRecon)
+	}
+
+	isPrimary := primary == nil || (ovnRecon.Namespace == primary.Namespace && ovnRecon.Name == primary.Name)
+	if !isPrimary {
+		nonPrimaryCtx := withReconcilePhase(ctx, "primary-check")
+		r.recordEvent(nonPrimaryCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "NotPrimary", "Another OvnRecon instance is already active")
+		r.updateCondition(nonPrimaryCtx, ovnRecon, "Available", metav1.ConditionFalse, "NotPrimary", "Another OvnRecon instance is already active")
+		r.updateCondition(nonPrimaryCtx, ovnRecon, "PluginEnabled", metav1.ConditionFalse, "NotPrimary", "Another OvnRecon instance is already active")
+		r.logMessage(nonPrimaryCtx, policy, operatorLogLevelInfo, "Skipping reconcile for non-primary OvnRecon", "primary", ovnReconRef(primary))
 		return reconcile.Result{RequeueAfter: time.Minute * 2}, nil
 	}
+	r.logMessage(withReconcilePhase(ctx, "start"), policy, operatorLogLevelDebug, "Starting reconcile")
 
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(ovnRecon, finalizerName) {
+		finalizerCtx := withReconcilePhase(ctx, "finalizer")
 		controllerutil.AddFinalizer(ovnRecon, finalizerName)
-		if err := r.Update(ctx, ovnRecon); err != nil {
+		if err := r.Update(finalizerCtx, ovnRecon); err != nil {
+			log.FromContext(finalizerCtx).Error(err, "Failed to add finalizer")
 			return reconcile.Result{}, err
 		}
+		r.logMessage(finalizerCtx, policy, operatorLogLevelTrace, "Added finalizer")
 	}
 
 	// Initialize status conditions if needed
@@ -111,59 +336,118 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Require target namespace to exist for namespaced resources.
-	if err := r.ensureTargetNamespaceExists(ctx, ovnRecon); err != nil {
-		log.Error(err, "Target namespace does not exist")
-		r.updateCondition(ctx, ovnRecon, "NamespaceReady", metav1.ConditionFalse, "NamespaceNotFound", err.Error())
+	namespaceCtx := withReconcilePhase(ctx, "namespace-check")
+	if err := r.ensureTargetNamespaceExists(namespaceCtx, ovnRecon); err != nil {
+		log.FromContext(namespaceCtx).Error(err, "Target namespace does not exist")
+		r.recordEvent(namespaceCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "NamespaceNotFound", err.Error())
+		r.updateCondition(namespaceCtx, ovnRecon, "NamespaceReady", metav1.ConditionFalse, "NamespaceNotFound", err.Error())
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
-	r.updateCondition(ctx, ovnRecon, "NamespaceReady", metav1.ConditionTrue, "NamespaceFound", "Target namespace exists")
+	if r.updateCondition(namespaceCtx, ovnRecon, "NamespaceReady", metav1.ConditionTrue, "NamespaceFound", "Target namespace exists") {
+		r.recordEvent(namespaceCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "NamespaceFound", "Target namespace exists")
+	}
 
 	// 1. Reconcile Deployment
-	if err := r.reconcileDeployment(ctx, ovnRecon); err != nil {
-		log.Error(err, "Failed to reconcile Deployment")
-		r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "DeploymentReconcileFailed", err.Error())
-		r.updateCondition(ctx, ovnRecon, "Available", metav1.ConditionFalse, "DeploymentReconcileFailed", err.Error())
+	deploymentCtx := withReconcilePhase(ctx, "reconcile-deployment")
+	if err := r.reconcileDeployment(deploymentCtx, ovnRecon); err != nil {
+		log.FromContext(deploymentCtx).Error(err, "Failed to reconcile Deployment")
+		r.recordEvent(deploymentCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "DeploymentReconcileFailed", err.Error())
+		r.updateCondition(deploymentCtx, ovnRecon, "Available", metav1.ConditionFalse, "DeploymentReconcileFailed", err.Error())
 		return reconcile.Result{RequeueAfter: time.Second * 30}, err
 	}
+	r.logMessage(deploymentCtx, policy, operatorLogLevelTrace, "Deployment reconciled")
 
 	// 2. Reconcile Service
-	if err := r.reconcileService(ctx, ovnRecon); err != nil {
-		log.Error(err, "Failed to reconcile Service")
-		r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "ServiceReconcileFailed", err.Error())
-		r.updateCondition(ctx, ovnRecon, "ServiceReady", metav1.ConditionFalse, "ServiceReconcileFailed", err.Error())
+	serviceCtx := withReconcilePhase(ctx, "reconcile-service")
+	if err := r.reconcileService(serviceCtx, ovnRecon); err != nil {
+		log.FromContext(serviceCtx).Error(err, "Failed to reconcile Service")
+		r.recordEvent(serviceCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "ServiceReconcileFailed", err.Error())
+		r.updateCondition(serviceCtx, ovnRecon, "ServiceReady", metav1.ConditionFalse, "ServiceReconcileFailed", err.Error())
 		return reconcile.Result{RequeueAfter: time.Second * 30}, err
 	}
-	r.updateCondition(ctx, ovnRecon, "ServiceReady", metav1.ConditionTrue, "ServiceReady", "Service is ready")
+	if r.updateCondition(serviceCtx, ovnRecon, "ServiceReady", metav1.ConditionTrue, "ServiceReady", "Service is ready") {
+		r.recordEvent(serviceCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "ServiceReady", "Service is ready")
+	}
+	r.logMessage(serviceCtx, policy, operatorLogLevelTrace, "Service reconciled")
+
+	// 2.5 Reconcile collector resources behind feature gate.
+	if collectorFeatureEnabled(ovnRecon) {
+		collectorRBACCtx := withReconcilePhase(ctx, "reconcile-collector-rbac")
+		if err := r.reconcileCollectorAccessControls(collectorRBACCtx, ovnRecon); err != nil {
+			log.FromContext(collectorRBACCtx).Error(err, "Failed to reconcile collector access controls")
+			r.recordEvent(collectorRBACCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "CollectorRBACReconcileFailed", err.Error())
+			r.updateCondition(collectorRBACCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorRBACReconcileFailed", err.Error())
+			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		}
+		collectorDeploymentCtx := withReconcilePhase(ctx, "reconcile-collector-deployment")
+		if err := r.reconcileCollectorDeployment(collectorDeploymentCtx, ovnRecon); err != nil {
+			log.FromContext(collectorDeploymentCtx).Error(err, "Failed to reconcile collector Deployment")
+			r.recordEvent(collectorDeploymentCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "CollectorDeploymentReconcileFailed", err.Error())
+			r.updateCondition(collectorDeploymentCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorDeploymentReconcileFailed", err.Error())
+			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		}
+		collectorServiceCtx := withReconcilePhase(ctx, "reconcile-collector-service")
+		if err := r.reconcileCollectorService(collectorServiceCtx, ovnRecon); err != nil {
+			log.FromContext(collectorServiceCtx).Error(err, "Failed to reconcile collector Service")
+			r.recordEvent(collectorServiceCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "CollectorServiceReconcileFailed", err.Error())
+			r.updateCondition(collectorServiceCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorServiceReconcileFailed", err.Error())
+			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		}
+		if r.updateCondition(collectorServiceCtx, ovnRecon, "CollectorReady", metav1.ConditionTrue, "CollectorReady", "Collector resources are reconciled") {
+			r.recordEvent(collectorServiceCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "CollectorReady", "Collector resources are reconciled")
+		}
+	} else {
+		collectorDeleteCtx := withReconcilePhase(ctx, "delete-collector-resources")
+		if err := r.deleteCollectorResources(collectorDeleteCtx, ovnRecon); err != nil {
+			log.FromContext(collectorDeleteCtx).Error(err, "Failed to delete collector resources while feature gate is disabled")
+			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		}
+		collectorRBACDeleteCtx := withReconcilePhase(ctx, "delete-collector-rbac")
+		if err := r.deleteCollectorAccessControls(collectorRBACDeleteCtx, ovnRecon); err != nil {
+			log.FromContext(collectorRBACDeleteCtx).Error(err, "Failed to delete collector RBAC while feature gate is disabled")
+			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		}
+		if r.updateCondition(collectorRBACDeleteCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorFeatureDisabled", "Collector feature gate is disabled") {
+			r.recordEvent(collectorRBACDeleteCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "CollectorFeatureDisabled", "Collector feature gate is disabled")
+		}
+	}
 
 	// 3. Reconcile ConsolePlugin
-	if err := r.reconcileConsolePlugin(ctx, ovnRecon); err != nil {
-		log.Error(err, "Failed to reconcile ConsolePlugin")
-		r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "ConsolePluginReconcileFailed", err.Error())
-		r.updateCondition(ctx, ovnRecon, "ConsolePluginReady", metav1.ConditionFalse, "ConsolePluginReconcileFailed", err.Error())
+	consolePluginCtx := withReconcilePhase(ctx, "reconcile-consoleplugin")
+	if err := r.reconcileConsolePlugin(consolePluginCtx, ovnRecon); err != nil {
+		log.FromContext(consolePluginCtx).Error(err, "Failed to reconcile ConsolePlugin")
+		r.recordEvent(consolePluginCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "ConsolePluginReconcileFailed", err.Error())
+		r.updateCondition(consolePluginCtx, ovnRecon, "ConsolePluginReady", metav1.ConditionFalse, "ConsolePluginReconcileFailed", err.Error())
 		return reconcile.Result{RequeueAfter: time.Second * 30}, err
 	}
-	r.updateCondition(ctx, ovnRecon, "ConsolePluginReady", metav1.ConditionTrue, "ConsolePluginReady", "ConsolePlugin is ready")
+	if r.updateCondition(consolePluginCtx, ovnRecon, "ConsolePluginReady", metav1.ConditionTrue, "ConsolePluginReady", "ConsolePlugin is ready") {
+		r.recordEvent(consolePluginCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "ConsolePluginReady", "ConsolePlugin is ready")
+	}
 
 	// Check deployment status after the service is in place.
-	deploymentReady, err := r.checkDeploymentReady(ctx, ovnRecon)
+	deploymentStatusCtx := withReconcilePhase(ctx, "deployment-status")
+	deploymentReady, err := r.checkDeploymentReady(deploymentStatusCtx, ovnRecon)
 	if err != nil {
-		log.Error(err, "Failed to check Deployment status")
+		log.FromContext(deploymentStatusCtx).Error(err, "Failed to check Deployment status")
 		return reconcile.Result{RequeueAfter: time.Second * 10}, err
 	}
 
 	if deploymentReady {
-		r.updateCondition(ctx, ovnRecon, "Available", metav1.ConditionTrue, "DeploymentReady", "Deployment is ready")
+		if r.updateCondition(deploymentStatusCtx, ovnRecon, "Available", metav1.ConditionTrue, "DeploymentReady", "Deployment is ready") {
+			r.recordEvent(deploymentStatusCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "DeploymentReady", "Deployment is ready")
+		}
 	} else {
-		r.updateCondition(ctx, ovnRecon, "Available", metav1.ConditionFalse, "DeploymentNotReady", "Deployment is not ready")
+		r.updateCondition(deploymentStatusCtx, ovnRecon, "Available", metav1.ConditionFalse, "DeploymentNotReady", "Deployment is not ready")
 		return reconcile.Result{RequeueAfter: time.Second * 10}, nil
 	}
 
 	// 4. Auto-enable plugin in Console operator configuration
 	if ovnRecon.Spec.ConsolePlugin.Enabled {
-		enabled, err := r.reconcileConsoleOperator(ctx, ovnRecon)
+		consoleOperatorCtx := withReconcilePhase(ctx, "reconcile-console-operator")
+		enabled, err := r.reconcileConsoleOperator(consoleOperatorCtx, ovnRecon)
 		if err != nil {
-			log.Error(err, "Failed to auto-enable plugin in Console operator")
-			r.Recorder.Event(ovnRecon, corev1.EventTypeWarning, "ConsoleOperatorUpdateFailed", err.Error())
+			log.FromContext(consoleOperatorCtx).Error(err, "Failed to auto-enable plugin in Console operator")
+			r.recordEvent(consoleOperatorCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "ConsoleOperatorUpdateFailed", err.Error())
 			// Retry on conflict
 			if errors.IsConflict(err) {
 				return reconcile.Result{Requeue: true}, nil
@@ -171,43 +455,55 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return reconcile.Result{RequeueAfter: time.Second * 30}, err
 		}
 		if enabled {
-			r.updateCondition(ctx, ovnRecon, "PluginEnabled", metav1.ConditionTrue, "PluginEnabled", "Plugin is enabled in Console operator")
+			if r.updateCondition(consoleOperatorCtx, ovnRecon, "PluginEnabled", metav1.ConditionTrue, "PluginEnabled", "Plugin is enabled in Console operator") {
+				r.recordEvent(consoleOperatorCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "PluginEnabled", "Plugin is enabled in Console operator")
+			}
 		} else {
-			r.updateCondition(ctx, ovnRecon, "PluginEnabled", metav1.ConditionFalse, "PluginEnabling", "Plugin is being enabled in Console operator")
+			if r.updateCondition(consoleOperatorCtx, ovnRecon, "PluginEnabled", metav1.ConditionFalse, "PluginEnabling", "Plugin is being enabled in Console operator") {
+				r.recordEvent(consoleOperatorCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "PluginEnabling", "Plugin is being enabled in Console operator")
+			}
 		}
 	} else {
-		r.updateCondition(ctx, ovnRecon, "PluginEnabled", metav1.ConditionFalse, "PluginDisabled", "Plugin is disabled")
+		pluginDisabledCtx := withReconcilePhase(ctx, "plugin-disabled")
+		if r.updateCondition(pluginDisabledCtx, ovnRecon, "PluginEnabled", metav1.ConditionFalse, "PluginDisabled", "Plugin is disabled") {
+			r.recordEvent(pluginDisabledCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "PluginDisabled", "Plugin is disabled")
+		}
 	}
+	r.logMessage(withReconcilePhase(ctx, "complete"), policy, operatorLogLevelDebug, "Reconcile completed successfully")
 
 	return reconcile.Result{}, nil
 }
 
-func (r *OvnReconReconciler) isPrimaryInstance(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) (bool, error) {
-	list := &reconv1alpha1.OvnReconList{}
+func (r *OvnReconReconciler) primaryInstance(ctx context.Context) (*reconv1beta1.OvnRecon, error) {
+	list := &reconv1beta1.OvnReconList{}
 	if err := r.List(ctx, list); err != nil {
-		return false, err
-	}
-	if len(list.Items) <= 1 {
-		return true, nil
+		return nil, err
 	}
 
-	sort.Slice(list.Items, func(i, j int) bool {
-		ti := list.Items[i].CreationTimestamp
-		tj := list.Items[j].CreationTimestamp
+	return selectPrimaryInstance(list.Items), nil
+}
+
+func selectPrimaryInstance(items []reconv1beta1.OvnRecon) *reconv1beta1.OvnRecon {
+	if len(items) == 0 {
+		return nil
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		ti := items[i].CreationTimestamp
+		tj := items[j].CreationTimestamp
 		if !ti.Equal(&tj) {
 			return ti.Before(&tj)
 		}
-		if list.Items[i].Namespace != list.Items[j].Namespace {
-			return list.Items[i].Namespace < list.Items[j].Namespace
+		if items[i].Namespace != items[j].Namespace {
+			return items[i].Namespace < items[j].Namespace
 		}
-		return list.Items[i].Name < list.Items[j].Name
+		return items[i].Name < items[j].Name
 	})
 
-	primary := list.Items[0]
-	return ovnRecon.Namespace == primary.Namespace && ovnRecon.Name == primary.Name, nil
+	return &items[0]
 }
 
-func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 
 	deployment := &appsv1.Deployment{
@@ -228,7 +524,7 @@ func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *
 	return err
 }
 
-func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 
 	service := &corev1.Service{
@@ -248,10 +544,161 @@ func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *rec
 	return err
 }
 
+func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	name := collectorName(ovnRecon)
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
+		desired := DesiredCollectorDeployment(ovnRecon)
+		deployment.Labels = mergeStringMap(deployment.Labels, desired.Labels)
+		deployment.Annotations = mergeStringMap(deployment.Annotations, desired.Annotations)
+		deployment.Spec = desired.Spec
+		return nil
+	})
+	return err
+}
+
+func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	saName := collectorServiceAccountName(ovnRecon)
+
+	serviceAccount := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      saName,
+			Namespace: namespace,
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, serviceAccount, func() error {
+		serviceAccount.Labels = mergeStringMap(serviceAccount.Labels, labelsForOvnRecon(ovnRecon.Name))
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: collectorClusterRoleName(ovnRecon),
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, clusterRole, func() error {
+		clusterRole.Labels = mergeStringMap(clusterRole.Labels, labelsForOvnRecon(ovnRecon.Name))
+		clusterRole.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"pods"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"pods/exec"},
+				Verbs:     []string{"create"},
+			},
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	probeNamespaces := collectorProbeNamespacesFor(ovnRecon)
+	for _, probeNamespace := range probeNamespaces {
+		roleBinding := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      collectorRoleBindingName(ovnRecon),
+				Namespace: probeNamespace,
+			},
+		}
+		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roleBinding, func() error {
+			roleBinding.Labels = mergeStringMap(roleBinding.Labels, labelsForOvnRecon(ovnRecon.Name))
+			roleBinding.Subjects = []rbacv1.Subject{
+				{
+					Kind:      rbacv1.ServiceAccountKind,
+					Name:      saName,
+					Namespace: namespace,
+				},
+			}
+			roleBinding.RoleRef = rbacv1.RoleRef{
+				APIGroup: rbacv1.GroupName,
+				Kind:     "ClusterRole",
+				Name:     collectorClusterRoleName(ovnRecon),
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *OvnReconReconciler) reconcileCollectorService(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	name := collectorName(ovnRecon)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
+		desired := DesiredCollectorService(ovnRecon)
+		service.Labels = mergeStringMap(service.Labels, desired.Labels)
+		service.Annotations = mergeStringMap(service.Annotations, desired.Annotations)
+		service.Spec = desired.Spec
+		return nil
+	})
+	return err
+}
+
+func (r *OvnReconReconciler) deleteCollectorAccessControls(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+
+	serviceAccount := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      collectorServiceAccountName(ovnRecon),
+			Namespace: namespace,
+		},
+	}
+	if err := r.Delete(ctx, serviceAccount); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: collectorClusterRoleName(ovnRecon),
+		},
+	}
+	if err := r.Delete(ctx, clusterRole); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	for _, probeNamespace := range collectorProbeNamespacesFor(ovnRecon) {
+		roleBinding := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      collectorRoleBindingName(ovnRecon),
+				Namespace: probeNamespace,
+			},
+		}
+		if err := r.Delete(ctx, roleBinding); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *OvnReconReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&reconv1alpha1.OvnRecon{}).
+		For(&reconv1beta1.OvnRecon{}).
 		Named("ovnrecon").
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
@@ -324,14 +771,40 @@ func sanitizeLabelValue(value string) string {
 	return val
 }
 
-func targetNamespace(ovnRecon *reconv1alpha1.OvnRecon) string {
+func targetNamespace(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.TargetNamespace != "" {
 		return ovnRecon.Spec.TargetNamespace
 	}
 	return defaultNamespace
 }
 
-func imageTagFor(ovnRecon *reconv1alpha1.OvnRecon) string {
+func collectorName(ovnRecon *reconv1beta1.OvnRecon) string {
+	return ovnRecon.Name + "-collector"
+}
+
+func collectorServiceAccountName(ovnRecon *reconv1beta1.OvnRecon) string {
+	return collectorName(ovnRecon)
+}
+
+func collectorClusterRoleName(ovnRecon *reconv1beta1.OvnRecon) string {
+	return collectorName(ovnRecon)
+}
+
+func collectorRoleBindingName(ovnRecon *reconv1beta1.OvnRecon) string {
+	return collectorName(ovnRecon)
+}
+
+func collectorFeatureEnabled(ovnRecon *reconv1beta1.OvnRecon) bool {
+	if ovnRecon.Spec.Collector.Enabled != nil {
+		return *ovnRecon.Spec.Collector.Enabled
+	}
+	return ovnRecon.Spec.FeatureGates.OVNCollector
+}
+
+func imageTagFor(ovnRecon *reconv1beta1.OvnRecon) string {
+	if ovnRecon.Spec.ConsolePlugin.Image.Tag != "" {
+		return ovnRecon.Spec.ConsolePlugin.Image.Tag
+	}
 	if ovnRecon.Spec.Image.Tag != "" {
 		return ovnRecon.Spec.Image.Tag
 	}
@@ -355,7 +828,7 @@ func operatorVersionAnnotations() map[string]string {
 	}
 }
 
-func (r *OvnReconReconciler) reconcileConsolePlugin(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) reconcileConsolePlugin(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	operatorAnnotations := operatorVersionAnnotations()
 	plugin := &unstructured.Unstructured{}
 	plugin.SetGroupVersionKind(schema.GroupVersionKind{
@@ -382,7 +855,7 @@ func (r *OvnReconReconciler) reconcileConsolePlugin(ctx context.Context, ovnReco
 	return err
 }
 
-func (r *OvnReconReconciler) reconcileConsoleOperator(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) (bool, error) {
+func (r *OvnReconReconciler) reconcileConsoleOperator(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) (bool, error) {
 	console := &unstructured.Unstructured{}
 	console.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "operator.openshift.io",
@@ -447,7 +920,7 @@ func (r *OvnReconReconciler) reconcileConsoleOperator(ctx context.Context, ovnRe
 	return true, nil // Plugin is in the list, assume enabled
 }
 
-func (r *OvnReconReconciler) checkDeploymentReady(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) (bool, error) {
+func (r *OvnReconReconciler) checkDeploymentReady(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) (bool, error) {
 	deployment := &appsv1.Deployment{}
 	err := r.Get(ctx, types.NamespacedName{
 		Name:      ovnRecon.Name,
@@ -466,7 +939,7 @@ func (r *OvnReconReconciler) checkDeploymentReady(ctx context.Context, ovnRecon 
 	return false, nil
 }
 
-func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) (reconcile.Result, error) {
+func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) (reconcile.Result, error) {
 	log := log.FromContext(ctx)
 
 	if controllerutil.ContainsFinalizer(ovnRecon, finalizerName) {
@@ -510,7 +983,7 @@ func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *recon
 	return reconcile.Result{}, nil
 }
 
-func (r *OvnReconReconciler) ensureTargetNamespaceExists(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) ensureTargetNamespaceExists(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	ns := &corev1.Namespace{}
 	err := r.Get(ctx, client.ObjectKey{Name: targetNamespace(ovnRecon)}, ns)
 	if err == nil {
@@ -519,7 +992,7 @@ func (r *OvnReconReconciler) ensureTargetNamespaceExists(ctx context.Context, ov
 	return err
 }
 
-func (r *OvnReconReconciler) deleteNamespacedResources(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) deleteNamespacedResources(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -541,10 +1014,44 @@ func (r *OvnReconReconciler) deleteNamespacedResources(ctx context.Context, ovnR
 		return err
 	}
 
+	if err := r.deleteCollectorResources(ctx, ovnRecon); err != nil {
+		return err
+	}
+	if err := r.deleteCollectorAccessControls(ctx, ovnRecon); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (r *OvnReconReconciler) removePluginFromConsole(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon) error {
+func (r *OvnReconReconciler) deleteCollectorResources(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	name := collectorName(ovnRecon)
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+	if err := r.Delete(ctx, deployment); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+	if err := r.Delete(ctx, service); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	return nil
+}
+
+func (r *OvnReconReconciler) removePluginFromConsole(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	console := &unstructured.Unstructured{}
 	console.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "operator.openshift.io",
@@ -587,7 +1094,7 @@ func (r *OvnReconReconciler) removePluginFromConsole(ctx context.Context, ovnRec
 	return nil
 }
 
-func (r *OvnReconReconciler) updateCondition(ctx context.Context, ovnRecon *reconv1alpha1.OvnRecon, conditionType string, status metav1.ConditionStatus, reason, message string) {
+func (r *OvnReconReconciler) updateCondition(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon, conditionType string, status metav1.ConditionStatus, reason, message string) bool {
 	now := metav1.Now()
 	condition := metav1.Condition{
 		Type:               conditionType,
@@ -598,10 +1105,16 @@ func (r *OvnReconReconciler) updateCondition(ctx context.Context, ovnRecon *reco
 		ObservedGeneration: ovnRecon.Generation,
 	}
 
-	// Find and update existing condition or add new one
+	// Find and update existing condition or add new one.
 	found := false
 	for i, c := range ovnRecon.Status.Conditions {
 		if c.Type == conditionType {
+			if c.Status == status && c.Reason == reason && c.Message == message && c.ObservedGeneration == ovnRecon.Generation {
+				return false
+			}
+			if c.Status == status {
+				condition.LastTransitionTime = c.LastTransitionTime
+			}
 			ovnRecon.Status.Conditions[i] = condition
 			found = true
 			break
@@ -611,8 +1124,10 @@ func (r *OvnReconReconciler) updateCondition(ctx context.Context, ovnRecon *reco
 		ovnRecon.Status.Conditions = append(ovnRecon.Status.Conditions, condition)
 	}
 
-	// Update status
+	// Update status.
 	if err := r.Status().Update(ctx, ovnRecon); err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update status conditions")
+		return false
 	}
+	return true
 }

@@ -1,0 +1,80 @@
+{
+  "apiVersion": "nmstate.io/v1",
+  "kind": "NodeNetworkState",
+  "metadata": {
+    "name": "worker-vrf"
+  },
+  "status": {
+    "currentState": {
+      "interfaces": [
+        {
+          "name": "vrf-blue",
+          "type": "vrf",
+          "state": "up",
+          "vrf": {
+            "route-table-id": 1001,
+            "port": [
+              "ovn-k8s-mp0",
+              "ovn-k8s-mp1"
+            ]
+          }
+        },
+        {
+          "name": "br-int",
+          "type": "ovs-bridge",
+          "state": "up"
+        },
+        {
+          "name": "ovn-k8s-mp0",
+          "type": "ovs-interface",
+          "state": "up",
+          "controller": "br-int",
+          "mac_address": "02:aa:bb:cc:dd:10"
+        },
+        {
+          "name": "ovn-k8s-mp1",
+          "type": "ovs-interface",
+          "state": "up",
+          "master": "br-int",
+          "mac-address": "02:aa:bb:cc:dd:11"
+        },
+        {
+          "name": "eno2",
+          "type": "ethernet",
+          "state": "up"
+        }
+      ],
+      "routes": {
+        "running": [
+          {
+            "destination": "10.128.0.0/14",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "next-hop-address": "192.0.2.10",
+            "table-id": 1001,
+            "metric": 20,
+            "protocol": "bgp"
+          },
+          {
+            "destination": "172.30.0.0/16",
+            "oif": "ovn-k8s-mp1",
+            "route-table-id": "1001",
+            "metric": "100"
+          },
+          {
+            "dst": "198.51.100.0/24",
+            "dev": "eno2",
+            "table": 254
+          }
+        ],
+        "config": [
+          {
+            "destination": "10.128.0.0/14",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "next-hop-address": "192.0.2.10",
+            "table-id": 1001
+          }
+        ]
+      }
+    }
+  }
+}

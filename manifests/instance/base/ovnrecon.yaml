@@ -8,10 +8,12 @@ metadata:
   name: ovn-recon
 spec:
   targetNamespace: ovn-recon
-  image:
-    repository: quay.io/dbewley/ovn-recon
-    #tag: latest
-    pullPolicy: Always
   consolePlugin:
     displayName: "OVN Recon"
     enabled: true
+    image:
+      repository: quay.io/dbewley/ovn-recon
+      # tag: latest
+      pullPolicy: Always
+  collector:
+    enabled: false
