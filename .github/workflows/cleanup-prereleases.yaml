@@ -17,22 +17,22 @@ jobs:
           PURGE_AFTER_DAYS: 7
         run: |
           echo "Fetching releases..."
-          # Fetch the last 100 releases
-          releases=$(gh release list -R ${{ github.repository }} --limit 100 --json tagName,isPrerelease,publishedAt)
+          # Fetch the last 100 releases via API (compatible across gh versions)
+          releases=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/releases?per_page=100")
 
           # Identify stable releases and their publication dates
-          stable_releases=$(echo "$releases" | jq -r '.[] | select(.isPrerelease == false) | "\(.tagName) \(.publishedAt)"')
+          stable_releases=$(echo "$releases" | jq -r '.[] | select(.prerelease == false) | "\(.tag_name) \(.published_at)"')
 
           echo "Checking pre-releases..."
-          echo "$releases" | jq -c '.[] | select(.isPrerelease == true)' | while read -r pre; do
-            tag=$(echo "$pre" | jq -r .tagName)
+          echo "$releases" | jq -c '.[] | select(.prerelease == true)' | while read -r pre; do
+            tag=$(echo "$pre" | jq -r .tag_name)
 
             # Strip pre-release suffix (e.g., v0.1.0-rc1 -> v0.1.0)
             # This logic assumes semver-like tags (vX.Y.Z-suffix)
             base_tag=$(echo "$tag" | sed -E 's/-.*//')
 
             # Check if a corresponding stable release exists
-            stable_info=$(echo "$stable_releases" | grep "^$base_tag ")
+            stable_info=$(echo "$stable_releases" | awk -v tag="$base_tag" '$1 == tag { print; exit }')
             if [ -n "$stable_info" ]; then
               published_at=$(echo "$stable_info" | awk '{print $2}')
               published_ts=$(date -d "$published_at" +%s)
