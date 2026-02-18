@@ -9,6 +9,7 @@ import (
 )
 
 func TestPluginImageDefaults(t *testing.T) {
+	t.Setenv("OPERATOR_VERSION", "")
 	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "test"},
 	}
@@ -24,7 +25,19 @@ func TestPluginImageDefaults(t *testing.T) {
 	}
 }
 
+func TestPluginImageDefaultsToOperatorVersion(t *testing.T) {
+	t.Setenv("OPERATOR_VERSION", "v1.2.3")
+	cr := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+	}
+
+	if got := imageTagFor(cr); got != "v1.2.3" {
+		t.Fatalf("unexpected plugin tag default from OPERATOR_VERSION: %s", got)
+	}
+}
+
 func TestDesiredDeploymentUsesPluginImageFallbacks(t *testing.T) {
+	t.Setenv("OPERATOR_VERSION", "")
 	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
 	}

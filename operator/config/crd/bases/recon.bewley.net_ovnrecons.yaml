@@ -118,13 +118,11 @@ spec:
                     description: Image configuration for the plugin container.
                     properties:
                       pullPolicy:
-                        default: IfNotPresent
                         type: string
                       repository:
                         default: quay.io/dbewley/ovn-recon
                         type: string
                       tag:
-                        default: latest
                         type: string
                     type: object
                   logging:
@@ -163,13 +161,11 @@ spec:
                   Image configuration for the plugin container.
                 properties:
                   pullPolicy:
-                    default: IfNotPresent
                     type: string
                   repository:
                     default: quay.io/dbewley/ovn-recon
                     type: string
                   tag:
-                    default: latest
                     type: string
                 type: object
               operator:
@@ -382,13 +378,11 @@ spec:
                     description: Image configuration for the plugin container.
                     properties:
                       pullPolicy:
-                        default: IfNotPresent
                         type: string
                       repository:
                         default: quay.io/dbewley/ovn-recon
                         type: string
                       tag:
-                        default: latest
                         type: string
                     type: object
                   logging:
@@ -427,13 +421,11 @@ spec:
                   Image configuration for the plugin container.
                 properties:
                   pullPolicy:
-                    default: IfNotPresent
                     type: string
                   repository:
                     default: quay.io/dbewley/ovn-recon
                     type: string
                   tag:
-                    default: latest
                     type: string
                 type: object
               operator:

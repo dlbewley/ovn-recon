@@ -19,8 +19,8 @@ spec:
     enabled: true
     image:
       repository: quay.io/dbewley/ovn-recon
-      # tag: latest
-      pullPolicy: IfNotPresent
+      # tag: v1.2.3             # omit to use operator release tag (OPERATOR_VERSION)
+      # pullPolicy: IfNotPresent # omit to use IfNotPresent
     logging:
       level: info
       accessLog:
@@ -29,7 +29,7 @@ spec:
     enabled: false
     image:
       repository: quay.io/dbewley/ovn-collector
-      # tag: latest             # defaults to consolePlugin.image.tag when omitted
+      # tag: v1.2.3             # defaults to consolePlugin.image.tag when omitted
       # pullPolicy: IfNotPresent # defaults to consolePlugin.image.pullPolicy when omitted
     probeNamespaces:
       - openshift-ovn-kubernetes

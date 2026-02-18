@@ -4,7 +4,7 @@ metadata:
   name: ovn-recon-operator.v0.0.0
   annotations:
     alm-examples: |-
-      [{"apiVersion":"recon.bewley.net/v1beta1","kind":"OvnRecon","metadata":{"name":"ovn-recon"},"spec":{"targetNamespace":"ovn-recon","consolePlugin":{"displayName":"OVN Recon","enabled":true,"image":{"repository":"quay.io/dbewley/ovn-recon","tag":"latest","pullPolicy":"IfNotPresent"}},"collector":{"enabled":false,"image":{"repository":"quay.io/dbewley/ovn-collector"},"probeNamespaces":["openshift-ovn-kubernetes","openshift-frr-k8s"]}}}]
+      [{"apiVersion":"recon.bewley.net/v1beta1","kind":"OvnRecon","metadata":{"name":"ovn-recon"},"spec":{"targetNamespace":"ovn-recon","consolePlugin":{"displayName":"OVN Recon","enabled":true,"image":{"repository":"quay.io/dbewley/ovn-recon"}},"collector":{"enabled":false,"image":{"repository":"quay.io/dbewley/ovn-collector"},"probeNamespaces":["openshift-ovn-kubernetes","openshift-frr-k8s"]}}}]
     capabilities: Basic Install
     categories: Networking
     containerImage: quay.io/dbewley/ovn-recon-operator:latest
