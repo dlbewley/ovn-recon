@@ -61,9 +61,7 @@ type OvnReconSpec struct {
 type ImageSpec struct {
 	// +kubebuilder:default=quay.io/dbewley/ovn-recon
 	Repository string `json:"repository,omitempty"`
-	// +kubebuilder:default=latest
 	Tag string `json:"tag,omitempty"`
-	// +kubebuilder:default=IfNotPresent
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 

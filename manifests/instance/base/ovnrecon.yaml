@@ -1,19 +1,18 @@
-apiVersion: recon.bewley.net/v1alpha1
+apiVersion: recon.bewley.net/v1beta1
 kind: OvnRecon
 metadata:
-  labels:
-    app.kubernetes.io/name: ovn-recon
-    app.kubernetes.io/instance: ovn-recon
-    app.kubernetes.io/managed-by: kustomize
   name: ovn-recon
 spec:
   targetNamespace: ovn-recon
   consolePlugin:
-    displayName: "OVN Recon"
+    displayName: OVN Recon
     enabled: true
     image:
       repository: quay.io/dbewley/ovn-recon
-      # tag: latest
-      pullPolicy: Always
   collector:
     enabled: false
+    image:
+      repository: quay.io/dbewley/ovn-collector
+    probeNamespaces:
+      - openshift-ovn-kubernetes
+      - openshift-frr-k8s
