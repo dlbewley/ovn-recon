@@ -281,6 +281,8 @@ This Phase 2 work runs in parallel with ongoing Phase 1 improvements:
 ### Snapshot Serving Path
 - Initial implementation serves cached `LogicalTopologySnapshot` JSON over HTTP from the collector.
 - UI consumes this HTTP endpoint for `/ovn-recon/ovn/:name` rendering.
+- Runtime validation (2026-02-18) confirmed live cluster traffic requires Console plugin bridge-compatible paths.
+  The UI now probes plugin backend path variants before falling back to fixture data.
 - Alternative transport options (CR/API aggregation) remain future enhancements.
 
 ### Initial OvnRecon Phase 2 Config Shape
@@ -327,6 +329,7 @@ Current Phase 2 bead status:
 | Define collector RBAC and configurable target namespaces | task | `ovn-recon-e18.14` | `CLOSED` |
 | Add Phase 2 feature gate to OvnRecon API and operator behavior | task | `ovn-recon-e18.15` | `CLOSED` |
 | Define MVP node probe command matrix and error semantics | task | `ovn-recon-e18.16` | `CLOSED` |
+| Add persistent snapshot cache with TTL floor and volume options (PVC/EmptyDir) | task | `ovn-recon-e18.17` | `OPEN` |
 
 ## Acceptance Criteria (Phase 2 initial release)
 - Node list screen exposes a per-node entry to logical topology view (for example, a third table column).

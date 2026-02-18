@@ -43,6 +43,12 @@ func TestDesiredDeploymentUsesPluginImageFallbacks(t *testing.T) {
 	if got, ok := envValue(container.Env, "OVN_RECON_NGINX_ACCESS_LOG"); !ok || got != "off" {
 		t.Fatalf("expected default nginx access log env=off, got %q (present=%v)", got, ok)
 	}
+	if deployment.Spec.Selector == nil {
+		t.Fatalf("expected deployment selector to be set")
+	}
+	if got := deployment.Spec.Selector.MatchLabels["app.kubernetes.io/component"]; got != "plugin" {
+		t.Fatalf("expected plugin deployment selector component=plugin, got %q", got)
+	}
 }
 
 func TestConsolePluginLoggingEnvOverrides(t *testing.T) {

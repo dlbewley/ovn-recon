@@ -65,7 +65,11 @@ func DesiredDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deployment {
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: labelsForOvnRecon(ovnRecon.Name),
+				MatchLabels: map[string]string{
+					"app.kubernetes.io/name":      "ovn-recon",
+					"app.kubernetes.io/instance":  ovnRecon.Name,
+					"app.kubernetes.io/component": "plugin",
+				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
