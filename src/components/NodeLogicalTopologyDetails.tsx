@@ -46,7 +46,41 @@ import {
 } from './logicalTopologyModel';
 
 const REFRESH_INTERVAL_MS = 30000;
-const COLLECTOR_SNAPSHOT_PROXY_PREFIX = '/api/proxy/plugin/ovn-recon/api/v1/snapshots';
+const COLLECTOR_SNAPSHOT_PROXY_PREFIXES = [
+    '/api/plugins/ovn-recon/api/v1/snapshots',
+    '/api/plugins/ovn-recon/backend/api/v1/snapshots',
+    '/api/proxy/plugin/ovn-recon/backend/api/v1/snapshots',
+    '/api/proxy/plugin/ovn-recon/api/v1/snapshots',
+];
+
+const fetchCollectorSnapshot = async (nodeName: string): Promise<LogicalTopologySnapshot> => {
+    const encodedNodeName = encodeURIComponent(nodeName);
+    const attempts: string[] = [];
+
+    for (const prefix of COLLECTOR_SNAPSHOT_PROXY_PREFIXES) {
+        const url = `${prefix}/${encodedNodeName}`;
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    Accept: 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                attempts.push(`${url} -> HTTP ${response.status}`);
+                continue;
+            }
+
+            const payload = await response.json() as LogicalTopologySnapshot;
+            return payload;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            attempts.push(`${url} -> ${message}`);
+        }
+    }
+
+    throw new Error(`Collector request failed. Attempts: ${attempts.join('; ')}`);
+};
 
 const resolveNodeName = (routeName?: string): string => {
     const fromRoute = routeName?.trim();
@@ -130,9 +164,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
         setSnapshotError('');
 
         try {
-            const response = await fetch(`${COLLECTOR_SNAPSHOT_PROXY_PREFIX}/${encodeURIComponent(name)}`);
-            if (!response.ok) throw new Error(`Collector returned ${response.status}`);
-            const payload = await response.json() as LogicalTopologySnapshot;
+            const payload = await fetchCollectorSnapshot(name);
             setSnapshot(payload);
             setSourceLabel('collector');
             setLastLoadedAt(Date.now());
@@ -149,7 +181,8 @@ const NodeLogicalTopologyDetails: React.FC = () => {
             if (fixture) {
                 setSnapshot(fixture);
                 setSourceLabel('fixture');
-                setSnapshotError(`Collector unavailable for ${name}; showing fixture data.`);
+                const details = error instanceof Error ? ` ${error.message}` : '';
+                setSnapshotError(`Collector unavailable for ${name}; showing fixture data.${details}`);
                 setLastLoadedAt(Date.now());
             } else {
                 setSnapshot(null);
