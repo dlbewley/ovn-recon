@@ -1,5 +1,8 @@
 # Node Visualization LLDP Neighbor Column Plan
 
+## Overview
+Link Layer Discovery Protocol (LLDP) provides layer-2 neighbor discovery data that helps operators understand what each host interface is physically connected to (switch identity, remote port, chassis ID, and capabilities). In the OVN Recon topology view, exposing LLDP as an optional column adds physical adjacency context next to interface wiring without changing the default graph density, which improves troubleshooting of cabling, uplink mapping, and host-to-switch reachability when LLDP is available.
+
 ## Intent
 Add LLDP neighbor visibility to the physical topology graph in `src/components/NodeVisualization.tsx` without changing default behavior for clusters that do not report LLDP data.
 
@@ -148,3 +151,8 @@ Current LLDP visualization bead status:
 - LLDP column renders to the left of Physical Interfaces.
 - LLDP nodes connect to corresponding physical interfaces.
 - Existing visualization behavior remains unchanged when LLDP toggle is off.
+
+## References
+- [Containerization of LLDP for OpenShift](https://schmaustech.blogspot.com/2025/11/containerization-of-lldp-for-openshift.html)
+- [Nmstate LLDP feature documentation](https://nmstate.io/features/lldp.html)
+- [IEEE 802.1AB LLDP overview](https://en.wikipedia.org/wiki/Link_Layer_Discovery_Protocol)
