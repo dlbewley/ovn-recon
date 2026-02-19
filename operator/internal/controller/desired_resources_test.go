@@ -36,6 +36,26 @@ func TestPluginImageDefaultsToOperatorVersion(t *testing.T) {
 	}
 }
 
+func TestPluginImageDefaultsToNormalizedOperatorVersion(t *testing.T) {
+	t.Setenv("OPERATOR_VERSION", "v1.2.3:quay.io/dbewley/ovn-recon-operator:v1.2.3")
+	cr := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+	}
+
+	if got := imageTagFor(cr); got != "v1.2.3" {
+		t.Fatalf("unexpected plugin tag default from normalized OPERATOR_VERSION: %s", got)
+	}
+}
+
+func TestOperatorVersionAnnotationsNormalizeOperatorVersion(t *testing.T) {
+	t.Setenv("OPERATOR_VERSION", "v1.2.3:quay.io/dbewley/ovn-recon-operator:v1.2.3")
+
+	got := operatorVersionAnnotations()["ovnrecon.bewley.net/operator-version"]
+	if got != "v1.2.3" {
+		t.Fatalf("unexpected operator version annotation value: %s", got)
+	}
+}
+
 func TestDesiredDeploymentUsesPluginImageFallbacks(t *testing.T) {
 	t.Setenv("OPERATOR_VERSION", "")
 	cr := &reconv1beta1.OvnRecon{
@@ -279,7 +299,7 @@ func TestHierarchicalFieldsTakePrecedenceOverLegacy(t *testing.T) {
 				Tag:        "legacy-tag",
 				PullPolicy: string(corev1.PullIfNotPresent),
 			},
-			CollectorImage: reconv1beta1.CollectorImageSpec{
+			CollectorImage: reconv1beta1.LegacyCollectorImageSpec{
 				Repository: "quay.io/example/legacy-collector",
 				Tag:        "collector-legacy-tag",
 				PullPolicy: string(corev1.PullIfNotPresent),

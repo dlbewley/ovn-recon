@@ -812,18 +812,37 @@ func imageTagFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.Image.Tag != "" {
 		return ovnRecon.Spec.Image.Tag
 	}
-	// Use operator version as default tag if available
-	version := os.Getenv("OPERATOR_VERSION")
-	// Sanity check: valid tags cannot contain colons.
-	// This protects against polluted env vars (e.g. "v0.1.2:quay.io/...")
-	if version != "" && version != "dev" && !strings.Contains(version, ":") {
+	// Use operator version as default tag if available.
+	if version := normalizedOperatorVersion(os.Getenv("OPERATOR_VERSION")); version != "" {
 		return version
 	}
 	return defaultImageTag
 }
 
+func normalizedOperatorVersion(raw string) string {
+	version := strings.TrimSpace(raw)
+	if version == "" || version == "dev" {
+		return ""
+	}
+	if !strings.Contains(version, ":") {
+		return version
+	}
+
+	// Defensively recover the leading version when OPERATOR_VERSION is
+	// accidentally rendered as "<version>:<image-ref>".
+	leading, _, found := strings.Cut(version, ":")
+	if !found {
+		return ""
+	}
+	leading = strings.TrimSpace(leading)
+	if leading == "" || leading == "dev" {
+		return ""
+	}
+	return leading
+}
+
 func operatorVersionAnnotations() map[string]string {
-	version := os.Getenv("OPERATOR_VERSION")
+	version := normalizedOperatorVersion(os.Getenv("OPERATOR_VERSION"))
 	if version == "" {
 		version = "dev"
 	}

@@ -105,6 +105,7 @@ jobs:
         # Update manager image in kustomize config
         cd config/manager && ../../bin/kustomize edit set image controller=$IMG
         cd ../..
+        rm -rf bundle
         # Generate bundle - base CSV already has all metadata, so no prompts needed
         if [[ "$VERSION" == *"-"* ]]; then
           CHANNELS=latest
@@ -115,6 +116,16 @@ jobs:
         fi
         bin/kustomize build config/manifests | operator-sdk generate bundle -q --overwrite --version $VERSION_NUM --channels $CHANNELS --default-channel $DEFAULT_CHANNEL
         operator-sdk bundle validate ./bundle
+        csv_count=$(find bundle/manifests -maxdepth 1 -name '*.clusterserviceversion.yaml' | wc -l | tr -d '[:space:]')
+        if [ "$csv_count" -ne 1 ]; then
+          echo "Error: expected exactly 1 CSV in bundle/manifests, found $csv_count"
+          ls -1 bundle/manifests/*.clusterserviceversion.yaml || true
+          exit 1
+        fi
+        if rg -n --no-messages '"tag": "latest"' bundle/manifests/*.clusterserviceversion.yaml; then
+          echo "Error: bundle alm-examples must not pin image tag to latest"
+          exit 1
+        fi
         if rg -n --no-messages 'image:\s*controller:latest' bundle/manifests; then
           echo "Error: bundle contains an unqualified controller image"
           exit 1

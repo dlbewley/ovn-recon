@@ -50,23 +50,28 @@ type OvnReconSpec struct {
 
 	// Deprecated: use collector.image instead.
 	// CollectorImage configuration for the OVN collector container image.
-	CollectorImage CollectorImageSpec `json:"collectorImage,omitempty"`
+	CollectorImage LegacyCollectorImageSpec `json:"collectorImage,omitempty"`
 
 	// Deprecated: use collector.probeNamespaces instead.
 	// CollectorProbeNamespaces defines namespaces where collector is allowed to probe OVN pods.
-	// +kubebuilder:default:={"openshift-ovn-kubernetes","openshift-frr-k8s"}
 	CollectorProbeNamespaces []string `json:"collectorProbeNamespaces,omitempty"`
 }
 
 type ImageSpec struct {
 	// +kubebuilder:default=quay.io/dbewley/ovn-recon
 	Repository string `json:"repository,omitempty"`
-	Tag string `json:"tag,omitempty"`
+	Tag        string `json:"tag,omitempty"`
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 
 type CollectorImageSpec struct {
 	// +kubebuilder:default=quay.io/dbewley/ovn-collector
+	Repository string `json:"repository,omitempty"`
+	Tag        string `json:"tag,omitempty"`
+	PullPolicy string `json:"pullPolicy,omitempty"`
+}
+
+type LegacyCollectorImageSpec struct {
 	Repository string `json:"repository,omitempty"`
 	Tag        string `json:"tag,omitempty"`
 	PullPolicy string `json:"pullPolicy,omitempty"`
