@@ -92,15 +92,11 @@ spec:
                   pullPolicy:
                     type: string
                   repository:
-                    default: quay.io/dbewley/ovn-collector
                     type: string
                   tag:
                     type: string
                 type: object
               collectorProbeNamespaces:
-                default:
-                - openshift-ovn-kubernetes
-                - openshift-frr-k8s
                 description: |-
                   Deprecated: use collector.probeNamespaces instead.
                   CollectorProbeNamespaces defines namespaces where collector is allowed to probe OVN pods.
@@ -352,15 +348,11 @@ spec:
                   pullPolicy:
                     type: string
                   repository:
-                    default: quay.io/dbewley/ovn-collector
                     type: string
                   tag:
                     type: string
                 type: object
               collectorProbeNamespaces:
-                default:
-                - openshift-ovn-kubernetes
-                - openshift-frr-k8s
                 description: |-
                   Deprecated: use collector.probeNamespaces instead.
                   CollectorProbeNamespaces defines namespaces where collector is allowed to probe OVN pods.

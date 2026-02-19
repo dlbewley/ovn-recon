@@ -279,7 +279,7 @@ func TestHierarchicalFieldsTakePrecedenceOverLegacy(t *testing.T) {
 				Tag:        "legacy-tag",
 				PullPolicy: string(corev1.PullIfNotPresent),
 			},
-			CollectorImage: reconv1beta1.CollectorImageSpec{
+			CollectorImage: reconv1beta1.LegacyCollectorImageSpec{
 				Repository: "quay.io/example/legacy-collector",
 				Tag:        "collector-legacy-tag",
 				PullPolicy: string(corev1.PullIfNotPresent),
