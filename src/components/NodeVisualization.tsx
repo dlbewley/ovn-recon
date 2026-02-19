@@ -809,6 +809,20 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     };
 
+    const getSwitchChecked = (
+        first: React.FormEvent<HTMLInputElement> | boolean,
+        second?: React.FormEvent<HTMLInputElement> | boolean
+    ): boolean => {
+        if (typeof first === 'boolean') {
+            return first;
+        }
+        if (typeof second === 'boolean') {
+            return second;
+        }
+        const target = first.target as HTMLInputElement | null;
+        return Boolean(target?.checked);
+    };
+
     const interfaces: Interface[] = nns?.status?.currentState?.interfaces || [];
     const ovn = nns?.status?.currentState?.ovn;
     const bridgeMappings: OvnBridgeMapping[] = ovn?.['bridge-mappings'] || [];
@@ -819,12 +833,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const [showHiddenColumns, setShowHiddenColumns] = React.useState<boolean>(false);
     const [showNads, setShowNads] = React.useState<boolean>(false);
     const [showLldpNeighbors, setShowLldpNeighbors] = React.useState<boolean>(false);
-
-    React.useEffect(() => {
-        if (!hasLldpData) {
-            setShowLldpNeighbors(false);
-        }
-    }, [hasLldpData]);
+    const showLldpColumn = hasLldpData && showLldpNeighbors;
 
     // Pan/Zoom state
     const [viewBox, setViewBox] = React.useState<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -902,7 +911,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Define columns with their data
     const networkItems: NetworkColumnItem[] = [...cudns.map((c): NetworkColumnItem => ({ kind: 'cudn', item: c })), ...udns.map((u): NetworkColumnItem => ({ kind: 'udn', item: u }))];
     const columns = [
-        ...(showLldpNeighbors ? [{ name: 'LLDP Neighbors', data: lldpNeighbors, key: 'lldp' }] : []),
+        ...(showLldpColumn ? [{ name: 'LLDP Neighbors', data: lldpNeighbors, key: 'lldp' }] : []),
         { name: 'Physical Interfaces', data: ethInterfaces, key: 'eth' },
         { name: 'Bonds', data: bondInterfaces, key: 'bond' },
         { name: 'VLAN Interfaces', data: vlanInterfaces, key: 'vlan' },
@@ -952,7 +961,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         nads,
         routeAdvertisements,
         showNads,
-        showLldpNeighbors,
+        showLldpNeighbors: showLldpColumn,
         resolveNodeId,
         getAttachmentNodeId,
         getUdnNodeId,
@@ -992,7 +1001,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Position nodes based on visible columns
     // const currentColIndex = 0; // Unused
 
-    if (showLldpNeighbors && lldpNeighbors.length > 0) {
+    if (showLldpColumn && lldpNeighbors.length > 0) {
         const colOffset = visibleColumns.findIndex(col => col.key === 'lldp');
         if (colOffset >= 0) {
             const baseYByInterface = new Map<string, number>();
@@ -1176,7 +1185,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     // Dynamic height calculation
     const maxRows = Math.max(
-        showLldpNeighbors ? lldpNeighbors.length : 0,
+        showLldpColumn ? lldpNeighbors.length : 0,
         ethInterfaces.length,
         bondInterfaces.length,
         bridgeInterfaces.length,
@@ -1801,7 +1810,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         id="show-nads-toggle"
                                         label="Show Net Attach Defs"
                                         isChecked={showNads}
-                                        onChange={(event, checked) => setShowNads(checked)}
+                                        onChange={(first, second) => setShowNads(getSwitchChecked(first, second))}
                                     />
                                 </FlexItem>
                                 {hasLldpData && (
@@ -1810,7 +1819,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                             id="show-lldp-neighbors-toggle"
                                             label="Show LLDP neighbors"
                                             isChecked={showLldpNeighbors}
-                                            onChange={(event, checked) => setShowLldpNeighbors(checked)}
+                                            onChange={(first, second) => setShowLldpNeighbors(getSwitchChecked(first, second))}
                                         />
                                     </FlexItem>
                                 )}
@@ -1819,7 +1828,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         id="show-hidden-columns-toggle"
                                         label="Show hidden columns"
                                         isChecked={showHiddenColumns}
-                                        onChange={(event, checked) => setShowHiddenColumns(checked)}
+                                        onChange={(first, second) => setShowHiddenColumns(getSwitchChecked(first, second))}
                                     />
                                 </FlexItem>
                             </Flex>
@@ -1876,38 +1885,62 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                 .filter((neighbor: LldpNeighborNode) => nodePositions[neighbor.id])
                                                 .map((neighbor: LldpNeighborNode) => {
                                                     const pos = nodePositions[neighbor.id];
-                                                    return renderInterfaceNode(neighbor, pos.x, pos.y, '#2E7D32', 'lldp-neighbor');
+                                                    return (
+                                                        <React.Fragment key={neighbor.id}>
+                                                            {renderInterfaceNode(neighbor, pos.x, pos.y, '#2E7D32', 'lldp-neighbor')}
+                                                        </React.Fragment>
+                                                    );
                                                 })}
                                             {col.key === 'eth' && sortedEthInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
                                                 .map((iface: Interface, renderIndex: number) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                    return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0066CC');
+                                                    return (
+                                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
+                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0066CC')}
+                                                        </React.Fragment>
+                                                    );
                                                 })}
                                             {col.key === 'bond' && sortedBondInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
                                                 .map((iface: Interface, renderIndex: number) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                    return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#663399');
+                                                    return (
+                                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
+                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#663399')}
+                                                        </React.Fragment>
+                                                    );
                                                 })}
                                             {col.key === 'vlan' && sortedVlanInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
                                                 .map((iface: Interface, renderIndex: number) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                    return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#9933CC');
+                                                    return (
+                                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
+                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#9933CC')}
+                                                        </React.Fragment>
+                                                    );
                                                 })}
                                             {col.key === 'bridge' && sortedBridgeInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
                                                 .map((iface: Interface, renderIndex: number) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     // Recalculate Y position based on render index to eliminate gaps
-                                                    return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#FF6600');
+                                                    return (
+                                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
+                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#FF6600')}
+                                                        </React.Fragment>
+                                                    );
                                                 })}
                                             {col.key === 'logical' && sortedLogicalInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
                                                 .map((iface: Interface, renderIndex: number) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                    return renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0099CC');
+                                                    return (
+                                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
+                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0099CC')}
+                                                        </React.Fragment>
+                                                    );
                                                 })}
                                             {col.key === 'l3' && (
                                                 <>
@@ -1915,7 +1948,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                     <text x={xPos} y={padding - 10} fontWeight="bold" fill="currentColor">Bridge Mappings</text>
                                                     {sortedBridgeMappings
                                                         .filter((mapping: OvnBridgeMapping) => nodePositions[`ovn-${mapping.localnet}`])
-                                                        .map((mapping: OvnBridgeMapping, renderIndex: number) => {
+                                                        .map((mapping: OvnBridgeMapping) => {
                                                             const pos = nodePositions[`ovn-${mapping.localnet}`];
                                                             // For l3 column, we rely on the pre-calculated nodePositions.
                                                             // However, if we want to visually separate them, we might need to adjust Y manually if nodePositions wasn't aware of the split.
@@ -1924,7 +1957,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                             // OR, we just render them based on position.
                                                             // The user wants TWO headers.
                                                             // So we find the Y range of the first group.
-                                                            return renderInterfaceNode(mapping, pos.x, pos.y, '#009900', 'ovn-mapping');
+                                                            return (
+                                                                <React.Fragment key={`ovn-${mapping.localnet}`}>
+                                                                    {renderInterfaceNode(mapping, pos.x, pos.y, '#009900', 'ovn-mapping')}
+                                                                </React.Fragment>
+                                                            );
                                                         })}
 
                                                     {/* VRFs Section Header - Position it above the first VRF node */}
@@ -1940,9 +1977,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
                                                     {sortedVrfInterfaces
                                                         .filter((iface: Interface) => nodePositions[iface.name])
-                                                        .map((iface: Interface, renderIndex: number) => {
+                                                        .map((iface: Interface) => {
                                                             const pos = nodePositions[iface.name];
-                                                            return renderInterfaceNode(iface, pos.x, pos.y, '#CC6600', 'vrf');
+                                                            return (
+                                                                <React.Fragment key={iface.name}>
+                                                                    {renderInterfaceNode(iface, pos.x, pos.y, '#CC6600', 'vrf')}
+                                                                </React.Fragment>
+                                                            );
                                                         })}
                                                 </>
                                             )}
@@ -1951,7 +1992,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                 .map((n: NetworkColumnItem, renderIndex: number) => {
                                                     const pos = nodePositions[getNetworkNodeId(n)];
                                                     const color = n.kind === 'cudn' ? CUDN_NODE_COLOR : UDN_NODE_COLOR;
-                                                    return renderInterfaceNode(n.item, pos.x, padding + (renderIndex * (itemHeight + 20)), color, n.kind);
+                                                    return (
+                                                        <React.Fragment key={getNetworkNodeId(n)}>
+                                                            {renderInterfaceNode(n.item, pos.x, padding + (renderIndex * (itemHeight + 20)), color, n.kind)}
+                                                        </React.Fragment>
+                                                    );
                                                 })}
                                         </React.Fragment>
                                     );
@@ -1961,15 +2006,21 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 <text x={padding + (attachmentColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">Attachments</text>
                                 {sortedAttachmentNodes.map((node: AttachmentNode) => {
                                     const pos = nodePositions[getAttachmentNodeId(node)];
-                                    return pos && renderInterfaceNode(node, pos.x, pos.y, 'var(--pf-global--palette--gold-400)', 'attachment', getAttachmentHeight(node));
+                                    return (
+                                        <React.Fragment key={getAttachmentNodeId(node)}>
+                                            {pos && renderInterfaceNode(node, pos.x, pos.y, 'var(--pf-global--palette--gold-400)', 'attachment', getAttachmentHeight(node))}
+                                        </React.Fragment>
+                                    );
                                 })}
 
                                 {showNads && (
                                     <>
                                         <text x={padding + (nadColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">NADs</text>
-                                        {sortedNads.map((nad: NetworkAttachmentDefinition) =>
-                                            nodePositions[getNadNodeId(nad)] && renderInterfaceNode(nad, nodePositions[getNadNodeId(nad)].x, nodePositions[getNadNodeId(nad)].y, '#CC9900', 'nad')
-                                        )}
+                                        {sortedNads.map((nad: NetworkAttachmentDefinition) => (
+                                            <React.Fragment key={getNadNodeId(nad)}>
+                                                {nodePositions[getNadNodeId(nad)] && renderInterfaceNode(nad, nodePositions[getNadNodeId(nad)].x, nodePositions[getNadNodeId(nad)].y, '#CC9900', 'nad')}
+                                            </React.Fragment>
+                                        ))}
                                     </>
                                 )}
 
@@ -1979,7 +2030,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     {sortedOtherInterfaces.map((iface: Interface, index: number) => {
                                         const col = index % 4;
                                         const row = Math.floor(index / 4);
-                                        return renderInterfaceNode(iface, col * (itemWidth + 20), row * (itemHeight + 20), '#666');
+                                        return (
+                                            <React.Fragment key={resolveNodeId(iface, iface.type)}>
+                                                {renderInterfaceNode(iface, col * (itemWidth + 20), row * (itemHeight + 20), '#666')}
+                                            </React.Fragment>
+                                        );
                                     })}
                                 </g>
                             </svg>
