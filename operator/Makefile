@@ -309,9 +309,20 @@ endif
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	$(OPERATOR_SDK) generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	rm -f bundle/manifests/*.clusterserviceversion.yaml
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS) || \
 		($(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS) < /dev/stdin)
 	$(OPERATOR_SDK) bundle validate ./bundle
+	@csv_count=$$(ls bundle/manifests/*.clusterserviceversion.yaml 2>/dev/null | wc -l | tr -d '[:space:]'); \
+	if [ "$$csv_count" -ne 1 ]; then \
+		echo "Error: expected exactly 1 CSV in bundle/manifests, found $$csv_count"; \
+		ls -1 bundle/manifests/*.clusterserviceversion.yaml 2>/dev/null || true; \
+		exit 1; \
+	fi
+	if rg -n --no-messages '"tag": "latest"' bundle/manifests/*.clusterserviceversion.yaml; then \
+		echo "Error: bundle alm-examples must not pin image tag to latest"; \
+		exit 1; \
+	fi
 
 .PHONY: render
 render: ## Render YAML for the sample OvnRecon resource.
