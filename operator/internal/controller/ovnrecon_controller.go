@@ -370,7 +370,17 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	r.logMessage(serviceCtx, policy, operatorLogLevelTrace, "Service reconciled")
 
-	// 2.5 Reconcile collector resources behind feature gate.
+	// 2.5 Reconcile collector service and collector resources behind feature gate.
+	// Keep the collector Service present even when collector is disabled so plugin nginx
+	// can resolve the backend DNS name at startup.
+	collectorServiceCtx := withReconcilePhase(ctx, "reconcile-collector-service")
+	if err := r.reconcileCollectorService(collectorServiceCtx, ovnRecon); err != nil {
+		log.FromContext(collectorServiceCtx).Error(err, "Failed to reconcile collector Service")
+		r.recordEvent(collectorServiceCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "CollectorServiceReconcileFailed", err.Error())
+		r.updateCondition(collectorServiceCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorServiceReconcileFailed", err.Error())
+		return reconcile.Result{RequeueAfter: time.Second * 30}, err
+	}
+
 	if collectorFeatureEnabled(ovnRecon) {
 		collectorRBACCtx := withReconcilePhase(ctx, "reconcile-collector-rbac")
 		if err := r.reconcileCollectorAccessControls(collectorRBACCtx, ovnRecon); err != nil {
@@ -386,20 +396,14 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			r.updateCondition(collectorDeploymentCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorDeploymentReconcileFailed", err.Error())
 			return reconcile.Result{RequeueAfter: time.Second * 30}, err
 		}
-		collectorServiceCtx := withReconcilePhase(ctx, "reconcile-collector-service")
-		if err := r.reconcileCollectorService(collectorServiceCtx, ovnRecon); err != nil {
-			log.FromContext(collectorServiceCtx).Error(err, "Failed to reconcile collector Service")
-			r.recordEvent(collectorServiceCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "CollectorServiceReconcileFailed", err.Error())
-			r.updateCondition(collectorServiceCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorServiceReconcileFailed", err.Error())
-			return reconcile.Result{RequeueAfter: time.Second * 30}, err
-		}
+
 		if r.updateCondition(collectorServiceCtx, ovnRecon, "CollectorReady", metav1.ConditionTrue, "CollectorReady", "Collector resources are reconciled") {
 			r.recordEvent(collectorServiceCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "CollectorReady", "Collector resources are reconciled")
 		}
 	} else {
-		collectorDeleteCtx := withReconcilePhase(ctx, "delete-collector-resources")
-		if err := r.deleteCollectorResources(collectorDeleteCtx, ovnRecon); err != nil {
-			log.FromContext(collectorDeleteCtx).Error(err, "Failed to delete collector resources while feature gate is disabled")
+		collectorDeleteCtx := withReconcilePhase(ctx, "delete-collector-deployment")
+		if err := r.deleteCollectorDeployment(collectorDeleteCtx, ovnRecon); err != nil {
+			log.FromContext(collectorDeleteCtx).Error(err, "Failed to delete collector deployment while feature gate is disabled")
 			return reconcile.Result{RequeueAfter: time.Second * 30}, err
 		}
 		collectorRBACDeleteCtx := withReconcilePhase(ctx, "delete-collector-rbac")
@@ -1018,6 +1022,23 @@ func (r *OvnReconReconciler) deleteNamespacedResources(ctx context.Context, ovnR
 		return err
 	}
 	if err := r.deleteCollectorAccessControls(ctx, ovnRecon); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *OvnReconReconciler) deleteCollectorDeployment(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	name := collectorName(ovnRecon)
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+	if err := r.Delete(ctx, deployment); err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 
