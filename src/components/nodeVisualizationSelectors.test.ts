@@ -1,12 +1,18 @@
 import fs from 'fs';
 import path from 'path';
+import * as yaml from 'js-yaml';
 
 import { Interface, NodeNetworkState } from '../types';
-import { getVrfConnectionInfo, getVrfRoutesForInterface } from './nodeVisualizationSelectors';
+import { extractLldpNeighbors, getVrfConnectionInfo, getVrfRoutesForInterface, hasLldpNeighbors } from './nodeVisualizationSelectors';
 
 const loadFixture = (name: string): NodeNetworkState => {
     const fixturePath = path.join(process.cwd(), 'test', 'fixtures', 'nns', `${name}.json`);
-    return JSON.parse(fs.readFileSync(fixturePath, 'utf-8')) as NodeNetworkState;
+    const fixtureContent = fs.readFileSync(fixturePath, 'utf-8');
+    try {
+        return JSON.parse(fixtureContent) as NodeNetworkState;
+    } catch {
+        return yaml.load(fixtureContent) as NodeNetworkState;
+    }
 };
 
 const findInterfaceByName = (nns: NodeNetworkState, name: string): Interface => {
@@ -51,5 +57,29 @@ describe('nodeVisualizationSelectors fixture coverage', () => {
             destination: '203.0.113.0/24',
             nextHopInterface: 'ovn-k8s-mp2'
         });
+    });
+
+    it('extracts LLDP neighbors from interfaces and normalizes key fields', () => {
+        const nns = loadFixture('host-lldp');
+        const interfaces = nns.status?.currentState?.interfaces || [];
+
+        const neighbors = extractLldpNeighbors(interfaces);
+
+        expect(neighbors).toHaveLength(2);
+        expect(neighbors.map((neighbor) => neighbor.localInterface).sort()).toEqual(['enp44s0', 'enp45s0']);
+        expect(neighbors[0]).toMatchObject({
+            label: 'USWEnterprise48PoE',
+            systemName: 'USWEnterprise48PoE',
+            chassisId: '28:70:4E:D4:53:B0'
+        });
+        expect(neighbors[0].capabilities).toEqual(['MAC Bridge component', 'Router']);
+    });
+
+    it('reports LLDP availability only when at least one interface has neighbors', () => {
+        const lldpNns = loadFixture('host-lldp');
+        const basicNns = loadFixture('basic-host');
+
+        expect(hasLldpNeighbors(lldpNns.status?.currentState?.interfaces || [])).toBe(true);
+        expect(hasLldpNeighbors(basicNns.status?.currentState?.interfaces || [])).toBe(false);
     });
 });

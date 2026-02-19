@@ -8,6 +8,7 @@ import {
 } from '../types';
 import {
     findCudnNameForNad,
+    LldpNeighborNode,
     findRouteAdvertisementForVrf,
     getCudnsSelectedByRouteAdvertisement,
     getNadUpstreamNodeIdsForEdges
@@ -30,12 +31,14 @@ interface BuildTopologyEdgesParams {
     interfaces: Interface[];
     vrfInterfaces: Interface[];
     bridgeMappings: OvnBridgeMapping[];
+    lldpNeighbors: LldpNeighborNode[];
     cudns: ClusterUserDefinedNetwork[];
     udns: UserDefinedNetwork[];
     attachmentNodes: AttachmentNodeModel[];
     nads: NetworkAttachmentDefinition[];
     routeAdvertisements: RouteAdvertisements[] | undefined;
     showNads: boolean;
+    showLldpNeighbors: boolean;
     resolveNodeId: (item: Interface, type: string) => string;
     getAttachmentNodeId: (attachment: AttachmentNodeModel) => string;
     getUdnNodeId: (udn: UserDefinedNetwork) => string;
@@ -59,12 +62,14 @@ export const buildTopologyEdges = ({
     interfaces,
     vrfInterfaces,
     bridgeMappings,
+    lldpNeighbors,
     cudns,
     udns,
     attachmentNodes,
     nads,
     routeAdvertisements,
     showNads,
+    showLldpNeighbors,
     resolveNodeId,
     getAttachmentNodeId,
     getUdnNodeId,
@@ -88,6 +93,12 @@ export const buildTopologyEdges = ({
     bridgeMappings.forEach((mapping) => {
         pushEdge(edges, edgeKeys, mapping.bridge, `ovn-${mapping.localnet}`);
     });
+
+    if (showLldpNeighbors) {
+        lldpNeighbors.forEach((neighbor) => {
+            pushEdge(edges, edgeKeys, neighbor.id, neighbor.localInterface);
+        });
+    }
 
     cudns.forEach((cudn) => {
         const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
