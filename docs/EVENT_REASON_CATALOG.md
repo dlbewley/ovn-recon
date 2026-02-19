@@ -6,7 +6,7 @@ This document defines the current `reason` values emitted by the `ovn-recon` ope
 
 - Applies to Kubernetes Events emitted by the operator controller.
 - Applies to status condition `reason` fields set on `OvnRecon`.
-- Covers behavior in the current `v1beta1` operator line (`v1alpha1` remains served for compatibility).
+- Covers behavior in the current `v1beta1` operator line.
 
 ## Current Reason Catalog
 

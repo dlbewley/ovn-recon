@@ -16,6 +16,10 @@ When implementing any UI element consider leveraging [PatternFly](https://www.pa
 
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
+### Planning Document Requirement
+
+When creating or updating a task planning document under `docs/tasks/`, include an `Initial Beads Backlog Mapping` section with a table of related bead IDs and statuses.
+
 ### Quick Reference
 
 ```bash

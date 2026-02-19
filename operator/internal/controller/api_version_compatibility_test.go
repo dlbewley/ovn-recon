@@ -21,6 +21,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
@@ -29,8 +31,8 @@ import (
 	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 )
 
-var _ = Describe("OvnRecon API Version Compatibility", func() {
-	It("reads v1alpha1 resources as v1beta1", func() {
+var _ = Describe("OvnRecon API Version Policy", func() {
+	It("rejects v1alpha1 resources", func() {
 		ctx := context.Background()
 		name := "compat-alpha-" + rand.String(6)
 
@@ -40,17 +42,12 @@ var _ = Describe("OvnRecon API Version Compatibility", func() {
 				TargetNamespace: "compat-alpha",
 			},
 		}
-		Expect(k8sClient.Create(ctx, alpha)).To(Succeed())
-		DeferCleanup(func() {
-			_ = k8sClient.Delete(ctx, alpha)
-		})
-
-		beta := &reconv1beta1.OvnRecon{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, beta)).To(Succeed())
-		Expect(beta.Spec.TargetNamespace).To(Equal("compat-alpha"))
+		err := k8sClient.Create(ctx, alpha)
+		Expect(err).To(HaveOccurred())
+		Expect(apierrors.IsNotFound(err) || meta.IsNoMatchError(err)).To(BeTrue())
 	})
 
-	It("reads v1beta1 resources as v1alpha1", func() {
+	It("accepts v1beta1 resources", func() {
 		ctx := context.Background()
 		name := "compat-beta-" + rand.String(6)
 
@@ -65,8 +62,8 @@ var _ = Describe("OvnRecon API Version Compatibility", func() {
 			_ = k8sClient.Delete(ctx, beta)
 		})
 
-		alpha := &reconv1alpha1.OvnRecon{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, alpha)).To(Succeed())
-		Expect(alpha.Spec.TargetNamespace).To(Equal("compat-beta"))
+		retrieved := &reconv1beta1.OvnRecon{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, retrieved)).To(Succeed())
+		Expect(retrieved.Spec.TargetNamespace).To(Equal("compat-beta"))
 	})
 })
