@@ -61,7 +61,7 @@ type OvnReconSpec struct {
 type ImageSpec struct {
 	// +kubebuilder:default=quay.io/dbewley/ovn-recon
 	Repository string `json:"repository,omitempty"`
-	Tag string `json:"tag,omitempty"`
+	Tag        string `json:"tag,omitempty"`
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 
@@ -158,6 +158,7 @@ type OvnReconStatus struct {
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:unservedversion
 
 // OvnRecon is the Schema for the ovnrecons API.
 type OvnRecon struct {
