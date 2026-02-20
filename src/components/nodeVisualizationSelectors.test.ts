@@ -75,11 +75,50 @@ describe('nodeVisualizationSelectors fixture coverage', () => {
         expect(neighbors[0].capabilities).toEqual(['MAC Bridge component', 'Router']);
     });
 
-    it('reports LLDP availability only when at least one interface has neighbors', () => {
+    it('reports LLDP availability when interfaces include enabled LLDP and neighbors data', () => {
         const lldpNns = loadFixture('host-lldp');
         const basicNns = loadFixture('basic-host');
 
         expect(hasLldpNeighbors(lldpNns.status?.currentState?.interfaces || [])).toBe(true);
         expect(hasLldpNeighbors(basicNns.status?.currentState?.interfaces || [])).toBe(false);
+    });
+
+    it('does not report LLDP availability when LLDP is enabled but no neighbors are present', () => {
+        const interfaces: Interface[] = [
+            {
+                name: 'ens192',
+                type: 'ethernet',
+                state: 'up',
+                lldp: {
+                    enabled: true
+                }
+            }
+        ];
+
+        expect(hasLldpNeighbors(interfaces)).toBe(false);
+    });
+
+    it('reports LLDP availability when LLDP enabled and neighbors are present on different interfaces', () => {
+        const interfaces: Interface[] = [
+            {
+                name: 'ens192',
+                type: 'ethernet',
+                state: 'up',
+                lldp: {
+                    enabled: true
+                }
+            },
+            {
+                name: 'ens224',
+                type: 'ethernet',
+                state: 'up',
+                lldp: {
+                    enabled: false,
+                    neighbors: [[{ 'system-name': 'switch-1', type: 5 }]]
+                }
+            }
+        ];
+
+        expect(hasLldpNeighbors(interfaces)).toBe(true);
     });
 });

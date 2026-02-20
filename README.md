@@ -19,6 +19,15 @@
 
 **Open Virtual Network Reconnaissance (OVN Recon) is an OpenShift Console Plugin that provides a visualization of the Virtual and Node Network State in an OpenShift cluster.**
 
+Blog post: [OVN Recon: Making OpenShift Networking Connections](https://guifreelife.com/blog/2026/02/18/OVN-Recon-Making-OpenShift-Networking-Connections/)
+
+## Feature Highlights
+
+- **Physical topology view**: Per-node graph of host interfaces, bridges, OVN bridge mappings, VRFs, CUDNs/UDNs, attachments, and NAD relationships.
+- **LLDP-aware interface context**: Optional LLDP neighbors column in the node visualization, shown via toggle when LLDP is enabled and neighbor data is present.
+- **Logical topology view (WIP)**: Node-scoped logical OVN graph (`/ovn-recon/ovn/:name`) backed by the optional collector service.
+- **Operator-managed lifecycle**: Recommended installation via OVN Recon Operator with automatic console plugin enablement and collector wiring.
+
 ## Kubernetes Resource Dependencies
 
 OVN Recon visualizes the following Kubernetes Custom Resources:
@@ -26,9 +35,22 @@ OVN Recon visualizes the following Kubernetes Custom Resources:
 - **NodeNetworkState (NNS)** - Represents the current network configuration of a node, including interfaces, bridges, and OVN bridge mappings. Provided by the [nmstate operator](https://nmstate.io/).
 - **NodeNetworkConfigurationPolicy (NNCP)** - Defines desired network configuration for nodes. Used to configure OVN bridge mappings and physical network interfaces.
 - **ClusterUserDefinedNetwork (CUDN)** - Defines overlay networks that can be attached to pods. Part of OpenShift's [OVN-Kubernetes secondary networks](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/about-ovn-kubernetes.html).
+- **UserDefinedNetwork (UDN)** - Namespace-scoped network definitions used by secondary network workflows.
 - **NetworkAttachmentDefinition (NAD)** - Multus CNI resource that references a CUDN and allows pods to attach to secondary networks.
+- **RouteAdvertisements** - Cluster-scoped route advertisement policy objects used for VRF-to-network relationships.
+- **OvnRecon** - Operator custom resource that controls plugin/collector deployment and logical topology feature gating.
 
-The plugin watches these resources in real-time and renders an interactive topology showing how physical interfaces, bridges, and virtual networks are connected.
+The plugin watches these resources in real-time and renders interactive physical/logical topology views to show how interfaces, bridges, networks, routes, and attachments are connected.
+
+## Using OVN Recon
+
+- **Node list**: `/ovn-recon/node-network-state`
+- **Physical view**: `/ovn-recon/node-network-state/:name`
+- **Logical OVN view**: `/ovn-recon/ovn/:name` (shown when collector feature gate is enabled)
+
+In the physical node graph:
+- LLDP neighbors are rendered in a dedicated optional column left of physical interfaces.
+- The `Show LLDP neighbors` toggle appears only when LLDP is enabled on at least one interface and LLDP neighbor payloads are present.
 
 ## Installation
 
@@ -72,6 +94,22 @@ oc apply -k manifests/instance/base
 Console plugin will be automatically enabled.
 
 For detailed operator deployment instructions, please see [docs/OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
+
+### Enable Logical Topology View (Collector)
+
+The logical OVN topology view is enabled when collector support is turned on in your `OvnRecon` resource. This is a WIP feature and is not yet enabled by default.
+
+Example patch:
+
+```bash
+oc patch ovnrecon ovn-recon --type=merge -p '{
+  "spec": {
+    "collector": { "enabled": true }
+  }
+}'
+```
+
+You can also set collector image fields (`spec.collector.image.repository|tag|pullPolicy`) as needed. See [OPERATOR.md](OPERATOR.md) for full API details.
 
 ### Manual Installation
 
