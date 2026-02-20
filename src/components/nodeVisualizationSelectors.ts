@@ -232,6 +232,7 @@ export const extractLldpNeighbors = (interfaces: Interface[]): LldpNeighborNode[
 };
 
 export const hasLldpNeighbors = (interfaces: Interface[]): boolean =>
+    interfaces.some((iface) => iface?.lldp?.enabled === true) &&
     interfaces.some((iface) => Array.isArray(iface?.lldp?.neighbors) && iface.lldp.neighbors.length > 0);
 
 const getRouteTableId = (route: Record<string, unknown>): string | undefined =>

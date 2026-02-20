@@ -9,7 +9,9 @@ Add LLDP neighbor visibility to the physical topology graph in `src/components/N
 ## Requirements
 - Show LLDP neighbors in a dedicated column to the left of `Physical Interfaces`.
 - Keep the LLDP column hidden by default.
-- Offer a toggle in the existing top control row only when LLDP data exists.
+- Offer a toggle in the existing top control row only when both of these are true across interfaces:
+  - at least one interface has `lldp.enabled: true`
+  - at least one interface has `lldp.neighbors[]` data
 - Do not show the LLDP toggle when no LLDP data is available for the selected host.
 
 ## Current Baseline
@@ -66,7 +68,7 @@ Parsing rules:
 
 ### Toggle Behavior
 - Add state: `showLldpNeighbors` (default `false`).
-- Compute `hasLldpData` from extracted neighbors.
+- Compute `hasLldpData` from LLDP-enabled presence plus neighbor payload presence.
 - Render toggle only when `hasLldpData === true`.
 - Toggle placement: alongside existing switches at the top (`Flex` row).
 - Suggested label: `Show LLDP neighbors`.
