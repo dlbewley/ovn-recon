@@ -25,6 +25,19 @@ export interface VrfAssociatedRoute {
     protocol?: string;
 }
 
+export interface LldpNeighborNode {
+    id: string;
+    label: string;
+    localInterface: string;
+    neighborIndex: number;
+    systemName?: string;
+    portId?: string;
+    chassisId?: string;
+    systemDescription?: string;
+    capabilities: string[];
+    rawTlvs: Record<string, unknown>[];
+}
+
 const matchesLabelSelector = (
     labels: Record<string, string>,
     matchLabels?: Record<string, string>,
@@ -129,6 +142,97 @@ const toStringValue = (value: unknown): string | undefined => {
     if (typeof value === 'number' || typeof value === 'boolean') return String(value);
     return undefined;
 };
+
+const toStringArray = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value
+        .map((entry) => toStringValue(entry))
+        .filter((entry): entry is string => Boolean(entry));
+};
+
+const normalizeLldpNeighbor = (
+    localInterface: string,
+    rawNeighbor: unknown,
+    neighborIndex: number
+): LldpNeighborNode | null => {
+    if (!Array.isArray(rawNeighbor)) {
+        return null;
+    }
+
+    const tlvs = rawNeighbor
+        .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
+
+    if (tlvs.length === 0) {
+        return null;
+    }
+
+    let systemName: string | undefined;
+    let portId: string | undefined;
+    let chassisId: string | undefined;
+    let systemDescription: string | undefined;
+    const capabilities: string[] = [];
+
+    tlvs.forEach((tlv) => {
+        if (!systemName) {
+            systemName = toStringValue(tlv['system-name']);
+        }
+        if (!portId) {
+            portId = toStringValue(tlv['port-id']);
+        }
+        if (!chassisId) {
+            chassisId = toStringValue(tlv['chassis-id']);
+        }
+        if (!systemDescription) {
+            systemDescription = toStringValue(tlv['system-description']);
+        }
+        capabilities.push(...toStringArray(tlv['system-capabilities']));
+    });
+
+    const label = systemName || chassisId || `LLDP Neighbor ${neighborIndex + 1}`;
+
+    return {
+        id: `lldp-${localInterface}-${neighborIndex}`,
+        label,
+        localInterface,
+        neighborIndex,
+        systemName,
+        portId,
+        chassisId,
+        systemDescription,
+        capabilities: Array.from(new Set(capabilities)),
+        rawTlvs: tlvs
+    };
+};
+
+export const extractLldpNeighbors = (interfaces: Interface[]): LldpNeighborNode[] => {
+    const neighbors: LldpNeighborNode[] = [];
+
+    interfaces.forEach((iface) => {
+        const localInterface = iface?.name;
+        if (!localInterface) {
+            return;
+        }
+
+        const rawNeighbors = iface?.lldp?.neighbors;
+        if (!Array.isArray(rawNeighbors)) {
+            return;
+        }
+
+        rawNeighbors.forEach((rawNeighbor, neighborIndex) => {
+            const normalized = normalizeLldpNeighbor(localInterface, rawNeighbor, neighborIndex);
+            if (normalized) {
+                neighbors.push(normalized);
+            }
+        });
+    });
+
+    return neighbors;
+};
+
+export const hasLldpNeighbors = (interfaces: Interface[]): boolean =>
+    interfaces.some((iface) => Array.isArray(iface?.lldp?.neighbors) && iface.lldp.neighbors.length > 0);
 
 const getRouteTableId = (route: Record<string, unknown>): string | undefined =>
     toStringValue(

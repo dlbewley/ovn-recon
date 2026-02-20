@@ -1,0 +1,685 @@
+apiVersion: nmstate.io/v1beta1
+kind: NodeNetworkState
+metadata:
+  creationTimestamp: "2025-12-11T18:45:52Z"
+  generation: 1
+  labels:
+    nmstate.io/force-nns-refresh: "1771442405761700231"
+  name: ocs-master-1.example.dom
+  ownerReferences:
+  - apiVersion: v1
+    kind: Node
+    name: ocs-master-1.example.dom
+    uid: 64d76a53-9219-4970-8a0c-b616b343fcc0
+  resourceVersion: "88468027"
+  uid: c8dd3dc6-3027-4141-a508-d05d05929030
+status:
+  currentState:
+    dns-resolver:
+      config:
+        search:
+        - ocs.other.dom
+        server:
+        - 10.2.2.1
+      running:
+        search:
+        - ocs.other.dom
+        server:
+        - 10.2.2.1
+    interfaces:
+    - accept-all-mac-addresses: false
+      controller: br-vmdata
+      ethtool:
+        feature:
+          esp-hw-offload: false
+          esp-tx-csum-hw-offload: false
+          highdma: true
+          rx-gro: true
+          rx-gro-list: false
+          rx-lro: false
+          rx-udp-gro-forwarding: false
+          rx-vlan-filter: true
+          rx-vlan-hw-parse: true
+          rx-vlan-stag-filter: true
+          rx-vlan-stag-hw-parse: true
+          tx-checksum-ip-generic: true
+          tx-esp-segmentation: false
+          tx-generic-segmentation: true
+          tx-gre-csum-segmentation: true
+          tx-gre-segmentation: true
+          tx-gso-list: false
+          tx-ipxip4-segmentation: true
+          tx-ipxip6-segmentation: true
+          tx-nocache-copy: false
+          tx-scatter-gather-fraglist: false
+          tx-sctp-segmentation: false
+          tx-tcp-ecn-segmentation: true
+          tx-tcp-mangleid-segmentation: true
+          tx-tcp-segmentation: true
+          tx-tcp6-segmentation: true
+          tx-udp-segmentation: false
+          tx-udp_tnl-csum-segmentation: true
+          tx-udp_tnl-segmentation: true
+      identifier: name
+      ipv4:
+        enabled: false
+        forwarding: false
+      ipv6:
+        enabled: false
+      link-aggregation:
+        mode: 802.3ad
+        options:
+          ad_actor_sys_prio: 65535
+          ad_actor_system: "00:00:00:00:00:00"
+          ad_select: stable
+          ad_user_port_key: 0
+          all_slaves_active: dropped
+          arp_all_targets: any
+          arp_interval: 0
+          arp_validate: none
+          downdelay: 0
+          lacp_active: true
+          lacp_rate: slow
+          lp_interval: 1
+          miimon: 150
+          min_links: 0
+          primary_reselect: always
+          updelay: 0
+          use_carrier: true
+          xmit_hash_policy: layer2
+        port:
+        - enp44s0
+        - enp45s0
+        ports-config:
+        - name: enp44s0
+          priority: 0
+          queue-id: 0
+        - name: enp45s0
+          priority: 0
+          queue-id: 0
+      lldp:
+        enabled: false
+      mac-address: 58:47:CA:7F:A2:BA
+      max-mtu: 65535
+      min-mtu: 68
+      mtu: 9000
+      name: bond0
+      state: up
+      type: bond
+    - accept-all-mac-addresses: false
+      controller: br-ex
+      ethtool:
+        feature:
+          highdma: true
+          rx-gro: true
+          rx-gro-list: false
+          rx-udp-gro-forwarding: false
+          tx-checksum-fcoe-crc: false
+          tx-checksum-ip-generic: true
+          tx-checksum-sctp: false
+          tx-fcoe-segmentation: false
+          tx-generic-segmentation: true
+          tx-gre-csum-segmentation: true
+          tx-gre-segmentation: true
+          tx-gso-list: true
+          tx-ipxip4-segmentation: true
+          tx-ipxip6-segmentation: true
+          tx-nocache-copy: false
+          tx-scatter-gather-fraglist: false
+          tx-sctp-segmentation: true
+          tx-tcp-ecn-segmentation: true
+          tx-tcp-mangleid-segmentation: true
+          tx-tcp-segmentation: true
+          tx-tcp6-segmentation: true
+          tx-udp-segmentation: true
+          tx-udp_tnl-csum-segmentation: true
+          tx-udp_tnl-segmentation: true
+      identifier: name
+      ipv4:
+        enabled: false
+        forwarding: true
+      ipv6:
+        enabled: false
+      lldp:
+        enabled: false
+      mac-address: 58:47:CA:7F:A2:BA
+      max-mtu: 65535
+      mtu: 9000
+      name: bond0.55
+      profile-name: ovs-if-phys0
+      state: up
+      type: vlan
+      vlan:
+        base-iface: bond0
+        id: 55
+        loose-binding: false
+        protocol: 802.1q
+        registration-protocol: none
+        reorder-headers: true
+    - bridge:
+        options:
+          datapath: ""
+          fail-mode: ""
+          mcast-snooping-enable: false
+          rstp: false
+          stp:
+            enabled: false
+        port:
+        - name: bond0.55
+        - name: br-ex
+        - name: patch-br-ex_ocs-master-1.example.dom-to-br-int
+      identifier: name
+      ipv4:
+        auto-dns: true
+        auto-gateway: true
+        auto-route-table-id: 0
+        auto-routes: true
+        dhcp: true
+        dhcp-send-hostname: true
+        enabled: true
+      ipv6:
+        addr-gen-mode: stable-privacy
+        auto-dns: true
+        auto-gateway: true
+        auto-route-table-id: 0
+        auto-routes: true
+        autoconf: true
+        dhcp: true
+        dhcp-send-hostname: true
+        enabled: true
+      lldp:
+        enabled: false
+      name: br-ex
+      ovs-db:
+        external_ids: {}
+        other_config:
+          hwaddr: 58:47:CA:7F:A2:BA
+      state: up
+      type: ovs-bridge
+      wait-ip: any
+    - accept-all-mac-addresses: false
+      controller: br-ex
+      ethtool:
+        feature:
+          highdma: true
+          rx-gro: true
+          rx-gro-list: false
+          rx-udp-gro-forwarding: false
+          tx-checksum-ip-generic: true
+          tx-generic-segmentation: true
+          tx-gre-csum-segmentation: true
+          tx-gre-segmentation: true
+          tx-gso-list: true
+          tx-ipxip4-segmentation: true
+          tx-ipxip6-segmentation: true
+          tx-nocache-copy: false
+          tx-scatter-gather-fraglist: true
+          tx-sctp-segmentation: true
+          tx-tcp-ecn-segmentation: true
+          tx-tcp-mangleid-segmentation: true
+          tx-tcp-segmentation: true
+          tx-tcp6-segmentation: true
+          tx-udp-segmentation: true
+          tx-udp_tnl-csum-segmentation: true
+          tx-udp_tnl-segmentation: true
+          tx-vlan-hw-insert: true
+          tx-vlan-stag-hw-insert: true
+      identifier: name
+      ipv4:
+        address:
+        - ip: 192.168.55.11
+          prefix-length: 24
+        - ip: 169.254.0.2
+          prefix-length: 17
+        auto-route-metric: 48
+        dhcp: false
+        enabled: true
+        forwarding: true
+      ipv6:
+        auto-route-metric: 48
+        autoconf: false
+        dhcp: false
+        enabled: false
+      lldp:
+        enabled: false
+      mac-address: 58:47:CA:7F:A2:BA
+      max-mtu: 65535
+      min-mtu: 68
+      mptcp:
+        address-flags: []
+      mtu: 9000
+      name: br-ex
+      profile-name: ovs-if-br-ex
+      state: up
+      type: ovs-interface
+      wait-ip: any
+    - accept-all-mac-addresses: false
+      controller: br-int
+      ethtool:
+        feature:
+          highdma: true
+          rx-gro: true
+          rx-gro-list: false
+          rx-udp-gro-forwarding: false
+          tx-checksum-ip-generic: true
+          tx-generic-segmentation: true
+          tx-gre-csum-segmentation: true
+          tx-gre-segmentation: true
+          tx-gso-list: true
+          tx-ipxip4-segmentation: true
+          tx-ipxip6-segmentation: true
+          tx-nocache-copy: false
+          tx-scatter-gather-fraglist: true
+          tx-sctp-segmentation: true
+          tx-tcp-ecn-segmentation: true
+          tx-tcp-mangleid-segmentation: true
+          tx-tcp-segmentation: true
+          tx-tcp6-segmentation: true
+          tx-udp-segmentation: true
+          tx-udp_tnl-csum-segmentation: true
+          tx-udp_tnl-segmentation: true
+          tx-vlan-hw-insert: true
+          tx-vlan-stag-hw-insert: true
+      ipv4:
+        enabled: false
+        forwarding: false
+      ipv6:
+        enabled: false
+      mac-address: 06:42:C3:27:44:7D
+      max-mtu: 65535
+      min-mtu: 68
+      mtu: 8900
+      name: br-int
+      state: ignore
+      type: ovs-interface
+    - bridge:
+        options:
+          datapath: ""
+          fail-mode: ""
+          mcast-snooping-enable: false
+          rstp: false
+          stp:
+            enabled: false
+        port:
+        - name: bond0
+      description: A dedicated OVS bridge to enable localnet and layer2 topology networks
+      identifier: name
+      ipv4:
+        dhcp: false
+        enabled: false
+      ipv6:
+        autoconf: false
+        dhcp: false
+        enabled: false
+      lldp:
+        enabled: false
+      name: br-vmdata
+      ovs-db:
+        external_ids: {}
+        other_config: {}
+      profile-name: br-vmdata-br
+      state: up
+      type: ovs-bridge
+      wait-ip: any
+    - accept-all-mac-addresses: false
+      controller: bond0
+      driver: igc
+      ethernet:
+        auto-negotiation: true
+        duplex: full
+        speed: 2500
+      ethtool:
+        coalesce:
+          rx-usecs: 3
+          tx-usecs: 3
+        feature:
+          hw-tc-offload: true
+          rx-checksum: true
+          rx-gro: true
+          rx-gro-list: false
+          rx-hashing: true
+          rx-ntuple-filter: false
+          rx-udp-gro-forwarding: false
+          rx-vlan-hw-parse: false
+          tx-checksum-ip-generic: true
+          tx-checksum-sctp: true
+          tx-generic-segmentation: true
+          tx-gre-csum-segmentation: true
+          tx-gre-segmentation: true
+          tx-gso-partial: true
+          tx-ipxip4-segmentation: true
+          tx-ipxip6-segmentation: true
+          tx-nocache-copy: false
+          tx-tcp-ecn-segmentation: true
+          tx-tcp-mangleid-segmentation: false
+          tx-tcp-segmentation: true
+          tx-tcp6-segmentation: true
+          tx-udp_tnl-csum-segmentation: true
+          tx-udp_tnl-segmentation: true
+          tx-vlan-hw-insert: false
+        pause:
+          autoneg: true
+          rx: true
+          tx: false
+        ring:
+          rx: 256
+          rx-max: 4096
+          tx: 256
+          tx-max: 4096
+      identifier: name
+      ipv4:
+        enabled: false
+        forwarding: false
+      ipv6:
+        enabled: false
+      lldp:
+        enabled: true
+        neighbors:
+        - - system-name: USWEnterprise48PoE
+            type: 5
+          - system-description: USW-Enterprise-48-PoE, 7.2.123.16565, Linux 4.4.153
+            type: 6
+          - system-capabilities:
+            - MAC Bridge component
+            - Router
+            type: 7
+          - _description: MAC address
+            chassis-id: 28:70:4E:D4:53:B0
+            chassis-id-type: 4
+            type: 1
+          - _description: Locally assigned
+            port-id: Port 34
+            port-id-type: 7
+            type: 2
+      mac-address: 58:47:CA:7F:A2:BA
+      max-mtu: 9216
+      min-mtu: 68
+      mtu: 9000
+      name: enp44s0
+      pci-address: 0000:2c:00.0
+      permanent-mac-address: 58:47:CA:7F:A2:BB
+      state: up
+      type: ethernet
+    - accept-all-mac-addresses: false
+      controller: bond0
+      driver: igc
+      ethernet:
+        auto-negotiation: true
+        duplex: full
+        speed: 2500
+      ethtool:
+        coalesce:
+          rx-usecs: 3
+          tx-usecs: 3
+        feature:
+          hw-tc-offload: true
+          rx-checksum: true
+          rx-gro: true
+          rx-gro-list: false
+          rx-hashing: true
+          rx-ntuple-filter: false
+          rx-udp-gro-forwarding: false
+          rx-vlan-hw-parse: false
+          tx-checksum-ip-generic: true
+          tx-checksum-sctp: true
+          tx-generic-segmentation: true
+          tx-gre-csum-segmentation: true
+          tx-gre-segmentation: true
+          tx-gso-partial: true
+          tx-ipxip4-segmentation: true
+          tx-ipxip6-segmentation: true
+          tx-nocache-copy: false
+          tx-tcp-ecn-segmentation: true
+          tx-tcp-mangleid-segmentation: false
+          tx-tcp-segmentation: true
+          tx-tcp6-segmentation: true
+          tx-udp_tnl-csum-segmentation: true
+          tx-udp_tnl-segmentation: true
+          tx-vlan-hw-insert: false
+        pause:
+          autoneg: true
+          rx: true
+          tx: false
+        ring:
+          rx: 256
+          rx-max: 4096
+          tx: 256
+          tx-max: 4096
+      identifier: name
+      ipv4:
+        enabled: false
+        forwarding: false
+      ipv6:
+        enabled: false
+      lldp:
+        enabled: true
+        neighbors:
+        - - system-name: USWEnterprise48PoE
+            type: 5
+          - system-description: USW-Enterprise-48-PoE, 7.2.123.16565, Linux 4.4.153
+            type: 6
+          - system-capabilities:
+            - MAC Bridge component
+            - Router
+            type: 7
+          - _description: MAC address
+            chassis-id: 28:70:4E:D4:53:B0
+            chassis-id-type: 4
+            type: 1
+          - _description: Locally assigned
+            port-id: Port 33
+            port-id-type: 7
+            type: 2
+      mac-address: 58:47:CA:7F:A2:BA
+      max-mtu: 9216
+      min-mtu: 68
+      mtu: 9000
+      name: enp45s0
+      pci-address: 0000:2d:00.0
+      permanent-mac-address: 58:47:CA:7F:A2:BA
+      state: up
+      type: ethernet
+    - accept-all-mac-addresses: false
+      controller: ovs-system
+      ethernet: {}
+      ethtool:
+        feature:
+          rx-checksum: true
+          rx-gro: true
+          rx-gro-list: false
+          rx-udp-gro-forwarding: false
+          tx-checksum-ip-generic: true
+          tx-generic-segmentation: true
+          tx-gso-list: true
+          tx-nocache-copy: false
+          tx-scatter-gather-fraglist: true
+          tx-sctp-segmentation: true
+          tx-tcp-ecn-segmentation: true
+          tx-tcp-mangleid-segmentation: true
+          tx-tcp-segmentation: true
+          tx-tcp6-segmentation: true
+          tx-udp-segmentation: true
+      ipv4:
+        enabled: false
+        forwarding: false
+      ipv6:
+        address:
+        - ip: fe80::60fb:ecff:febb:3a74
+          prefix-length: 64
+        enabled: true
+      mac-address: 62:FB:EC:BB:3A:74
+      max-mtu: 65465
+      min-mtu: 68
+      mtu: 65000
+      name: genev_sys_6081
+      state: ignore
+      type: ethernet
+    - accept-all-mac-addresses: false
+      ethtool:
+        feature:
+          rx-gro: true
+          rx-gro-list: false
+          rx-udp-gro-forwarding: false
+          tx-generic-segmentation: true
+          tx-gso-list: true
+          tx-sctp-segmentation: true
+          tx-tcp-ecn-segmentation: true
+          tx-tcp-mangleid-segmentation: true
+          tx-tcp-segmentation: true
+          tx-tcp6-segmentation: true
+          tx-udp-segmentation: true
+      ipv4:
+        address:
+        - ip: 127.0.0.1
+          prefix-length: 8
+        enabled: true
+        forwarding: false
+      ipv6:
+        address:
+        - ip: ::1
+          prefix-length: 128
+        enabled: true
+      mac-address: "00:00:00:00:00:00"
+      mtu: 65536
+      name: lo
+      state: up
+      type: loopback
+    - accept-all-mac-addresses: false
+      controller: br-int
+      ethtool:
+        feature:
+          highdma: true
+          rx-gro: true
+          rx-gro-list: false
+          rx-udp-gro-forwarding: false
+          tx-checksum-ip-generic: true
+          tx-generic-segmentation: true
+          tx-gre-csum-segmentation: true
+          tx-gre-segmentation: true
+          tx-gso-list: true
+          tx-ipxip4-segmentation: true
+          tx-ipxip6-segmentation: true
+          tx-nocache-copy: false
+          tx-scatter-gather-fraglist: true
+          tx-sctp-segmentation: true
+          tx-tcp-ecn-segmentation: true
+          tx-tcp-mangleid-segmentation: true
+          tx-tcp-segmentation: true
+          tx-tcp6-segmentation: true
+          tx-udp-segmentation: true
+          tx-udp_tnl-csum-segmentation: true
+          tx-udp_tnl-segmentation: true
+          tx-vlan-hw-insert: true
+          tx-vlan-stag-hw-insert: true
+      ipv4:
+        address:
+        - ip: 10.130.0.2
+          prefix-length: 23
+        enabled: true
+        forwarding: true
+      ipv6:
+        address:
+        - ip: fe80::858:aff:fe82:2
+          prefix-length: 64
+        enabled: true
+      mac-address: 0A:58:0A:82:00:02
+      max-mtu: 65535
+      min-mtu: 68
+      mptcp:
+        address-flags: []
+      mtu: 8900
+      name: ovn-k8s-mp0
+      ovs-db:
+        external_ids:
+          iface-id: k8s-ocs-master-1.example.dom
+          ovn-installed: "true"
+          ovn-installed-ts: "1765478127745"
+        other_config: {}
+      state: ignore
+      type: ovs-interface
+    - controller: br-ex
+      name: patch-br-ex_ocs-master-1.example.dom-to-br-int
+      patch:
+        peer: patch-br-int-to-br-ex_ocs-master-1.example.dom
+      state: ignore
+      type: ovs-interface
+    - controller: br-int
+      name: patch-br-int-to-br-ex_ocs-master-1.example.dom
+      patch:
+        peer: patch-br-ex_ocs-master-1.example.dom-to-br-int
+      state: ignore
+      type: ovs-interface
+    ovn:
+      bridge-mappings:
+      - bridge: br-ex
+        localnet: physnet
+      - bridge: br-vmdata
+        localnet: physnet-vmdata
+    routes:
+      config:
+      - destination: 172.30.0.0/16
+        next-hop-address: 10.130.0.1
+        next-hop-interface: ovn-k8s-mp0
+        state: ignore
+        table-id: 7
+      - destination: 10.128.0.0/14
+        next-hop-address: 10.130.0.1
+        next-hop-interface: ovn-k8s-mp0
+        state: ignore
+        table-id: 254
+      - destination: 169.254.0.1/32
+        next-hop-address: 0.0.0.0
+        next-hop-interface: br-ex
+        source: 192.168.55.11
+        table-id: 254
+      - destination: 169.254.0.3/32
+        next-hop-address: 10.130.0.1
+        next-hop-interface: ovn-k8s-mp0
+        state: ignore
+        table-id: 254
+      - destination: 172.30.0.0/16
+        mtu: 8900
+        next-hop-address: 169.254.0.4
+        next-hop-interface: br-ex
+        source: 169.254.0.2
+        table-id: 254
+      - destination: 0.0.0.0/0
+        metric: 254
+        next-hop-address: 192.168.55.1
+        next-hop-interface: br-ex
+        table-id: 254
+      running:
+      - destination: 172.30.0.0/16
+        next-hop-address: 10.130.0.1
+        next-hop-interface: ovn-k8s-mp0
+        state: ignore
+        table-id: 7
+      - destination: 10.128.0.0/14
+        next-hop-address: 10.130.0.1
+        next-hop-interface: ovn-k8s-mp0
+        state: ignore
+        table-id: 254
+      - destination: 169.254.0.1/32
+        next-hop-address: 0.0.0.0
+        next-hop-interface: br-ex
+        source: 192.168.55.11
+        table-id: 254
+      - destination: 169.254.0.3/32
+        next-hop-address: 10.130.0.1
+        next-hop-interface: ovn-k8s-mp0
+        state: ignore
+        table-id: 254
+      - destination: 172.30.0.0/16
+        mtu: 8900
+        next-hop-address: 169.254.0.4
+        next-hop-interface: br-ex
+        source: 169.254.0.2
+        table-id: 254
+      - destination: 0.0.0.0/0
+        metric: 254
+        next-hop-address: 192.168.55.1
+        next-hop-interface: br-ex
+        table-id: 254
+  handlerNmstateVersion: nmstatectl 2.2.56
+  hostNetworkManagerVersion: 1.52.0
+  lastSuccessfulUpdateTime: "2026-02-19T17:49:48Z"
