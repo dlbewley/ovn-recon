@@ -31,3 +31,7 @@ build.log
 
 # Explorations
 _spike/
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
