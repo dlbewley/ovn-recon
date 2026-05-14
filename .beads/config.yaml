@@ -4,12 +4,8 @@
 
 issue-prefix: "ovn-recon"
 
-# Auto-export JSONL for lightweight viewing and git-based review. Do not
-# auto-stage it: this worktree marks .beads/issues.jsonl skip-worktree, and
-# auto git-add fails under that local checkout state.
-export.auto: true
-export.path: "issues.jsonl"
-export.interval: "60s"
-export.git-add: false
+# Canonical issue data is Dolt (embedded store + bd dolt push / bd dolt pull).
+# Do not rely on committing JSONL for sync; see docs/SYNC_CONCEPTS upstream.
+export.auto: false
 
 sync.remote: "git@github.com:dlbewley/ovn-recon.git"
