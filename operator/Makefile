@@ -180,6 +180,11 @@ docker-push: ## Push docker image with the manager.
 # - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
+#
+# Default PLATFORMS includes s390x/ppc64le for upstream kubebuilder parity. For
+# OVN Recon Quay releases, CI overrides to linux/amd64,linux/arm64 only. When
+# migrating from amd64-only images, always verify the pushed tag is a manifest
+# list (e.g. docker buildx imagetools inspect <image> --raw | jq .manifests).
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 # Optional second tag for the same manifest list (e.g. :latest on stable releases).
 IMAGE_EXTRA_TAG ?=
@@ -394,7 +399,21 @@ catalog-build: opm ## Build a catalog image.
 CATALOG_INDEX_DOCKERFILE ?= catalog-index.Dockerfile
 CATALOG_PLATFORMS ?= linux/amd64,linux/arm64
 CATALOG_EXTRA_IMG ?=
-# Optional pin for the opm binary inside the catalog image (multi-arch digest recommended).
+# OPM_INDEX_BINARY_IMAGE — optional but recommended for reproducible catalogs.
+#
+#   opm index add --generate writes a Dockerfile whose first line is effectively:
+#     FROM <catalog runtime image>   # default: quay.io/operator-framework/opm:latest
+#
+#   That image is NOT your operator bundle; it is the upstream image that runs
+#   "registry serve" inside the catalog pod. For multi-arch, that FROM image
+#   must resolve to a manifest list (linux/amd64 + linux/arm64), or one
+#   platform can silently get the wrong rootfs or fail to build.
+#
+#   Set this to a multi-arch digest to pin the FROM line, e.g.:
+#     OPM_INDEX_BINARY_IMAGE=quay.io/operator-framework/opm@sha256:...
+#   Verify before pinning:  oc image info --show-multiarch <ref>
+#   CI: export the same value in operator-release.yaml when calling
+#   make catalog-build-multiarch (or pass on the make command line).
 OPM_INDEX_BINARY_IMAGE ?=
 
 .PHONY: catalog-index-dockerfile

@@ -179,6 +179,10 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
         cd operator
+        # Optional hardening: pin the generated catalog Dockerfile FROM line to a
+        # multi-arch opm digest (operator/Makefile OPM_INDEX_BINARY_IMAGE). See
+        # docs/tasks/multi-arch-build.md section "Catalog FROM line and OPM_INDEX_BINARY_IMAGE".
+        # export OPM_INDEX_BINARY_IMAGE=quay.io/operator-framework/opm@sha256:<digest>
         BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:$VERSION
         CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
         # Try to pull existing catalog to add to it, but don't fail if it doesn't exist (first release)

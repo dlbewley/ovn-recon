@@ -53,13 +53,17 @@ podman manifest add     ${TAG} containers-storage:${TAG}-arm64
 podman manifest push --all ${TAG}
 ```
 
-### `opm` base image
+### `opm` base image (catalog runtime)
 
-`opm`'s registry base image must also be multi-arch. Pin a digest from a
-manifest list — newer upstream tags publish both arches, but
-`quay.io/operator-framework/opm:latest` has historically been amd64-only on
-some mirrors. Resolve a digest with `oc image info --show-multiarch` (see
-below) before pinning.
+The **catalog image** that `opm index add` produces is built from a Dockerfile
+whose **`FROM`** line uses Operator Framework’s **`quay.io/operator-framework/opm`**
+image (the **catalog pod runtime**, not the `opm` CLI binary in `operator/bin`).
+That **`FROM` image must be multi-arch** if you build a multi-arch catalog.
+Pin a digest from a manifest list when you want reproducible builds; floating
+tags can move or be single-arch on some mirrors. Use **`oc image info
+--show-multiarch`** before pinning. For how this maps to Make, see
+[Catalog FROM line and `OPM_INDEX_BINARY_IMAGE`](#catalog-from-line-and-opm_index_binary_image)
+in the implementation plan below.
 
 ## Verify
 
@@ -97,6 +101,11 @@ move from `TRANSIENT_FAILURE` to `READY` within ~30 seconds.
 This section satisfies the planning scope for multi-arch operator releases and
 OLM catalog publishing (see bead **ovn-recon-970**). It is the agreed reference
 before changing CI or Makefiles.
+
+**Direction:** Quay tags may still be **amd64-only** until the first successful
+multi-arch release push; after that, keep **manifest lists** (linux/amd64 +
+linux/arm64) as the norm for operator, bundle, and catalog (see [Rolling
+forward from amd64-only images](#rolling-forward-from-amd64-only-images)).
 
 ### Selected CI approach
 
@@ -142,21 +151,61 @@ before changing CI or Makefiles.
    **`docker buildx build --platform linux/amd64,linux/arm64 --push`** pattern
    as for other images (today `make bundle-build` is a single `docker build`).
 
-### OLM / `opm` base image pinning
+### Rolling forward from amd64-only images
 
-The index Dockerfile `opm` generates uses a **registry base image** (not the
-`opm` CLI image). Pin that base by digest after confirming it is a **manifest
-list** covering amd64 and arm64:
+If Quay tags today resolve to **single-arch amd64** images, that is expected
+before the first successful **multi-arch** release run. Going forward, treat
+**manifest lists** (at least **linux/amd64** and **linux/arm64**) as the default
+for operator, bundle, and catalog images so arm64 nodes (including CRC on Apple
+Silicon) never pull an amd64-only OLM catalog again (see [Why](#why)).
+
+After CI publishes new tags, confirm each image with **`docker buildx
+imagetools inspect`** or **`oc image info --show-multiarch`** (see [Verify](#verify)
+and the workflow “Verify release images…” step).
+
+### Catalog FROM line and `OPM_INDEX_BINARY_IMAGE`
+
+There are **two different “opm” notions**; pinning applies to the **second**
+one:
+
+1. **`opm` the CLI** — the binary Make downloads into `operator/bin/opm`. That
+   tool **generates** the catalog Dockerfile and `database/index.db`. It is not
+   the image your cluster runs as the catalog.
+
+2. **Catalog runtime base image** — the generated Dockerfile begins with a line
+   like **`FROM quay.io/operator-framework/opm:<tag>`** (Operator Framework’s
+   image that ships the **on-disk `opm` / registry serve** stack). **That** is
+   the filesystem your **catalog pod** actually runs. For multi-arch builds,
+   that **`FROM` image must itself be a multi-arch manifest** (or each
+   platform’s build will not get a matching rootfs). Floating tags can change
+   or temporarily be single-arch on some mirrors.
+
+**Best practice:** pick a **digest** of a catalog base image that **`oc image
+info --show-multiarch`** (or Quay’s UI) shows as listing **linux/amd64** and
+**linux/arm64**, then pin it so every release uses the same rootfs:
 
 ```bash
-oc image info --show-multiarch <registry-base>:<tag>
+# Example: inspect a tag (or use a digest URL from Quay after you confirm both arches).
+oc image info --show-multiarch quay.io/operator-framework/opm:v1.55.0
 ```
 
-If the tag is not multi-arch, choose another tag or digest from the same repo
-that lists both platforms, then record the digest in the Makefile (comment),
-workflow env, or a small include file so catalog generation does not regress to
-an amd64-only base. Optionally add a CI step that **fails** when the resolved
-base is single-arch.
+Wire the pin into catalog generation by setting **`OPM_INDEX_BINARY_IMAGE`**
+when calling Make (this becomes **`opm index add --binary-image …`**, which
+controls the **`FROM`** in the generated Dockerfile):
+
+```bash
+make catalog-build-multiarch CATALOG_IMG=... BUNDLE_IMGS=... \
+  OPM_INDEX_BINARY_IMAGE=quay.io/operator-framework/opm@sha256:<digest>
+```
+
+In GitHub Actions, pass the same value as an **`env:`** entry or **`make`**
+variable on the **`catalog-build-multiarch`** line once you have chosen a
+digest. Leaving it **unset** is valid while you are validating the default tag;
+set it once you want **reproducible, supply-chain–conscious** catalog builds.
+
+**Note:** This pin is **only** the catalog runtime base. Your **operator** and
+**bundle** images are separate; they are already built as multi-arch manifest
+lists in the release workflow via **`docker-buildx`** / **`bundle-buildx`**.
 
 ### Which images must be multi-arch?
 
@@ -202,7 +251,7 @@ version the catalog tag per operator release (today **catalog is not**
 | **`--from-index`** path behaves differently per arch | Prefer a single generated Dockerfile built for both platforms; if splitting jobs, ensure both legs use the **same** index input and bundle digests. |
 | **Slow or flaky QEMU** arm64 builds on amd64 runners | Use a **native arm64** GitHub-hosted runner for the arm64 catalog leg. |
 | **Sqlite catalog deprecation** (`opm` warns) | Track **file-based catalog (FBC)** migration separately; multi-arch plan applies to whatever image build path replaces sqlite indexes. |
-| Wrong **base image** digest | Pin and verify with **`oc image info --show-multiarch`** in CI (see [Verify](#verify)). |
+| Wrong **catalog `FROM` / opm runtime** image | Pin **`OPM_INDEX_BINARY_IMAGE`** to a multi-arch digest; verify with **`oc image info --show-multiarch`** (see [Catalog FROM line](#catalog-from-line-and-opm_index_binary_image)). |
 
 ### Release validation checklist (catch single-arch before callers pull)
 
@@ -238,4 +287,6 @@ while engineering proceeds on a focused task.
 `bewley-operator-catalog` as manifest lists for **linux/amd64** and
 **linux/arm64** using Docker Buildx, `make docker-buildx` / `bundle-buildx` /
 `catalog-build-multiarch`, and a post-push `docker buildx imagetools inspect`
-check (see workflow “Verify release images…” step).
+check (see workflow “Verify release images…” step). **Recommended next
+hardening step:** set **`OPM_INDEX_BINARY_IMAGE`** to a **multi-arch digest** for
+the catalog runtime `FROM` image (see [Catalog FROM line and OPM_INDEX_BINARY_IMAGE](#catalog-from-line-and-opm_index_binary_image)).
