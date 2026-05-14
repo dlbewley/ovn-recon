@@ -180,16 +180,30 @@ docker-push: ## Push docker image with the manager.
 # - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
+#
+# Default PLATFORMS includes s390x/ppc64le for upstream kubebuilder parity. For
+# OVN Recon Quay releases, CI overrides to linux/amd64,linux/arm64 only. When
+# migrating from amd64-only images, always verify the pushed tag is a manifest
+# list (e.g. docker buildx imagetools inspect <image> --raw | jq .manifests).
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+# Optional second tag for the same manifest list (e.g. :latest on stable releases).
+IMAGE_EXTRA_TAG ?=
+# Set DOCKER_BUILDX_NO_ISOLATED_BUILDER=1 when CI already ran docker/setup-buildx-action (avoid extra named builder).
+DOCKER_BUILDX_NO_ISOLATED_BUILDER ?=
+
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
+ifeq ($(DOCKER_BUILDX_NO_ISOLATED_BUILDER),1)
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} $(if $(IMAGE_EXTRA_TAG),--tag $(IMAGE_EXTRA_TAG),) -f Dockerfile.cross .
+else
 	- $(CONTAINER_TOOL) buildx create --name operator-builder
 	$(CONTAINER_TOOL) buildx use operator-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} $(if $(IMAGE_EXTRA_TAG),--tag $(IMAGE_EXTRA_TAG),) -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm operator-builder
-	rm Dockerfile.cross
+endif
+	rm -f Dockerfile.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
@@ -332,6 +346,15 @@ render: ## Render YAML for the sample OvnRecon resource.
 bundle-build: ## Build the bundle image.
 	$(CONTAINER_TOOL) build $(BUILD_ARGS) -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
+# Platforms for bundle/catalog release images (manifest list).
+BUNDLE_PLATFORMS ?= linux/amd64,linux/arm64
+BUNDLE_EXTRA_IMG ?=
+
+.PHONY: bundle-buildx
+bundle-buildx: ## Build and push multi-arch bundle image (requires registry login and buildx).
+	$(CONTAINER_TOOL) buildx build --push --platform=$(BUNDLE_PLATFORMS) $(BUILD_ARGS) -f bundle.Dockerfile \
+		-t $(BUNDLE_IMG) $(if $(BUNDLE_EXTRA_IMG),-t $(BUNDLE_EXTRA_IMG),) .
+
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
@@ -371,6 +394,42 @@ endif
 .PHONY: catalog-build
 catalog-build: opm ## Build a catalog image.
 	$(OPM) index add --container-tool $(CONTAINER_TOOL) --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+
+# Multi-arch catalog: generate Dockerfile + sqlite DB with opm, then build/push with buildx (see docs/tasks/multi-arch-build.md).
+CATALOG_INDEX_DOCKERFILE ?= catalog-index.Dockerfile
+CATALOG_PLATFORMS ?= linux/amd64,linux/arm64
+CATALOG_EXTRA_IMG ?=
+# OPM_INDEX_BINARY_IMAGE — optional but recommended for reproducible catalogs.
+#
+#   opm index add --generate writes a Dockerfile whose first line is effectively:
+#     FROM <catalog runtime image>   # default: quay.io/operator-framework/opm:latest
+#
+#   That image is NOT your operator bundle; it is the upstream image that runs
+#   "registry serve" inside the catalog pod. For multi-arch, that FROM image
+#   must resolve to a manifest list (linux/amd64 + linux/arm64), or one
+#   platform can silently get the wrong rootfs or fail to build.
+#
+#   Set this to a multi-arch digest to pin the FROM line, e.g.:
+#     OPM_INDEX_BINARY_IMAGE=quay.io/operator-framework/opm@sha256:...
+#   Verify before pinning:  oc image info --show-multiarch <ref>
+#   CI: export the same value in operator-release.yaml when calling
+#   make catalog-build-multiarch (or pass on the make command line).
+OPM_INDEX_BINARY_IMAGE ?=
+
+.PHONY: catalog-index-dockerfile
+catalog-index-dockerfile: opm ## Generate catalog Dockerfile and database/ via opm (does not build).
+	rm -rf database
+	rm -f $(CATALOG_INDEX_DOCKERFILE)
+	$(OPM) index add --container-tool $(CONTAINER_TOOL) --mode semver --tag $(CATALOG_IMG) \
+		--bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT) $(if $(OPM_INDEX_BINARY_IMAGE),--binary-image $(OPM_INDEX_BINARY_IMAGE),) \
+		--generate -d $(CATALOG_INDEX_DOCKERFILE)
+
+.PHONY: catalog-build-multiarch
+catalog-build-multiarch: catalog-index-dockerfile ## Build and push multi-arch catalog image (requires buildx + registry login).
+	$(CONTAINER_TOOL) buildx build --push --platform=$(CATALOG_PLATFORMS) $(BUILD_ARGS) \
+		-f $(CATALOG_INDEX_DOCKERFILE) -t $(CATALOG_IMG) $(if $(CATALOG_EXTRA_IMG),-t $(CATALOG_EXTRA_IMG),) .
+	rm -rf database
+	rm -f $(CATALOG_INDEX_DOCKERFILE)
 
 # Push the catalog image.
 .PHONY: catalog-push
