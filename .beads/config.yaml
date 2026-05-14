@@ -11,3 +11,5 @@ export.auto: true
 export.path: "issues.jsonl"
 export.interval: "60s"
 export.git-add: false
+
+sync.remote: "git@github.com:dlbewley/ovn-recon.git"
