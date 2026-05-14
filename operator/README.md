@@ -10,7 +10,7 @@ Deployment, Service, and ConsolePlugin resources needed by the plugin.
 ## Getting Started
 
 ### Prerequisites
-- Go 1.23+
+- Go 1.24+
 - Docker or Podman
 - kubectl 1.31+
 - Access to a Kubernetes 1.31+ cluster (OpenShift 4.20 recommended)
