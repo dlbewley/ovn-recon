@@ -35,7 +35,7 @@ source setup_env.sh && \
 
 ## Task Management
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started, and **`bd prime`** for workflow context and persistent memories.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:full hash:f65d5d33 -->
 ## Issue Tracking with bd (beads)
@@ -114,11 +114,12 @@ bd close bd-42 --reason "Completed" --json
 
 ### Auto-Sync
 
-bd automatically syncs via Dolt:
+bd keeps issue state in **Dolt** (not in committed `.beads/issues.jsonl`; that path is intentionally not versioned here).
 
-- Each write auto-commits to Dolt history
-- Use `bd dolt push`/`bd dolt pull` for remote sync
-- No manual export/import needed!
+- Each write updates local Dolt history
+- Use **`bd dolt push`** / **`bd dolt pull`** against `origin` for cross-machine sync (`refs/dolt/data` on the remote)
+- New clones: run **`bd bootstrap`** once if the remote already has Dolt data
+- No JSONL export/import workflow is required for normal work
 
 ### Important Rules
 
@@ -130,7 +131,7 @@ bd automatically syncs via Dolt:
 - ❌ Do NOT use external issue trackers
 - ❌ Do NOT duplicate tracking systems
 
-For more details, see README.md and docs/QUICKSTART.md.
+For more details, see README.md and https://gastownhall.github.io/beads/getting-started/quickstart
 
 ## Session Completion
 
