@@ -7,6 +7,13 @@
 bin/*
 Dockerfile.cross
 
+# opm index add --generate (multi-arch catalog) leaves these under operator/
+catalog-index.Dockerfile
+index.Dockerfile
+database/
+index_tmp_*/
+index_build_tmp*/
+
 # Test binary, built with `go test -c`
 *.test
 

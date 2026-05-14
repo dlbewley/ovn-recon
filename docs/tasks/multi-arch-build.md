@@ -232,3 +232,10 @@ below.
 Implementation work (CI/Makefile changes) can be tracked as a **new bead**
 discovered-from **ovn-recon-970** once you start coding, so planning stays closed
 while engineering proceeds on a focused task.
+
+**Status (implemented):** `.github/workflows/operator-release.yaml` publishes
+`quay.io/dbewley/ovn-recon-operator`, `ovn-recon-operator-bundle`, and
+`bewley-operator-catalog` as manifest lists for **linux/amd64** and
+**linux/arm64** using Docker Buildx, `make docker-buildx` / `bundle-buildx` /
+`catalog-build-multiarch`, and a post-push `docker buildx imagetools inspect`
+check (see workflow “Verify release images…” step).
