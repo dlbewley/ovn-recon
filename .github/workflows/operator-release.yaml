@@ -143,6 +143,15 @@ jobs:
           echo "Error: bundle OLM package name must be ovn-recon-operator, not operator (stale catalog PackageManifest)"
           exit 1
         fi
+        for label in \
+          'operatorframework.io/arch.amd64: supported' \
+          'operatorframework.io/arch.arm64: supported' \
+          'operatorframework.io/os.linux: supported'; do
+          if ! grep -Fq "$$label" bundle/manifests/*.clusterserviceversion.yaml; then
+            echo "Error: bundle CSV must include label for OperatorHub: $$label"
+            exit 1
+          fi
+        done
 
     - name: Prepare Community Operators Artifact
       if: startsWith(github.ref, 'refs/tags/v')
