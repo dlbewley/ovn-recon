@@ -59,11 +59,11 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-# CONTAINER_TOOL defines the container tool to be used for building images.
-# Be aware that the target commands are only tested with Docker which is
-# scaffolded by default. However, you might want to replace it to use other
-# tools. (i.e. podman)
-CONTAINER_TOOL ?= docker
+# CONTAINER_TOOL defines the container tool used for image builds and for opm
+# (--container-tool). Default: docker if on PATH, else podman (common on macOS
+# without Docker Desktop). Override explicitly when needed, e.g.
+#   make catalog-push-pruned-index CONTAINER_TOOL=podman ...
+CONTAINER_TOOL ?= $(shell if command -v docker >/dev/null 2>&1; then echo docker; elif command -v podman >/dev/null 2>&1; then echo podman; else echo docker; fi)
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
