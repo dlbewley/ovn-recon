@@ -127,15 +127,15 @@ jobs:
           ls -1 bundle/manifests/*.clusterserviceversion.yaml || true
           exit 1
         fi
-        if rg -n --no-messages '"tag": "latest"' bundle/manifests/*.clusterserviceversion.yaml; then
+        if grep -Fq '"tag": "latest"' bundle/manifests/*.clusterserviceversion.yaml; then
           echo "Error: bundle alm-examples must not pin image tag to latest"
           exit 1
         fi
-        if rg -n --no-messages 'image:\s*controller:latest' bundle/manifests; then
+        if grep -rEq 'image:[[:space:]]*controller:latest' bundle/manifests; then
           echo "Error: bundle contains an unqualified controller image"
           exit 1
         fi
-        if rg -n --no-messages 'image:\s*ovn-recon-operator:latest' bundle/manifests; then
+        if grep -rEq 'image:[[:space:]]*ovn-recon-operator:latest' bundle/manifests; then
           echo "Error: bundle contains an unqualified ovn-recon-operator image"
           exit 1
         fi
@@ -143,15 +143,18 @@ jobs:
           echo "Error: bundle OLM package name must be ovn-recon-operator, not operator (stale catalog PackageManifest)"
           exit 1
         fi
-        for label in \
-          'operatorframework.io/arch.amd64: supported' \
-          'operatorframework.io/arch.arm64: supported' \
-          'operatorframework.io/os.linux: supported'; do
-          if ! grep -Fq "$$label" bundle/manifests/*.clusterserviceversion.yaml; then
-            echo "Error: bundle CSV must include label for OperatorHub: $$label"
-            exit 1
-          fi
-        done
+        if ! grep -Fq 'operatorframework.io/arch.amd64: supported' bundle/manifests/*.clusterserviceversion.yaml; then
+          echo "Error: bundle CSV must include operatorframework.io/arch.amd64: supported for OperatorHub"
+          exit 1
+        fi
+        if ! grep -Fq 'operatorframework.io/arch.arm64: supported' bundle/manifests/*.clusterserviceversion.yaml; then
+          echo "Error: bundle CSV must include operatorframework.io/arch.arm64: supported for OperatorHub"
+          exit 1
+        fi
+        if ! grep -Fq 'operatorframework.io/os.linux: supported' bundle/manifests/*.clusterserviceversion.yaml; then
+          echo "Error: bundle CSV must include operatorframework.io/os.linux: supported for OperatorHub"
+          exit 1
+        fi
 
     - name: Prepare Community Operators Artifact
       if: startsWith(github.ref, 'refs/tags/v')
