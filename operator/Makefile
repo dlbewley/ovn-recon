@@ -424,6 +424,33 @@ catalog-index-dockerfile: opm ## Generate catalog Dockerfile and database/ via o
 		--bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT) $(if $(OPM_INDEX_BINARY_IMAGE),--binary-image $(OPM_INDEX_BINARY_IMAGE),) \
 		--generate -d $(CATALOG_INDEX_DOCKERFILE)
 
+# Dockerfile from `opm index rm --generate` (not committed).
+CATALOG_PRUNE_DOCKERFILE ?= catalog-index-prune.Dockerfile
+# Legacy sqlite package name from early operator-sdk defaults (see docs/tasks/multi-arch-build.md).
+LEGACY_CATALOG_PACKAGE ?= operator
+# Source index for pruning (required for catalog-index-rm-legacy-package / catalog-push-pruned-index).
+FROM_INDEX ?=
+
+.PHONY: catalog-index-rm-legacy-package
+catalog-index-rm-legacy-package: opm ## Generate Dockerfile to remove a package from an existing index. Set FROM_INDEX, CATALOG_IMG, and optionally LEGACY_CATALOG_PACKAGE / OPM_INDEX_BINARY_IMAGE.
+	@[ -n "$(FROM_INDEX)" ] || { echo "ERROR: FROM_INDEX must be set (e.g. quay.io/dbewley/bewley-operator-catalog:v4.20)"; exit 1; }
+	@[ -n "$(CATALOG_IMG)" ] || { echo "ERROR: CATALOG_IMG must be set (tag for rebuilt catalog image)"; exit 1; }
+	rm -rf database
+	rm -f $(CATALOG_PRUNE_DOCKERFILE)
+	$(OPM) index rm --container-tool $(CONTAINER_TOOL) \
+		--from-index $(FROM_INDEX) \
+		--operators $(LEGACY_CATALOG_PACKAGE) \
+		--tag $(CATALOG_IMG) \
+		$(if $(OPM_INDEX_BINARY_IMAGE),--binary-image $(OPM_INDEX_BINARY_IMAGE),) \
+		--generate -d $(CATALOG_PRUNE_DOCKERFILE)
+
+.PHONY: catalog-push-pruned-index
+catalog-push-pruned-index: catalog-index-rm-legacy-package ## Rebuild and push multi-arch catalog after opm index rm (requires buildx + registry login).
+	$(CONTAINER_TOOL) buildx build --push --platform=$(CATALOG_PLATFORMS) $(BUILD_ARGS) \
+		-f $(CATALOG_PRUNE_DOCKERFILE) -t $(CATALOG_IMG) $(if $(CATALOG_EXTRA_IMG),-t $(CATALOG_EXTRA_IMG),) .
+	rm -rf database
+	rm -f $(CATALOG_PRUNE_DOCKERFILE)
+
 .PHONY: catalog-build-multiarch
 catalog-build-multiarch: catalog-index-dockerfile ## Build and push multi-arch catalog image (requires buildx + registry login).
 	$(CONTAINER_TOOL) buildx build --push --platform=$(CATALOG_PLATFORMS) $(BUILD_ARGS) \

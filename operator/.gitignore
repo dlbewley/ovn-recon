@@ -9,6 +9,7 @@ Dockerfile.cross
 
 # opm index add --generate (multi-arch catalog) leaves these under operator/
 catalog-index.Dockerfile
+catalog-index-prune.Dockerfile
 index.Dockerfile
 database/
 index_tmp_*/

@@ -139,6 +139,10 @@ jobs:
           echo "Error: bundle contains an unqualified ovn-recon-operator image"
           exit 1
         fi
+        if grep -q 'operators.operatorframework.io.bundle.package.v1: operator' bundle/metadata/annotations.yaml; then
+          echo "Error: bundle OLM package name must be ovn-recon-operator, not operator (stale catalog PackageManifest)"
+          exit 1
+        fi
 
     - name: Prepare Community Operators Artifact
       if: startsWith(github.ref, 'refs/tags/v')
