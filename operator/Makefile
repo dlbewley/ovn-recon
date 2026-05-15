@@ -412,6 +412,10 @@ CATALOG_EXTRA_IMG ?=
 #   make catalog-build-multiarch (or pass on the make command line).
 OPM_INDEX_BINARY_IMAGE ?=
 
+# Podman: "podman buildx build --push" is not supported; catalog multi-arch
+# uses "podman build --manifest …" + "podman manifest push --all" instead.
+CATALOG_MANIFEST_WORK ?= localhost/ovn-recon/catalog-multiarch:work
+
 .PHONY: catalog-index-dockerfile
 catalog-index-dockerfile: opm ## Generate catalog Dockerfile and database/ via opm (does not build).
 	rm -rf database
@@ -441,16 +445,38 @@ catalog-index-rm-legacy-package: opm ## Generate Dockerfile to remove a package 
 		--generate -d $(CATALOG_PRUNE_DOCKERFILE)
 
 .PHONY: catalog-push-pruned-index
-catalog-push-pruned-index: catalog-index-rm-legacy-package ## Rebuild and push multi-arch catalog after opm index rm (requires buildx + registry login).
+catalog-push-pruned-index: catalog-index-rm-legacy-package ## Rebuild and push multi-arch catalog after opm index rm (requires registry login; Docker buildx or Podman manifest workflow).
+ifeq ($(CONTAINER_TOOL),podman)
+	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
+	$(CONTAINER_TOOL) build --platform=$(CATALOG_PLATFORMS) --manifest $(CATALOG_MANIFEST_WORK) $(BUILD_ARGS) \
+		-f $(CATALOG_PRUNE_DOCKERFILE) .
+	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_IMG)
+ifneq ($(strip $(CATALOG_EXTRA_IMG)),)
+	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_EXTRA_IMG)
+endif
+	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
+else
 	$(CONTAINER_TOOL) buildx build --push --platform=$(CATALOG_PLATFORMS) $(BUILD_ARGS) \
 		-f $(CATALOG_PRUNE_DOCKERFILE) -t $(CATALOG_IMG) $(if $(CATALOG_EXTRA_IMG),-t $(CATALOG_EXTRA_IMG),) .
+endif
 	rm -rf database
 	rm -f $(CATALOG_PRUNE_DOCKERFILE)
 
 .PHONY: catalog-build-multiarch
-catalog-build-multiarch: catalog-index-dockerfile ## Build and push multi-arch catalog image (requires buildx + registry login).
+catalog-build-multiarch: catalog-index-dockerfile ## Build and push multi-arch catalog image (requires registry login; Docker buildx or Podman manifest workflow).
+ifeq ($(CONTAINER_TOOL),podman)
+	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
+	$(CONTAINER_TOOL) build --platform=$(CATALOG_PLATFORMS) --manifest $(CATALOG_MANIFEST_WORK) $(BUILD_ARGS) \
+		-f $(CATALOG_INDEX_DOCKERFILE) .
+	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_IMG)
+ifneq ($(strip $(CATALOG_EXTRA_IMG)),)
+	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_EXTRA_IMG)
+endif
+	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
+else
 	$(CONTAINER_TOOL) buildx build --push --platform=$(CATALOG_PLATFORMS) $(BUILD_ARGS) \
 		-f $(CATALOG_INDEX_DOCKERFILE) -t $(CATALOG_IMG) $(if $(CATALOG_EXTRA_IMG),-t $(CATALOG_EXTRA_IMG),) .
+endif
 	rm -rf database
 	rm -f $(CATALOG_INDEX_DOCKERFILE)
 
