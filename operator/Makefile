@@ -59,11 +59,11 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-# CONTAINER_TOOL defines the container tool to be used for building images.
-# Be aware that the target commands are only tested with Docker which is
-# scaffolded by default. However, you might want to replace it to use other
-# tools. (i.e. podman)
-CONTAINER_TOOL ?= docker
+# CONTAINER_TOOL defines the container tool used for image builds and for opm
+# (--container-tool). Default: docker if on PATH, else podman (common on macOS
+# without Docker Desktop). Override explicitly when needed, e.g.
+#   make catalog-push-pruned-index CONTAINER_TOOL=podman ...
+CONTAINER_TOOL ?= $(shell if command -v docker >/dev/null 2>&1; then echo docker; elif command -v podman >/dev/null 2>&1; then echo podman; else echo docker; fi)
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -361,9 +361,8 @@ bundle-push: ## Push the bundle image.
 
 .PHONY: opm
 OPM = $(LOCALBIN)/opm
-opm: ## Download opm locally if necessary.
+opm: ## Download opm from operator-registry releases into bin/ (always; avoids mistaken PATH opm, e.g. symlink to oc).
 ifeq (,$(wildcard $(OPM)))
-ifeq (,$(shell which opm 2>/dev/null))
 	@{ \
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
@@ -371,9 +370,6 @@ ifeq (,$(shell which opm 2>/dev/null))
 	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.55.0/$${OS}-$${ARCH}-opm ;\
 	chmod +x $(OPM) ;\
 	}
-else
-OPM = $(shell which opm)
-endif
 endif
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
@@ -416,6 +412,10 @@ CATALOG_EXTRA_IMG ?=
 #   make catalog-build-multiarch (or pass on the make command line).
 OPM_INDEX_BINARY_IMAGE ?=
 
+# Podman: "podman buildx build --push" is not supported; catalog multi-arch
+# uses "podman build --manifest …" + "podman manifest push --all" instead.
+CATALOG_MANIFEST_WORK ?= localhost/ovn-recon/catalog-multiarch:work
+
 .PHONY: catalog-index-dockerfile
 catalog-index-dockerfile: opm ## Generate catalog Dockerfile and database/ via opm (does not build).
 	rm -rf database
@@ -424,10 +424,59 @@ catalog-index-dockerfile: opm ## Generate catalog Dockerfile and database/ via o
 		--bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT) $(if $(OPM_INDEX_BINARY_IMAGE),--binary-image $(OPM_INDEX_BINARY_IMAGE),) \
 		--generate -d $(CATALOG_INDEX_DOCKERFILE)
 
+# Dockerfile from `opm index rm --generate` (not committed).
+CATALOG_PRUNE_DOCKERFILE ?= catalog-index-prune.Dockerfile
+# Legacy sqlite package name from early operator-sdk defaults (see docs/tasks/multi-arch-build.md).
+LEGACY_CATALOG_PACKAGE ?= operator
+# Source index for pruning (required for catalog-index-rm-legacy-package / catalog-push-pruned-index).
+FROM_INDEX ?=
+
+.PHONY: catalog-index-rm-legacy-package
+catalog-index-rm-legacy-package: opm ## Generate Dockerfile to remove a package from an existing index. Set FROM_INDEX, CATALOG_IMG, and optionally LEGACY_CATALOG_PACKAGE / OPM_INDEX_BINARY_IMAGE.
+	@[ -n "$(FROM_INDEX)" ] || { echo "ERROR: FROM_INDEX must be set (e.g. quay.io/dbewley/bewley-operator-catalog:v4.20)"; exit 1; }
+	@[ -n "$(CATALOG_IMG)" ] || { echo "ERROR: CATALOG_IMG must be set (tag for rebuilt catalog image)"; exit 1; }
+	rm -rf database
+	rm -f $(CATALOG_PRUNE_DOCKERFILE)
+	$(OPM) index rm --container-tool $(CONTAINER_TOOL) \
+		--from-index $(FROM_INDEX) \
+		--operators $(LEGACY_CATALOG_PACKAGE) \
+		--tag $(CATALOG_IMG) \
+		$(if $(OPM_INDEX_BINARY_IMAGE),--binary-image $(OPM_INDEX_BINARY_IMAGE),) \
+		--generate -d $(CATALOG_PRUNE_DOCKERFILE)
+
+.PHONY: catalog-push-pruned-index
+catalog-push-pruned-index: catalog-index-rm-legacy-package ## Rebuild and push multi-arch catalog after opm index rm (requires registry login; Docker buildx or Podman manifest workflow).
+ifeq ($(CONTAINER_TOOL),podman)
+	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
+	$(CONTAINER_TOOL) build --platform=$(CATALOG_PLATFORMS) --manifest $(CATALOG_MANIFEST_WORK) $(BUILD_ARGS) \
+		-f $(CATALOG_PRUNE_DOCKERFILE) .
+	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_IMG)
+ifneq ($(strip $(CATALOG_EXTRA_IMG)),)
+	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_EXTRA_IMG)
+endif
+	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
+else
+	$(CONTAINER_TOOL) buildx build --push --platform=$(CATALOG_PLATFORMS) $(BUILD_ARGS) \
+		-f $(CATALOG_PRUNE_DOCKERFILE) -t $(CATALOG_IMG) $(if $(CATALOG_EXTRA_IMG),-t $(CATALOG_EXTRA_IMG),) .
+endif
+	rm -rf database
+	rm -f $(CATALOG_PRUNE_DOCKERFILE)
+
 .PHONY: catalog-build-multiarch
-catalog-build-multiarch: catalog-index-dockerfile ## Build and push multi-arch catalog image (requires buildx + registry login).
+catalog-build-multiarch: catalog-index-dockerfile ## Build and push multi-arch catalog image (requires registry login; Docker buildx or Podman manifest workflow).
+ifeq ($(CONTAINER_TOOL),podman)
+	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
+	$(CONTAINER_TOOL) build --platform=$(CATALOG_PLATFORMS) --manifest $(CATALOG_MANIFEST_WORK) $(BUILD_ARGS) \
+		-f $(CATALOG_INDEX_DOCKERFILE) .
+	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_IMG)
+ifneq ($(strip $(CATALOG_EXTRA_IMG)),)
+	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_EXTRA_IMG)
+endif
+	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
+else
 	$(CONTAINER_TOOL) buildx build --push --platform=$(CATALOG_PLATFORMS) $(BUILD_ARGS) \
 		-f $(CATALOG_INDEX_DOCKERFILE) -t $(CATALOG_IMG) $(if $(CATALOG_EXTRA_IMG),-t $(CATALOG_EXTRA_IMG),) .
+endif
 	rm -rf database
 	rm -f $(CATALOG_INDEX_DOCKERFILE)
 

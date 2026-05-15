@@ -119,6 +119,10 @@ make bundle-build bundle-push BUNDLE_IMG=$BUNDLE_IMG
 make catalog-build catalog-push BUNDLE_IMGS=$BUNDLE_IMG CATALOG_IMG=$CATALOG_IMG
 ```
 
+### Pruning a stale package from an existing catalog index
+
+If the Bewley catalog still advertises a legacy OLM package (for example **`operator`** from an old bundle), rebuild the index with **`opm index rm`** and push a new multi-arch catalog image. See [Pruning stale `operator` package](tasks/multi-arch-build.md#pruning-stale-operator-package-from-bewley-operator-catalog) in **`docs/tasks/multi-arch-build.md`** and the **`make catalog-push-pruned-index`** target in **`operator/Makefile`**.
+
 ## Part 2: Creating a Subscription (User Guide)
 
 Users can install the operator via OLM in two ways:

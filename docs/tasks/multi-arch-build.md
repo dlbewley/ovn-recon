@@ -245,6 +245,38 @@ The plan assumes those tag names stay the same unless you intentionally
 version the catalog tag per operator release (today **catalog is not**
 `$VERSION`-scoped; document any future change so consumers are not surprised).
 
+### Pruning stale `operator` package from `bewley-operator-catalog`
+
+Early bundles used OLM package name **`operator`** (operator-sdk default). Incremental **`opm index add --from-index`** keeps that package in the sqlite index next to **`ovn-recon-operator`**, so clusters can show two **PackageManifests**. OLM does not support deleting **PackageManifest** objects manually; they disappear once the catalog index no longer lists the package.
+
+**Maintainer one-off** (requires **`docker login quay.io`**, Docker Buildx, and network pulls of the current catalog):
+
+```bash
+cd operator
+make catalog-push-pruned-index \
+  FROM_INDEX=quay.io/dbewley/bewley-operator-catalog:v4.20 \
+  CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20 \
+  CATALOG_EXTRA_IMG=quay.io/dbewley/bewley-operator-catalog:latest
+```
+
+Catalog recipes use **`opm` from `operator/bin/opm`** (downloaded on first **`make opm`**). Do not rely on a global **`opm` on `PATH`**—some setups mistakenly symlink **`opm`** to **`oc`**, which produces `unknown command "index" for "oc"`.
+
+**Container CLI:** **`make`** defaults **`CONTAINER_TOOL`** to **`docker`** if it is on **`PATH`**, otherwise **`podman`**, so **`opm index …`** can pull the base catalog image without `exec: "docker": executable file not found`. Override explicitly if both are installed but you want Podman (e.g. **`CONTAINER_TOOL=podman`**). Multi-arch catalog push uses **`docker buildx build --push`** when **`CONTAINER_TOOL=docker`**; with **Podman**, the Makefile uses **`podman build --manifest …`** plus **`podman manifest push --all`** because **`podman buildx build --push`** is not supported.
+
+Optional: set **`OPM_INDEX_BINARY_IMAGE`** to the same multi-arch digest used for normal catalog builds (see [Catalog FROM line and OPM_INDEX_BINARY_IMAGE](#catalog-from-line-and-opm_index_binary_image)). Override **`LEGACY_CATALOG_PACKAGE`** if the stale name differs.
+
+Makefile targets: **`catalog-index-rm-legacy-package`** (generate Dockerfile only) and **`catalog-push-pruned-index`** (generate + **`buildx --push`** for **`CATALOG_PLATFORMS`**).
+
+**Verify on-cluster** after the push propagates:
+
+```bash
+oc get packagemanifest -n openshift-marketplace -l 'catalog=bewley-operators' -o name | sort
+```
+
+Expect **ovn-recon-operator**; no **operator** row.
+
+**Prevent regression:** CI rejects **`operators.operatorframework.io.bundle.package.v1: operator`** in **`bundle/metadata/annotations.yaml`**; keep **`operator/bundle.Dockerfile`** labels aligned with **`annotations.yaml`** (package **ovn-recon-operator**, channels **stable,latest**).
+
 ### Risks and mitigations
 
 | Risk | Mitigation |
