@@ -32,8 +32,11 @@ build: fmt vet test ## Build collector binary
 run: ## Run collector locally
 	go run ./cmd/ovn-collector
 
-image: ## Build collector container image
-	$(CONTAINER_ENGINE) build --platform linux/amd64 -t $(IMG) .
+# Default linux/amd64 matches typical OpenShift nodes; CI publishes linux/amd64,linux/arm64 via buildx.
+IMAGE_PLATFORM ?= linux/amd64
+
+image: ## Build collector container image (single platform; override IMAGE_PLATFORM= for multi-arch locally)
+	$(CONTAINER_ENGINE) build --platform $(IMAGE_PLATFORM) -t $(IMG) .
 
 push: image ## Push collector container image
 	$(CONTAINER_ENGINE) push $(IMG)

@@ -65,7 +65,7 @@ source setup_env.sh && \
   oc wait --for=condition=ready pod -l "$APP_SELECTOR" -n "$APP_NAMESPACE" --timeout=60s
 ```
 
-> **Mac/ARM64**: Container images must be built for `linux/amd64`. The Makefile already passes `--platform linux/amd64`.
+> **Release images on Quay** (`ovn-recon`, `ovn-collector`, operator/bundle/catalog) are published as **multi-arch** manifest lists (**linux/amd64** and **linux/arm64**) from GitHub Actions. For local `make image` in `collector/`, the default is still **`linux/amd64`** unless you override **`IMAGE_PLATFORM`**.
 
 ### Releasing
 
