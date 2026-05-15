@@ -361,9 +361,8 @@ bundle-push: ## Push the bundle image.
 
 .PHONY: opm
 OPM = $(LOCALBIN)/opm
-opm: ## Download opm locally if necessary.
+opm: ## Download opm from operator-registry releases into bin/ (always; avoids mistaken PATH opm, e.g. symlink to oc).
 ifeq (,$(wildcard $(OPM)))
-ifeq (,$(shell which opm 2>/dev/null))
 	@{ \
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
@@ -371,9 +370,6 @@ ifeq (,$(shell which opm 2>/dev/null))
 	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.55.0/$${OS}-$${ARCH}-opm ;\
 	chmod +x $(OPM) ;\
 	}
-else
-OPM = $(shell which opm)
-endif
 endif
 
 # A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).

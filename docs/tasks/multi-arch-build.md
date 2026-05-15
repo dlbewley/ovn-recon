@@ -259,6 +259,8 @@ make catalog-push-pruned-index \
   CATALOG_EXTRA_IMG=quay.io/dbewley/bewley-operator-catalog:latest
 ```
 
+Catalog recipes use **`opm` from `operator/bin/opm`** (downloaded on first **`make opm`**). Do not rely on a global **`opm` on `PATH`**—some setups mistakenly symlink **`opm`** to **`oc`**, which produces `unknown command "index" for "oc"`.
+
 Optional: set **`OPM_INDEX_BINARY_IMAGE`** to the same multi-arch digest used for normal catalog builds (see [Catalog FROM line and OPM_INDEX_BINARY_IMAGE](#catalog-from-line-and-opm_index_binary_image)). Override **`LEGACY_CATALOG_PACKAGE`** if the stale name differs.
 
 Makefile targets: **`catalog-index-rm-legacy-package`** (generate Dockerfile only) and **`catalog-push-pruned-index`** (generate + **`buildx --push`** for **`CATALOG_PLATFORMS`**).
