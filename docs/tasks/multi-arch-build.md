@@ -214,6 +214,8 @@ lists in the release workflow via **`docker-buildx`** / **`bundle-buildx`**.
 | `quay.io/dbewley/bewley-operator-catalog` | **Yes** | **Minimum bar.** Must be a manifest list with **linux/amd64** and **linux/arm64** for `v4.20`, `latest`, and any other tags used by `CatalogSource` (see [Why](#why)). |
 | `quay.io/dbewley/ovn-recon-operator` | **Strongly recommended** | OLM and direct installs on arm64 should pull native manager binaries; aligns with SDK multi-arch expectations for referenced operator images. |
 | `quay.io/dbewley/ovn-recon-operator-bundle` | **Strongly recommended** | Keeps bundle pulls architecture-correct alongside the catalog index; low overhead with buildx. |
+| `quay.io/dbewley/ovn-collector` | **Yes** | Console plugin pulls this image on arm64 clusters; single-arch amd64 manifests show missing or **unknown** platform rows in Quay for arm64 consumers. |
+| `quay.io/dbewley/ovn-recon` | **Yes** | Same as collector: deployment must match node arch (nginx/node base images are multi-arch when built with buildx). |
 
 ### Concrete files to change (implementation follow-up)
 
@@ -260,6 +262,7 @@ clusters might use:
 
 - [ ] **`oc image info --show-multiarch quay.io/dbewley/bewley-operator-catalog:v4.20`** — must list **linux/amd64** and **linux/arm64** (and the same for **`latest`** when that tag is updated).
 - [ ] **`oc image info --show-multiarch`** on **`quay.io/dbewley/ovn-recon-operator:$VERSION`** (and **`bundle`** when multi-arch is implemented) for the same release.
+- [ ] **`oc image info --show-multiarch quay.io/dbewley/ovn-collector:$VERSION`** and **`quay.io/dbewley/ovn-recon:$VERSION`** after a release that touched collector or plugin paths.
 - [ ] **`skopeo inspect --raw docker://…`** + **`jq`** check that the top-level **`mediaType`** is a manifest list when multi-arch is intended (see [Verify](#verify)).
 - [ ] Optional smoke: **`CatalogSource`** reaches **READY** on an **arm64** OpenShift node (e.g. CRC on Apple Silicon) after applying the updated catalog image.
 
@@ -287,6 +290,16 @@ while engineering proceeds on a focused task.
 `bewley-operator-catalog` as manifest lists for **linux/amd64** and
 **linux/arm64** using Docker Buildx, `make docker-buildx` / `bundle-buildx` /
 `catalog-build-multiarch`, and a post-push `docker buildx imagetools inspect`
-check (see workflow “Verify release images…” step). **Recommended next
-hardening step:** set **`OPM_INDEX_BINARY_IMAGE`** to a **multi-arch digest** for
-the catalog runtime `FROM` image (see [Catalog FROM line and OPM_INDEX_BINARY_IMAGE](#catalog-from-line-and-opm_index_binary_image)).
+check (see workflow “Verify release images…” step).
+
+**Status (implemented):** `.github/workflows/collector-release.yaml` and
+`.github/workflows/build-test.yaml` publish **`quay.io/dbewley/ovn-collector`**
+and **`quay.io/dbewley/ovn-recon`** respectively as the same dual-platform
+manifest lists, with QEMU + Buildx and the same **`imagetools inspect` + `jq`**
+verification pattern as the operator workflow. The collector **`Dockerfile`**
+cross-compiles with **`GOOS`/`GOARCH`** from buildx **`TARGET*`** args (no
+hardcoded amd64).
+
+**Recommended next hardening step:** set **`OPM_INDEX_BINARY_IMAGE`** to a
+**multi-arch digest** for the catalog runtime `FROM` image (see [Catalog FROM
+line and OPM_INDEX_BINARY_IMAGE](#catalog-from-line-and-opm_index_binary_image)).

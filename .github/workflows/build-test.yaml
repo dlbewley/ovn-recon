@@ -52,14 +52,13 @@ jobs:
           echo "EXPIRY_LABEL=" >> $GITHUB_ENV
         fi
 
-    - name: Build Container
+    - name: Set up QEMU
       if: startsWith(github.ref, 'refs/tags/v')
-      run: |
-        echo "Building version $VERSION with $EXPIRY_LABEL"
-        docker build $EXPIRY_LABEL -t quay.io/dbewley/ovn-recon:$VERSION .
-        if [[ "$VERSION" != *"-"* ]]; then
-          docker tag quay.io/dbewley/ovn-recon:$VERSION quay.io/dbewley/ovn-recon:latest
-        fi
+      uses: docker/setup-qemu-action@v4
+
+    - name: Set up Docker Buildx
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: docker/setup-buildx-action@v4
 
     - name: Login to Quay.io
       if: startsWith(github.ref, 'refs/tags/v')
@@ -69,12 +68,51 @@ jobs:
         username: ${{ secrets.QUAY_USER }}
         password: ${{ secrets.QUAY_TOKEN }}
 
-    - name: Push Container
+    - name: Build and push console plugin image (multi-arch)
+      if: startsWith(github.ref, 'refs/tags/v')
+      env:
+        DOCKER_BUILDX_NO_ISOLATED_BUILDER: "1"
+      run: |
+        set -euo pipefail
+        echo "Building version $VERSION with $EXPIRY_LABEL"
+        if [[ "$VERSION" != *"-"* ]]; then
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            $EXPIRY_LABEL \
+            -t quay.io/dbewley/ovn-recon:$VERSION \
+            -t quay.io/dbewley/ovn-recon:latest \
+            --push .
+        else
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            $EXPIRY_LABEL \
+            -t quay.io/dbewley/ovn-recon:$VERSION \
+            --push .
+        fi
+
+    - name: Verify console plugin image is a multi-arch manifest list
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
-        docker push quay.io/dbewley/ovn-recon:$VERSION
+        set -euo pipefail
+        verify() {
+          local img="$1"
+          echo "---- verifying $img ----"
+          local raw
+          raw="$(docker buildx imagetools inspect "$img" --raw)"
+          if ! echo "$raw" | jq -e '.manifests != null and (.manifests | length) > 1' >/dev/null; then
+            echo "ERROR: $img is not a multi-arch manifest list (expected index with linux/amd64 and linux/arm64)."
+            docker buildx imagetools inspect "$img" || true
+            exit 1
+          fi
+          local plats
+          plats="$(echo "$raw" | jq -r '.manifests[] | select(.platform != null) | "\(.platform.os)/\(.platform.architecture)"')"
+          echo "$plats"
+          echo "$plats" | grep -qx 'linux/amd64' || { echo "ERROR: missing linux/amd64 in $img"; exit 1; }
+          echo "$plats" | grep -qx 'linux/arm64' || { echo "ERROR: missing linux/arm64 in $img"; exit 1; }
+        }
+        verify "quay.io/dbewley/ovn-recon:${VERSION}"
         if [[ "$VERSION" != *"-"* ]]; then
-          docker push quay.io/dbewley/ovn-recon:latest
+          verify "quay.io/dbewley/ovn-recon:latest"
         fi
 
     - name: Create GitHub Release

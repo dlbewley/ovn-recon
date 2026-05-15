@@ -48,6 +48,10 @@ jobs:
             echo "EXPIRY_LABEL=" >> $GITHUB_ENV
           fi
 
+      - name: Set up QEMU
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/setup-qemu-action@v4
+
       - name: Set up Docker Buildx
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/setup-buildx-action@v4
@@ -60,18 +64,51 @@ jobs:
           username: ${{ secrets.QUAY_USER }}
           password: ${{ secrets.QUAY_TOKEN }}
 
-      - name: Build Collector Image
+      - name: Build and push collector image (multi-arch)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          DOCKER_BUILDX_NO_ISOLATED_BUILDER: "1"
+        run: |
+          set -euo pipefail
+          echo "Building version $VERSION with $EXPIRY_LABEL"
+          if [[ "$VERSION" != *"-"* ]]; then
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              $EXPIRY_LABEL \
+              -t quay.io/dbewley/ovn-collector:$VERSION \
+              -t quay.io/dbewley/ovn-collector:latest \
+              --push \
+              collector
+          else
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              $EXPIRY_LABEL \
+              -t quay.io/dbewley/ovn-collector:$VERSION \
+              --push \
+              collector
+          fi
+
+      - name: Verify collector image is a multi-arch manifest list
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          echo "Building version $VERSION with $EXPIRY_LABEL"
-          docker buildx build \
-            --platform linux/amd64 \
-            $EXPIRY_LABEL \
-            -t quay.io/dbewley/ovn-collector:$VERSION \
-            --push \
-            collector
+          set -euo pipefail
+          verify() {
+            local img="$1"
+            echo "---- verifying $img ----"
+            local raw
+            raw="$(docker buildx imagetools inspect "$img" --raw)"
+            if ! echo "$raw" | jq -e '.manifests != null and (.manifests | length) > 1' >/dev/null; then
+              echo "ERROR: $img is not a multi-arch manifest list (expected index with linux/amd64 and linux/arm64)."
+              docker buildx imagetools inspect "$img" || true
+              exit 1
+            fi
+            local plats
+            plats="$(echo "$raw" | jq -r '.manifests[] | select(.platform != null) | "\(.platform.os)/\(.platform.architecture)"')"
+            echo "$plats"
+            echo "$plats" | grep -qx 'linux/amd64' || { echo "ERROR: missing linux/amd64 in $img"; exit 1; }
+            echo "$plats" | grep -qx 'linux/arm64' || { echo "ERROR: missing linux/arm64 in $img"; exit 1; }
+          }
+          verify "quay.io/dbewley/ovn-collector:${VERSION}"
           if [[ "$VERSION" != *"-"* ]]; then
-            docker buildx imagetools create \
-              --tag quay.io/dbewley/ovn-collector:latest \
-              quay.io/dbewley/ovn-collector:$VERSION
+            verify "quay.io/dbewley/ovn-collector:latest"
           fi

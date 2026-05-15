@@ -1,15 +1,15 @@
-FROM node:18 AS builder
+# syntax=docker/dockerfile:1
+# Webpack runs only on the build host arch. Per-target images only add nginx + dist (avoids QEMU arm64 webpack on amd64 CI).
+FROM --platform=$BUILDPLATFORM node:18 AS builder
 
 WORKDIR /usr/src/app
 
 COPY package.json yarn.lock* package-lock.json* ./
 
-# Install dependencies
-RUN npm install
+RUN npm ci
 
 COPY . .
 
-# Build the plugin
 RUN npm run build
 
 FROM nginx:1.21-alpine
