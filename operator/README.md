@@ -1,6 +1,6 @@
 # OVN Recon Operator
 
-See also [operator readme](../operator/README.md).
+See also the [root README](../README.md).
 
 ## Description
 The OVN Recon Operator installs and manages the OVN Recon OpenShift Console Plugin

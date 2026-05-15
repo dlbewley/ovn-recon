@@ -1,4 +1,4 @@
-# Makefile for OVN collector
+# Makefile for OVN collector (release tags v* at repo root trigger collector-release when collector/** changes)
 
 CONTAINER_ENGINE ?= podman
 IMAGE_REGISTRY ?= quay.io
