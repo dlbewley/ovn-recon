@@ -4,6 +4,7 @@ import { useHistory } from 'react-router-dom';
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { NetworkIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon, PficonVcenterIcon, MigrationIcon, TagIcon, ExternalLinkAltIcon, PluggedIcon } from '@patternfly/react-icons';
 
+import { CodeEditor, Language } from '@patternfly/react-code-editor';
 import * as yaml from 'js-yaml';
 
 import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, Interface, OvnBridgeMapping, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
@@ -1600,23 +1601,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
                     {node.raw && (
                         <>
-                            <div style={{ flex: 1, minHeight: 0, overflow: 'auto', borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
-                                <pre
-                                    style={{
-                                        minHeight: '100%',
-                                        margin: 0,
-                                        padding: 'var(--pf-global--spacer--md)',
-                                        backgroundColor: 'var(--pf-global--BackgroundColor--200)',
-                                        color: 'var(--pf-global--Color--100)',
-                                        fontFamily: 'var(--pf-global--FontFamily--monospace)',
-                                        fontSize: 'var(--pf-global--FontSize--sm)',
-                                        lineHeight: 1.5,
-                                        whiteSpace: 'pre-wrap',
-                                        wordBreak: 'break-word'
-                                    }}
-                                >
-                                    {yaml.dump(node.raw)}
-                                </pre>
+                            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
+                                <CodeEditor
+                                    isDarkTheme
+                                    isLineNumbersVisible
+                                    isReadOnly
+                                    code={yaml.dump(node.raw)}
+                                    language={Language.yaml}
+                                    height="100%"
+                                    style={{ height: '100%' }}
+                                />
                             </div>
                             <div style={{ flex: '0 0 auto', padding: 'var(--pf-global--spacer--md)', backgroundColor: 'var(--pf-global--BackgroundColor--100)' }}>
                                 <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-global--spacer--sm)' }} />
