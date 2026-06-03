@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch, Tabs, Tab, TabTitleText, Flex, FlexItem, Button, FormSelect, FormSelectOption } from '@patternfly/react-core';
-import { useHistory } from 'react-router-dom';
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { NetworkIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon, PficonVcenterIcon, MigrationIcon, TagIcon, ExternalLinkAltIcon, PluggedIcon } from '@patternfly/react-icons';
 
@@ -790,7 +789,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         nodes: { [id: string]: GraphNode };
     }
 
-    const history = useHistory();
+    const navigateToPath = (path: string) => {
+        window.history.pushState(null, '', path);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+    };
 
     // Fetch all NodeNetworkState resources for the dropdown
     const [allNodeNetworkStates] = useK8sWatchResource<NodeNetworkState[]>({
@@ -805,7 +807,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const handleHostSelect = (event: React.FormEvent<HTMLSelectElement>) => {
         const value = (event.target as HTMLSelectElement).value;
         if (value) {
-            history.push(`/ovn-recon/node-network-state/${value}`);
+            navigateToPath(`/ovn-recon/node-network-state/${value}`);
         }
     };
 
