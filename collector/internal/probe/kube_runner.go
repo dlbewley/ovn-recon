@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -66,6 +67,7 @@ type KubernetesExecRunner struct {
 	targetNamespaces []string
 	nodeName         string
 	logger           *slog.Logger
+	execPod          podExecFunc
 }
 
 // Run executes a command in a target pod and returns stdout.
@@ -81,7 +83,11 @@ func (r *KubernetesExecRunner) Run(ctx context.Context, command []string) (strin
 
 	var lastErr error
 	for _, target := range targets {
-		stdout, stderr, execErr := r.execInPod(ctx, target.namespace, target.podName, target.containerName, command)
+		execPod := r.execInPod
+		if r.execPod != nil {
+			execPod = r.execPod
+		}
+		stdout, stderr, execErr := execPod(ctx, target.namespace, target.podName, target.containerName, command)
 		if execErr == nil {
 			r.logger.Debug(
 				"probe command executed successfully",
@@ -118,6 +124,8 @@ type execTarget struct {
 	containerName string
 }
 
+type podExecFunc func(context.Context, string, string, string, []string) (string, string, error)
+
 func (r *KubernetesExecRunner) resolveExecTargets(ctx context.Context) ([]execTarget, error) {
 	var preferred []execTarget
 	var fallback []execTarget
@@ -132,7 +140,11 @@ func (r *KubernetesExecRunner) resolveExecTargets(ctx context.Context) ([]execTa
 			FieldSelector: "status.phase=Running",
 		})
 		if err != nil {
-			r.logger.Warn("failed to list pods for probe namespace", "namespace", namespace, "error", err)
+			r.logProbeNamespaceListError(namespace, err)
+			continue
+		}
+		if len(podList.Items) == 0 {
+			r.logger.Warn("probe namespace has no running pods; skipping", "namespace", namespace)
 			continue
 		}
 
@@ -162,6 +174,17 @@ func (r *KubernetesExecRunner) resolveExecTargets(ctx context.Context) ([]execTa
 		return append(preferred, fallback...), nil
 	}
 	return fallback, nil
+}
+
+func (r *KubernetesExecRunner) logProbeNamespaceListError(namespace string, err error) {
+	switch {
+	case apierrors.IsNotFound(err):
+		r.logger.Warn("probe namespace does not exist; skipping", "namespace", namespace, "reason", "notFound", "error", err)
+	case apierrors.IsForbidden(err):
+		r.logger.Warn("probe namespace is not readable; skipping", "namespace", namespace, "reason", "forbidden", "error", err)
+	default:
+		r.logger.Warn("failed to list pods for probe namespace; skipping", "namespace", namespace, "reason", "listFailed", "error", err)
+	}
 }
 
 func podExecTargets(namespace string, pod *corev1.Pod) []execTarget {

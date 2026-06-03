@@ -249,6 +249,7 @@ func (r *OvnReconReconciler) shouldEmitNormalEvent(ovnRecon *reconv1beta1.OvnRec
 // +kubebuilder:rbac:groups=recon.bewley.net,resources=ovnrecons/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=recon.bewley.net,resources=ovnrecons/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
@@ -612,6 +613,19 @@ func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Contex
 
 	probeNamespaces := collectorProbeNamespacesFor(ovnRecon)
 	for _, probeNamespace := range probeNamespaces {
+		probeNamespace = strings.TrimSpace(probeNamespace)
+		if probeNamespace == "" {
+			continue
+		}
+		probeNamespaceObject := &corev1.Namespace{}
+		if err := r.Get(ctx, client.ObjectKey{Name: probeNamespace}, probeNamespaceObject); err != nil {
+			if errors.IsNotFound(err) {
+				log.FromContext(ctx).Info("Collector probe namespace does not exist; skipping RoleBinding", "namespace", probeNamespace)
+				continue
+			}
+			return err
+		}
+
 		roleBinding := &rbacv1.RoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      collectorRoleBindingName(ovnRecon),

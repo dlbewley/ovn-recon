@@ -6,6 +6,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -124,5 +125,60 @@ func TestDeleteCollectorResourcesRemovesService(t *testing.T) {
 	err = reconciler.Get(context.Background(), types.NamespacedName{Name: "ovn-recon-collector", Namespace: "ovn-recon"}, service)
 	if !apierrors.IsNotFound(err) {
 		t.Fatalf("expected collector service to be deleted during full cleanup, got err=%v", err)
+	}
+}
+
+func TestReconcileCollectorAccessControlsSkipsMissingProbeNamespace(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add core/v1 scheme: %v", err)
+	}
+	if err := rbacv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add rbac/v1 scheme: %v", err)
+	}
+
+	targetNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"}}
+	ovnNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-ovn-kubernetes"}}
+	ovnRecon := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1beta1.OvnReconSpec{
+			TargetNamespace: "ovn-recon",
+			Collector: reconv1beta1.CollectorSpec{
+				ProbeNamespaces: []string{"openshift-ovn-kubernetes", "openshift-frr-k8s"},
+			},
+		},
+	}
+
+	reconciler := &OvnReconReconciler{
+		Client: fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(targetNamespace, ovnNamespace).
+			Build(),
+		Scheme: scheme,
+	}
+
+	if err := reconciler.reconcileCollectorAccessControls(context.Background(), ovnRecon); err != nil {
+		t.Fatalf("reconcileCollectorAccessControls failed: %v", err)
+	}
+
+	ovnRoleBinding := &rbacv1.RoleBinding{}
+	if err := reconciler.Get(
+		context.Background(),
+		types.NamespacedName{Name: collectorRoleBindingName(ovnRecon), Namespace: "openshift-ovn-kubernetes"},
+		ovnRoleBinding,
+	); err != nil {
+		t.Fatalf("expected OVN namespace rolebinding to be created: %v", err)
+	}
+
+	frrRoleBinding := &rbacv1.RoleBinding{}
+	err := reconciler.Get(
+		context.Background(),
+		types.NamespacedName{Name: collectorRoleBindingName(ovnRecon), Namespace: "openshift-frr-k8s"},
+		frrRoleBinding,
+	)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("expected no rolebinding in missing FRR namespace, got err=%v", err)
 	}
 }
