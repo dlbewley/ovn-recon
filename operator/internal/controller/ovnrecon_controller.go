@@ -34,6 +34,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -717,9 +718,59 @@ func (r *OvnReconReconciler) deleteCollectorAccessControls(ctx context.Context, 
 func (r *OvnReconReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&reconv1beta1.OvnRecon{}).
+		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.reconcileRequestsForProbeNamespace)).
 		Named("ovnrecon").
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
+}
+
+func (r *OvnReconReconciler) reconcileRequestsForProbeNamespace(ctx context.Context, object client.Object) []reconcile.Request {
+	if object == nil {
+		return nil
+	}
+	probeNamespace := strings.TrimSpace(object.GetName())
+	if probeNamespace == "" {
+		return nil
+	}
+
+	ovnReconList := &reconv1beta1.OvnReconList{}
+	if err := r.List(ctx, ovnReconList); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list OvnRecon resources for probe namespace event", "namespace", probeNamespace)
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(ovnReconList.Items))
+	matches := make([]string, 0, len(ovnReconList.Items))
+	for i := range ovnReconList.Items {
+		ovnRecon := &ovnReconList.Items[i]
+		if !collectorFeatureEnabled(ovnRecon) || ovnRecon.DeletionTimestamp != nil {
+			continue
+		}
+		for _, candidate := range collectorProbeNamespacesFor(ovnRecon) {
+			if strings.TrimSpace(candidate) != probeNamespace {
+				continue
+			}
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: ovnRecon.Namespace,
+					Name:      ovnRecon.Name,
+				},
+			})
+			matches = append(matches, ovnReconRef(ovnRecon))
+			break
+		}
+	}
+
+	if len(requests) > 0 {
+		log.FromContext(ctx).Info(
+			"Collector probe namespace event matched OvnRecon resources; enqueueing reconcile",
+			"namespace", probeNamespace,
+			"count", len(requests),
+			"ovnrecons", strings.Join(matches, ","),
+		)
+	}
+
+	return requests
 }
 
 func labelsForOvnRecon(name string) map[string]string {

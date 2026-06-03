@@ -182,3 +182,143 @@ func TestReconcileCollectorAccessControlsSkipsMissingProbeNamespace(t *testing.T
 		t.Fatalf("expected no rolebinding in missing FRR namespace, got err=%v", err)
 	}
 }
+
+func TestReconcileCollectorAccessControlsCreatesRoleBindingWhenProbeNamespaceAppears(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add core/v1 scheme: %v", err)
+	}
+	if err := rbacv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add rbac/v1 scheme: %v", err)
+	}
+
+	targetNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"}}
+	ovnNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-ovn-kubernetes"}}
+	ovnRecon := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1beta1.OvnReconSpec{
+			TargetNamespace: "ovn-recon",
+			Collector: reconv1beta1.CollectorSpec{
+				ProbeNamespaces: []string{"openshift-ovn-kubernetes", "openshift-frr-k8s"},
+			},
+		},
+	}
+
+	reconciler := &OvnReconReconciler{
+		Client: fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(targetNamespace, ovnNamespace).
+			Build(),
+		Scheme: scheme,
+	}
+
+	if err := reconciler.reconcileCollectorAccessControls(context.Background(), ovnRecon); err != nil {
+		t.Fatalf("initial reconcileCollectorAccessControls failed: %v", err)
+	}
+	frrRoleBinding := &rbacv1.RoleBinding{}
+	err := reconciler.Get(
+		context.Background(),
+		types.NamespacedName{Name: collectorRoleBindingName(ovnRecon), Namespace: "openshift-frr-k8s"},
+		frrRoleBinding,
+	)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("expected no rolebinding before FRR namespace exists, got err=%v", err)
+	}
+
+	if err := reconciler.Create(
+		context.Background(),
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-frr-k8s"}},
+	); err != nil {
+		t.Fatalf("failed to create FRR namespace: %v", err)
+	}
+
+	if err := reconciler.reconcileCollectorAccessControls(context.Background(), ovnRecon); err != nil {
+		t.Fatalf("second reconcileCollectorAccessControls failed: %v", err)
+	}
+	if err := reconciler.Get(
+		context.Background(),
+		types.NamespacedName{Name: collectorRoleBindingName(ovnRecon), Namespace: "openshift-frr-k8s"},
+		frrRoleBinding,
+	); err != nil {
+		t.Fatalf("expected FRR namespace rolebinding after namespace appears: %v", err)
+	}
+}
+
+func TestProbeNamespaceEventEnqueuesMatchingOvnRecon(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add core/v1 scheme: %v", err)
+	}
+	if err := reconv1beta1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add recon/v1beta1 scheme: %v", err)
+	}
+
+	enabled := true
+	disabled := false
+	matching := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "matching"},
+		Spec: reconv1beta1.OvnReconSpec{
+			Collector: reconv1beta1.CollectorSpec{
+				Enabled:         &enabled,
+				ProbeNamespaces: []string{"openshift-ovn-kubernetes", "openshift-frr-k8s"},
+			},
+		},
+	}
+	defaultProbeNamespaces := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "default-probe-namespaces"},
+		Spec: reconv1beta1.OvnReconSpec{
+			Collector: reconv1beta1.CollectorSpec{
+				Enabled: &enabled,
+			},
+		},
+	}
+	disabledMatch := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "disabled-match"},
+		Spec: reconv1beta1.OvnReconSpec{
+			Collector: reconv1beta1.CollectorSpec{
+				Enabled:         &disabled,
+				ProbeNamespaces: []string{"openshift-frr-k8s"},
+			},
+		},
+	}
+	otherNamespace := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "other-namespace"},
+		Spec: reconv1beta1.OvnReconSpec{
+			Collector: reconv1beta1.CollectorSpec{
+				Enabled:         &enabled,
+				ProbeNamespaces: []string{"custom-probe"},
+			},
+		},
+	}
+
+	reconciler := &OvnReconReconciler{
+		Client: fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(matching, defaultProbeNamespaces, disabledMatch, otherNamespace).
+			Build(),
+		Scheme: scheme,
+	}
+
+	requests := reconciler.reconcileRequestsForProbeNamespace(
+		context.Background(),
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-frr-k8s"}},
+	)
+
+	if len(requests) != 2 {
+		t.Fatalf("expected two matching reconcile requests, got %#v", requests)
+	}
+	got := map[string]bool{}
+	for _, request := range requests {
+		got[request.Name] = true
+	}
+	if !got["matching"] || !got["default-probe-namespaces"] {
+		t.Fatalf("unexpected reconcile requests: %#v", requests)
+	}
+	if got["disabled-match"] || got["other-namespace"] {
+		t.Fatalf("unexpected disabled or nonmatching reconcile request: %#v", requests)
+	}
+}
