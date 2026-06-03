@@ -66,9 +66,16 @@ make image IMAGE_TAG=dev
 
 ## Runtime and RBAC Assumptions (Planned)
 
-Planned collector behavior requires read + pod exec access in:
+Live OVN collection requires read + pod exec access in at least one namespace
+that contains runnable OVN probe pods. The default target namespace list is:
 - `openshift-ovn-kubernetes`
 - `openshift-frr-k8s`
+
+`openshift-frr-k8s` is optional. Clusters only have that namespace when the
+OpenShift FRR stack is enabled. If the namespace is missing, forbidden, or has no
+running pods, the collector logs a warning and continues with other configured
+probe namespaces. Current logical topology collection uses OVN NB commands and
+can remain healthy when `openshift-ovn-kubernetes` is available.
 
 Namespace targets should remain configurable.
 
