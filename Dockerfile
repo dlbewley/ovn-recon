@@ -12,7 +12,7 @@ COPY . .
 
 RUN npm run build
 
-FROM nginx:1.21-alpine
+FROM --platform=$TARGETPLATFORM nginx:1.21-alpine
 
 # Support running as arbitrary user which belogs to the root group
 RUN chmod g+rwx /var/cache/nginx /var/run /var/log/nginx && \

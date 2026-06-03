@@ -15,7 +15,7 @@ COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags='-s -w' -o /usr/local/bin/ovn-collector ./cmd/ovn-collector
 
-FROM alpine:3.20
+FROM --platform=$TARGETPLATFORM alpine:3.20
 
 WORKDIR /app
 
