@@ -1,0 +1,140 @@
+========================================================================
+  Operator Anti-Pattern Scanner v1.0.0
+  Scanning: /Users/dale/src/ovn-recon/operator
+========================================================================
+
+[0;31m[HIGH]  AP-1: Predicate filters don't limit cache[0m
+  File: internal/controller/ovnrecon_controller.go:723
+  Code: 		WithEventFilter(predicate.GenerationChangedPredicate{}).
+  Desc: Predicate/event filter used on Watches() but predicates only filter events reaching the reconciler, not what the informer caches. The informer still does a full LIST+WATCH cluster-wide.
+  Fix:  Replace Watches() with mgr.GetAPIReader() for occasional reads, or add a label selector in ByObject cache config.
+
+[1;31m[CRITICAL]  AP-3: Invisible informer from client.Get()[0m
+  File: internal/controller/ovnrecon_controller.go:1013
+  Code: 	err := r.Get(ctx, types.NamespacedName{
+  Desc: client.Get()/List() for appsv1.Deployment which is not in ByObject or DisableFor. On first call, the cached client silently creates a cluster-wide informer with a full LIST of every appsv1.Deployment in every namespace.
+  Fix:  Add &appsv1.Deployment{} to DisableFor to bypass cache, or add it to ByObject with a label selector.
+
+[1;31m[CRITICAL]  AP-3: Invisible informer from client.Get()[0m
+  File: internal/controller/ovnrecon_controller.go:485
+  Code: 	if err := r.List(ctx, list); err != nil {
+  Desc: client.Get()/List() for reconv1beta1.OvnReconList which is not in ByObject or DisableFor. On first call, the cached client silently creates a cluster-wide informer with a full LIST of every reconv1beta1.OvnReconList in every namespace.
+  Fix:  Add &reconv1beta1.OvnReconList{} to DisableFor to bypass cache, or add it to ByObject with a label selector.
+
+[1;31m[CRITICAL]  AP-3: Invisible informer from client.Get()[0m
+  File: internal/controller/ovnrecon_controller.go:737
+  Code: 	if err := r.List(ctx, ovnReconList); err != nil {
+  Desc: client.Get()/List() for reconv1beta1.OvnReconList which is not in ByObject or DisableFor. On first call, the cached client silently creates a cluster-wide informer with a full LIST of every reconv1beta1.OvnReconList in every namespace.
+  Fix:  Add &reconv1beta1.OvnReconList{} to DisableFor to bypass cache, or add it to ByObject with a label selector.
+
+[0;31m[HIGH]  AP-4: No DefaultNamespaces — everything is cluster-wide[0m
+  File: cmd/main.go:183
+  Code: cache.Options without DefaultNamespaces
+  Desc: No DefaultNamespaces set in cache configuration. Every informer watches ALL namespaces by default, even if the operator only manages resources in a few namespaces.
+  Fix:  For single-namespace operators, set DefaultNamespaces: map[string]cache.Config{"my-ns": {}}. For multi-namespace, use label selectors in ByObject.
+
+[0;31m[HIGH]  AP-5: Typed/unstructured cache trap[0m
+  File: internal/controller/desired_resources.go:437
+  Code: 	plugin := &unstructured.Unstructured{}
+  Desc: Unstructured object usage found in a file that also registers typed watches. controller-runtime maintains 3 separate caches (typed, unstructured, metadata) — mismatched representations cause duplicate caches or wasted memory.
+  Fix:  Use WatchesMetadata() if you only need triggers. Otherwise ensure watch and read use the same object representation.
+
+[0;31m[HIGH]  AP-5: Typed/unstructured cache trap[0m
+  File: internal/controller/desired_resources.go:438
+  Code: 	plugin.SetGroupVersionKind(schema.GroupVersionKind{
+  Desc: Unstructured object usage found in a file that also registers typed watches. controller-runtime maintains 3 separate caches (typed, unstructured, metadata) — mismatched representations cause duplicate caches or wasted memory.
+  Fix:  Use WatchesMetadata() if you only need triggers. Otherwise ensure watch and read use the same object representation.
+
+[0;31m[HIGH]  AP-5: Typed/unstructured cache trap[0m
+  File: internal/controller/ovnrecon_controller.go:921
+  Code: 	plugin := &unstructured.Unstructured{}
+  Desc: Unstructured object usage found in a file that also registers typed watches. controller-runtime maintains 3 separate caches (typed, unstructured, metadata) — mismatched representations cause duplicate caches or wasted memory.
+  Fix:  Use WatchesMetadata() if you only need triggers. Otherwise ensure watch and read use the same object representation.
+
+[0;31m[HIGH]  AP-5: Typed/unstructured cache trap[0m
+  File: internal/controller/ovnrecon_controller.go:922
+  Code: 	plugin.SetGroupVersionKind(schema.GroupVersionKind{
+  Desc: Unstructured object usage found in a file that also registers typed watches. controller-runtime maintains 3 separate caches (typed, unstructured, metadata) — mismatched representations cause duplicate caches or wasted memory.
+  Fix:  Use WatchesMetadata() if you only need triggers. Otherwise ensure watch and read use the same object representation.
+
+[0;31m[HIGH]  AP-5: Typed/unstructured cache trap[0m
+  File: internal/controller/ovnrecon_controller.go:947
+  Code: 	console := &unstructured.Unstructured{}
+  Desc: Unstructured object usage found in a file that also registers typed watches. controller-runtime maintains 3 separate caches (typed, unstructured, metadata) — mismatched representations cause duplicate caches or wasted memory.
+  Fix:  Use WatchesMetadata() if you only need triggers. Otherwise ensure watch and read use the same object representation.
+
+[0;31m[HIGH]  AP-5: Typed/unstructured cache trap[0m
+  File: internal/controller/ovnrecon_controller.go:948
+  Code: 	console.SetGroupVersionKind(schema.GroupVersionKind{
+  Desc: Unstructured object usage found in a file that also registers typed watches. controller-runtime maintains 3 separate caches (typed, unstructured, metadata) — mismatched representations cause duplicate caches or wasted memory.
+  Fix:  Use WatchesMetadata() if you only need triggers. Otherwise ensure watch and read use the same object representation.
+
+[0;31m[HIGH]  AP-5: Typed/unstructured cache trap[0m
+  File: internal/controller/ovnrecon_controller.go:1049
+  Code: 		plugin := &unstructured.Unstructured{}
+  Desc: Unstructured object usage found in a file that also registers typed watches. controller-runtime maintains 3 separate caches (typed, unstructured, metadata) — mismatched representations cause duplicate caches or wasted memory.
+  Fix:  Use WatchesMetadata() if you only need triggers. Otherwise ensure watch and read use the same object representation.
+
+[0;31m[HIGH]  AP-5: Typed/unstructured cache trap[0m
+  File: internal/controller/ovnrecon_controller.go:1050
+  Code: 		plugin.SetGroupVersionKind(schema.GroupVersionKind{
+  Desc: Unstructured object usage found in a file that also registers typed watches. controller-runtime maintains 3 separate caches (typed, unstructured, metadata) — mismatched representations cause duplicate caches or wasted memory.
+  Fix:  Use WatchesMetadata() if you only need triggers. Otherwise ensure watch and read use the same object representation.
+
+[0;31m[HIGH]  AP-5: Typed/unstructured cache trap[0m
+  File: internal/controller/ovnrecon_controller.go:1160
+  Code: 	console := &unstructured.Unstructured{}
+  Desc: Unstructured object usage found in a file that also registers typed watches. controller-runtime maintains 3 separate caches (typed, unstructured, metadata) — mismatched representations cause duplicate caches or wasted memory.
+  Fix:  Use WatchesMetadata() if you only need triggers. Otherwise ensure watch and read use the same object representation.
+
+[0;31m[HIGH]  AP-5: Typed/unstructured cache trap[0m
+  File: internal/controller/ovnrecon_controller.go:1161
+  Code: 	console.SetGroupVersionKind(schema.GroupVersionKind{
+  Desc: Unstructured object usage found in a file that also registers typed watches. controller-runtime maintains 3 separate caches (typed, unstructured, metadata) — mismatched representations cause duplicate caches or wasted memory.
+  Fix:  Use WatchesMetadata() if you only need triggers. Otherwise ensure watch and read use the same object representation.
+
+[0;33m[MEDIUM]  AP-9: Labels not propagated during resource update[0m
+  File: internal/controller/ovnrecon_controller.go:985
+  Code: 		err = r.Update(ctx, console)
+  Desc: Update() call found without explicit label propagation. If the object's Labels map is nil or missing the required filter label (app.kubernetes.io/name), the resource becomes invisible to the filtered cache after the update.
+  Fix:  Before Update(): if obj.Labels == nil { obj.Labels = map[string]string{} }; obj.Labels["app.kubernetes.io/name"] = "true"
+
+[0;33m[MEDIUM]  AP-9: Labels not propagated during resource update[0m
+  File: internal/controller/ovnrecon_controller.go:1066
+  Code: 		if err := r.Update(ctx, ovnRecon); err != nil {
+  Desc: Update() call found without explicit label propagation. If the object's Labels map is nil or missing the required filter label (app.kubernetes.io/name), the resource becomes invisible to the filtered cache after the update.
+  Fix:  Before Update(): if obj.Labels == nil { obj.Labels = map[string]string{} }; obj.Labels["app.kubernetes.io/name"] = "true"
+
+[0;33m[MEDIUM]  AP-9: Labels not propagated during resource update[0m
+  File: internal/controller/ovnrecon_controller.go:1196
+  Code: 		return r.Update(ctx, console)
+  Desc: Update() call found without explicit label propagation. If the object's Labels map is nil or missing the required filter label (app.kubernetes.io/name), the resource becomes invisible to the filtered cache after the update.
+  Fix:  Before Update(): if obj.Labels == nil { obj.Labels = map[string]string{} }; obj.Labels["app.kubernetes.io/name"] = "true"
+
+[0;33m[MEDIUM]  AP-9: Labels not propagated during resource update[0m
+  File: internal/controller/ovnrecon_controller.go:1233
+  Code: 	if err := r.Status().Update(ctx, ovnRecon); err != nil {
+  Desc: Update() call found without explicit label propagation. If the object's Labels map is nil or missing the required filter label (app.kubernetes.io/name), the resource becomes invisible to the filtered cache after the update.
+  Fix:  Before Update(): if obj.Labels == nil { obj.Labels = map[string]string{} }; obj.Labels["app.kubernetes.io/name"] = "true"
+
+========================================================================
+  SUMMARY
+========================================================================
+  Total findings: 19
+    CRITICAL: 3
+    HIGH:     12
+    MEDIUM:   4
+    LOW:      0
+
+  Anti-pattern coverage:
+    AP-1: DETECTED
+    AP-2: clean
+    AP-3: DETECTED
+    AP-4: DETECTED
+    AP-5: DETECTED
+    AP-6: clean
+    AP-7: clean
+    AP-8: clean
+    AP-9: DETECTED
+    AP-10: clean
+========================================================================
