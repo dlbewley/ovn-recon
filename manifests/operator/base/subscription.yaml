@@ -11,4 +11,3 @@ spec:
   name: ovn-recon-operator
   source: bewley-operators
   sourceNamespace: openshift-marketplace
-  startingCSV: ovn-recon-operator.v0.1.5
