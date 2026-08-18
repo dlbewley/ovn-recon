@@ -207,6 +207,16 @@ jobs:
         # ship without the version being released.
         make opm
         make catalog-fbc-validate
+        # The additive-diff below pulls the published catalog through
+        # containers/image, which refuses to run without a signature policy and
+        # offers no flag or env var to point at one. Runners do not ship a
+        # policy file, so write the permissive default here. Ephemeral host.
+        sudo mkdir -p /etc/containers
+        echo '{"default":[{"type":"insecureAcceptAnything"}]}' | sudo tee /etc/containers/policy.json >/dev/null
+        # Integrity + additive-diff against the catalog stable consumers track.
+        # Fails the release if this build would remove a bundle, rewrite an
+        # upgrade edge, or strand anyone already installed.
+        make catalog-fbc-verify
         NAME="ovn-recon-operator.${VERSION}"
         if ! grep -q "\"${NAME}\"" catalog/ovn-recon-operator/catalog.json; then
           echo "ERROR: ${NAME} is not present in the committed file-based catalog."

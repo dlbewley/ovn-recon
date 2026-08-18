@@ -215,7 +215,7 @@ are easy to get wrong:
 >
 > Before any maintenance branch is cut, the workflow must derive the channel, the floating tags, and the catalog content from the branch or tag pattern. Tracked in `ovn-recon-ych`.
 
-The catalog is currently built with `opm index add --mode semver`, which **infers upgrade edges from version ordering across the whole package**. That is safe with one stream and unsafe with two — it would synthesize an upgrade edge from the legacy stream to the current one. Migrating to a File-Based Catalog, where channel membership and upgrade edges are declared explicitly, is a prerequisite for the split (`ovn-recon-4vx`).
+The catalog is a [File-Based Catalog](docs/tasks/fbc-migration.md) under `operator/catalog/`, where channel membership and upgrade edges are **declared** rather than inferred. This is what makes two independent upgrade graphs expressible in one catalog, and therefore a prerequisite for the pre/post-4.22 split. The previous sqlite index (`opm index add --mode semver`) inferred edges from version ordering and would have synthesized an upgrade edge from the legacy stream to the current one.
 
 ---
 

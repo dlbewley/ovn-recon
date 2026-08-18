@@ -92,12 +92,19 @@ cd operator
 # Set catalog image
 export CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
 
-# Build catalog (includes your bundle)
-make catalog-build BUNDLE_IMGS=$BUNDLE_IMG CATALOG_IMG=$CATALOG_IMG
+# Add your bundle to the file-based catalog (edits operator/catalog/, commit it)
+make catalog-fbc-add BUNDLE_IMG=$BUNDLE_IMG
 
-# Push catalog image
+# Check the change is sound and additive, then build and push
+make catalog-fbc-verify
+make catalog-fbc-build CATALOG_IMG=$CATALOG_IMG
 make catalog-push CATALOG_IMG=$CATALOG_IMG
 ```
+
+> [!NOTE]
+> The catalog is a [File-Based Catalog](tasks/fbc-migration.md) checked into git under
+> `operator/catalog/`. `catalog-fbc-add` renders the bundle and appends it with an explicit
+> `replaces` edge, so the upgrade graph is declared rather than inferred from version ordering.
 
 ### Complete Example Workflow
 
@@ -119,13 +126,29 @@ make bundle IMG=$IMG
 # 4. Build and push bundle
 make bundle-build bundle-push BUNDLE_IMG=$BUNDLE_IMG
 
-# 5. Build and push catalog
-make catalog-build catalog-push BUNDLE_IMGS=$BUNDLE_IMG CATALOG_IMG=$CATALOG_IMG
+# 5. Add the bundle to the catalog, verify, then build and push
+make catalog-fbc-add BUNDLE_IMG=$BUNDLE_IMG
+make catalog-fbc-verify
+make catalog-fbc-build catalog-push CATALOG_IMG=$CATALOG_IMG
 ```
 
-### Pruning a stale package from an existing catalog index
+### Removing a package or bundle from the catalog
 
-If the Bewley catalog still advertises a legacy OLM package (for example **`operator`** from an old bundle), rebuild the index with **`opm index rm`** and push a new multi-arch catalog image. See [Pruning stale `operator` package](tasks/multi-arch-build.md#pruning-stale-operator-package-from-bewley-operator-catalog) in **`docs/tasks/multi-arch-build.md`** and the **`make catalog-push-pruned-index`** target in **`operator/Makefile`**.
+Under the file-based catalog this is a text edit, not an `opm` round trip. Delete the `olm.bundle`
+object and its channel entries from `operator/catalog/ovn-recon-operator/catalog.json`, repair the
+`replaces` chain so the channel still has exactly one head, then:
+
+```bash
+make catalog-fbc-verify CATALOG_REF=      # integrity only; a broken chain fails here
+```
+
+Removing something that is already published is **not** additive, so the default
+`catalog-fbc-verify` (which diffs against the published catalog) will fail by design — that guard
+exists to stop accidental removals. Re-run with `CATALOG_REF=` once the removal is deliberate.
+
+The historical `opm index rm` recipe for pruning the legacy `operator` package is retained for
+reference in [multi-arch-build.md](tasks/multi-arch-build.md), but those Makefile targets were
+removed with the sqlite catalog.
 
 ## Part 2: Creating a Subscription (User Guide)
 
@@ -370,12 +393,15 @@ To release a new version:
    make bundle-build bundle-push BUNDLE_IMG=$BUNDLE_IMG
    ```
 
-3. **Update catalog** (add new bundle to existing catalog):
+3. **Update catalog** (append the new bundle to the file-based catalog):
    ```bash
    export CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
-   make catalog-build BUNDLE_IMGS=$BUNDLE_IMG CATALOG_IMG=$CATALOG_IMG CATALOG_BASE_IMG=$CATALOG_IMG
-   make catalog-push CATALOG_IMG=$CATALOG_IMG
+   make catalog-fbc-add BUNDLE_IMG=$BUNDLE_IMG    # edits operator/catalog/ - commit it
+   make catalog-fbc-verify
+   make catalog-fbc-build catalog-push CATALOG_IMG=$CATALOG_IMG
    ```
+   There is no `CATALOG_BASE_IMG` any more: the catalog is not rebuilt by pulling the previously
+   published image forward, it is the content committed in `operator/catalog/`.
 
 ## Channels
 

@@ -30,7 +30,7 @@ sqlite database.
 | Upgrade edges | inferred by `--mode semver` | declared per channel |
 | Build | `opm index add --generate` → generated Dockerfile | `operator/catalog.Dockerfile` |
 | Add a release | CI pulls prior catalog, appends bundle | release prep runs `make catalog-fbc-add`, commits |
-| Make targets | `catalog-build*`, `catalog-index-*` (kept, deprecated) | `catalog-fbc-*` |
+| Make targets | `catalog-build*`, `catalog-index-*` | `catalog-fbc-*` (sqlite targets removed) |
 
 The migration itself was `opm render` of the live catalog image, which converts sqlite → FBC
 directly. The result was verified to be **semantically identical** to the published catalog:
@@ -137,17 +137,90 @@ to corrupt a channel.
   serves (`found existing cache contents` / `serving registry`).
 - Adding a lower version into a *new* channel succeeds and validates — the two-stream pattern.
 
+## Verifying the catalog
+
+`make catalog-fbc-verify` answers "is the catalog sound, and would publishing it break anyone already
+installed?" Run it before every release and after any hand edit to `catalog.json`.
+
+```bash
+cd operator
+make catalog-fbc-verify                 # integrity + additive-diff vs the published :latest
+make catalog-fbc-verify CATALOG_REF=    # integrity only, offline
+make catalog-fbc-verify CATALOG_REF=quay.io/dbewley/bewley-operator-catalog:v4.20
+```
+
+It runs two independent checks and exits non-zero on either.
+
+> [!IMPORTANT]
+> **One-time local setup for the published diff.** `opm render` pulls through `containers/image`,
+> which refuses to run without a signature policy file and provides **no flag and no environment
+> variable** to point at one — it consults only `~/.config/containers/policy.json` and
+> `/etc/containers/policy.json`. Podman on macOS keeps its policy inside the VM, so the host
+> usually has none and the `--ref` diff fails with `no policy.json file found`.
+>
+> ```bash
+> mkdir -p ~/.config/containers && \
+>   printf '{"default":[{"type":"insecureAcceptAnything"}]}' > ~/.config/containers/policy.json
+> ```
+>
+> This is the same permissive default podman and skopeo ship. The integrity check needs no network
+> and no policy; run `make catalog-fbc-verify CATALOG_REF=` to skip the published diff entirely.
+> CI writes the file itself before verifying.
+
+**Integrity** (offline). Every channel has exactly one head, every entry reaches that head by its
+`replaces` chain, no `replaces` points at a missing entry, and every channel entry has a matching
+`olm.bundle`. A forked or broken graph strands users on a version with no upgrade path — and note
+`opm validate` catches only the forked-head case, not the others.
+
+**Regression** (needs the network). Diffs against a published catalog image and requires the change
+to be purely **additive**: no bundle removed, no image ref changed on a pre-existing bundle, no edge
+rewritten on a pre-existing channel entry, `defaultChannel` unchanged. This is what turns "existing
+users are unaffected" into a checked fact.
+
+Both checks are negative-tested: removing a mid-chain bundle and rewriting an edge on a pre-existing
+entry each make it fail.
+
+### Evidence from the migration
+
+Run against the sqlite catalog still published at `:latest`, the FBC catalog diffs as:
+
+```
+channel 'latest': +2 entries ['ovn-recon-operator.v0.3.8-a0', 'ovn-recon-operator.v0.3.8-a1']
+channel 'stable': +0 entries
+OK
+```
+
+Nothing removed, no edges rewritten, `stable` untouched. Confirmed on a live cluster: the
+packagemanifest served from the FBC catalog is identical to the one from the sqlite catalog
+(same `displayName`, description length, `installModes`, owned CRDs, `alm-examples`), so the
+`olm.bundle.object` → `olm.csv.metadata` conversion costs nothing in the console.
+
+### Cutover risk
+
+`:latest` still serves the **sqlite** catalog — prereleases only push `:v4.20`. The first stable
+release publishes FBC to `:latest`, and that is the moment existing consumers switch format.
+Rollback point for the sqlite image:
+
+```
+quay.io/dbewley/bewley-operator-catalog@sha256:de7c1d1746544c02055f6bdbc30b51419e2526327cd56d3abf7994bc29c77f6c
+```
+
+The catalog base image (`OPM_IMAGE`) is pinned by digest, because that image is the runtime consumers
+execute in their clusters; an unpinned `:latest` could change their behavior with no corresponding
+change in this repo.
+
 ## Not done yet
 
 - **Cutover has not been published.** The next release will be the first built from FBC. Verify the
   catalog on a live cluster with a `CatalogSource` before relying on it.
-- **The sqlite targets are still present** in `operator/Makefile` under a deprecated heading, as a
-  rollback path. Remove them once FBC is proven in production.
+- ~~The sqlite targets are still present in `operator/Makefile`.~~ **Removed** once FBC was proven
+  in production (`ovn-recon-4vx.2`).
 - **Prerelease entries are still carried** in the `latest` channel. Their images are pruned on a
   cron, so those references will eventually dangle. Pruning them is a behavior change for anyone
   subscribed to `latest` and is tracked separately.
 - **Catalog tag taxonomy is unchanged.** The image still publishes to `:v4.20` and `:latest` so
   existing `CatalogSource` resources keep working. The `:v4.20` tag no longer implies an OpenShift
   version — one FBC catalog serves every supported release. Decided in `ovn-recon-w35` / `ovn-recon-ych`.
-- **`catalog-push-pruned-index` / legacy package removal** still uses `opm index rm`. Under FBC,
-  graph removal is a text edit plus `opm validate`.
+- ~~`catalog-push-pruned-index` / legacy package removal still uses `opm index rm`.~~ **Removed.**
+  Under FBC, graph removal is a text edit to `catalog.json` plus `make catalog-fbc-verify
+  CATALOG_REF=` — see [OLM-BUNDLE-GUIDE.md](../OLM-BUNDLE-GUIDE.md).

@@ -201,7 +201,7 @@ Version numbers carry the software's own semver; the **channel name** carries th
 ### What must change before a branch is cut
 
 - [operator-release.yaml](../.github/workflows/operator-release.yaml) triggers on `tags: ['v*']` with no branch restriction, and its floating `:latest` tags, channel selection, and hard-coded catalog tag are all branch-independent. Tags from a maintenance branch would collide with `main`'s.
-- The catalog is built with `opm index add --mode semver`, which infers upgrade edges from version ordering and would link the two streams together. Migrating to a File-Based Catalog is a prerequisite (`ovn-recon-4vx`).
+- ~~The catalog is built with `opm index add --mode semver`, which infers upgrade edges from version ordering and would link the two streams together.~~ **Done** — the catalog is now a [File-Based Catalog](tasks/fbc-migration.md) with explicitly declared edges, so two streams can coexist without OLM inventing a path between them.
 - `consolePlugin.dependencies["@console/pluginAPI"]` in `package.json` is `"*"`, claiming compatibility with every console version. Each stream must declare a real range.
 - Shared modules (`react`, `react-dom`, `react-i18next`, `i18next`, `react-router-dom`) are currently under `dependencies`; they belong in `devDependencies`, since the console supplies them at runtime.
 
