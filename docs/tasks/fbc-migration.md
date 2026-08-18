@@ -74,10 +74,20 @@ change reviewable in the release commit and avoids CI pushing to `main` from a t
 cd operator
 make bundle VERSION=<x.y.z> IMG=quay.io/dbewley/ovn-recon-operator:v<x.y.z>
 make catalog-fbc-add BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v<x.y.z> CHANNELS=stable,latest
-git add catalog/ bundle/
+git add catalog/
 ```
 
-For a prerelease, use `CHANNELS=latest` to match existing behavior.
+`CHANNELS` on `catalog-fbc-add` controls catalog membership. `make bundle` derives the bundle's
+own channel annotations from `VERSION` (a hyphen means prerelease → `latest` only), matching the
+logic in the release workflow, so the two stay consistent without being told twice.
+
+> [!NOTE]
+> **Commit only `catalog/`.** Everything else `make bundle` touches is a generated artifact that CI
+> regenerates from source during release, and several flip per release type:
+> `bundle.Dockerfile` and `bundle/metadata/annotations.yaml` carry the channel labels
+> (`latest` for a prerelease, `stable,latest` otherwise), and `config/manager/kustomization.yaml`
+> carries whatever `IMG` you passed. Revert those rather than committing prerelease values to
+> `main`. `operator/bundle/` itself is gitignored apart from `metadata/annotations.yaml`.
 
 > [!IMPORTANT]
 > **Pass `IMG`.** It defaults to `ovn-recon-operator:latest`, and `make bundle` runs
