@@ -8,6 +8,17 @@ on:
     branches: [ main ]
 
 jobs:
+  # Syntax-check the shell inside every workflow `run:` block. Most of the
+  # release path is gated on `if: startsWith(github.ref, 'refs/tags/v')` and so
+  # never runs on a PR; without this, a syntax error there ships green and only
+  # surfaces when a tag is cut. See beads ovn-recon-sye.
+  workflow-lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - name: Lint shell in workflow run blocks
+      run: python3 scripts/lint-workflows.py
+
   build:
     runs-on: ubuntu-latest
     permissions:
