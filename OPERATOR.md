@@ -31,7 +31,7 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 | `consolePlugin.displayName` | `string` | `OVN Recon` | The name displayed in the OpenShift console. |
 | `consolePlugin.enabled` | `bool` | `true` | If true, the operator will patch the OpenShift Console configuration to enable the plugin. |
 | `consolePlugin.image.repository`| `string` | `quay.io/dbewley/ovn-recon` | Plugin backend image repository. |
-| `consolePlugin.image.tag` | `string` | `latest` | Plugin backend image tag. |
+| `consolePlugin.image.tag` | `string` | _operator's own version_ | Plugin backend image tag. Defaults to `OPERATOR_VERSION` (stamped into the CSV at release), falling back to `latest` only when that is unset or `dev` — i.e. for `make deploy` development installs. |
 | `consolePlugin.image.pullPolicy`| `string` | `IfNotPresent` | Plugin backend ImagePullPolicy. |
 | `consolePlugin.logging.level` | `string` | `info` | Console plugin backend log level. Allowed: `error`, `warn`, `info`, `debug`. |
 | `consolePlugin.logging.accessLog.enabled` | `bool` | `false` | Enables request access logging in the console plugin backend. |
@@ -125,8 +125,16 @@ Selection between streams is **static**: each stream's bundle references its own
 > stable-only content should point at `:stable`. See
 > [fbc-migration.md](docs/tasks/fbc-migration.md#catalog-image-tags).
 
-> [!WARNING]
-> `consolePlugin.image.tag` defaults to `latest`. Once two streams exist, a floating `latest` tag will resolve to whichever stream published most recently and can deliver an incompatible plugin to your cluster. **Pin `consolePlugin.image.tag` (and `collector.image.tag`) to an explicit version** rather than relying on the default. The default is expected to change to a stream-specific tag as part of the split.
+> [!NOTE]
+> **How the plugin and collector images get pinned.** They are not named in the catalog. The operator
+> derives their tag from `OPERATOR_VERSION`, which CI stamps into the CSV at release, so an OLM
+> install of operator `vX.Y.Z` deploys `ovn-recon:vX.Y.Z` and `ovn-collector:vX.Y.Z`. That makes the
+> plugin transitively pinned to whichever bundle the channel offered, which is what allows two
+> release streams to coexist without the operator having to detect the OpenShift version.
+>
+> Two cases still resolve to `latest` and are **not** safe once two streams exist: a development
+> install via `make deploy` (where `OPERATOR_VERSION` is `dev`), and any `OvnRecon` CR that sets
+> `consolePlugin.image.tag: latest` explicitly. Pin an explicit version in both cases.
 
 ---
 
