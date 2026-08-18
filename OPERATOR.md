@@ -117,6 +117,14 @@ Three independent guardrails prevent a mismatched install, each covering a diffe
 
 Selection between streams is **static**: each stream's bundle references its own plugin image tag, and OLM channel membership decides which bundle a cluster can install. The operator does not detect the cluster's OpenShift version. This keeps the compatibility decision declarative and reviewable rather than embedded in reconcile logic, at the cost of the user choosing the correct channel. Runtime version detection remains a possible future improvement — see the design notes on `ovn-recon-ych` for the tradeoff.
 
+> [!NOTE]
+> **Catalog image tags** (decided in `ovn-recon-w35`): `:stable` carries stable releases only,
+> `:latest` carries every release including prereleases, and `:v4.20` is a deprecated alias of
+> `:latest`. `:latest` changed meaning — it used to be stable-only. A Subscription on the `stable`
+> channel is unaffected, since the channel decides what is offered, but a CatalogSource that wants
+> stable-only content should point at `:stable`. See
+> [fbc-migration.md](docs/tasks/fbc-migration.md#catalog-image-tags).
+
 > [!WARNING]
 > `consolePlugin.image.tag` defaults to `latest`. Once two streams exist, a floating `latest` tag will resolve to whichever stream published most recently and can deliver an incompatible plugin to your cluster. **Pin `consolePlugin.image.tag` (and `collector.image.tag`) to an explicit version** rather than relying on the default. The default is expected to change to a stream-specific tag as part of the split.
 

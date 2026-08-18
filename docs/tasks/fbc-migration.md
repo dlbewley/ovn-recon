@@ -216,6 +216,65 @@ Two guards now cover it:
 
 Tracked in `ovn-recon-sye`.
 
+### Catalog image tags
+
+Decided in `ovn-recon-w35`. The OpenShift dimension is carried by the **OLM channel**, not the image
+tag, because a Subscription names a channel and OLM will never offer a bundle outside it. Pointing a
+CatalogSource at the wrong tag is a much weaker guarantee. So the tag only separates stable content
+from experimental content:
+
+| Tag | Contains | Previously |
+|---|---|---|
+| `:stable` | stable releases only | was `:latest` |
+| `:latest` | every release, prereleases included | was `:v4.20` |
+| `:v4.20` | deprecated alias of `:latest` | unchanged, retire later |
+
+> [!WARNING]
+> **`:latest` changed meaning.** It used to be stable-only and now includes prereleases. A
+> Subscription on the `stable` **channel** is unaffected either way — the channel decides what is
+> offered, not the image tag — but a CatalogSource that wants stable-only content should move to
+> `:stable`. `manifests/catalogsource.yaml` currently points at `:latest` and is GitOps-managed.
+
+`:v4.20` never meant anything after the FBC migration: one catalog serves every supported OpenShift
+version. It is still published so existing CatalogSources keep resolving, and should be retired once
+consumers have moved.
+
+### Channels
+
+Today: `stable` (stable releases) and `latest` (stable releases and prereleases). Unchanged from the
+sqlite era and already what the catalog contains.
+
+> [!NOTE]
+> **These names do not survive the 4.22 split.** An unversioned channel cannot hold two release
+> streams — OLM would offer 4.22 content to a 4.21 cluster, which is the exact failure the split
+> exists to prevent. Channel naming at the split is being decided in `ovn-recon-ych`; expect
+> per-generation names, with the current channels deprecated via `olm.deprecations` rather than
+> deleted outright.
+
+### Pruning dangling prereleases
+
+Prerelease bundle images are published with a `quay.expires-at` label and are eventually removed, but
+the catalog keeps referencing them by tag. `make catalog-fbc-prune-dangling` reports those entries;
+`APPLY=1` removes them and splices the upgrade chain so the channel keeps exactly one head.
+
+```bash
+cd operator
+make catalog-fbc-prune-dangling            # dry run
+make catalog-fbc-prune-dangling APPLY=1    # remove
+make catalog-fbc-verify CATALOG_REF=       # integrity only; see below
+```
+
+Two deliberate refusals:
+
+- **Only prereleases are pruned.** A missing *stable* image is reported as an error and nothing is
+  removed — silently dropping a stable release would strand anyone sitting on it.
+- **Only a definite 404 counts as missing.** Any other registry response (401, 5xx, timeout) is
+  treated as present, so a network hiccup can never delete catalog content.
+
+Pruning is **not additive**, so the default `make catalog-fbc-verify` will fail against the published
+catalog by design — that guard exists to catch accidental removals. Use `CATALOG_REF=` to run the
+integrity check alone when the removal is intentional.
+
 ### Cutover risk
 
 `:latest` still serves the **sqlite** catalog — prereleases only push `:v4.20`. The first stable

@@ -390,7 +390,8 @@ CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(VERSION)
 
 # Platforms for the multi-arch catalog image.
 CATALOG_PLATFORMS ?= linux/amd64,linux/arm64
-# Optional second tag for the same manifest list (e.g. :latest on stable releases).
+# Additional tags for the same manifest list, space separated
+# (e.g. ":latest :v4.20" on a prerelease, plus ":stable" on a stable release).
 CATALOG_EXTRA_IMG ?=
 # Podman: "podman buildx build --push" is not supported, so the podman path
 # builds a local manifest list here and pushes it with "manifest push --all".
@@ -434,6 +435,10 @@ catalog-fbc-verify: opm ## Verify catalog integrity, and that changes vs CATALOG
 	python3 ./hack/catalog-verify.py --opm "$(OPM)" --fbc "$(CATALOG_FBC)" \
 		$(if $(strip $(CATALOG_REF)),--ref "$(CATALOG_REF)",)
 
+.PHONY: catalog-fbc-prune-dangling
+catalog-fbc-prune-dangling: ## Report prerelease catalog entries whose images are gone. Set APPLY=1 to remove them.
+	python3 ./hack/catalog-prune-dangling.py --fbc "$(CATALOG_FBC)" $(if $(APPLY),--apply,)
+
 .PHONY: catalog-fbc-add
 catalog-fbc-add: opm ## Render BUNDLE_IMG into the FBC and append it to CHANNELS. Requires BUNDLE_IMG; set CHANNELS to a comma-separated list (default: stable,latest).
 	@test -n "$(BUNDLE_IMG)" || { echo "BUNDLE_IMG is required, e.g. make catalog-fbc-add BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v1.0.0"; exit 1; }
@@ -456,14 +461,12 @@ ifeq ($(CONTAINER_TOOL),podman)
 	$(CONTAINER_TOOL) build --platform=$(CATALOG_PLATFORMS) --manifest $(CATALOG_MANIFEST_WORK) $(BUILD_ARGS) \
 		--build-arg OPM_IMAGE=$(OPM_IMAGE) -f $(CATALOG_DOCKERFILE) .
 	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_IMG)
-ifneq ($(strip $(CATALOG_EXTRA_IMG)),)
-	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_EXTRA_IMG)
-endif
+	$(foreach t,$(CATALOG_EXTRA_IMG),$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(t);)
 	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
 else
 	$(CONTAINER_TOOL) buildx build --push --platform=$(CATALOG_PLATFORMS) $(BUILD_ARGS) \
 		--build-arg OPM_IMAGE=$(OPM_IMAGE) -f $(CATALOG_DOCKERFILE) \
-		-t $(CATALOG_IMG) $(if $(CATALOG_EXTRA_IMG),-t $(CATALOG_EXTRA_IMG),) .
+		-t $(CATALOG_IMG) $(foreach t,$(CATALOG_EXTRA_IMG),-t $(t)) .
 endif
 
 
