@@ -241,8 +241,15 @@ consumers have moved.
 
 ### Channels
 
-`stable` and `latest` are permanent. Stable releases go to both; prereleases go to `latest` only.
-That is unchanged from the sqlite era and is what the catalog already contains.
+Today: `stable` (stable releases) and `latest` (stable releases and prereleases). Unchanged from the
+sqlite era and already what the catalog contains.
+
+> [!NOTE]
+> **These names do not survive the 4.22 split.** An unversioned channel cannot hold two release
+> streams — OLM would offer 4.22 content to a 4.21 cluster, which is the exact failure the split
+> exists to prevent. Channel naming at the split is being decided in `ovn-recon-ych`; expect
+> per-generation names, with the current channels deprecated via `olm.deprecations` rather than
+> deleted outright.
 
 ### Pruning dangling prereleases
 
