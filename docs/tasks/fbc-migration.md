@@ -151,6 +151,22 @@ make catalog-fbc-verify CATALOG_REF=quay.io/dbewley/bewley-operator-catalog:v4.2
 
 It runs two independent checks and exits non-zero on either.
 
+> [!IMPORTANT]
+> **One-time local setup for the published diff.** `opm render` pulls through `containers/image`,
+> which refuses to run without a signature policy file and provides **no flag and no environment
+> variable** to point at one — it consults only `~/.config/containers/policy.json` and
+> `/etc/containers/policy.json`. Podman on macOS keeps its policy inside the VM, so the host
+> usually has none and the `--ref` diff fails with `no policy.json file found`.
+>
+> ```bash
+> mkdir -p ~/.config/containers && \
+>   printf '{"default":[{"type":"insecureAcceptAnything"}]}' > ~/.config/containers/policy.json
+> ```
+>
+> This is the same permissive default podman and skopeo ship. The integrity check needs no network
+> and no policy; run `make catalog-fbc-verify CATALOG_REF=` to skip the published diff entirely.
+> CI writes the file itself before verifying.
+
 **Integrity** (offline). Every channel has exactly one head, every entry reaches that head by its
 `replaces` chain, no `replaces` points at a missing entry, and every channel entry has a matching
 `olm.bundle`. A forked or broken graph strands users on a version with no upgrade path — and note

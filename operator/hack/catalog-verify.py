@@ -20,6 +20,7 @@ Exit non-zero if either check fails. Uses only the Python standard library.
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 
@@ -34,6 +35,29 @@ def iter_json(text):
             return
         obj, i = dec.raw_decode(text, i)
         yield obj
+
+
+POLICY_PATHS = ("~/.config/containers/policy.json", "/etc/containers/policy.json")
+
+
+def require_signature_policy():
+    """opm pulls through containers/image, which refuses to run without a policy file.
+
+    There is no flag or environment variable to point at one; only these two
+    paths are consulted. Fail with the fix rather than letting opm emit its
+    own message, which does not say what the file should contain.
+    """
+    if any(os.path.exists(os.path.expanduser(p)) for p in POLICY_PATHS):
+        return
+    sys.exit(
+        "no container signature policy found, so the published-catalog diff cannot pull.\n"
+        "opm looks only at " + " or ".join(POLICY_PATHS) + " (no flag, no env var).\n"
+        "\nCreate the permissive default that podman and skopeo also use:\n"
+        "  mkdir -p ~/.config/containers && \\\n"
+        "    printf '{\"default\":[{\"type\":\"insecureAcceptAnything\"}]}' > ~/.config/containers/policy.json\n"
+        "\nOr skip the published diff and run the offline integrity check only:\n"
+        "  make catalog-fbc-verify CATALOG_REF="
+    )
 
 
 def render(opm, ref):
@@ -134,6 +158,7 @@ def main():
     problems = check_integrity(new)
 
     if args.ref:
+        require_signature_policy()
         print(f"\nregression vs {args.ref} (must be additive)")
         problems += check_regression(render(args.opm, args.ref), new)
 
