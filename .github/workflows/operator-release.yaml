@@ -237,7 +237,6 @@ jobs:
         else
           make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG BUILD_ARGS="$EXPIRY_LABEL"
         fi
-        fi
 
     - name: Verify release images are multi-arch manifest lists
       if: startsWith(github.ref, 'refs/tags/v')
