@@ -384,11 +384,64 @@ ifneq ($(origin CATALOG_BASE_IMG), undefined)
 FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG)
 endif
 
+##@ Catalog (File-Based Catalog)
+
+# FBC is the supported replacement for the deprecated sqlite index below.
+# Catalog source of truth lives in git under $(CATALOG_DIR) and is rendered by
+# `opm render`, not inferred from version ordering. See docs/tasks/fbc-migration.md.
+CATALOG_DIR ?= catalog
+CATALOG_PKG ?= ovn-recon-operator
+CATALOG_FBC ?= $(CATALOG_DIR)/$(CATALOG_PKG)/catalog.json
+CATALOG_DOCKERFILE ?= catalog.Dockerfile
+# Multi-arch base for the catalog runtime. Pin by digest for reproducible builds:
+#   OPM_IMAGE=quay.io/operator-framework/opm@sha256:...
+# Verify it is a manifest list first: oc image info --show-multiarch <ref>
+OPM_IMAGE ?= quay.io/operator-framework/opm:latest
+
+.PHONY: catalog-fbc-validate
+catalog-fbc-validate: opm ## Validate the file-based catalog tree.
+	$(OPM) validate $(CATALOG_DIR)
+	@echo "FBC valid: $(CATALOG_DIR)"
+
+.PHONY: catalog-fbc-add
+catalog-fbc-add: opm ## Render BUNDLE_IMG into the FBC and append it to CHANNELS. Requires BUNDLE_IMG; set CHANNELS to a comma-separated list (default: stable,latest).
+	@test -n "$(BUNDLE_IMG)" || { echo "BUNDLE_IMG is required, e.g. make catalog-fbc-add BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v1.0.0"; exit 1; }
+	python3 ./hack/catalog-add-bundle.py \
+		--opm "$(OPM)" \
+		--fbc "$(CATALOG_FBC)" \
+		--package "$(CATALOG_PKG)" \
+		--bundle "$(BUNDLE_IMG)" \
+		--channels "$(if $(CHANNELS),$(CHANNELS),stable,latest)"
+	$(MAKE) catalog-fbc-validate
+
+.PHONY: catalog-fbc-build
+catalog-fbc-build: catalog-fbc-validate ## Build the FBC catalog image for the local platform.
+	$(CONTAINER_TOOL) build -f $(CATALOG_DOCKERFILE) --build-arg OPM_IMAGE=$(OPM_IMAGE) -t $(CATALOG_IMG) .
+
+.PHONY: catalog-fbc-build-multiarch
+catalog-fbc-build-multiarch: catalog-fbc-validate ## Build and push the multi-arch FBC catalog image (podman manifest workflow).
+	- $(CONTAINER_TOOL) manifest rm $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
+	$(CONTAINER_TOOL) build --platform $(CATALOG_PLATFORMS) --manifest $(CATALOG_MANIFEST_WORK) \
+		-f $(CATALOG_DOCKERFILE) --build-arg OPM_IMAGE=$(OPM_IMAGE) $(BUILD_ARGS) .
+	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) docker://$(CATALOG_IMG)
+	$(if $(CATALOG_EXTRA_IMG),$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) docker://$(CATALOG_EXTRA_IMG),)
+
+##@ Catalog (deprecated sqlite index)
+
+# DEPRECATED: 'opm index add' and sqlite catalogs are deprecated upstream and
+# will be removed in a future opm release. These targets are retained only for
+# rollback during the FBC migration; use the catalog-fbc-* targets above.
+#
+# They also cannot express two independent upgrade graphs in one package:
+# '--mode semver' INFERS edges from version ordering, so a 1.x stream would be
+# linked to a 0.x stream automatically. That is why FBC is a prerequisite for
+# the pre/post-4.22 release split.
+
 # Build a catalog image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
 # This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
 # https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
 .PHONY: catalog-build
-catalog-build: opm ## Build a catalog image.
+catalog-build: opm ## (DEPRECATED) Build a sqlite catalog image.
 	$(OPM) index add --container-tool $(CONTAINER_TOOL) --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
 
 # Multi-arch catalog: generate Dockerfile + sqlite DB with opm, then build/push with buildx (see docs/tasks/multi-arch-build.md).

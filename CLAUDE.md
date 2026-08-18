@@ -70,7 +70,7 @@ source setup_env.sh && \
 ### Releasing
 
 ```bash
-npm version patch|minor|major   # bumps package.json, Chart.yaml, creates git tag
+npm version patch|minor|major   # bumps package.json + consolePlugin.version, creates git tag
 git push --follow-tags           # triggers CI to build, push image, create GitHub Release
 ```
 

@@ -4,9 +4,12 @@ This document describes how to set up your development environment, build the pr
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) (v14 or newer recommended)
+- [Node.js](https://nodejs.org/) v18 or newer
 - [npm](https://www.npmjs.com/)
 - [podman](https://podman.io/) or [docker](https://www.docker.com/) for container image building
+
+> [!NOTE]
+> The plugin build is tied to the OpenShift Console version it targets — the console supplies React, react-router, and react-i18next at runtime, so the plugin must be compiled against matching versions. See [Release Streams and OpenShift Compatibility](#release-streams-and-openshift-compatibility) before releasing.
 
 ## Installation
 
@@ -86,7 +89,7 @@ For development and testing, you can manually deploy the plugin to an OpenShift 
 
 ### Prerequisites
 
-- An OpenShift cluster (4.10+)
+- An OpenShift cluster (4.20+)
 - `oc` CLI tool configured and authenticated
 - Podman or Docker for building images
 
@@ -169,6 +172,41 @@ source setup_env.sh && \
     oc wait --for=condition=ready pod -l "$APP_SELECTOR" -n "$APP_NAMESPACE" --timeout=60s
 ```
 
+## Release Streams and OpenShift Compatibility
+
+### Why the plugin cannot be version-agnostic
+
+OpenShift Console loads dynamic plugins via webpack module federation and supplies the shared singleton modules itself — React, react-router, react-i18next, and PatternFly. The plugin must **not** bundle its own copies; it compiles against whatever versions the target console provides. When the console upgrades one of those modules across a major version, every plugin must upgrade with it.
+
+OpenShift 4.22 does exactly that: React 17 → 18, react-router 5 → 7, react-i18next 11 → 16, PatternFly 6 only. A plugin built for 4.22 will not load on a 4.21 console, and a plugin built for 4.21 will not load on 4.22. There is no runtime shim — the mismatch is resolved in the module graph before plugin code executes.
+
+### Planned branch layout
+
+> [!NOTE]
+> Planned, not yet in effect. The repo is single-stream today. Tracked in beads `ovn-recon-ych` and `ovn-recon-t14`.
+
+```
+main            ──●──●──●──●──▶   OCP 4.22+      plugin 1.x    channel stable-4.22
+                  │
+release-4.21      └──●─────●──▶   OCP 4.20-4.21  plugin 0.3.z  channel stable-4.21
+                     ▲       ▲    frozen: security + P0 bugs only
+                     │       │
+                  cut here   critical fix, cherry-picked main → release-4.21
+```
+
+`release-4.21` is a **freeze, not a parallel development line.** Features go to `main` only; a backport is a deliberate exception. Because the operator and collector have no console coupling, their changes ship from `main` and serve both generations — the branch only wakes up for plugin-specific fixes.
+
+Version numbers carry the software's own semver; the **channel name** carries the OpenShift dimension. Do not encode the OpenShift version in the operator version (e.g. `v4.20.z`): OLM orders upgrades within a channel by semver, so a `4.22.1` would sort above a `4.20.5` and be offered to clusters that cannot run it.
+
+### What must change before a branch is cut
+
+- [operator-release.yaml](../.github/workflows/operator-release.yaml) triggers on `tags: ['v*']` with no branch restriction, and its floating `:latest` tags, channel selection, and hard-coded catalog tag are all branch-independent. Tags from a maintenance branch would collide with `main`'s.
+- The catalog is built with `opm index add --mode semver`, which infers upgrade edges from version ordering and would link the two streams together. Migrating to a File-Based Catalog is a prerequisite (`ovn-recon-4vx`).
+- `consolePlugin.dependencies["@console/pluginAPI"]` in `package.json` is `"*"`, claiming compatibility with every console version. Each stream must declare a real range.
+- Shared modules (`react`, `react-dom`, `react-i18next`, `i18next`, `react-router-dom`) are currently under `dependencies`; they belong in `devDependencies`, since the console supplies them at runtime.
+
+See [OPERATOR.md](../OPERATOR.md#openshift-version-compatibility) for the OLM-side guardrails.
+
 ## Feature Branch Workflow
 
 1.  Create and switch to a feature branch:
@@ -204,7 +242,6 @@ To release a new version:
 2.  Run `npm version <patch|minor|major>`. This will:
     - Update the version in `package.json`.
     - Sync the version to `consolePlugin` section.
-    - Sync the version to `charts/ovn-recon/Chart.yaml` appVersion.
     - Run linting and tests.
     - Create a git commit and tag (e.g., `v1.0.1`).
 

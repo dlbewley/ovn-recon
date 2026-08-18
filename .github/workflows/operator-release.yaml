@@ -191,32 +191,51 @@ jobs:
           make bundle-buildx BUNDLE_IMG=$BUNDLE_IMG BUILD_ARGS="$EXPIRY_LABEL"
         fi
 
-    - name: Build and push catalog image (multi-arch)
+    - name: Verify the committed catalog contains this release
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
+        set -euo pipefail
         cd operator
-        # Optional hardening: pin the generated catalog Dockerfile FROM line to a
-        # multi-arch opm digest (operator/Makefile OPM_INDEX_BINARY_IMAGE). See
-        # docs/tasks/multi-arch-build.md section "Catalog FROM line and OPM_INDEX_BINARY_IMAGE".
-        # export OPM_INDEX_BINARY_IMAGE=quay.io/operator-framework/opm@sha256:<digest>
-        BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:$VERSION
+        # The file-based catalog is source of truth in git (operator/catalog/).
+        # It is updated during release PREP, not written back by CI:
+        #   make bundle VERSION=<x.y.z>
+        #   make catalog-fbc-add BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v<x.y.z> \
+        #       CHANNELS=stable,latest      # prereleases: CHANNELS=latest
+        #   git commit && git tag
+        # Failing here means that step was skipped and the catalog image would
+        # ship without the version being released.
+        make opm
+        make catalog-fbc-validate
+        NAME="ovn-recon-operator.${VERSION}"
+        if ! grep -q "\"${NAME}\"" catalog/ovn-recon-operator/catalog.json; then
+          echo "ERROR: ${NAME} is not present in the committed file-based catalog."
+          echo "Run the catalog-fbc-add step during release prep and re-tag."
+          echo "See docs/tasks/fbc-migration.md."
+          exit 1
+        fi
+        echo "catalog contains ${NAME}"
+
+    - name: Build and push catalog image (multi-arch, FBC)
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        set -euo pipefail
+        cd operator
+        # Optional hardening: pin the catalog base image to a multi-arch opm digest
+        # (operator/Makefile OPM_IMAGE). Verify it is a manifest list first:
+        #   oc image info --show-multiarch <ref>
+        # export OPM_IMAGE=quay.io/operator-framework/opm@sha256:<digest>
+        #
+        # NOTE: the :v4.20 tag is kept for backwards compatibility with existing
+        # CatalogSources. It no longer implies an OpenShift version -- one FBC
+        # catalog serves every supported release. Tag taxonomy is being decided
+        # in beads ovn-recon-w35 / ovn-recon-ych.
         CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
-        # Try to pull existing catalog to add to it, but don't fail if it doesn't exist (first release)
-        if docker pull "$CATALOG_IMG" 2>/dev/null; then
-          if [[ "$VERSION" != *"-"* ]]; then
-            make catalog-build-multiarch CATALOG_IMG=$CATALOG_IMG BUNDLE_IMGS=$BUNDLE_IMG CATALOG_BASE_IMG=$CATALOG_IMG \
-              BUILD_ARGS="$EXPIRY_LABEL" CATALOG_EXTRA_IMG=quay.io/dbewley/bewley-operator-catalog:latest
-          else
-            make catalog-build-multiarch CATALOG_IMG=$CATALOG_IMG BUNDLE_IMGS=$BUNDLE_IMG CATALOG_BASE_IMG=$CATALOG_IMG \
-              BUILD_ARGS="$EXPIRY_LABEL"
-          fi
+        if [[ "$VERSION" != *"-"* ]]; then
+          make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG BUILD_ARGS="$EXPIRY_LABEL" \
+            CATALOG_EXTRA_IMG=quay.io/dbewley/bewley-operator-catalog:latest
         else
-          if [[ "$VERSION" != *"-"* ]]; then
-            make catalog-build-multiarch CATALOG_IMG=$CATALOG_IMG BUNDLE_IMGS=$BUNDLE_IMG BUILD_ARGS="$EXPIRY_LABEL" \
-              CATALOG_EXTRA_IMG=quay.io/dbewley/bewley-operator-catalog:latest
-          else
-            make catalog-build-multiarch CATALOG_IMG=$CATALOG_IMG BUNDLE_IMGS=$BUNDLE_IMG BUILD_ARGS="$EXPIRY_LABEL"
-          fi
+          make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG BUILD_ARGS="$EXPIRY_LABEL"
+        fi
         fi
 
     - name: Verify release images are multi-arch manifest lists
