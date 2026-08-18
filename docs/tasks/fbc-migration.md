@@ -30,7 +30,7 @@ sqlite database.
 | Upgrade edges | inferred by `--mode semver` | declared per channel |
 | Build | `opm index add --generate` → generated Dockerfile | `operator/catalog.Dockerfile` |
 | Add a release | CI pulls prior catalog, appends bundle | release prep runs `make catalog-fbc-add`, commits |
-| Make targets | `catalog-build*`, `catalog-index-*` (kept, deprecated) | `catalog-fbc-*` |
+| Make targets | `catalog-build*`, `catalog-index-*` | `catalog-fbc-*` (sqlite targets removed) |
 
 The migration itself was `opm render` of the live catalog image, which converts sqlite → FBC
 directly. The result was verified to be **semantically identical** to the published catalog:
@@ -197,13 +197,14 @@ change in this repo.
 
 - **Cutover has not been published.** The next release will be the first built from FBC. Verify the
   catalog on a live cluster with a `CatalogSource` before relying on it.
-- **The sqlite targets are still present** in `operator/Makefile` under a deprecated heading, as a
-  rollback path. Remove them once FBC is proven in production.
+- ~~The sqlite targets are still present in `operator/Makefile`.~~ **Removed** once FBC was proven
+  in production (`ovn-recon-4vx.2`).
 - **Prerelease entries are still carried** in the `latest` channel. Their images are pruned on a
   cron, so those references will eventually dangle. Pruning them is a behavior change for anyone
   subscribed to `latest` and is tracked separately.
 - **Catalog tag taxonomy is unchanged.** The image still publishes to `:v4.20` and `:latest` so
   existing `CatalogSource` resources keep working. The `:v4.20` tag no longer implies an OpenShift
   version — one FBC catalog serves every supported release. Decided in `ovn-recon-w35` / `ovn-recon-ych`.
-- **`catalog-push-pruned-index` / legacy package removal** still uses `opm index rm`. Under FBC,
-  graph removal is a text edit plus `opm validate`.
+- ~~`catalog-push-pruned-index` / legacy package removal still uses `opm index rm`.~~ **Removed.**
+  Under FBC, graph removal is a text edit to `catalog.json` plus `make catalog-fbc-verify
+  CATALOG_REF=` — see [OLM-BUNDLE-GUIDE.md](../OLM-BUNDLE-GUIDE.md).
