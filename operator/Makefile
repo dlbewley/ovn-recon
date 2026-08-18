@@ -430,7 +430,7 @@ catalog-fbc-build: catalog-fbc-validate ## Build the FBC catalog image for the l
 	$(CONTAINER_TOOL) build -f $(CATALOG_DOCKERFILE) --build-arg OPM_IMAGE=$(OPM_IMAGE) -t $(CATALOG_IMG) .
 
 .PHONY: catalog-fbc-build-multiarch
-catalog-fbc-build-multiarch: catalog-fbc-validate ## Build and push the multi-arch FBC catalog image (podman manifest workflow).
+catalog-fbc-build-multiarch: catalog-fbc-validate ## Build and push the multi-arch FBC catalog image (docker buildx or podman manifest workflow).
 ifeq ($(CONTAINER_TOOL),podman)
 	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
 	$(CONTAINER_TOOL) build --platform=$(CATALOG_PLATFORMS) --manifest $(CATALOG_MANIFEST_WORK) $(BUILD_ARGS) \
