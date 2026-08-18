@@ -236,16 +236,26 @@ jobs:
         #   oc image info --show-multiarch <ref>
         # export OPM_IMAGE=quay.io/operator-framework/opm@sha256:<digest>
         #
-        # NOTE: the :v4.20 tag is kept for backwards compatibility with existing
-        # CatalogSources. It no longer implies an OpenShift version -- one FBC
-        # catalog serves every supported release. Tag taxonomy is being decided
-        # in beads ovn-recon-w35 / ovn-recon-ych.
-        CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
+        # Tag taxonomy (decided in ovn-recon-w35):
+        #   :latest  every release, prereleases included  <- was :v4.20
+        #   :stable  stable releases only                 <- was :latest
+        # The OpenShift dimension is carried by the OLM channel, not the image
+        # tag, so :v4.20 no longer means anything: one FBC catalog serves every
+        # supported release. It is still published as a deprecated alias of
+        # :latest so existing CatalogSources keep resolving.
+        #
+        # NOTE :latest changes meaning here. It used to be stable-only; it now
+        # includes prereleases. Consumers who want stable-only should point at
+        # :stable. A Subscription on the 'stable' CHANNEL is unaffected either
+        # way, because the channel decides what is offered, not the image tag.
+        REPO=quay.io/dbewley/bewley-operator-catalog
+        CATALOG_IMG=$REPO:latest
         if [[ "$VERSION" != *"-"* ]]; then
           make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG BUILD_ARGS="$EXPIRY_LABEL" \
-            CATALOG_EXTRA_IMG=quay.io/dbewley/bewley-operator-catalog:latest
+            CATALOG_EXTRA_IMG="$REPO:stable $REPO:v4.20"
         else
-          make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG BUILD_ARGS="$EXPIRY_LABEL"
+          make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG BUILD_ARGS="$EXPIRY_LABEL" \
+            CATALOG_EXTRA_IMG="$REPO:v4.20"
         fi
 
     - name: Verify release images are multi-arch manifest lists
@@ -270,9 +280,10 @@ jobs:
         }
         verify "quay.io/dbewley/ovn-recon-operator:${VERSION}"
         verify "quay.io/dbewley/ovn-recon-operator-bundle:${VERSION}"
+        verify "quay.io/dbewley/bewley-operator-catalog:latest"
         verify "quay.io/dbewley/bewley-operator-catalog:v4.20"
         if [[ "$VERSION" != *"-"* ]]; then
           verify "quay.io/dbewley/ovn-recon-operator:latest"
           verify "quay.io/dbewley/ovn-recon-operator-bundle:latest"
-          verify "quay.io/dbewley/bewley-operator-catalog:latest"
+          verify "quay.io/dbewley/bewley-operator-catalog:stable"
         fi
