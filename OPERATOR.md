@@ -2,7 +2,7 @@
 
 The OVN Recon Operator manages the lifecycle of the [OVN Recon](https://github.com/dlbewley/ovn-recon) console plugin on OpenShift. It provides a declarative way to deploy, configure, and automatically enable the plugin within the OpenShift Web Console.
 
-See also [OLM-BUNDLE-GUIDE.md](../docs/OLM-BUNDLE-GUIDE.md).
+See also [OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
 
 ## Features
 
@@ -79,10 +79,53 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 
 ---
 
+## OpenShift Version Compatibility
+
+### Current state
+
+Today there is a **single release stream** supporting OpenShift 4.20 and later. One operator version, one bundle, one channel (`stable`, with `latest` also published), one plugin image.
+
+### Why this changes at 4.22
+
+The console plugin is not self-contained. OpenShift Console supplies React, react-router, and react-i18next to dynamic plugins at runtime through webpack module federation's shared scope, and **OpenShift 4.22 changes those shared modules** — React 17 to 18, react-router 5 to 7, react-i18next 11 to 16. Only one version of each singleton module can be loaded, so a plugin compiled against React 18 cannot run on a 4.21 console, and vice versa.
+
+This is a property of the plugin bundle only. The operator's Go reconcile logic, the `OvnRecon` CRD, and the collector are all unaffected — they have no console coupling. **A single operator build continues to work across both generations; only the plugin image it deploys must differ.**
+
+### Planned stream split
+
+> [!NOTE]
+> Planned, not yet implemented. Tracked in beads `ovn-recon-ych` (release streams), `ovn-recon-t14` (plugin migration), and `ovn-recon-4vx` (catalog migration).
+
+| | Legacy stream | Current stream |
+|---|---|---|
+| OpenShift | 4.20 – 4.21 | 4.22+ |
+| Git branch | `release-4.21` (frozen) | `main` |
+| Operator version | `0.3.z` | `1.x` |
+| OLM channel | `stable-4.21` | `stable-4.22` |
+| Plugin build | React 17 / router 5 | React 18 / router 7 |
+| Maintenance | Security and P0 bugs only | Active development |
+
+The `release-4.21` branch is a **freeze, not a parallel development line**. Features land on `main`; only critical fixes are cherry-picked back. Because operator and collector changes are stream-independent, they ship from `main` and serve both generations.
+
+Three independent guardrails prevent a mismatched install, each covering a different failure path:
+
+| Guardrail | Where | Prevents |
+|---|---|---|
+| `com.redhat.openshift.versions` | bundle `annotations.yaml` | The bundle appearing in the wrong per-OCP catalog |
+| `olm.maxOpenShiftVersion` | last pre-4.22 CSV | A **cluster** upgrade to 4.22 while an incompatible operator is installed |
+| `@console/pluginAPI` range | plugin `package.json` | The console loading a plugin it cannot satisfy — the plugin is skipped rather than crashing the page |
+
+Selection between streams is **static**: each stream's bundle references its own plugin image tag, and OLM channel membership decides which bundle a cluster can install. The operator does not detect the cluster's OpenShift version. This keeps the compatibility decision declarative and reviewable rather than embedded in reconcile logic, at the cost of the user choosing the correct channel. Runtime version detection remains a possible future improvement — see the design notes on `ovn-recon-ych` for the tradeoff.
+
+> [!WARNING]
+> `consolePlugin.image.tag` defaults to `latest`. Once two streams exist, a floating `latest` tag will resolve to whichever stream published most recently and can deliver an incompatible plugin to your cluster. **Pin `consolePlugin.image.tag` (and `collector.image.tag`) to an explicit version** rather than relying on the default. The default is expected to change to a stream-specific tag as part of the split.
+
+---
+
 ## Operational Guide
 
 ### Prerequisites
-- OpenShift 4.20 or compatible.
+- OpenShift 4.20 or compatible. See [OpenShift Version Compatibility](#openshift-version-compatibility) — support becomes stream-specific at OpenShift 4.22.
 - `oc` or `kubectl` CLI.
 - Cluster-admin permissions (required for CRD installation and Console operator patching).
 
@@ -131,7 +174,19 @@ make deploy IMG=quay.io/dbewley/ovn-recon-operator:latest
 - `make build-installer`: Generate a single `install.yaml` for distribution.
 
 ### CI/CD
-The operator image is automatically built and pushed to `quay.io/dbewley/ovn-recon-operator` on tags matching `v*`.
+
+The operator image is automatically built and pushed to `quay.io/dbewley/ovn-recon-operator` on tags matching `v*`, by [operator-release.yaml](.github/workflows/operator-release.yaml).
+
+Everything the release produces is derived from the **git tag**, not from the Makefile. `VERSION` comes from `${GITHUB_REF#refs/tags/}`, and `IMG` / `BUNDLE_IMG` / `CATALOG_IMG` are passed on the `make` command line — the `VERSION ?= 0.0.1` default in `operator/Makefile` is a kubebuilder scaffold value and is never used in CI.
+
+A tag containing a hyphen (e.g. `v1.0.1-beta.1`) is treated as a prerelease: it publishes only to the `latest` channel and does not move the floating `latest` image tags.
+
+> [!IMPORTANT]
+> The workflow triggers on `tags: ['v*']` with **no branch restriction**, and several outputs are branch-independent: the floating `:latest` image tags, the channel selection (`stable,latest`), and the hard-coded catalog tag `quay.io/dbewley/bewley-operator-catalog:v4.20`. A release tag pushed from a future `release-4.21` branch would therefore overwrite `main`'s floating tags and publish into the same `stable` channel and the same catalog.
+>
+> Before any maintenance branch is cut, the workflow must derive the channel, the floating tags, and the catalog content from the branch or tag pattern. Tracked in `ovn-recon-ych`.
+
+The catalog is currently built with `opm index add --mode semver`, which **infers upgrade edges from version ordering across the whole package**. That is safe with one stream and unsafe with two — it would synthesize an upgrade edge from the legacy stream to the current one. Migrating to a File-Based Catalog, where channel membership and upgrade edges are declared explicitly, is a prerequisite for the split (`ovn-recon-4vx`).
 
 ---
 
