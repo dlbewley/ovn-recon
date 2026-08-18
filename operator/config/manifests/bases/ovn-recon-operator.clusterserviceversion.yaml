@@ -1,27 +1,27 @@
 apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
-  name: ovn-recon-operator.v0.0.0
-  labels:
-    operatorframework.io/arch.amd64: supported
-    operatorframework.io/arch.arm64: supported
-    operatorframework.io/os.linux: supported
   annotations:
-    alm-examples: |-
-      [{"apiVersion":"recon.bewley.net/v1beta1","kind":"OvnRecon","metadata":{"name":"ovn-recon"},"spec":{"targetNamespace":"ovn-recon","consolePlugin":{"displayName":"OVN Recon","enabled":true,"image":{"repository":"quay.io/dbewley/ovn-recon"}},"collector":{"enabled":false,"image":{"repository":"quay.io/dbewley/ovn-collector"},"probeNamespaces":["openshift-ovn-kubernetes","openshift-frr-k8s"]}}}]
+    alm-examples: '[{"apiVersion":"recon.bewley.net/v1beta1","kind":"OvnRecon","metadata":{"name":"ovn-recon"},"spec":{"targetNamespace":"ovn-recon","consolePlugin":{"displayName":"OVN
+      Recon","enabled":true,"image":{"repository":"quay.io/dbewley/ovn-recon"}},"collector":{"enabled":false,"image":{"repository":"quay.io/dbewley/ovn-collector"},"probeNamespaces":["openshift-ovn-kubernetes","openshift-frr-k8s"]}}}]'
     capabilities: Basic Install
     categories: Networking
     containerImage: quay.io/dbewley/ovn-recon-operator:latest
     documentation: https://github.com/dlbewley/ovn-recon/tree/main/docs
+    operatorframework.io/suggested-namespace: ovn-recon
     repository: https://github.com/dlbewley/ovn-recon
     support: https://github.com/dlbewley/ovn-recon/issues
-    operatorframework.io/suggested-namespace: ovn-recon
+  labels:
+    operatorframework.io/arch.amd64: supported
+    operatorframework.io/arch.arm64: supported
+    operatorframework.io/os.linux: supported
+  name: ovn-recon-operator.v0.0.0
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
     - description: OvnRecon is the Schema for the ovnrecons API.
-      displayName: OVN Recon
+      displayName: Ovn Recon
       kind: OvnRecon
       name: ovnrecons.recon.bewley.net
       version: v1beta1
