@@ -72,12 +72,23 @@ change reviewable in the release commit and avoids CI pushing to `main` from a t
 
 ```bash
 cd operator
-make bundle VERSION=<x.y.z>
+make bundle VERSION=<x.y.z> IMG=quay.io/dbewley/ovn-recon-operator:v<x.y.z>
 make catalog-fbc-add BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v<x.y.z> CHANNELS=stable,latest
-git add catalog/ operator/bundle/
+git add catalog/ bundle/
 ```
 
 For a prerelease, use `CHANNELS=latest` to match existing behavior.
+
+> [!IMPORTANT]
+> **Pass `IMG`.** It defaults to `ovn-recon-operator:latest`, and `make bundle` runs
+> `kustomize edit set image controller=$(IMG)`. Without it the CSV records the wrong operator
+> image, `config/manager/kustomization.yaml` is rewritten as a side effect, and — because the
+> catalog renders the CSV — that wrong image is baked into the catalog entry. CI sets `IMG`
+> itself, so this only bites the local release-prep path.
+
+`CHANNELS` and `DEFAULT_CHANNEL` now default to `stable,latest` and `stable` in the Makefile.
+Previously they were unset, so operator-sdk fell back to `alpha` and a local `make bundle`
+silently rewrote `bundle/metadata/annotations.yaml`, dropping the real channels.
 
 `catalog-fbc-add` renders the bundle, appends it, and points its `replaces` at the current channel
 head. Because the bundle image does not exist until CI builds it, the add can also render the local

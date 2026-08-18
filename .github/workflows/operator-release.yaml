@@ -198,9 +198,10 @@ jobs:
         cd operator
         # The file-based catalog is source of truth in git (operator/catalog/).
         # It is updated during release PREP, not written back by CI:
-        #   make bundle VERSION=<x.y.z>
+        #   make bundle VERSION=<x.y.z> IMG=quay.io/dbewley/ovn-recon-operator:v<x.y.z>
         #   make catalog-fbc-add BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v<x.y.z> \
         #       CHANNELS=stable,latest      # prereleases: CHANNELS=latest
+        # IMG matters: it lands in the CSV that the catalog renders.
         #   git commit && git tag
         # Failing here means that step was skipped and the catalog image would
         # ship without the version being released.
