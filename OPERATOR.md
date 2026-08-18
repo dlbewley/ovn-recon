@@ -181,6 +181,35 @@ Everything the release produces is derived from the **git tag**, not from the Ma
 
 A tag containing a hyphen (e.g. `v1.0.1-beta.1`) is treated as a prerelease: it publishes only to the `latest` channel and does not move the floating `latest` image tags.
 
+### Releasing the operator
+
+Unlike the plugin (where `npm version` creates the tag), the operator is tagged by hand. Two steps
+are easy to get wrong:
+
+1. **Update the catalog first.** The file-based catalog under `operator/catalog/` is source of
+   truth and is updated during release prep, not written back by CI. CI fails the release if the
+   version being tagged is not already in the committed catalog. See
+   [docs/tasks/fbc-migration.md](docs/tasks/fbc-migration.md).
+
+   ```bash
+   cd operator
+   make bundle VERSION=<x.y.z> IMG=quay.io/dbewley/ovn-recon-operator:v<x.y.z>
+   make catalog-fbc-add BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v<x.y.z>
+   git add catalog/   # only the catalog; the rest is generated
+   ```
+
+2. **Tag with `-a`.** `git push --follow-tags` pushes only *annotated* tags. A tag created with a
+   bare `git tag <name>` is lightweight and is silently skipped, while any other unpushed annotated
+   tags in your repo get pushed instead — re-triggering a release for an old version and
+   overwriting its published images with freshly built content.
+
+   ```bash
+   git tag -a v<x.y.z> -m "v<x.y.z>" && git push --follow-tags
+   ```
+
+   Verify before pushing: `git cat-file -t v<x.y.z>` prints `tag` for annotated, `commit` for
+   lightweight. `git push --dry-run --follow-tags` lists exactly which refs would go.
+
 > [!IMPORTANT]
 > The workflow triggers on `tags: ['v*']` with **no branch restriction**, and several outputs are branch-independent: the floating `:latest` image tags, the channel selection (`stable,latest`), and the hard-coded catalog tag `quay.io/dbewley/bewley-operator-catalog:v4.20`. A release tag pushed from a future `release-4.21` branch would therefore overwrite `main`'s floating tags and publish into the same `stable` channel and the same catalog.
 >

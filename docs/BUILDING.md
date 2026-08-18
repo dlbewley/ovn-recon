@@ -255,3 +255,22 @@ To release a new version:
     - Push the versioned tag (e.g., `quay.io/dbewley/ovn-recon:1.0.1`).
     - If it is a stable release (no hyphen, e.g., `v1.0.0`), it will also update the `latest` tag. Prereleases containing a `-` (e.g., `v1.0.1-beta.1`) will **not** update `latest`.
     - **Create a GitHub Release** with automatically generated release notes. Pre-releases will be marked accordingly.
+
+> [!WARNING]
+> **`--follow-tags` only pushes _annotated_ tags.** `npm version` creates one, so the plugin flow
+> above is safe. A tag made by hand with `git tag <name>` is **lightweight** and will be silently
+> skipped — `git push --follow-tags` reports success while pushing no tag at all, and will happily
+> push any *other* annotated tags sitting unpushed in your local repo instead. That can re-trigger
+> a release for an old version and overwrite already-published images with freshly built content.
+>
+> Tag by hand with `-a`, or push the tag by name:
+>
+> ```bash
+> git tag -a v1.0.1 -m "v1.0.1" && git push --follow-tags
+> # or
+> git push origin v1.0.1
+> ```
+>
+> Check what you are about to publish first — `git cat-file -t <tag>` prints `tag` for annotated
+> and `commit` for lightweight, and `git push --dry-run --follow-tags` lists exactly which refs
+> would go.

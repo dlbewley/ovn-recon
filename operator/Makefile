@@ -431,11 +431,20 @@ catalog-fbc-build: catalog-fbc-validate ## Build the FBC catalog image for the l
 
 .PHONY: catalog-fbc-build-multiarch
 catalog-fbc-build-multiarch: catalog-fbc-validate ## Build and push the multi-arch FBC catalog image (podman manifest workflow).
-	- $(CONTAINER_TOOL) manifest rm $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
-	$(CONTAINER_TOOL) build --platform $(CATALOG_PLATFORMS) --manifest $(CATALOG_MANIFEST_WORK) \
-		-f $(CATALOG_DOCKERFILE) --build-arg OPM_IMAGE=$(OPM_IMAGE) $(BUILD_ARGS) .
-	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) docker://$(CATALOG_IMG)
-	$(if $(CATALOG_EXTRA_IMG),$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) docker://$(CATALOG_EXTRA_IMG),)
+ifeq ($(CONTAINER_TOOL),podman)
+	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
+	$(CONTAINER_TOOL) build --platform=$(CATALOG_PLATFORMS) --manifest $(CATALOG_MANIFEST_WORK) $(BUILD_ARGS) \
+		--build-arg OPM_IMAGE=$(OPM_IMAGE) -f $(CATALOG_DOCKERFILE) .
+	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_IMG)
+ifneq ($(strip $(CATALOG_EXTRA_IMG)),)
+	$(CONTAINER_TOOL) manifest push --all $(CATALOG_MANIFEST_WORK) $(CATALOG_EXTRA_IMG)
+endif
+	-$(CONTAINER_TOOL) rmi -f $(CATALOG_MANIFEST_WORK) 2>/dev/null || true
+else
+	$(CONTAINER_TOOL) buildx build --push --platform=$(CATALOG_PLATFORMS) $(BUILD_ARGS) \
+		--build-arg OPM_IMAGE=$(OPM_IMAGE) -f $(CATALOG_DOCKERFILE) \
+		-t $(CATALOG_IMG) $(if $(CATALOG_EXTRA_IMG),-t $(CATALOG_EXTRA_IMG),) .
+endif
 
 ##@ Catalog (deprecated sqlite index)
 
