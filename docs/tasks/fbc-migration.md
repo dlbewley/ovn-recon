@@ -195,6 +195,27 @@ packagemanifest served from the FBC catalog is identical to the one from the sql
 (same `displayName`, description length, `installModes`, owned CRDs, `alm-examples`), so the
 `olm.bundle.object` → `olm.csv.metadata` conversion costs nothing in the console.
 
+### Catching release-path defects before a tag
+
+Most of `operator-release.yaml` is gated on `if: startsWith(github.ref, 'refs/tags/v')`, so it does
+**not** run on pull requests or on merges to `main`. A green PR check means `make build` and
+`make test` passed — nothing about the bundle or catalog path. Three consecutive releases failed on
+defects that had shipped green for exactly this reason.
+
+Two guards now cover it:
+
+- **`scripts/lint-workflows.py`** runs on every PR (a job in `build-test.yaml`) and syntax-checks
+  the shell inside every `run:` block. GitHub expressions are neutralised first, so `${{ ... }}`
+  does not produce false positives. This catches the class of defect that shipped twice.
+- **`release-dryrun.yaml`** runs the real release path — same make targets, same shell — but builds
+  images with `--output type=cacheonly` instead of pushing. It triggers on PRs that touch the
+  catalog, Makefile, hack scripts or the release workflow; weekly on a schedule to catch toolchain
+  and base-image drift; and on demand via `workflow_dispatch`, optionally with a version to
+  simulate. By default it simulates the current default-channel head so the
+  "catalog contains this release" check exercises its success path.
+
+Tracked in `ovn-recon-sye`.
+
 ### Cutover risk
 
 `:latest` still serves the **sqlite** catalog — prereleases only push `:v4.20`. The first stable

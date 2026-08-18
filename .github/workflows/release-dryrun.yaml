@@ -1,0 +1,145 @@
+name: Release Dry Run
+
+# Executes the bundle and catalog release path WITHOUT publishing anything.
+#
+# Why this exists: every bundle/catalog step in operator-release.yaml is gated
+# on `if: startsWith(github.ref, 'refs/tags/v')`, so none of it runs on a pull
+# request or a merge to main. Those steps ship unexecuted and fail when a tag is
+# cut. That caused three consecutive failed releases (podman-only multi-arch
+# path, a stray `fi`, and a missing container signature policy).
+#
+# This job runs the same make targets and the same shell, but builds images to
+# the local cache instead of pushing, so a defect surfaces here rather than
+# mid-release. Tracked in beads ovn-recon-sye.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to simulate (default: current catalog head)'
+        required: false
+        type: string
+  schedule:
+    # Weekly, so drift in the toolchain or base images is caught before a release.
+    - cron: '17 6 * * 1'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'operator/Makefile'
+      - 'operator/catalog/**'
+      - 'operator/catalog.Dockerfile'
+      - 'operator/hack/**'
+      - '.github/workflows/operator-release.yaml'
+      - '.github/workflows/release-dryrun.yaml'
+
+jobs:
+  dryrun:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.24'
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+
+    - name: Resolve a version to simulate
+      run: |
+        set -euo pipefail
+        cd operator
+        REQUESTED='${{ inputs.version }}'
+        if [ -n "$REQUESTED" ]; then
+          VERSION_NUM="${REQUESTED#v}"
+        else
+          # Use the head of the default channel so the "catalog contains this
+          # release" check exercises its success path against real content.
+          VERSION_NUM=$(python3 - <<'PY'
+        import json
+        dec=json.JSONDecoder(); t=open("catalog/ovn-recon-operator/catalog.json").read(); objs=[]; i=0
+        while True:
+            while i < len(t) and t[i].isspace(): i += 1
+            if i >= len(t): break
+            o, i = dec.raw_decode(t, i); objs.append(o)
+        pkg = [o for o in objs if o["schema"] == "olm.package"][0]
+        ch = [o for o in objs if o["schema"] == "olm.channel" and o["name"] == pkg["defaultChannel"]][0]
+        replaced = {e.get("replaces") for e in ch["entries"]}
+        head = [e["name"] for e in ch["entries"] if e["name"] not in replaced][0]
+        print(head.rsplit(".v", 1)[1])
+        PY
+        )
+        fi
+        echo "VERSION=v${VERSION_NUM}" >> $GITHUB_ENV
+        echo "VERSION_NUM=${VERSION_NUM}" >> $GITHUB_ENV
+        echo "simulating release ${VERSION_NUM}"
+
+    - name: Install Operator SDK
+      run: |
+        set -euo pipefail
+        cd operator
+        make operator-sdk
+        bin/operator-sdk version
+
+    - name: Generate bundle (same path as release)
+      run: |
+        set -euo pipefail
+        cd operator
+        IMG=quay.io/dbewley/ovn-recon-operator:$VERSION
+        make bundle VERSION=$VERSION_NUM IMG=$IMG
+        # The release guards, re-run here so a bundle regression fails in the
+        # dry run rather than at tag time.
+        if grep -Fq '"tag": "latest"' bundle/manifests/*.clusterserviceversion.yaml; then
+          echo "Error: bundle alm-examples must not pin image tag to latest"; exit 1
+        fi
+        if grep -q 'operators.operatorframework.io.bundle.package.v1: operator$' bundle/metadata/annotations.yaml; then
+          echo "Error: bundle OLM package name must be ovn-recon-operator"; exit 1
+        fi
+        for label in arch.amd64 arch.arm64 os.linux; do
+          grep -Fq "operatorframework.io/${label}: supported" bundle/manifests/*.clusterserviceversion.yaml \
+            || { echo "Error: bundle CSV missing operatorframework.io/${label}"; exit 1; }
+        done
+
+    - name: Build bundle image (no push)
+      run: |
+        set -euo pipefail
+        cd operator
+        docker buildx build --platform linux/amd64,linux/arm64 \
+          -f bundle.Dockerfile --output type=cacheonly .
+
+    - name: Verify catalog (same checks as release)
+      run: |
+        set -euo pipefail
+        cd operator
+        # opm pulls through containers/image, which needs a signature policy and
+        # offers no flag or env var to point at one. Runners ship none.
+        sudo mkdir -p /etc/containers
+        echo '{"default":[{"type":"insecureAcceptAnything"}]}' | sudo tee /etc/containers/policy.json >/dev/null
+        make opm
+        make catalog-fbc-validate
+        make catalog-fbc-verify
+        NAME="ovn-recon-operator.${VERSION}"
+        if ! grep -q "\"${NAME}\"" catalog/ovn-recon-operator/catalog.json; then
+          echo "NOTE: ${NAME} is not in the committed catalog."
+          echo "Expected when simulating an unreleased version; a real release would fail here."
+        else
+          echo "catalog contains ${NAME}"
+        fi
+
+    - name: Build multi-arch catalog image (no push)
+      run: |
+        set -euo pipefail
+        cd operator
+        # Mirrors catalog-fbc-build-multiarch's docker branch, but resolves to
+        # the local cache instead of a registry. Exercises both architecture
+        # legs, including the opm serve --cache-only layer under QEMU.
+        docker buildx build --platform linux/amd64,linux/arm64 \
+          -f catalog.Dockerfile --output type=cacheonly .
+
+    - name: Summary
+      run: |
+        echo "Dry run completed for ${VERSION}. Nothing was pushed."
