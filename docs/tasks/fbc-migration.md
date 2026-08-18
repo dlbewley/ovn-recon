@@ -137,6 +137,62 @@ to corrupt a channel.
   serves (`found existing cache contents` / `serving registry`).
 - Adding a lower version into a *new* channel succeeds and validates — the two-stream pattern.
 
+## Verifying the catalog
+
+`make catalog-fbc-verify` answers "is the catalog sound, and would publishing it break anyone already
+installed?" Run it before every release and after any hand edit to `catalog.json`.
+
+```bash
+cd operator
+make catalog-fbc-verify                 # integrity + additive-diff vs the published :latest
+make catalog-fbc-verify CATALOG_REF=    # integrity only, offline
+make catalog-fbc-verify CATALOG_REF=quay.io/dbewley/bewley-operator-catalog:v4.20
+```
+
+It runs two independent checks and exits non-zero on either.
+
+**Integrity** (offline). Every channel has exactly one head, every entry reaches that head by its
+`replaces` chain, no `replaces` points at a missing entry, and every channel entry has a matching
+`olm.bundle`. A forked or broken graph strands users on a version with no upgrade path — and note
+`opm validate` catches only the forked-head case, not the others.
+
+**Regression** (needs the network). Diffs against a published catalog image and requires the change
+to be purely **additive**: no bundle removed, no image ref changed on a pre-existing bundle, no edge
+rewritten on a pre-existing channel entry, `defaultChannel` unchanged. This is what turns "existing
+users are unaffected" into a checked fact.
+
+Both checks are negative-tested: removing a mid-chain bundle and rewriting an edge on a pre-existing
+entry each make it fail.
+
+### Evidence from the migration
+
+Run against the sqlite catalog still published at `:latest`, the FBC catalog diffs as:
+
+```
+channel 'latest': +2 entries ['ovn-recon-operator.v0.3.8-a0', 'ovn-recon-operator.v0.3.8-a1']
+channel 'stable': +0 entries
+OK
+```
+
+Nothing removed, no edges rewritten, `stable` untouched. Confirmed on a live cluster: the
+packagemanifest served from the FBC catalog is identical to the one from the sqlite catalog
+(same `displayName`, description length, `installModes`, owned CRDs, `alm-examples`), so the
+`olm.bundle.object` → `olm.csv.metadata` conversion costs nothing in the console.
+
+### Cutover risk
+
+`:latest` still serves the **sqlite** catalog — prereleases only push `:v4.20`. The first stable
+release publishes FBC to `:latest`, and that is the moment existing consumers switch format.
+Rollback point for the sqlite image:
+
+```
+quay.io/dbewley/bewley-operator-catalog@sha256:de7c1d1746544c02055f6bdbc30b51419e2526327cd56d3abf7994bc29c77f6c
+```
+
+The catalog base image (`OPM_IMAGE`) is pinned by digest, because that image is the runtime consumers
+execute in their clusters; an unpinned `:latest` could change their behavior with no corresponding
+change in this repo.
+
 ## Not done yet
 
 - **Cutover has not been published.** The next release will be the first built from FBC. Verify the

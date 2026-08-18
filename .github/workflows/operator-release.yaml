@@ -207,6 +207,10 @@ jobs:
         # ship without the version being released.
         make opm
         make catalog-fbc-validate
+        # Integrity + additive-diff against the catalog stable consumers track.
+        # Fails the release if this build would remove a bundle, rewrite an
+        # upgrade edge, or strand anyone already installed.
+        make catalog-fbc-verify
         NAME="ovn-recon-operator.${VERSION}"
         if ! grep -q "\"${NAME}\"" catalog/ovn-recon-operator/catalog.json; then
           echo "ERROR: ${NAME} is not present in the committed file-based catalog."

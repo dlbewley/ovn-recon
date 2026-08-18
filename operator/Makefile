@@ -404,15 +404,33 @@ CATALOG_DIR ?= catalog
 CATALOG_PKG ?= ovn-recon-operator
 CATALOG_FBC ?= $(CATALOG_DIR)/$(CATALOG_PKG)/catalog.json
 CATALOG_DOCKERFILE ?= catalog.Dockerfile
-# Multi-arch base for the catalog runtime. Pin by digest for reproducible builds:
-#   OPM_IMAGE=quay.io/operator-framework/opm@sha256:...
-# Verify it is a manifest list first: oc image info --show-multiarch <ref>
-OPM_IMAGE ?= quay.io/operator-framework/opm:latest
+# Multi-arch base for the catalog runtime, PINNED BY DIGEST.
+#
+# This image is what consumers actually run: it serves the catalog over gRPC in
+# their cluster. An unpinned :latest means that runtime can change under us
+# between releases with no corresponding change in this repo, so a catalog that
+# worked yesterday can behave differently today for reasons invisible in git.
+#
+# Verified manifest list (linux/amd64, arm64, ppc64le, s390x) as of 2026-08-18.
+# To update: confirm the new digest is still a manifest list, then bump here.
+#   curl -sH 'Accept: application/vnd.oci.image.index.v1+json' \
+#     https://quay.io/v2/operator-framework/opm/manifests/latest -D - -o /dev/null | grep -i docker-content-digest
+OPM_IMAGE ?= quay.io/operator-framework/opm@sha256:e5a6220603fb4504d58c6e3e488386b817e3695c906a62ee0370b5faedc3799a
 
 .PHONY: catalog-fbc-validate
 catalog-fbc-validate: opm ## Validate the file-based catalog tree.
 	$(OPM) validate $(CATALOG_DIR)
 	@echo "FBC valid: $(CATALOG_DIR)"
+
+# CATALOG_REF is the published catalog to diff against. Defaults to the tag
+# stable consumers track, so `make catalog-fbc-verify` answers the question that
+# actually matters: "would publishing this break anyone already installed?"
+CATALOG_REF ?= quay.io/dbewley/bewley-operator-catalog:latest
+
+.PHONY: catalog-fbc-verify
+catalog-fbc-verify: opm ## Verify catalog integrity, and that changes vs CATALOG_REF are additive. Set CATALOG_REF= to skip the published diff.
+	python3 ./hack/catalog-verify.py --opm "$(OPM)" --fbc "$(CATALOG_FBC)" \
+		$(if $(strip $(CATALOG_REF)),--ref "$(CATALOG_REF)",)
 
 .PHONY: catalog-fbc-add
 catalog-fbc-add: opm ## Render BUNDLE_IMG into the FBC and append it to CHANNELS. Requires BUNDLE_IMG; set CHANNELS to a comma-separated list (default: stable,latest).
