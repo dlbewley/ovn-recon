@@ -13,7 +13,14 @@ VERSION ?= 0.0.1
 # producing the same annotations as a stable release.
 # - use the CHANNELS as arg of the bundle target (e.g make bundle CHANNELS=candidate,fast,stable)
 # - use environment variables to overwrite this value (e.g export CHANNELS="candidate,fast,stable")
+# Prereleases (a hyphen in VERSION) publish to 'latest' only, matching the
+# logic in .github/workflows/operator-release.yaml. A flat default would put a
+# prerelease into 'stable'.
+ifeq (,$(findstring -,$(VERSION)))
 CHANNELS ?= stable,latest
+else
+CHANNELS ?= latest
+endif
 ifneq ($(origin CHANNELS), undefined)
 BUNDLE_CHANNELS := --channels=$(CHANNELS)
 endif
@@ -22,7 +29,11 @@ endif
 # See the CHANNELS note above: without a default the annotation is dropped entirely.
 # - use the DEFAULT_CHANNEL as arg of the bundle target (e.g make bundle DEFAULT_CHANNEL=stable)
 # - use environment variables to overwrite this value (e.g export DEFAULT_CHANNEL="stable")
+ifeq (,$(findstring -,$(VERSION)))
 DEFAULT_CHANNEL ?= stable
+else
+DEFAULT_CHANNEL ?= latest
+endif
 ifneq ($(origin DEFAULT_CHANNEL), undefined)
 BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif

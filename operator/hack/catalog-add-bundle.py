@@ -163,16 +163,13 @@ def main():
         if head:
             entry["replaces"] = head
         chan["entries"].append(entry)
-        chan["entries"].sort(key=lambda e: version_key(e["name"]))
         print(f"channel {chan_name}: added {name}" + (f" replacing {head}" if head else " (first entry)"))
 
     objs.append(bundle)
 
-    # Stable ordering keeps git diffs to just the new content.
-    order = {"olm.package": 0, "olm.channel": 1, "olm.bundle": 2}
-    objs.sort(key=lambda o: (order.get(o.get("schema"), 9),
-                             o.get("name", "") if o.get("schema") != "olm.bundle" else "",
-                             version_key(o.get("name", "")) if o.get("schema") == "olm.bundle" else (0, 0, 0, 0, "")))
+    # Append in place rather than re-sorting. Sorting the whole catalog would
+    # rewrite hundreds of untouched lines on every release and bury the one real
+    # change; a reviewable diff is the point of keeping the catalog in git.
 
     with open(args.fbc, "w") as f:
         for o in objs:
