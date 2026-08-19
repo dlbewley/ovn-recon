@@ -227,7 +227,7 @@ from experimental content:
 |---|---|---|
 | `:stable` | stable releases only | was `:latest` |
 | `:latest` | every release, prereleases included | was `:v4.20` |
-| `:v4.20` | deprecated alias of `:latest` | unchanged, retire later |
+| `:v4.20` | deprecated alias of `:latest` | **being retired** — see below |
 
 > [!WARNING]
 > **`:latest` changed meaning.** It used to be stable-only and now includes prereleases. A
@@ -236,8 +236,24 @@ from experimental content:
 > `:stable`. `manifests/catalogsource.yaml` currently points at `:latest` and is GitOps-managed.
 
 `:v4.20` never meant anything after the FBC migration: one catalog serves every supported OpenShift
-version. It is still published so existing CatalogSources keep resolving, and should be retired once
-consumers have moved.
+version. It is still published so existing CatalogSources keep resolving.
+
+**Retirement (`ovn-recon-09z`).** Every GitHub release carries a deprecation notice naming the
+replacement tags, added to the release body in `build-test.yaml`. Once the notice has ridden **two
+stable releases**, stop publishing `:v4.20` (drop it from `CATALOG_EXTRA_IMG` in
+`operator-release.yaml`), delete the tag from quay, and remove the notice block — all in the same
+change.
+
+Deleting rather than merely unpublishing is deliberate. A tag that stops being updated keeps
+resolving forever, so a consumer pinned to it silently installs an ageing catalog and misses fixes
+with no signal. A deleted tag fails at the `CatalogSource`, which the cluster surfaces immediately.
+
+> [!NOTE]
+> As of this writing `:stable` does not exist yet — the tag rename shipped in a PR but no release has
+> been tagged since, so only `:latest` (still the pre-migration sqlite catalog, from June) and
+> `:v4.20` (the current FBC catalog) are published. The first stable release creates `:stable` and
+> brings `:latest` current. Until then `:v4.20` is, confusingly, the *only* tag carrying current
+> content — which is itself an argument for getting a release out before retiring anything.
 
 ### Channels
 
