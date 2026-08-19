@@ -1,8 +1,7 @@
 import * as React from 'react';
-import { useParams, Link, useLocation } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router';
 import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
-import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
-import { Helmet } from 'react-helmet';
+import { DocumentTitle, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import NodeVisualization from './NodeVisualization';
 import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
 
@@ -116,9 +115,7 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
 
     return (
         <>
-            <Helmet>
-                <title>OVN Recon - {displayName}</title>
-            </Helmet>
+            <DocumentTitle>{`OVN Recon - ${displayName}`}</DocumentTitle>
             <PageSection>
                 <Breadcrumb>
                     <BreadcrumbItem>
