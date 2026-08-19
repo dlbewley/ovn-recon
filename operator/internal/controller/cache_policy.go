@@ -39,6 +39,22 @@ func ManagedResourceSelector() labels.Selector {
 	return labels.SelectorFromSet(labels.Set{ManagedByLabelKey: ManagedByLabelValue})
 }
 
+// ensureManagedLabels applies the desired labels to a managed object and then
+// re-asserts the cache filter label, which must survive every write.
+//
+// A label-filtered informer treats an object that lost the filter label as
+// deleted: the next CreateOrUpdate sees NotFound, issues a Create, and fails
+// with AlreadyExists on every reconcile from then on. Callers merge rather than
+// replace so that labels added by other controllers or by an admin are kept.
+//
+// Objects the operator writes but does not cache — the ConsolePlugin, and the
+// Console it patches but does not own — do not need this.
+func ensureManagedLabels(obj client.Object, desired map[string]string) {
+	merged := mergeStringMap(obj.GetLabels(), desired)
+	merged[ManagedByLabelKey] = ManagedByLabelValue
+	obj.SetLabels(merged)
+}
+
 // ManagerCacheOptions returns the manager's informer policy.
 //
 // Without an explicit Cache, controller-runtime lazily spawns a *cluster-wide*

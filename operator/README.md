@@ -146,11 +146,21 @@ every resource the operator creates.
 | `console.openshift.io/ConsolePlugin`, `operator.openshift.io/Console` | **Uncached** (`Unstructured: false`) | Accessed as `unstructured.Unstructured`. See note below. |
 
 **Invariant**: label-filtered caching only works if every write re-applies the
-filter label. All managed write paths funnel through
-`mergeStringMap(obj.Labels, labelsForOvnRecon(...))`, and
-`TestManagedResourceSelectorMatchesEveryManagedWritePath` fails if one drifts.
-An object that loses the label becomes invisible to the informer, and
-`CreateOrUpdate` then loops on `AlreadyExists`.
+filter label. All seven managed write paths go through
+`ensureManagedLabels(obj, desired)`, which merges the desired labels and then
+re-asserts the filter label unconditionally. An object that loses the label
+becomes invisible to the informer, so the next `CreateOrUpdate` sees `NotFound`,
+issues a `Create`, and fails with `AlreadyExists` on every reconcile from then
+on. `TestManagedResourceSelectorMatchesEveryManagedWritePath` fails if a
+desired-label set drifts, and the envtest spec in `cache_runtime_test.go`
+exercises the strip-and-recover cycle end to end.
+
+**Watch policy**: the controller watches `OvnRecon` (with
+`GenerationChangedPredicate`) and Namespaces (metadata-only, create/delete only
+- `reconcileRequestsForProbeNamespace` needs nothing but the name). The
+generation predicate is attached to the `For()` clause rather than as a
+`WithEventFilter`, which would also apply it to the Namespace watch where
+generation is always 0.
 
 **On unstructured reads**: `client.CacheOptions.Unstructured` defaults to
 `false` (controller-runtime `pkg/cluster/cluster.go`), so unstructured objects

@@ -32,8 +32,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -249,16 +251,21 @@ func (r *OvnReconReconciler) shouldEmitNormalEvent(ovnRecon *reconv1beta1.OvnRec
 // +kubebuilder:rbac:groups=recon.bewley.net,resources=ovnrecons,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=recon.bewley.net,resources=ovnrecons/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=recon.bewley.net,resources=ovnrecons/finalizers,verbs=update
+// Deployments, Services and Namespaces keep list+watch: their informers still
+// LIST+WATCH, label-filtered (Deployment, Service) or metadata-only (Namespace).
+// Everything below that lost list+watch is read live, never cached; see
+// internal/controller/cache_policy.go. Pods keep list+watch because the
+// operator can only grant the collector ClusterRole verbs it holds itself.
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods/exec,verbs=create
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=operator.openshift.io,resources=consoles,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;create;update;patch;delete
+// +kubebuilder:rbac:groups=console.openshift.io,resources=consoleplugins,verbs=get;create;update;patch;delete
+// +kubebuilder:rbac:groups=operator.openshift.io,resources=consoles,verbs=get;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -521,7 +528,7 @@ func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *
 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
 		desired := DesiredDeployment(ovnRecon)
-		deployment.Labels = mergeStringMap(deployment.Labels, desired.Labels)
+		ensureManagedLabels(deployment, desired.Labels)
 		deployment.Annotations = mergeStringMap(deployment.Annotations, desired.Annotations)
 		deployment.Spec = desired.Spec
 
@@ -542,7 +549,7 @@ func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *rec
 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
 		desired := DesiredService(ovnRecon)
-		service.Labels = mergeStringMap(service.Labels, desired.Labels)
+		ensureManagedLabels(service, desired.Labels)
 		service.Annotations = mergeStringMap(service.Annotations, desired.Annotations)
 		service.Spec = desired.Spec
 		return nil
@@ -563,7 +570,7 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
 		desired := DesiredCollectorDeployment(ovnRecon)
-		deployment.Labels = mergeStringMap(deployment.Labels, desired.Labels)
+		ensureManagedLabels(deployment, desired.Labels)
 		deployment.Annotations = mergeStringMap(deployment.Annotations, desired.Annotations)
 		deployment.Spec = desired.Spec
 		return nil
@@ -582,7 +589,7 @@ func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Contex
 		},
 	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, serviceAccount, func() error {
-		serviceAccount.Labels = mergeStringMap(serviceAccount.Labels, labelsForOvnRecon(ovnRecon.Name))
+		ensureManagedLabels(serviceAccount, labelsForOvnRecon(ovnRecon.Name))
 		return nil
 	}); err != nil {
 		return err
@@ -594,7 +601,7 @@ func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Contex
 		},
 	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, clusterRole, func() error {
-		clusterRole.Labels = mergeStringMap(clusterRole.Labels, labelsForOvnRecon(ovnRecon.Name))
+		ensureManagedLabels(clusterRole, labelsForOvnRecon(ovnRecon.Name))
 		clusterRole.Rules = []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{""},
@@ -634,7 +641,7 @@ func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Contex
 			},
 		}
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roleBinding, func() error {
-			roleBinding.Labels = mergeStringMap(roleBinding.Labels, labelsForOvnRecon(ovnRecon.Name))
+			ensureManagedLabels(roleBinding, labelsForOvnRecon(ovnRecon.Name))
 			roleBinding.Subjects = []rbacv1.Subject{
 				{
 					Kind:      rbacv1.ServiceAccountKind,
@@ -669,7 +676,7 @@ func (r *OvnReconReconciler) reconcileCollectorService(ctx context.Context, ovnR
 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
 		desired := DesiredCollectorService(ovnRecon)
-		service.Labels = mergeStringMap(service.Labels, desired.Labels)
+		ensureManagedLabels(service, desired.Labels)
 		service.Annotations = mergeStringMap(service.Annotations, desired.Annotations)
 		service.Spec = desired.Spec
 		return nil
@@ -717,11 +724,31 @@ func (r *OvnReconReconciler) deleteCollectorAccessControls(ctx context.Context, 
 // SetupWithManager sets up the controller with the Manager.
 func (r *OvnReconReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&reconv1beta1.OvnRecon{}).
-		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.reconcileRequestsForProbeNamespace)).
+		// The generation predicate belongs on the OvnRecon watch alone. As a
+		// WithEventFilter it also applied to the Namespace watch, where
+		// generation is always 0 and the filter is meaningless.
+		For(&reconv1beta1.OvnRecon{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		// Metadata-only: reconcileRequestsForProbeNamespace reads nothing but
+		// the name, and probe namespaces are cluster resources this operator
+		// does not label, so the informer cannot be selector-scoped. Caching
+		// names instead of whole Namespace objects is what keeps it cheap.
+		WatchesMetadata(
+			&corev1.Namespace{},
+			handler.EnqueueRequestsFromMapFunc(r.reconcileRequestsForProbeNamespace),
+			builder.WithPredicates(probeNamespaceExistencePredicate()),
+		).
 		Named("ovnrecon").
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
+}
+
+// probeNamespaceExistencePredicate drops Namespace updates. The collector's
+// RoleBinding reconciliation only depends on whether a probe namespace exists,
+// so create and delete are the only events worth a reconcile; without this,
+// every namespace update in the cluster would wake the map function.
+func probeNamespaceExistencePredicate() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(event.UpdateEvent) bool { return false },
+	}
 }
 
 func (r *OvnReconReconciler) reconcileRequestsForProbeNamespace(ctx context.Context, object client.Object) []reconcile.Request {

@@ -103,3 +103,34 @@ func TestManagerClientOptionsBypassCacheForUnwatchedTypes(t *testing.T) {
 	}
 	var _ client.Object = &reconv1beta1.OvnRecon{}
 }
+
+func TestEnsureManagedLabelsReassertsTheCacheFilter(t *testing.T) {
+	t.Parallel()
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sample",
+			// What the object looks like after something stripped the filter
+			// label: an unrelated label an admin added survives, ours is gone.
+			Labels: map[string]string{"example.com/owner": "platform-team"},
+		},
+	}
+
+	// Desired labels that omit the filter label entirely - the case a plain
+	// mergeStringMap would not repair.
+	ensureManagedLabels(deployment, map[string]string{"app.kubernetes.io/component": "test-component"})
+
+	got := deployment.GetLabels()
+	if got[ManagedByLabelKey] != ManagedByLabelValue {
+		t.Fatalf("filter label not re-applied: %v", got)
+	}
+	if got["example.com/owner"] != "platform-team" {
+		t.Errorf("third-party label was dropped: %v", got)
+	}
+	if got["app.kubernetes.io/component"] != "test-component" {
+		t.Errorf("desired label was not applied: %v", got)
+	}
+	if !ManagedResourceSelector().Matches(labels.Set(got)) {
+		t.Errorf("object still invisible to the label-filtered informer: %v", got)
+	}
+}
