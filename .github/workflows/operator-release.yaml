@@ -95,6 +95,11 @@ jobs:
 
         # Update operator version in manager.yaml so controller defaults to this version
         sed -i "s/value: dev/value: ${VERSION}/" config/manager/manager.yaml
+        # Stamp the operand images too. operator-sdk harvests RELATED_IMAGE_* env
+        # vars into the CSV's spec.relatedImages, which is what disconnected
+        # mirroring reads, so these must carry the release version rather than :dev.
+        sed -i "s|quay.io/dbewley/ovn-recon:dev|quay.io/dbewley/ovn-recon:${VERSION}|" config/manager/manager.yaml
+        sed -i "s|quay.io/dbewley/ovn-collector:dev|quay.io/dbewley/ovn-collector:${VERSION}|" config/manager/manager.yaml
 
         IMG=quay.io/dbewley/ovn-recon-operator:$VERSION
         # Prepare prerequisites - these will create bin/kustomize and ensure operator-sdk is available
@@ -155,6 +160,21 @@ jobs:
           echo "Error: bundle CSV must include operatorframework.io/os.linux: supported for OperatorHub"
           exit 1
         fi
+        # relatedImages is what disconnected mirroring reads. An unstamped :dev
+        # here would mirror a nonexistent tag, and a missing block would mirror
+        # nothing at all -- both only surface on a disconnected cluster.
+        if ! grep -q 'relatedImages:' bundle/manifests/*.clusterserviceversion.yaml; then
+          echo "Error: bundle CSV has no relatedImages; operand images would not be mirrored"
+          exit 1
+        fi
+        if grep -E 'image: quay\.io/dbewley/(ovn-recon|ovn-collector):dev' bundle/manifests/*.clusterserviceversion.yaml; then
+          echo "Error: relatedImages still reference the :dev placeholder"
+          exit 1
+        fi
+        for want in "quay.io/dbewley/ovn-recon:${VERSION}" "quay.io/dbewley/ovn-collector:${VERSION}"; do
+          grep -Fq "$want" bundle/manifests/*.clusterserviceversion.yaml \
+            || { echo "Error: relatedImages missing $want"; exit 1; }
+        done
 
     - name: Prepare Community Operators Artifact
       if: startsWith(github.ref, 'refs/tags/v')

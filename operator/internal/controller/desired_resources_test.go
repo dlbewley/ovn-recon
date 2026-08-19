@@ -386,3 +386,55 @@ func envValue(envVars []corev1.EnvVar, name string) (string, bool) {
 	}
 	return "", false
 }
+
+func TestPluginImageUsesRelatedImageWhenCRSaysNothing(t *testing.T) {
+	t.Setenv("OPERATOR_VERSION", "v1.2.3")
+	t.Setenv("RELATED_IMAGE_PLUGIN", "registry.mirror.example/ovn-recon@sha256:abc")
+	cr := &reconv1beta1.OvnRecon{}
+	if got := pluginImageFor(cr); got != "registry.mirror.example/ovn-recon@sha256:abc" {
+		t.Fatalf("expected the related image, got %s", got)
+	}
+}
+
+func TestPluginImageCROverrideBeatsRelatedImage(t *testing.T) {
+	t.Setenv("OPERATOR_VERSION", "v1.2.3")
+	t.Setenv("RELATED_IMAGE_PLUGIN", "registry.mirror.example/ovn-recon@sha256:abc")
+	cr := &reconv1beta1.OvnRecon{}
+	cr.Spec.ConsolePlugin.Image.Tag = "pinned"
+	// A user pinning a tag must keep the composed behaviour, not silently get
+	// the mirrored digest instead.
+	if got := pluginImageFor(cr); got != "quay.io/dbewley/ovn-recon:pinned" {
+		t.Fatalf("CR override should win, got %s", got)
+	}
+}
+
+func TestPluginImageFallsBackToComposedDefault(t *testing.T) {
+	t.Setenv("OPERATOR_VERSION", "v1.2.3")
+	t.Setenv("RELATED_IMAGE_PLUGIN", "")
+	cr := &reconv1beta1.OvnRecon{}
+	if got := pluginImageFor(cr); got != "quay.io/dbewley/ovn-recon:v1.2.3" {
+		t.Fatalf("expected the composed default, got %s", got)
+	}
+}
+
+func TestCollectorImageUsesRelatedImageWhenCRSaysNothing(t *testing.T) {
+	t.Setenv("OPERATOR_VERSION", "v1.2.3")
+	t.Setenv("RELATED_IMAGE_COLLECTOR", "registry.mirror.example/ovn-collector@sha256:def")
+	cr := &reconv1beta1.OvnRecon{}
+	if got := collectorImageFor(cr); got != "registry.mirror.example/ovn-collector@sha256:def" {
+		t.Fatalf("expected the related image, got %s", got)
+	}
+}
+
+func TestCollectorImageIgnoresRelatedImageWhenPluginTagPinned(t *testing.T) {
+	t.Setenv("OPERATOR_VERSION", "v1.2.3")
+	t.Setenv("RELATED_IMAGE_COLLECTOR", "registry.mirror.example/ovn-collector@sha256:def")
+	cr := &reconv1beta1.OvnRecon{}
+	cr.Spec.ConsolePlugin.Image.Tag = "pinned"
+	// collectorImageTagFor inherits the plugin tag, so a pinned plugin tag must
+	// keep the collector composed too -- otherwise the two disagree, which is
+	// exactly what put the collector into ImagePullBackOff during 4.22 testing.
+	if got := collectorImageFor(cr); got != "quay.io/dbewley/ovn-collector:pinned" {
+		t.Fatalf("plugin tag should still drive the collector, got %s", got)
+	}
+}
