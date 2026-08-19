@@ -132,3 +132,25 @@ jobs:
       with:
         generate_release_notes: true
         prerelease: ${{ contains(github.ref_name, '-') }}
+        # Carried on every release until the tag is removed, so the deprecation
+        # reaches people who read release notes rather than the repo docs.
+        # Remove this block in the same change that stops publishing :v4.20.
+        # Tracked in beads ovn-recon-09z.
+        body: |
+          > [!IMPORTANT]
+          > **The `bewley-operator-catalog:v4.20` catalog tag is deprecated and will be removed.**
+          >
+          > It no longer means anything: one file-based catalog now serves every supported
+          > OpenShift version, so the tag does not select a 4.20-specific catalog and never did
+          > after the FBC migration. It is currently published as an alias.
+          >
+          > Update your `CatalogSource` to whichever suits you:
+          >
+          > | Tag | Contains |
+          > |---|---|
+          > | `quay.io/dbewley/bewley-operator-catalog:stable` | stable releases only |
+          > | `quay.io/dbewley/bewley-operator-catalog:latest` | every release, prereleases included |
+          >
+          > When `:v4.20` is removed it will be **deleted**, not merely left unpublished, so a
+          > `CatalogSource` still pointing at it fails visibly instead of silently serving an
+          > ever-staler catalog.

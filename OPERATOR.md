@@ -145,12 +145,23 @@ The visible cost is cosmetic: a 4.21 user sees a permanently Pending CSV and a S
 looks stuck, explained only by that terse OLM message. Release notes for 4.22-targeted releases
 should state the OpenShift 4.22+ requirement plainly.
 
-> [!NOTE]
-> **Catalog image tags** (decided in `ovn-recon-w35`): `:stable` carries stable releases only,
-> `:latest` carries every release including prereleases, and `:v4.20` is a deprecated alias of
-> `:latest`. `:latest` changed meaning — it used to be stable-only. A Subscription on the `stable`
-> channel is unaffected, since the channel decides what is offered, but a CatalogSource that wants
-> stable-only content should point at `:stable`. See
+> [!IMPORTANT]
+> **Catalog image tags** (decided in `ovn-recon-w35`):
+>
+> | Tag | Contains | Status |
+> |---|---|---|
+> | `:stable` | stable releases only | current |
+> | `:latest` | every release, prereleases included | current |
+> | `:v4.20` | alias of `:latest` | **deprecated, will be deleted** (`ovn-recon-09z`) |
+>
+> `:latest` changed meaning — it used to be stable-only. A Subscription on the `stable` *channel* is
+> unaffected either way, since the channel decides what is offered, but a CatalogSource that wants
+> stable-only content should point at `:stable`.
+>
+> `:v4.20` stopped meaning anything after the FBC migration: one catalog serves every supported
+> OpenShift version, so the tag never selected a 4.20-specific catalog. When it is retired it will be
+> **deleted**, not merely left unpublished — a `CatalogSource` still pointing at it should fail
+> visibly rather than silently serve an ever-staler catalog. See
 > [fbc-migration.md](docs/tasks/fbc-migration.md#catalog-image-tags).
 
 > [!NOTE]
