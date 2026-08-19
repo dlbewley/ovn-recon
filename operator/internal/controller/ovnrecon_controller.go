@@ -294,7 +294,7 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	primary, err := r.primaryInstance(primaryCtx)
 	if err != nil {
 		log.FromContext(primaryCtx).Error(err, "Failed to determine primary OvnRecon instance")
-		return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		return reconcile.Result{}, err
 	}
 	policy, configuredLevel, policySource := resolveOperatorLogPolicy(ovnRecon, primary)
 	eventPolicy := resolveOperatorEventPolicy(ovnRecon, primary)
@@ -359,20 +359,16 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// 1. Reconcile Deployment
 	deploymentCtx := withReconcilePhase(ctx, "reconcile-deployment")
 	if err := r.reconcileDeployment(deploymentCtx, ovnRecon); err != nil {
-		log.FromContext(deploymentCtx).Error(err, "Failed to reconcile Deployment")
-		r.recordEvent(deploymentCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "DeploymentReconcileFailed", err.Error())
-		r.updateCondition(deploymentCtx, ovnRecon, "Available", metav1.ConditionFalse, "DeploymentReconcileFailed", err.Error())
-		return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		return r.reconcileStepFailed(deploymentCtx, ovnRecon, policy, eventPolicy, err,
+			"Failed to reconcile Deployment", "DeploymentReconcileFailed", "Available")
 	}
 	r.logMessage(deploymentCtx, policy, operatorLogLevelTrace, "Deployment reconciled")
 
 	// 2. Reconcile Service
 	serviceCtx := withReconcilePhase(ctx, "reconcile-service")
 	if err := r.reconcileService(serviceCtx, ovnRecon); err != nil {
-		log.FromContext(serviceCtx).Error(err, "Failed to reconcile Service")
-		r.recordEvent(serviceCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "ServiceReconcileFailed", err.Error())
-		r.updateCondition(serviceCtx, ovnRecon, "ServiceReady", metav1.ConditionFalse, "ServiceReconcileFailed", err.Error())
-		return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		return r.reconcileStepFailed(serviceCtx, ovnRecon, policy, eventPolicy, err,
+			"Failed to reconcile Service", "ServiceReconcileFailed", "ServiceReady")
 	}
 	if r.updateCondition(serviceCtx, ovnRecon, "ServiceReady", metav1.ConditionTrue, "ServiceReady", "Service is ready") {
 		r.recordEvent(serviceCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "ServiceReady", "Service is ready")
@@ -384,26 +380,20 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// can resolve the backend DNS name at startup.
 	collectorServiceCtx := withReconcilePhase(ctx, "reconcile-collector-service")
 	if err := r.reconcileCollectorService(collectorServiceCtx, ovnRecon); err != nil {
-		log.FromContext(collectorServiceCtx).Error(err, "Failed to reconcile collector Service")
-		r.recordEvent(collectorServiceCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "CollectorServiceReconcileFailed", err.Error())
-		r.updateCondition(collectorServiceCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorServiceReconcileFailed", err.Error())
-		return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		return r.reconcileStepFailed(collectorServiceCtx, ovnRecon, policy, eventPolicy, err,
+			"Failed to reconcile collector Service", "CollectorServiceReconcileFailed", "CollectorReady")
 	}
 
 	if collectorFeatureEnabled(ovnRecon) {
 		collectorRBACCtx := withReconcilePhase(ctx, "reconcile-collector-rbac")
 		if err := r.reconcileCollectorAccessControls(collectorRBACCtx, ovnRecon); err != nil {
-			log.FromContext(collectorRBACCtx).Error(err, "Failed to reconcile collector access controls")
-			r.recordEvent(collectorRBACCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "CollectorRBACReconcileFailed", err.Error())
-			r.updateCondition(collectorRBACCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorRBACReconcileFailed", err.Error())
-			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+			return r.reconcileStepFailed(collectorRBACCtx, ovnRecon, policy, eventPolicy, err,
+				"Failed to reconcile collector access controls", "CollectorRBACReconcileFailed", "CollectorReady")
 		}
 		collectorDeploymentCtx := withReconcilePhase(ctx, "reconcile-collector-deployment")
 		if err := r.reconcileCollectorDeployment(collectorDeploymentCtx, ovnRecon); err != nil {
-			log.FromContext(collectorDeploymentCtx).Error(err, "Failed to reconcile collector Deployment")
-			r.recordEvent(collectorDeploymentCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "CollectorDeploymentReconcileFailed", err.Error())
-			r.updateCondition(collectorDeploymentCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorDeploymentReconcileFailed", err.Error())
-			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+			return r.reconcileStepFailed(collectorDeploymentCtx, ovnRecon, policy, eventPolicy, err,
+				"Failed to reconcile collector Deployment", "CollectorDeploymentReconcileFailed", "CollectorReady")
 		}
 
 		if r.updateCondition(collectorServiceCtx, ovnRecon, "CollectorReady", metav1.ConditionTrue, "CollectorReady", "Collector resources are reconciled") {
@@ -413,12 +403,12 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		collectorDeleteCtx := withReconcilePhase(ctx, "delete-collector-deployment")
 		if err := r.deleteCollectorDeployment(collectorDeleteCtx, ovnRecon); err != nil {
 			log.FromContext(collectorDeleteCtx).Error(err, "Failed to delete collector deployment while feature gate is disabled")
-			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+			return reconcile.Result{}, err
 		}
 		collectorRBACDeleteCtx := withReconcilePhase(ctx, "delete-collector-rbac")
 		if err := r.deleteCollectorAccessControls(collectorRBACDeleteCtx, ovnRecon); err != nil {
 			log.FromContext(collectorRBACDeleteCtx).Error(err, "Failed to delete collector RBAC while feature gate is disabled")
-			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+			return reconcile.Result{}, err
 		}
 		if r.updateCondition(collectorRBACDeleteCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorFeatureDisabled", "Collector feature gate is disabled") {
 			r.recordEvent(collectorRBACDeleteCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "CollectorFeatureDisabled", "Collector feature gate is disabled")
@@ -428,10 +418,8 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// 3. Reconcile ConsolePlugin
 	consolePluginCtx := withReconcilePhase(ctx, "reconcile-consoleplugin")
 	if err := r.reconcileConsolePlugin(consolePluginCtx, ovnRecon); err != nil {
-		log.FromContext(consolePluginCtx).Error(err, "Failed to reconcile ConsolePlugin")
-		r.recordEvent(consolePluginCtx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "ConsolePluginReconcileFailed", err.Error())
-		r.updateCondition(consolePluginCtx, ovnRecon, "ConsolePluginReady", metav1.ConditionFalse, "ConsolePluginReconcileFailed", err.Error())
-		return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		return r.reconcileStepFailed(consolePluginCtx, ovnRecon, policy, eventPolicy, err,
+			"Failed to reconcile ConsolePlugin", "ConsolePluginReconcileFailed", "ConsolePluginReady")
 	}
 	if r.updateCondition(consolePluginCtx, ovnRecon, "ConsolePluginReady", metav1.ConditionTrue, "ConsolePluginReady", "ConsolePlugin is ready") {
 		r.recordEvent(consolePluginCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "ConsolePluginReady", "ConsolePlugin is ready")
@@ -442,7 +430,7 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	deploymentReady, err := r.checkDeploymentReady(deploymentStatusCtx, ovnRecon)
 	if err != nil {
 		log.FromContext(deploymentStatusCtx).Error(err, "Failed to check Deployment status")
-		return reconcile.Result{RequeueAfter: time.Second * 10}, err
+		return reconcile.Result{}, err
 	}
 
 	if deploymentReady {
@@ -467,7 +455,7 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			if errors.IsConflict(err) {
 				return reconcile.Result{Requeue: true}, nil
 			}
-			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+			return reconcile.Result{}, err
 		}
 		if enabled {
 			if r.updateCondition(consoleOperatorCtx, ovnRecon, "PluginEnabled", metav1.ConditionTrue, "PluginEnabled", "Plugin is enabled in Console operator") {
@@ -1097,14 +1085,14 @@ func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *recon
 		// Delete namespaced resources (no owner refs with cluster-scoped CRs).
 		if err := r.deleteNamespacedResources(ctx, ovnRecon); err != nil {
 			log.Error(err, "Failed to delete namespaced resources")
-			return reconcile.Result{RequeueAfter: time.Second * 10}, err
+			return reconcile.Result{}, err
 		}
 
 		// Remove plugin from Console operator
 		if ovnRecon.Spec.ConsolePlugin.Enabled {
 			if err := r.removePluginFromConsole(ctx, ovnRecon); err != nil {
 				log.Error(err, "Failed to remove plugin from Console operator")
-				return reconcile.Result{RequeueAfter: time.Second * 10}, err
+				return reconcile.Result{}, err
 			}
 		}
 
@@ -1120,7 +1108,7 @@ func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *recon
 		if err := r.Get(ctx, client.ObjectKey{Name: ovnRecon.Name}, plugin); err == nil {
 			if err := r.Delete(ctx, plugin); err != nil && !errors.IsNotFound(err) {
 				log.Error(err, "Failed to delete ConsolePlugin")
-				return reconcile.Result{RequeueAfter: time.Second * 10}, err
+				return reconcile.Result{}, err
 			}
 		}
 
@@ -1260,6 +1248,44 @@ func (r *OvnReconReconciler) removePluginFromConsole(ctx context.Context, ovnRec
 	}
 
 	return nil
+}
+
+// reconcileStepFailed converts a failed reconcile step into a result.
+//
+// A write conflict is the expected outcome of optimistic concurrency, not a
+// failure. CreateOrUpdate reads through the cache, and the managed-Deployment
+// watch fires reconciles precisely while the deployment controller is rewriting
+// that object's status, so the cached read can lose the race. Requeue quietly
+// and let the next attempt see the fresh object; logging an error and posting a
+// Warning event here would put one of each on the CR for every rollout.
+//
+// Any other error is a real failure and still gets the log, the event, and the
+// False condition. Pass an empty conditionType to skip the condition.
+func (r *OvnReconReconciler) reconcileStepFailed(
+	ctx context.Context,
+	ovnRecon *reconv1beta1.OvnRecon,
+	policy operatorLogLevel,
+	eventPolicy operatorEventPolicy,
+	err error,
+	message, reason, conditionType string,
+) (reconcile.Result, error) {
+	if errors.IsConflict(err) {
+		r.logMessage(ctx, policy, operatorLogLevelDebug,
+			message+": object modified concurrently, requeueing", "error", err.Error())
+		return reconcile.Result{Requeue: true}, nil
+	}
+
+	log.FromContext(ctx).Error(err, message)
+	r.recordEvent(ctx, ovnRecon, eventPolicy, corev1.EventTypeWarning, reason, err.Error())
+	if conditionType != "" {
+		r.updateCondition(ctx, ovnRecon, conditionType, metav1.ConditionFalse, reason, err.Error())
+	}
+	// Return a zero Result alongside the error. controller-runtime discards the
+	// Result whenever the error is non-nil and requeues with the workqueue's
+	// exponential backoff instead, so a RequeueAfter here would be dead code
+	// that also trips a "returned both a non-zero result and a non-nil error"
+	// warning on every failure. See TestReconcileNeverReturnsResultWithError.
+	return reconcile.Result{}, err
 }
 
 func (r *OvnReconReconciler) updateCondition(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon, conditionType string, status metav1.ConditionStatus, reason, message string) bool {
