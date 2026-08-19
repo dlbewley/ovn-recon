@@ -178,32 +178,38 @@ source setup_env.sh && \
 
 OpenShift Console loads dynamic plugins via webpack module federation and supplies the shared singleton modules itself — React, react-router, react-i18next, and PatternFly. The plugin must **not** bundle its own copies; it compiles against whatever versions the target console provides. When the console upgrades one of those modules across a major version, every plugin must upgrade with it.
 
-OpenShift 4.22 does exactly that: React 17 → 18, react-router 5 → 7, react-i18next 11 → 16, PatternFly 6 only. A plugin built for 4.22 will not load on a 4.21 console, and a plugin built for 4.21 will not load on 4.22. There is no runtime shim — the mismatch is resolved in the module graph before plugin code executes.
+OpenShift 4.22 does exactly that: React 17 → 18, react-router 5 → 7, react-i18next 11 → 16, PatternFly 6 only.
 
-### Planned branch layout
+The incompatibility runs **one way only**. An older plugin generally keeps working on a newer console: the SDK never sets `strictVersion`, and SDK versions before the 4.x line declared no `peerDependencies`, so those builds shared React with no version expectation and took whatever the console provided. The `v0.3.7` build (React 17) was observed running cleanly on a 4.22.8 console.
 
-> [!NOTE]
-> Planned, not yet in effect. The repo is single-stream today. Tracked in beads `ovn-recon-ych` and `ovn-recon-t14`.
+A **newer** plugin on an **older** console is what actually breaks — partly by our own declaration (`@console/pluginAPI: >=4.22.0-0` makes an older console decline to load it) and partly for real (`import { Link } from 'react-router'` resolves to v5 on 4.21, which exports `Link` from `react-router-dom` instead).
 
-```
-main            ──●──●──●──●──▶   OCP 4.22+      plugin 1.x    channel stable-4.22
-                  │
-release-4.21      └──●─────●──▶   OCP 4.20-4.21  plugin 0.3.z  channel stable-4.21
-                     ▲       ▲    frozen: security + P0 bugs only
-                     │       │
-                  cut here   critical fix, cherry-picked main → release-4.21
-```
+### The 4.22 break
 
-`release-4.21` is a **freeze, not a parallel development line.** Features go to `main` only; a backport is a deliberate exception. Because the operator and collector have no console coupling, their changes ship from `main` and serve both generations — the branch only wakes up for plugin-specific fixes.
+**Decision: a clean break, not a maintenance branch.** From the 4.22 migration onward, builds target
+OpenShift 4.22+ and are deliberately incompatible with 4.21 and earlier. There is no `release-4.21`
+branch and no parallel stream to backport into.
 
-Version numbers carry the software's own semver; the **channel name** carries the OpenShift dimension. Do not encode the OpenShift version in the operator version (e.g. `v4.20.z`): OLM orders upgrades within a channel by semver, so a `4.22.1` would sort above a `4.20.5` and be offered to clusters that cannot run it.
+The reasoning: an older plugin keeps working on a newer console only for as long as the APIs it
+touches survive, and `react-router-dom` and `react-router-dom-v5-compat` are already deprecated.
+Straddling both generations means freezing on an SDK that is falling further behind, in exchange for
+compatibility that expires on someone else's schedule.
 
-### What must change before a branch is cut
+What this means in practice:
 
-- [operator-release.yaml](../.github/workflows/operator-release.yaml) triggers on `tags: ['v*']` with no branch restriction, and its floating `:latest` tags, channel selection, and hard-coded catalog tag are all branch-independent. Tags from a maintenance branch would collide with `main`'s.
-- ~~The catalog is built with `opm index add --mode semver`, which infers upgrade edges from version ordering and would link the two streams together.~~ **Done** — the catalog is now a [File-Based Catalog](tasks/fbc-migration.md) with explicitly declared edges, so two streams can coexist without OLM inventing a path between them.
-- `consolePlugin.dependencies["@console/pluginAPI"]` in `package.json` is `"*"`, claiming compatibility with every console version. Each stream must declare a real range.
-- Shared modules (`react`, `react-dom`, `react-i18next`, `i18next`, `react-router-dom`) are currently under `dependencies`; they belong in `devDependencies`, since the console supplies them at runtime.
+| | |
+|---|---|
+| `main` | OpenShift 4.22+ only |
+| Last pre-4.22 release | `v0.3.7`, stays published and installable, receives nothing further |
+| Backports | none |
+| Guardrail | `@console/pluginAPI: >=4.22.0-0` — a 4.21 console declines to load the plugin rather than breaking the page |
+
+Because the guardrail is a *load-time* check, a 4.21 cluster that upgrades to a 4.22-targeted release
+gets a running operator with an absent plugin: degraded and visible, not a broken console. That is
+the intended failure mode.
+
+The remaining work is making sure a 4.21 cluster is never *offered* the newer release in the first
+place — an OLM channel boundary, tracked in `ovn-recon-ych`.
 
 See [OPERATOR.md](../OPERATOR.md#openshift-version-compatibility) for the OLM-side guardrails.
 

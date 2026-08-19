@@ -83,39 +83,56 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 
 ### Current state
 
-Today there is a **single release stream** supporting OpenShift 4.20 and later. One operator version, one bundle, one channel (`stable`, with `latest` also published), one plugin image.
+Published releases up to and including `v0.3.7` support OpenShift 4.20 and later, and continue to
+work on newer consoles — the `v0.3.7` plugin was verified running on a 4.22.8 console. One operator
+version, one bundle, channels `stable` and `latest`, one plugin image.
+
+Releases **after** `v0.3.7` target OpenShift 4.22+ only. See [The 4.22 break](#the-422-break).
 
 ### Why this changes at 4.22
 
-The console plugin is not self-contained. OpenShift Console supplies React, react-router, and react-i18next to dynamic plugins at runtime through webpack module federation's shared scope, and **OpenShift 4.22 changes those shared modules** — React 17 to 18, react-router 5 to 7, react-i18next 11 to 16. Only one version of each singleton module can be loaded, so a plugin compiled against React 18 cannot run on a 4.21 console, and vice versa.
+The console plugin is not self-contained. OpenShift Console supplies React, react-router, and react-i18next to dynamic plugins at runtime through webpack module federation's shared scope, and **OpenShift 4.22 changes those shared modules** — React 17 to 18, react-router 5 to 7, react-i18next 11 to 16.
+
+The incompatibility is **one-way**, which is easy to get wrong:
+
+- **Old plugin on a new console: works.** Observed — the React 17 build (`v0.3.7`, SDK 1.8.0) runs on a 4.22.8 console with no errors. `ConsoleRemotePlugin` sets `requiredVersion` from the SDK package's own `peerDependencies`, and SDK 1.8.0 declares none, so that build shares React with no version expectation at all and simply uses whatever the console provides. `strictVersion` is never set by the SDK, so even a declared mismatch would only warn.
+- **New plugin on an old console: breaks.** This build declares `@console/pluginAPI: >=4.22.0-0`, so a 4.21 console declines to load it. It would also fail on its own: `import { Link } from 'react-router'` resolves to react-router **v5** on 4.21, and v5 exports `Link` from `react-router-dom`, not `react-router`.
+
+So a plugin stays usable on newer consoles for as long as the APIs it touches survive — which is luck, not contract, since `react-router-dom` and `react-router-dom-v5-compat` are both already deprecated.
 
 This is a property of the plugin bundle only. The operator's Go reconcile logic, the `OvnRecon` CRD, and the collector are all unaffected — they have no console coupling. **A single operator build continues to work across both generations; only the plugin image it deploys must differ.**
 
-### Planned stream split
+### The 4.22 break
 
-> [!NOTE]
-> Planned, not yet implemented. Tracked in beads `ovn-recon-ych` (release streams), `ovn-recon-t14` (plugin migration), and `ovn-recon-4vx` (catalog migration).
+**Decision: a clean break, not a maintenance stream.** From the 4.22 migration onward, releases
+target OpenShift 4.22+ and are deliberately incompatible with 4.21 and earlier. There is no
+`release-4.21` branch, no backports, and no parallel stream.
 
-| | Legacy stream | Current stream |
+Straddling both generations would mean freezing on an SDK that keeps falling further behind, buying
+compatibility that expires on someone else's schedule — `react-router-dom` and
+`react-router-dom-v5-compat` are already deprecated.
+
+| | |
+|---|---|
+| `main` | OpenShift 4.22+ only |
+| Last pre-4.22 release | `v0.3.7` — stays published and installable, receives nothing further |
+| Backports | none |
+
+The **operator** itself is unaffected by the console generation: its reconcile logic, the `OvnRecon`
+CRD, and the collector have no console coupling. Only the plugin bundle is version-bound.
+
+Guardrails, in the order they take effect:
+
+| Guardrail | Where | Effect |
 |---|---|---|
-| OpenShift | 4.20 – 4.21 | 4.22+ |
-| Git branch | `release-4.21` (frozen) | `main` |
-| Operator version | `0.3.z` | `1.x` |
-| OLM channel | `stable-4.21` | `stable-4.22` |
-| Plugin build | React 17 / router 5 | React 18 / router 7 |
-| Maintenance | Security and P0 bugs only | Active development |
+| OLM channel membership | catalog | Decides which bundles a cluster is offered at all — the only lever that prevents the upgrade |
+| `olm.maxOpenShiftVersion` | last pre-4.22 CSV | Blocks a **cluster** upgrade to 4.22 while an incompatible operator is installed |
+| `@console/pluginAPI: >=4.22.0-0` | plugin `package.json` | A 4.21 console declines to load the plugin instead of breaking the page |
 
-The `release-4.21` branch is a **freeze, not a parallel development line**. Features land on `main`; only critical fixes are cherry-picked back. Because operator and collector changes are stream-independent, they ship from `main` and serve both generations.
-
-Three independent guardrails prevent a mismatched install, each covering a different failure path:
-
-| Guardrail | Where | Prevents |
-|---|---|---|
-| `com.redhat.openshift.versions` | bundle `annotations.yaml` | The bundle appearing in the wrong per-OCP catalog |
-| `olm.maxOpenShiftVersion` | last pre-4.22 CSV | A **cluster** upgrade to 4.22 while an incompatible operator is installed |
-| `@console/pluginAPI` range | plugin `package.json` | The console loading a plugin it cannot satisfy — the plugin is skipped rather than crashing the page |
-
-Selection between streams is **static**: each stream's bundle references its own plugin image tag, and OLM channel membership decides which bundle a cluster can install. The operator does not detect the cluster's OpenShift version. This keeps the compatibility decision declarative and reviewable rather than embedded in reconcile logic, at the cost of the user choosing the correct channel. Runtime version detection remains a possible future improvement — see the design notes on `ovn-recon-ych` for the tradeoff.
+Because the plugin guardrail is a **load-time** check, a 4.21 cluster that reaches a 4.22-targeted
+release ends up with a running operator and an absent plugin — degraded and visible rather than a
+broken console. That is the intended failure mode, not the intended outcome: the channel boundary is
+what should stop it happening, and is tracked in `ovn-recon-ych`.
 
 > [!NOTE]
 > **Catalog image tags** (decided in `ovn-recon-w35`): `:stable` carries stable releases only,
@@ -129,12 +146,16 @@ Selection between streams is **static**: each stream's bundle references its own
 > **How the plugin and collector images get pinned.** They are not named in the catalog. The operator
 > derives their tag from `OPERATOR_VERSION`, which CI stamps into the CSV at release, so an OLM
 > install of operator `vX.Y.Z` deploys `ovn-recon:vX.Y.Z` and `ovn-collector:vX.Y.Z`. That makes the
-> plugin transitively pinned to whichever bundle the channel offered, which is what allows two
-> release streams to coexist without the operator having to detect the OpenShift version.
+> plugin transitively pinned to whichever bundle the channel offered, with no OpenShift-version
+> detection in the operator.
 >
-> Two cases still resolve to `latest` and are **not** safe once two streams exist: a development
-> install via `make deploy` (where `OPERATOR_VERSION` is `dev`), and any `OvnRecon` CR that sets
-> `consolePlugin.image.tag: latest` explicitly. Pin an explicit version in both cases.
+> Two cases resolve to `latest` instead and are worth pinning explicitly: a development install via
+> `make deploy` (where `OPERATOR_VERSION` is `dev`), and any `OvnRecon` CR that sets
+> `consolePlugin.image.tag: latest`.
+>
+> Note that `collector.image.tag` **inherits** the plugin tag when unset
+> (`collectorImageTagFor()`), so overriding the plugin tag alone repoints the collector too — which
+> will fail if no collector image exists under that tag.
 
 ---
 
@@ -227,7 +248,9 @@ are easy to get wrong:
    lightweight. `git push --dry-run --follow-tags` lists exactly which refs would go.
 
 > [!IMPORTANT]
-> The workflow triggers on `tags: ['v*']` with **no branch restriction**, and several outputs are branch-independent: the floating `:latest` image tags, the channel selection (`stable,latest`), and the hard-coded catalog tag `quay.io/dbewley/bewley-operator-catalog:v4.20`. A release tag pushed from a future `release-4.21` branch would therefore overwrite `main`'s floating tags and publish into the same `stable` channel and the same catalog.
+> The workflow triggers on `tags: ['v*']` with **no branch restriction**, and several outputs are branch-independent: the floating `:latest` image tags, the channel selection (`stable,latest`), and the hard-coded catalog tag `quay.io/dbewley/bewley-operator-catalog:v4.20`. Those outputs being branch-independent no longer matters for a maintenance branch, since the 4.22
+break means there will not be one, but it still means any tag pushed from any branch publishes as if
+it came from `main`.
 >
 > Before any maintenance branch is cut, the workflow must derive the channel, the floating tags, and the catalog content from the branch or tag pattern. Tracked in `ovn-recon-ych`.
 
