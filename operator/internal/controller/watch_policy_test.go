@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -85,5 +86,61 @@ func TestGenerationPredicateIsMeaninglessForNamespaces(t *testing.T) {
 	generationChanged := predicate.GenerationChangedPredicate{}
 	if generationChanged.Update(event.UpdateEvent{ObjectOld: ns, ObjectNew: ns}) {
 		t.Error("expected the generation predicate to drop namespace updates, confirming it never belonged on that watch")
+	}
+}
+
+func TestManagedDeploymentMapsBackToItsOvnRecon(t *testing.T) {
+	t.Parallel()
+
+	reconciler := &OvnReconReconciler{}
+
+	cases := []struct {
+		name   string
+		labels map[string]string
+		want   string
+	}{
+		{
+			name:   "plugin deployment",
+			labels: labelsForOvnReconWithVersion("sample", "v1.0.0"),
+			want:   "sample",
+		},
+		{
+			name:   "collector deployment maps to the same CR",
+			labels: labelsForOvnRecon("sample"),
+			want:   "sample",
+		},
+		{
+			name:   "foreign deployment is ignored",
+			labels: map[string]string{"app.kubernetes.io/instance": "sample"},
+			want:   "",
+		},
+		{
+			name:   "managed object without an instance label is ignored",
+			labels: map[string]string{ManagedByLabelKey: ManagedByLabelValue},
+			want:   "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "d", Namespace: "ovn-recon", Labels: tc.labels},
+			}
+			got := reconciler.reconcileRequestsForManagedDeployment(context.Background(), deployment)
+
+			if tc.want == "" {
+				if len(got) != 0 {
+					t.Fatalf("expected no reconcile requests, got %#v", got)
+				}
+				return
+			}
+			if len(got) != 1 || got[0].Name != tc.want {
+				t.Fatalf("expected a request for %q, got %#v", tc.want, got)
+			}
+			// OvnRecon is cluster-scoped; a namespaced request would never match.
+			if got[0].Namespace != "" {
+				t.Errorf("request must not carry a namespace, got %q", got[0].Namespace)
+			}
+		})
 	}
 }

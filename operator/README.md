@@ -155,12 +155,21 @@ on. `TestManagedResourceSelectorMatchesEveryManagedWritePath` fails if a
 desired-label set drifts, and the envtest spec in `cache_runtime_test.go`
 exercises the strip-and-recover cycle end to end.
 
-**Watch policy**: the controller watches `OvnRecon` (with
-`GenerationChangedPredicate`) and Namespaces (metadata-only, create/delete only
-- `reconcileRequestsForProbeNamespace` needs nothing but the name). The
-generation predicate is attached to the `For()` clause rather than as a
-`WithEventFilter`, which would also apply it to the Namespace watch where
-generation is always 0.
+**Watch policy**: the controller watches three things.
+
+| Watch | Form | Notes |
+|---|---|---|
+| `OvnRecon` | `For()` + `GenerationChangedPredicate` | The predicate is attached here rather than as a `WithEventFilter`, which would also apply it to the other watches. |
+| `Namespace` | `WatchesMetadata()`, create/delete only | `reconcileRequestsForProbeNamespace` needs nothing but the name. |
+| `Deployment` | `Watches()` + label mapper | Makes readiness event-driven. |
+
+The Deployment watch maps back to its `OvnRecon` through the
+`app.kubernetes.io/instance` label rather than using `Owns()`, because the
+operator sets **no owner references** on managed resources — `OvnRecon` is
+cluster-scoped and cleanup runs through the finalizer instead, so `Owns()`
+would never fire. Note that no predicate may be attached to this watch: a
+`GenerationChangedPredicate` would swallow status-only updates and silently
+return readiness to polling. `cache_runtime_test.go` fails if that happens.
 
 **On unstructured reads**: `client.CacheOptions.Unstructured` defaults to
 `false` (controller-runtime `pkg/cluster/cluster.go`), so unstructured objects

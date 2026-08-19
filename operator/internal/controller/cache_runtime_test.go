@@ -10,9 +10,14 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 )
@@ -74,11 +79,9 @@ var _ = Describe("Manager cache policy", func() {
 	// ovn-recon-5gu.2 (T2) and the runtime gap left by ovn-recon-5gu.1 (T1):
 	// the unit tests assert the policy's shape, this asserts its effect.
 	Context("managed Deployment informer", func() {
-		const namespace = "default"
-
 		It("caches only Deployments this operator owns", func() {
-			mine := deploymentFixture("cache-scoped-mine", namespace, labelsForOvnRecon("sample"))
-			theirs := deploymentFixture("cache-scoped-theirs", namespace, map[string]string{"app": "somebody-else"})
+			mine := deploymentFixture("cache-scoped-mine", labelsForOvnRecon("sample"))
+			theirs := deploymentFixture("cache-scoped-theirs", map[string]string{"app": "somebody-else"})
 			Expect(k8sClient.Create(ctx, mine)).To(Succeed())
 			Expect(k8sClient.Create(ctx, theirs)).To(Succeed())
 			DeferCleanup(func() {
@@ -94,7 +97,7 @@ var _ = Describe("Manager cache policy", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			cached := &appsv1.DeploymentList{}
-			Expect(c.List(ctx, cached, client.InNamespace(namespace))).To(Succeed())
+			Expect(c.List(ctx, cached, client.InNamespace(testNamespace))).To(Succeed())
 
 			names := make([]string, 0, len(cached.Items))
 			for i := range cached.Items {
@@ -111,10 +114,8 @@ var _ = Describe("Manager cache policy", func() {
 	// label really does make a managed object vanish from the informer, and
 	// ensureManagedLabels brings it back.
 	Context("filter label preservation", func() {
-		const namespace = "default"
-
 		It("recovers a managed object that lost the filter label", func() {
-			deployment := deploymentFixture("label-recovery", namespace, labelsForOvnRecon("sample"))
+			deployment := deploymentFixture("label-recovery", labelsForOvnRecon("sample"))
 			Expect(k8sClient.Create(ctx, deployment)).To(Succeed())
 			DeferCleanup(func() {
 				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, deployment))).To(Succeed())
@@ -146,6 +147,82 @@ var _ = Describe("Manager cache policy", func() {
 		})
 	})
 
+	// ovn-recon-5gu.8 (T8): readiness is now event-driven. The failure mode
+	// worth guarding is a predicate that swallows status-only updates, which
+	// would silently restore the old polling-only behaviour.
+	//
+	// This drives a manager with the same Watches wiring and mapper that
+	// SetupWithManager uses, against a recording reconciler. It does not call
+	// SetupWithManager itself: that hardcodes the real reconciler, whose
+	// ConsolePlugin and Console reads cannot succeed in envtest.
+	Context("managed Deployment watch", func() {
+		It("delivers a status-only update to the reconciler", func() {
+			requests := make(chan reconcile.Request, 16)
+
+			mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+				Scheme:  scheme.Scheme,
+				Cache:   ManagerCacheOptions(),
+				Client:  ManagerClientOptions(),
+				Metrics: metricsserver.Options{BindAddress: "0"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			reconciler := &OvnReconReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}
+			Expect(
+				ctrl.NewControllerManagedBy(mgr).
+					For(&reconv1beta1.OvnRecon{}).
+					Watches(
+						&appsv1.Deployment{},
+						handler.EnqueueRequestsFromMapFunc(reconciler.reconcileRequestsForManagedDeployment),
+					).
+					Named("readiness-watch-test").
+					Complete(reconcile.Func(func(_ context.Context, req reconcile.Request) (reconcile.Result, error) {
+						requests <- req
+						return reconcile.Result{}, nil
+					})),
+			).To(Succeed())
+
+			mgrCtx, stop := context.WithCancel(ctx)
+			DeferCleanup(stop)
+			go func() {
+				defer GinkgoRecover()
+				Expect(mgr.Start(mgrCtx)).To(Succeed())
+			}()
+			Expect(mgr.GetCache().WaitForCacheSync(mgrCtx)).To(BeTrue())
+
+			managed := deploymentFixture("readiness-watch", labelsForOvnRecon("sample"))
+			foreign := deploymentFixture("readiness-watch-foreign", map[string]string{"app": "other"})
+			Expect(k8sClient.Create(ctx, managed)).To(Succeed())
+			Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, managed))).To(Succeed())
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, foreign))).To(Succeed())
+			})
+
+			// Drain the create events so the assertion below is about the
+			// status update specifically.
+			Eventually(requests).Should(Receive(Equal(reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "sample"},
+			})))
+
+			By("changing only the Deployment status")
+			managed.Status.ReadyReplicas = 1
+			managed.Status.Replicas = 1
+			Expect(k8sClient.Status().Update(ctx, managed)).To(Succeed())
+
+			Eventually(requests).Should(Receive(Equal(reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "sample"},
+			})), "a status-only Deployment update must reach the reconciler, or readiness is polling-only again")
+
+			By("touching a Deployment this operator does not manage")
+			foreign.Status.Replicas = 1
+			foreign.Status.ReadyReplicas = 1
+			Expect(k8sClient.Status().Update(ctx, foreign)).To(Succeed())
+			Consistently(requests, "2s").ShouldNot(Receive(),
+				"an unmanaged Deployment must not wake the reconciler")
+		})
+	})
+
 	// ovn-recon-5gu.3 (T3): the probe-namespace watch must not cache whole
 	// Namespace objects.
 	Context("probe namespace watch", func() {
@@ -174,10 +251,13 @@ var _ = Describe("Manager cache policy", func() {
 	})
 })
 
-func deploymentFixture(name, namespace string, labels map[string]string) *appsv1.Deployment {
+// testNamespace is the only namespace these specs use; envtest always has it.
+const testNamespace = "default"
+
+func deploymentFixture(name string, labels map[string]string) *appsv1.Deployment {
 	selector := map[string]string{"app": name}
 	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace, Labels: labels},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace, Labels: labels},
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: selector},
 			Template: corev1.PodTemplateSpec{

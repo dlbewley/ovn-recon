@@ -451,7 +451,9 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	} else {
 		r.updateCondition(deploymentStatusCtx, ovnRecon, "Available", metav1.ConditionFalse, "DeploymentNotReady", "Deployment is not ready")
-		return reconcile.Result{RequeueAfter: time.Second * 10}, nil
+		// The Deployment watch delivers readiness, so this is only a backstop
+		// against a missed event rather than the mechanism that finds it.
+		return reconcile.Result{RequeueAfter: deploymentReadinessBackstop}, nil
 	}
 
 	// 4. Auto-enable plugin in Console operator configuration
@@ -737,8 +739,40 @@ func (r *OvnReconReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.reconcileRequestsForProbeNamespace),
 			builder.WithPredicates(probeNamespaceExistencePredicate()),
 		).
+		// Readiness used to be discovered only by requeueing every 10s. This
+		// watch makes it event-driven. It maps by label rather than using
+		// Owns() because the operator sets no owner references on managed
+		// resources, so Owns() would never fire; the informer is already
+		// scoped to this operator's objects by ManagerCacheOptions.
+		Watches(
+			&appsv1.Deployment{},
+			handler.EnqueueRequestsFromMapFunc(r.reconcileRequestsForManagedDeployment),
+		).
 		Named("ovnrecon").
 		Complete(r)
+}
+
+// reconcileRequestsForManagedDeployment maps a managed Deployment back to the
+// OvnRecon that owns it, via the instance label every managed resource carries.
+//
+// No owner reference is involved: the operator deliberately sets none, because
+// OvnRecon is cluster-scoped and cleanup runs through the finalizer instead.
+// That is why this is a label-mapped Watches() rather than Owns().
+func (r *OvnReconReconciler) reconcileRequestsForManagedDeployment(_ context.Context, object client.Object) []reconcile.Request {
+	if object == nil {
+		return nil
+	}
+	labels := object.GetLabels()
+	if labels[ManagedByLabelKey] != ManagedByLabelValue {
+		return nil
+	}
+	instance := strings.TrimSpace(labels["app.kubernetes.io/instance"])
+	if instance == "" {
+		return nil
+	}
+	// OvnRecon is cluster-scoped, so the request carries no namespace. Both the
+	// plugin and collector Deployments map back to the same CR.
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: instance}}}
 }
 
 // probeNamespaceExistencePredicate drops Namespace updates. The collector's

@@ -100,10 +100,39 @@ envtest in `cache_runtime_test.go`:
   why `corev1.Namespace` had to move to `DisableFor`.
 - **T6** — stripping the filter label really does make a managed Deployment
   vanish from the informer, and `ensureManagedLabels` restores it.
+- **T8** — a status-only Deployment update reaches the reconciler, an unmanaged
+  Deployment does not, and the request carries no namespace (`OvnRecon` is
+  cluster-scoped). This spec drives a real manager; it mirrors the
+  `SetupWithManager` wiring rather than calling it, because the real reconciler
+  reads ConsolePlugin and Console, which do not exist in envtest.
+
+## T8 — event-driven readiness
+
+`checkDeploymentReady()` was only ever reached by `RequeueAfter` polling: the
+controller had no Deployment watch, so the pre-existing cluster-wide Deployment
+informer was pure cost with no event benefit. It now has one, and the
+not-ready requeue drops from a 10-second poll to a 2-minute backstop.
+
+**Not `Owns()`, despite what the bead said.** The operator sets **no owner
+references** on any managed resource — `ovnrecon_controller.go:1063` records
+the reasoning ("no owner refs with cluster-scoped CRs") and cleanup runs
+through the finalizer instead. `Owns()` enqueues from `ownerReferences`, so it
+would have been a silent no-op. The watch maps by the
+`app.kubernetes.io/instance` label instead, which every managed resource
+already carries, and the informer is already scoped to this operator's objects.
+
+For the record, the premise behind that comment is not quite right: Kubernetes
+does permit a namespaced dependent to declare a cluster-scoped owner, and
+garbage collection handles it. Switching to real owner references is therefore
+possible, but it changes deletion semantics and interacts with the existing
+finalizer, so it was left alone here.
+
+**No predicate may be attached to this watch.** Readiness arrives as a
+status-only update, which a `GenerationChangedPredicate` would discard —
+returning readiness to polling with no visible failure. The envtest spec
+asserts a status-only update reaches the reconciler, and was confirmed to fail
+when such a predicate is added.
 
 ## Follow-up
 
-`ovn-recon-5gu.8` — the controller has no `Owns()` and never did; readiness is
-discovered only by `RequeueAfter` polling. The pre-existing Deployment informer
-was therefore pure cost with no event benefit. Now that it is label-scoped,
-adding `Owns(&appsv1.Deployment{})` is nearly free.
+None outstanding for this epic.

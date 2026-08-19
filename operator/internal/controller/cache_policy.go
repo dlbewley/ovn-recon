@@ -17,6 +17,8 @@ limitations under the License.
 package controller
 
 import (
+	"time"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -33,6 +35,11 @@ const (
 	ManagedByLabelKey   = "app.kubernetes.io/name"
 	ManagedByLabelValue = "ovn-recon"
 )
+
+// deploymentReadinessBackstop bounds how long a missed Deployment event can
+// leave an OvnRecon reporting a stale Available condition. The watch is the
+// real readiness signal; this only covers the case where it does not arrive.
+const deploymentReadinessBackstop = 2 * time.Minute
 
 // ManagedResourceSelector matches only resources created by this operator.
 func ManagedResourceSelector() labels.Selector {
