@@ -7,7 +7,7 @@
             "dom",
             "esnext"
         ],
-        "jsx": "react",
+        "jsx": "react-jsx",
         "esModuleInterop": true,
         "allowSyntheticDefaultImports": true,
         "sourceMap": true,

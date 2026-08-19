@@ -2,9 +2,8 @@ import * as React from 'react';
 import { NodeNetworkState } from '../types';
 import { PageSection, Title, Card, CardBody, CardTitle } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
-import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
-import { Helmet } from 'react-helmet';
-import { Link } from 'react-router-dom';
+import { DocumentTitle, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
+import { Link } from 'react-router';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 
 const NodeNetworkStateList: React.FC = () => {
@@ -22,9 +21,7 @@ const NodeNetworkStateList: React.FC = () => {
 
     return (
         <>
-            <Helmet>
-                <title>OVN Recon - Nodes</title>
-            </Helmet>
+            <DocumentTitle>OVN Recon - Nodes</DocumentTitle>
             <PageSection>
                 <Title headingLevel="h1">OVN Recon - Nodes</Title>
             </PageSection>

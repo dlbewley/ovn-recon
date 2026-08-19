@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { Helmet } from 'react-helmet';
+import { DocumentTitle } from '@openshift-console/dynamic-plugin-sdk';
+import { useParams, Link } from 'react-router';
 import {
     PageSection,
     Title,
@@ -301,9 +301,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
 
     return (
         <>
-            <Helmet>
-                <title>OVN Recon - Logical OVN ({name})</title>
-            </Helmet>
+            <DocumentTitle>{`OVN Recon - Logical OVN (${name})`}</DocumentTitle>
             <PageSection>
                 <Breadcrumb>
                     <BreadcrumbItem>

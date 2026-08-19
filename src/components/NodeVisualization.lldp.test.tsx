@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import * as React from 'react';
-import ReactDOM from 'react-dom';
-import { act } from 'react-dom/test-utils';
+import { createRoot, Root } from 'react-dom/client';
+import { act } from 'react';
 import * as yaml from 'js-yaml';
 
 import { NodeNetworkState } from '../types';
@@ -24,14 +24,18 @@ const loadFixture = (name: string): NodeNetworkState => {
 
 describe('NodeVisualization LLDP', () => {
     let container: HTMLDivElement;
+    let root: Root;
 
     beforeEach(() => {
         container = document.createElement('div');
         document.body.appendChild(container);
+        root = createRoot(container);
     });
 
     afterEach(() => {
-        ReactDOM.unmountComponentAtNode(container);
+        act(() => {
+            root.unmount();
+        });
         container.remove();
     });
 
@@ -39,9 +43,8 @@ describe('NodeVisualization LLDP', () => {
         const nns = loadFixture('host-lldp');
 
         act(() => {
-            ReactDOM.render(
-                <NodeVisualization nns={nns} cudns={[]} udns={[]} nads={[]} routeAdvertisements={[]} />,
-                container
+            root.render(
+                <NodeVisualization nns={nns} cudns={[]} udns={[]} nads={[]} routeAdvertisements={[]} />
             );
         });
 
