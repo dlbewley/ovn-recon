@@ -125,14 +125,25 @@ Guardrails, in the order they take effect:
 
 | Guardrail | Where | Effect |
 |---|---|---|
-| OLM channel membership | catalog | Decides which bundles a cluster is offered at all — the only lever that prevents the upgrade |
-| `olm.maxOpenShiftVersion` | last pre-4.22 CSV | Blocks a **cluster** upgrade to 4.22 while an incompatible operator is installed |
-| `@console/pluginAPI: >=4.22.0-0` | plugin `package.json` | A 4.21 console declines to load the plugin instead of breaking the page |
+| `minKubeVersion: 1.35.0` | CSV | **The gate.** OLM will not install the bundle below Kubernetes 1.35 (OpenShift 4.22) |
+| `@console/pluginAPI: >=4.22.0-0` | plugin `package.json` | Backstop — a 4.21 console declines to load the plugin instead of breaking the page |
+| `olm.maxOpenShiftVersion` | CSV | Optional; blocks a **cluster** upgrade while an incompatible operator is installed. Not used |
 
-Because the plugin guardrail is a **load-time** check, a 4.21 cluster that reaches a 4.22-targeted
-release ends up with a running operator and an absent plugin — degraded and visible rather than a
-broken console. That is the intended failure mode, not the intended outcome: the channel boundary is
-what should stop it happening, and is tracked in `ovn-recon-ych`.
+`stable` and `latest` simply keep advancing; there is no per-generation channel and no frozen
+channel. `minKubeVersion` does the gating instead, and it fails **safe**:
+
+- A 4.21 cluster (Kubernetes 1.34) never installs the newer bundle. The CSV stays in
+  `Pending` / `RequirementsNotMet` with `CSV version requirement not met: minKubeVersion (1.35.0) >
+  server version (1.34.x)`.
+- The **existing** operator keeps running. A replaced CSV is only garbage-collected once its
+  replacement reaches `Succeeded`, and a Pending CSV never does — so `v0.3.7` is not torn down.
+
+Verified against `openshift/operator-framework-olm` `release-4.20` and `release-4.21`
+(`pkg/controller/operators/olm/requirements.go`, `operator.go`), not assumed.
+
+The visible cost is cosmetic: a 4.21 user sees a permanently Pending CSV and a Subscription that
+looks stuck, explained only by that terse OLM message. Release notes for 4.22-targeted releases
+should state the OpenShift 4.22+ requirement plainly.
 
 > [!NOTE]
 > **Catalog image tags** (decided in `ovn-recon-w35`): `:stable` carries stable releases only,
@@ -162,7 +173,7 @@ what should stop it happening, and is tracked in `ovn-recon-ych`.
 ## Operational Guide
 
 ### Prerequisites
-- OpenShift 4.20 or compatible. See [OpenShift Version Compatibility](#openshift-version-compatibility) — support becomes stream-specific at OpenShift 4.22.
+- OpenShift **4.22 or later** for releases after `v0.3.7`; `v0.3.7` itself supports 4.20+. See [OpenShift Version Compatibility](#openshift-version-compatibility).
 - `oc` or `kubectl` CLI.
 - Cluster-admin permissions (required for CRD installation and Console operator patching).
 

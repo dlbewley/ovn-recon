@@ -204,12 +204,15 @@ What this means in practice:
 | Backports | none |
 | Guardrail | `@console/pluginAPI: >=4.22.0-0` — a 4.21 console declines to load the plugin rather than breaking the page |
 
-Because the guardrail is a *load-time* check, a 4.21 cluster that upgrades to a 4.22-targeted release
-gets a running operator with an absent plugin: degraded and visible, not a broken console. That is
-the intended failure mode.
+`stable` and `latest` keep advancing as before — no per-generation channels, no frozen channel. The
+gate is **`minKubeVersion: 1.35.0`** in the CSV: OpenShift 4.22 ships Kubernetes 1.35, so OLM will
+not install a 4.22-targeted bundle on 4.20/4.21.
 
-The remaining work is making sure a 4.21 cluster is never *offered* the newer release in the first
-place — an OLM channel boundary, tracked in `ovn-recon-ych`.
+It fails safe. The CSV stays in `Pending` / `RequirementsNotMet`, and because a replaced CSV is only
+garbage-collected once its replacement `Succeeds`, the existing `v0.3.7` operator keeps running
+rather than being torn down. Verified in the OLM source for `release-4.20` and `release-4.21`.
+
+The `@console/pluginAPI: >=4.22.0-0` range remains as a backstop for anyone who bypasses OLM.
 
 See [OPERATOR.md](../OPERATOR.md#openshift-version-compatibility) for the OLM-side guardrails.
 
