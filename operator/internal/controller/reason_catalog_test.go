@@ -34,6 +34,11 @@ func TestOperatorEventReasonCatalogIsStable(t *testing.T) {
 			addReasonFromArg(t, call.Args, 4, reasons)
 		case "recordEvent":
 			addReasonFromArg(t, call.Args, 4, reasons)
+		case "reconcileStepFailed":
+			// Failure paths funnel through this helper, which emits the event
+			// and sets the condition from the same reason. Signature:
+			// (ctx, ovnRecon, policy, eventPolicy, err, message, reason, conditionType)
+			addReasonFromArg(t, call.Args, 6, reasons)
 		}
 		return true
 	})
