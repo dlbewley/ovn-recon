@@ -439,14 +439,47 @@ catalog-fbc-verify: opm ## Verify catalog integrity, and that changes vs CATALOG
 catalog-fbc-prune-dangling: ## Report prerelease catalog entries whose images are gone. Set APPLY=1 to remove them.
 	python3 ./hack/catalog-prune-dangling.py --fbc "$(CATALOG_FBC)" $(if $(APPLY),--apply,)
 
+# Operand image refs stamped into manager.yaml (and thus into the CSV's
+# relatedImages) for a release. CI does this with sed; release-prep does it here
+# so a locally prepared catalog entry carries the same values instead of ':dev'.
+PLUGIN_IMAGE_BASE ?= quay.io/dbewley/ovn-recon
+COLLECTOR_IMAGE_BASE ?= quay.io/dbewley/ovn-collector
+
+.PHONY: release-prep
+release-prep: opm ## Prepare a release: stamp operand images, generate the bundle, and add it to the catalog. Requires VERSION.
+	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make release-prep VERSION=1.0.0"; exit 1; }
+	@test "$(VERSION)" != "0.0.1" || { echo "VERSION looks like the scaffold default; pass the real release version"; exit 1; }
+	@echo ">> stamping operand images for v$(VERSION)"
+	@python3 -c "import sys;p='config/manager/manager.yaml';s=open(p).read();\
+s=s.replace('value: dev','value: v$(VERSION)');\
+s=s.replace('$(PLUGIN_IMAGE_BASE):dev','$(PLUGIN_IMAGE_BASE):v$(VERSION)');\
+s=s.replace('$(COLLECTOR_IMAGE_BASE):dev','$(COLLECTOR_IMAGE_BASE):v$(VERSION)');\
+open(p,'w').write(s)"
+	@echo ">> generating bundle"
+	@$(MAKE) bundle VERSION=$(VERSION) IMG=$(PLUGIN_IMAGE_BASE)-operator:v$(VERSION) >/dev/null
+	@echo ">> restoring manager.yaml (generated artifact; CI stamps it itself)"
+	@git checkout -- config/manager/manager.yaml config/manager/kustomization.yaml
+	@echo ">> adding to the catalog"
+	@$(MAKE) catalog-fbc-add BUNDLE_IMG=$(PLUGIN_IMAGE_BASE)-operator-bundle:v$(VERSION) BUNDLE_SRC=bundle
+	@echo ""
+	@echo "Prepared v$(VERSION). Commit operator/catalog/ (and the plugin version bump), then tag with -a."
+
 .PHONY: catalog-fbc-add
-catalog-fbc-add: opm ## Render BUNDLE_IMG into the FBC and append it to CHANNELS. Requires BUNDLE_IMG; set CHANNELS to a comma-separated list (default: stable,latest).
+# BUNDLE_SRC is what gets RENDERED; BUNDLE_IMG is what gets RECORDED in the
+# catalog. They differ during release prep: the bundle image for an unreleased
+# version does not exist yet, so render the local ./bundle directory and stamp
+# the ref CI will publish it under.
+#   make catalog-fbc-add BUNDLE_IMG=...:v1.0.0 BUNDLE_SRC=bundle
+BUNDLE_SRC ?= $(BUNDLE_IMG)
+
+catalog-fbc-add: opm ## Add a bundle to the FBC. BUNDLE_IMG is the ref recorded; BUNDLE_SRC is what is rendered (default: BUNDLE_IMG; use "bundle" for an unpublished release). CHANNELS defaults to stable,latest.
 	@test -n "$(BUNDLE_IMG)" || { echo "BUNDLE_IMG is required, e.g. make catalog-fbc-add BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v1.0.0"; exit 1; }
 	python3 ./hack/catalog-add-bundle.py \
 		--opm "$(OPM)" \
 		--fbc "$(CATALOG_FBC)" \
 		--package "$(CATALOG_PKG)" \
-		--bundle "$(BUNDLE_IMG)" \
+		--bundle "$(BUNDLE_SRC)" \
+		--image "$(BUNDLE_IMG)" \
 		--channels "$(if $(CHANNELS),$(CHANNELS),stable,latest)"
 	$(MAKE) catalog-fbc-validate
 

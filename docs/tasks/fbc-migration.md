@@ -72,10 +72,20 @@ change reviewable in the release commit and avoids CI pushing to `main` from a t
 
 ```bash
 cd operator
-make bundle VERSION=<x.y.z> IMG=quay.io/dbewley/ovn-recon-operator:v<x.y.z>
-make catalog-fbc-add BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v<x.y.z> CHANNELS=stable,latest
+make release-prep VERSION=<x.y.z>
 git add catalog/
 ```
+
+`release-prep` does three things that are easy to get wrong by hand:
+
+1. **Stamps the operand images.** `make bundle` alone leaves `relatedImages` at the `:dev`
+   placeholder, because CI normally does the stamping. Since the catalog records the rendered CSV,
+   preparing by hand without stamping bakes `:dev` into the catalog **permanently**.
+2. **Renders the local `bundle/` directory** and stamps the ref CI will publish it under. The bundle
+   image for an unreleased version does not exist yet, so rendering from the image ref cannot work.
+   (`catalog-fbc-add` exposes this as `BUNDLE_SRC`; `BUNDLE_IMG` is always the ref *recorded*.)
+3. **Restores `config/manager/manager.yaml`** afterwards, since it is a generated artifact that CI
+   stamps itself and should not be committed with release values.
 
 `CHANNELS` on `catalog-fbc-add` controls catalog membership. `make bundle` derives the bundle's
 own channel annotations from `VERSION` (a hyphen means prerelease → `latest` only), matching the
