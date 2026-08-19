@@ -181,8 +181,13 @@ func main() {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsServerOptions,
+		Scheme:  scheme,
+		Metrics: metricsServerOptions,
+		// Cache and Client scope the informers this operator opens. Leaving
+		// them unset lets the cached client spawn a cluster-wide informer for
+		// every type it touches; see internal/controller/cache_policy.go.
+		Cache:                  controller.ManagerCacheOptions(),
+		Client:                 controller.ManagerClientOptions(),
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,

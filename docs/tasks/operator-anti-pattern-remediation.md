@@ -31,6 +31,18 @@ Facts that shape the fix design (verified against the code):
 
 `cmd/main.go:183` area — `ctrl.NewManager` is called with no `Cache` field.
 
+> **Correction (2026-08-18):** `DisableFor` is **not** a `cache.Options` field.
+> It lives in `ctrl.Options.Client.Cache` (`client.CacheOptions`). The manager
+> needs both: `Cache: cache.Options{ByObject: ...}` for informer scoping and
+> `Client: client.Options{Cache: &client.CacheOptions{DisableFor: ...}}` for
+> cache bypass.
+>
+> **Scanner under-reported:** `controllerutil.CreateOrUpdate` issues a cached
+> `Get`, so `corev1.ServiceAccount`, `rbacv1.ClusterRole` and
+> `rbacv1.RoleBinding` each had an invisible cluster-wide informer too, plus
+> `corev1.Namespace` via `r.Get` at `:622`/`:1076`. The real pre-fix
+> invisible-informer count was **6, not 1**.
+
 Fix: add `Cache: cache.Options{ByObject: ...}` scoping each cached type:
 
 - `appsv1.Deployment`, `corev1.Service`: label selector
@@ -75,6 +87,17 @@ Two problems:
    `builder.WithPredicates(...)` on the `For()` clause.
 
 ### T4 — AP-5 (HIGH ×10): Typed/unstructured cache trap for ConsolePlugin & Console
+
+> **Resolved as FALSE POSITIVE (2026-08-18, during T1).**
+> `client.CacheOptions.Unstructured` defaults to `false`
+> (controller-runtime v0.19.7 `pkg/cluster/cluster.go:218-222`), and
+> `client.shouldBypassCache()` returns `true` for any `runtime.Unstructured`
+> when that flag is false. ConsolePlugin and Console reads have therefore
+> always gone live to the API server — no unstructured informers ever existed.
+> The scanner does not model this default. T1 pins `Unstructured: false`
+> explicitly. **Option B adopted** (user decision); T4 reduces to consistency
+> review plus dropping the now-provably-unneeded `list;watch` RBAC on
+> `consoleplugins`/`consoles`.
 
 `ovnrecon_controller.go:921-922, 947-948, 1049-1050, 1160-1161`,
 `desired_resources.go:437-438` — ConsolePlugin (`console.openshift.io/v1`) and
