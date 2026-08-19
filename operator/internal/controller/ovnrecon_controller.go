@@ -775,7 +775,9 @@ func (r *OvnReconReconciler) reconcileRequestsForProbeNamespace(ctx context.Cont
 
 func labelsForOvnRecon(name string) map[string]string {
 	return map[string]string{
-		"app.kubernetes.io/name":       "ovn-recon",
+		// Must stay in sync with ManagedResourceSelector: this pair is the
+		// cache filter for managed Deployments and Services.
+		ManagedByLabelKey:              ManagedByLabelValue,
 		"app.kubernetes.io/instance":   name,
 		"app.kubernetes.io/managed-by": "ovn-recon-operator",
 	}

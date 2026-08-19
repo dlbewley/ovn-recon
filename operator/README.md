@@ -115,12 +115,53 @@ The main controller implements the reconciliation logic for `OvnRecon` custom re
 - `deleteNamespacedResources()` - Deletes Deployment and Service during cleanup
 - `SetupWithManager()` - Configures the controller with the manager
 
+**Cache policy**: informer scoping lives in `internal/controller/cache_policy.go` (`ManagerCacheOptions`, `ManagerClientOptions`) - see [Cache Policy](#cache-policy-internalcontrollercache_policygo).
+
 **Helper Functions**:
 - `labelsForOvnRecon()` - Generates standard Kubernetes labels for resources
 - `labelsForOvnReconWithVersion()` - Generates labels including version information
 - `targetNamespace()` - Determines target namespace from spec or default
 - `imageTagFor()` - Determines image tag from spec or default
 - `operatorVersionAnnotations()` - Generates operator version annotations
+
+### Cache Policy (`internal/controller/cache_policy.go`)
+
+controller-runtime's cached client creates informers **lazily and silently**: the
+first cached `Get`/`List`/`Watch` of a type opens a LIST+WATCH over every object
+of that type in every namespace. The manager therefore configures `Cache` and
+`Client` explicitly (`cmd/main.go`) rather than accepting the defaults.
+
+`OvnRecon` is cluster-scoped and its target namespace is per-CR, so
+`DefaultNamespaces` scoping is not viable. The filter is instead the
+`app.kubernetes.io/name: ovn-recon` label that `labelsForOvnRecon()` stamps on
+every resource the operator creates.
+
+| Type | Policy | Why |
+|---|---|---|
+| `recon.bewley.net/OvnRecon` | Cached, **unfiltered** | The `For()` informer already exists. Left unfiltered so `primaryInstance()` sees every CR, including any created before the operator stamped labels. |
+| `apps/Deployment` | Cached, label-filtered | Read every reconcile by `checkDeploymentReady()` and both `CreateOrUpdate` paths. |
+| `core/Service` | Cached, label-filtered | Read every reconcile by both `CreateOrUpdate` paths. |
+| `core/Namespace` | **Uncached** (`DisableFor`) | Existence checks only. The probe-namespace watch uses a metadata-only informer, which cannot serve typed reads. |
+| `core/ServiceAccount`, `rbac/ClusterRole`, `rbac/RoleBinding` | **Uncached** (`DisableFor`) | Collector access controls: written rarely, read only inside `CreateOrUpdate`. Not worth a cluster-wide informer. |
+| `console.openshift.io/ConsolePlugin`, `operator.openshift.io/Console` | **Uncached** (`Unstructured: false`) | Accessed as `unstructured.Unstructured`. See note below. |
+
+**Invariant**: label-filtered caching only works if every write re-applies the
+filter label. All managed write paths funnel through
+`mergeStringMap(obj.Labels, labelsForOvnRecon(...))`, and
+`TestManagedResourceSelectorMatchesEveryManagedWritePath` fails if one drifts.
+An object that loses the label becomes invisible to the informer, and
+`CreateOrUpdate` then loops on `AlreadyExists`.
+
+**On unstructured reads**: `client.CacheOptions.Unstructured` defaults to
+`false` (controller-runtime `pkg/cluster/cluster.go`), so unstructured objects
+already bypass the cache — the ConsolePlugin and Console reads never created
+informers. The field is pinned explicitly so that flipping it later cannot
+silently add two cluster-wide unstructured informers.
+
+`ReaderFailOnMissingInformer` is deliberately **not** enabled. It would turn an
+unconfigured cached read into a loud error rather than a silent cluster-wide
+informer, but it also converts any future cached type from a regression into an
+outage.
 
 ### Desired Resources (`internal/controller/desired_resources.go`)
 
