@@ -294,7 +294,7 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	primary, err := r.primaryInstance(primaryCtx)
 	if err != nil {
 		log.FromContext(primaryCtx).Error(err, "Failed to determine primary OvnRecon instance")
-		return reconcile.Result{RequeueAfter: time.Second * 30}, err
+		return reconcile.Result{}, err
 	}
 	policy, configuredLevel, policySource := resolveOperatorLogPolicy(ovnRecon, primary)
 	eventPolicy := resolveOperatorEventPolicy(ovnRecon, primary)
@@ -403,12 +403,12 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		collectorDeleteCtx := withReconcilePhase(ctx, "delete-collector-deployment")
 		if err := r.deleteCollectorDeployment(collectorDeleteCtx, ovnRecon); err != nil {
 			log.FromContext(collectorDeleteCtx).Error(err, "Failed to delete collector deployment while feature gate is disabled")
-			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+			return reconcile.Result{}, err
 		}
 		collectorRBACDeleteCtx := withReconcilePhase(ctx, "delete-collector-rbac")
 		if err := r.deleteCollectorAccessControls(collectorRBACDeleteCtx, ovnRecon); err != nil {
 			log.FromContext(collectorRBACDeleteCtx).Error(err, "Failed to delete collector RBAC while feature gate is disabled")
-			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+			return reconcile.Result{}, err
 		}
 		if r.updateCondition(collectorRBACDeleteCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorFeatureDisabled", "Collector feature gate is disabled") {
 			r.recordEvent(collectorRBACDeleteCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "CollectorFeatureDisabled", "Collector feature gate is disabled")
@@ -430,7 +430,7 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	deploymentReady, err := r.checkDeploymentReady(deploymentStatusCtx, ovnRecon)
 	if err != nil {
 		log.FromContext(deploymentStatusCtx).Error(err, "Failed to check Deployment status")
-		return reconcile.Result{RequeueAfter: time.Second * 10}, err
+		return reconcile.Result{}, err
 	}
 
 	if deploymentReady {
@@ -455,7 +455,7 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			if errors.IsConflict(err) {
 				return reconcile.Result{Requeue: true}, nil
 			}
-			return reconcile.Result{RequeueAfter: time.Second * 30}, err
+			return reconcile.Result{}, err
 		}
 		if enabled {
 			if r.updateCondition(consoleOperatorCtx, ovnRecon, "PluginEnabled", metav1.ConditionTrue, "PluginEnabled", "Plugin is enabled in Console operator") {
@@ -1085,14 +1085,14 @@ func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *recon
 		// Delete namespaced resources (no owner refs with cluster-scoped CRs).
 		if err := r.deleteNamespacedResources(ctx, ovnRecon); err != nil {
 			log.Error(err, "Failed to delete namespaced resources")
-			return reconcile.Result{RequeueAfter: time.Second * 10}, err
+			return reconcile.Result{}, err
 		}
 
 		// Remove plugin from Console operator
 		if ovnRecon.Spec.ConsolePlugin.Enabled {
 			if err := r.removePluginFromConsole(ctx, ovnRecon); err != nil {
 				log.Error(err, "Failed to remove plugin from Console operator")
-				return reconcile.Result{RequeueAfter: time.Second * 10}, err
+				return reconcile.Result{}, err
 			}
 		}
 
@@ -1108,7 +1108,7 @@ func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *recon
 		if err := r.Get(ctx, client.ObjectKey{Name: ovnRecon.Name}, plugin); err == nil {
 			if err := r.Delete(ctx, plugin); err != nil && !errors.IsNotFound(err) {
 				log.Error(err, "Failed to delete ConsolePlugin")
-				return reconcile.Result{RequeueAfter: time.Second * 10}, err
+				return reconcile.Result{}, err
 			}
 		}
 
@@ -1280,7 +1280,12 @@ func (r *OvnReconReconciler) reconcileStepFailed(
 	if conditionType != "" {
 		r.updateCondition(ctx, ovnRecon, conditionType, metav1.ConditionFalse, reason, err.Error())
 	}
-	return reconcile.Result{RequeueAfter: time.Second * 30}, err
+	// Return a zero Result alongside the error. controller-runtime discards the
+	// Result whenever the error is non-nil and requeues with the workqueue's
+	// exponential backoff instead, so a RequeueAfter here would be dead code
+	// that also trips a "returned both a non-zero result and a non-nil error"
+	// warning on every failure. See TestReconcileNeverReturnsResultWithError.
+	return reconcile.Result{}, err
 }
 
 func (r *OvnReconReconciler) updateCondition(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon, conditionType string, status metav1.ConditionStatus, reason, message string) bool {

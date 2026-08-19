@@ -96,8 +96,11 @@ func TestReconcileStepFailedKeepsRealErrorsLoud(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("a real error must be returned unchanged, got %v", err)
 	}
-	if result.RequeueAfter == 0 {
-		t.Error("a real error should still carry a retry interval")
+	// The Result must be zero: controller-runtime discards it when the error is
+	// non-nil and requeues with exponential backoff, so a RequeueAfter here
+	// would be dead code that also trips a warning on every failure.
+	if !result.IsZero() {
+		t.Errorf("a real error must return a zero Result, got %+v", result)
 	}
 	select {
 	case ev := <-recorder.Events:
