@@ -56,6 +56,14 @@ spec:
         env:
           - name: OPERATOR_VERSION
             value: dev
+          # Operand images. operator-sdk harvests RELATED_IMAGE_* env vars into
+          # the CSV's spec.relatedImages, which is what disconnected mirroring
+          # (oc adm catalog mirror / ImageSetConfiguration) reads. CI stamps the
+          # release version over ':dev'.
+          - name: RELATED_IMAGE_PLUGIN
+            value: quay.io/dbewley/ovn-recon:dev
+          - name: RELATED_IMAGE_COLLECTOR
+            value: quay.io/dbewley/ovn-collector:dev
         ports:
         - containerPort: 8443
           name: https

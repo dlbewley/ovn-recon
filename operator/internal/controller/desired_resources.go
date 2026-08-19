@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -45,10 +46,7 @@ func DesiredDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deployment {
 	operatorAnnotations := operatorVersionAnnotations()
 
 	pullPolicy := imagePullPolicyFor(ovnRecon)
-	image := imageRepositoryFor(ovnRecon)
-	if imageTag != "" {
-		image = fmt.Sprintf("%s:%s", image, imageTag)
-	}
+	image := pluginImageFor(ovnRecon)
 	replicas := int32(1)
 
 	return &appsv1.Deployment{
@@ -176,10 +174,7 @@ func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deploym
 	operatorAnnotations := operatorVersionAnnotations()
 
 	pullPolicy := collectorImagePullPolicyFor(ovnRecon)
-	image := collectorImageRepositoryFor(ovnRecon)
-	if imageTag != "" {
-		image = fmt.Sprintf("%s:%s", image, imageTag)
-	}
+	image := collectorImageFor(ovnRecon)
 	replicas := int32(1)
 
 	return &appsv1.Deployment{
@@ -471,6 +466,55 @@ func mergeStringMap(dst, src map[string]string) map[string]string {
 		dst[k] = v
 	}
 	return dst
+}
+
+// relatedImageFor returns an operand image declared through the RELATED_IMAGE_*
+// convention, or "" when unset.
+//
+// These env vars are the OLM contract for operand images: operator-sdk harvests
+// them into the CSV's spec.relatedImages, and a mirroring tool rewrites them to
+// point at the mirror registry when the catalog is mirrored for a disconnected
+// cluster. Honouring them here is what makes the declaration true rather than
+// decorative -- the image we deploy is the one the bundle declared.
+func relatedImageFor(envVar string) string {
+	return strings.TrimSpace(os.Getenv(envVar))
+}
+
+// composeImage joins a repository and tag, tolerating an empty tag.
+func composeImage(repository, tag string) string {
+	if tag == "" {
+		return repository
+	}
+	return fmt.Sprintf("%s:%s", repository, tag)
+}
+
+// pluginImageFor resolves the console plugin image.
+//
+// An explicit repository or tag on the CR always wins, so a user pinning either
+// one keeps the composed behaviour they expect. Only when the CR says nothing do
+// we fall back to the RELATED_IMAGE_* value, and then to the built-in default.
+func pluginImageFor(ovnRecon *reconv1beta1.OvnRecon) string {
+	spec := ovnRecon.Spec
+	if spec.ConsolePlugin.Image.Repository == "" && spec.ConsolePlugin.Image.Tag == "" &&
+		spec.Image.Repository == "" && spec.Image.Tag == "" {
+		if related := relatedImageFor("RELATED_IMAGE_PLUGIN"); related != "" {
+			return related
+		}
+	}
+	return composeImage(imageRepositoryFor(ovnRecon), imageTagFor(ovnRecon))
+}
+
+// collectorImageFor resolves the collector image, with the same precedence.
+func collectorImageFor(ovnRecon *reconv1beta1.OvnRecon) string {
+	spec := ovnRecon.Spec
+	if spec.Collector.Image.Repository == "" && spec.Collector.Image.Tag == "" &&
+		spec.CollectorImage.Repository == "" && spec.CollectorImage.Tag == "" &&
+		spec.ConsolePlugin.Image.Tag == "" && spec.Image.Tag == "" {
+		if related := relatedImageFor("RELATED_IMAGE_COLLECTOR"); related != "" {
+			return related
+		}
+	}
+	return composeImage(collectorImageRepositoryFor(ovnRecon), collectorImageTagFor(ovnRecon))
 }
 
 func imageRepositoryFor(ovnRecon *reconv1beta1.OvnRecon) string {

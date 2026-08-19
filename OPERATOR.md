@@ -154,6 +154,20 @@ should state the OpenShift 4.22+ requirement plainly.
 > [fbc-migration.md](docs/tasks/fbc-migration.md#catalog-image-tags).
 
 > [!NOTE]
+> **Operand images and disconnected installs.** The plugin and collector images are declared to OLM
+> through the `RELATED_IMAGE_*` convention: `config/manager/manager.yaml` sets `RELATED_IMAGE_PLUGIN`
+> and `RELATED_IMAGE_COLLECTOR`, operator-sdk harvests them into the CSV's `spec.relatedImages`, and
+> CI stamps the release version over the `:dev` placeholder. That block is what
+> `oc adm catalog mirror` and `ImageSetConfiguration` read, so without it a disconnected cluster
+> would install the operator and then fail to pull its own workloads.
+>
+> The operator **consumes** those same env vars, so the images it deploys are the ones the bundle
+> declared rather than merely agreeing by coincidence. Precedence: an explicit repository or tag on
+> the `OvnRecon` CR wins, then `RELATED_IMAGE_*`, then the built-in default composed with
+> `OPERATOR_VERSION`. A mirroring tool that rewrites `RELATED_IMAGE_*` to point at the mirror
+> registry therefore changes what gets deployed, which is the whole point of the convention.
+
+> [!NOTE]
 > **How the plugin and collector images get pinned.** They are not named in the catalog. The operator
 > derives their tag from `OPERATOR_VERSION`, which CI stamps into the CSV at release, so an OLM
 > install of operator `vX.Y.Z` deploys `ovn-recon:vX.Y.Z` and `ovn-collector:vX.Y.Z`. That makes the
