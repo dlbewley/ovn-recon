@@ -138,6 +138,11 @@ func TestReconcileCollectorAccessControlsSkipsMissingProbeNamespace(t *testing.T
 	if err := rbacv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("failed to add rbac/v1 scheme: %v", err)
 	}
+	// setManagedOwner resolves the owner's GVK from the scheme, so the CR type
+	// must be registered here just as it is in cmd/main.go.
+	if err := reconv1beta1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add recon/v1beta1 scheme: %v", err)
+	}
 
 	targetNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"}}
 	ovnNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-ovn-kubernetes"}}
@@ -192,6 +197,11 @@ func TestReconcileCollectorAccessControlsCreatesRoleBindingWhenProbeNamespaceApp
 	}
 	if err := rbacv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("failed to add rbac/v1 scheme: %v", err)
+	}
+	// setManagedOwner resolves the owner's GVK from the scheme, so the CR type
+	// must be registered here just as it is in cmd/main.go.
+	if err := reconv1beta1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add recon/v1beta1 scheme: %v", err)
 	}
 
 	targetNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"}}

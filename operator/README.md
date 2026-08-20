@@ -182,6 +182,51 @@ unconfigured cached read into a loud error rather than a silent cluster-wide
 informer, but it also converts any future cached type from a regression into an
 outage.
 
+### Ownership and Cleanup (`internal/controller/owner_references.go`)
+
+Every resource the operator creates carries an owner reference back to its
+`OvnRecon`, set by `setManagedOwner()`.
+
+This contradicts an earlier comment in the controller which held that owner
+references were unavailable "with cluster-scoped CRs". The opposite is true, and
+the distinction matters:
+
+- A **namespaced** dependent may declare a **cluster-scoped** owner. Kubernetes
+  disallows *cross-namespace* references, but a cluster-scoped owner has no
+  namespace for the rule to bite on. This is what lets the collector's
+  RoleBindings — which live in the probe namespaces, not the target namespace —
+  be owned at all. A namespaced owner could never own them.
+- A **cluster-scoped** dependent may only declare a **cluster-scoped** owner,
+  which `OvnRecon` is, so the `ClusterRole` and `ConsolePlugin` qualify too.
+
+Being cluster-scoped is what makes ownership universally available here.
+
+**Ownership does not replace the finalizer, and the finalizer still deletes
+everything explicitly.** Garbage collection is asynchronous and gives no
+ordering guarantee, and the plugin must be de-registered from the Console
+operator *before* its `ConsolePlugin` is removed. GC is the backstop for the
+case the finalizer never runs at all — the operator uninstalled while a CR
+still exists, or a finalizer removed by force — which previously orphaned every
+managed resource with nothing left to reap it.
+
+`blockOwnerDeletion` is deliberately `false`. It only takes effect during
+foreground cascading deletion, the finalizer already sequences teardown, and
+leaving it off avoids depending on the `OwnerReferencesPermissionEnforcement`
+admission plugin.
+
+`setManagedOwner` adopts a **stale** `OvnRecon` controller reference rather than
+failing. A CR deleted and recreated under the same name leaves resources behind
+carrying the previous UID; without adoption, `SetControllerReference` would
+return `AlreadyOwnedError` on every reconcile and wedge permanently. A
+controller reference belonging to anything *other* than an `OvnRecon` is
+genuinely foreign and is refused, leaving the object untouched.
+
+> [!NOTE]
+> **Garbage collection itself is not covered by the test suite.** envtest runs
+> only etcd and kube-apiserver, with no kube-controller-manager, so no GC exists
+> to observe. The specs assert that the API server *accepts* these references;
+> that they are *acted on* requires a real cluster.
+
 ### Desired Resources (`internal/controller/desired_resources.go`)
 
 This file contains functions that generate the desired state specifications for Kubernetes resources.

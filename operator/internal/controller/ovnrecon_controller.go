@@ -519,6 +519,9 @@ func (r *OvnReconReconciler) reconcileDeployment(ctx context.Context, ovnRecon *
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
 		desired := DesiredDeployment(ovnRecon)
 		ensureManagedLabels(deployment, desired.Labels)
+		if err := setManagedOwner(ovnRecon, deployment, r.Scheme); err != nil {
+			return err
+		}
 		deployment.Annotations = mergeStringMap(deployment.Annotations, desired.Annotations)
 		deployment.Spec = desired.Spec
 
@@ -540,6 +543,9 @@ func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *rec
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
 		desired := DesiredService(ovnRecon)
 		ensureManagedLabels(service, desired.Labels)
+		if err := setManagedOwner(ovnRecon, service, r.Scheme); err != nil {
+			return err
+		}
 		service.Annotations = mergeStringMap(service.Annotations, desired.Annotations)
 		service.Spec = desired.Spec
 		return nil
@@ -561,6 +567,9 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
 		desired := DesiredCollectorDeployment(ovnRecon)
 		ensureManagedLabels(deployment, desired.Labels)
+		if err := setManagedOwner(ovnRecon, deployment, r.Scheme); err != nil {
+			return err
+		}
 		deployment.Annotations = mergeStringMap(deployment.Annotations, desired.Annotations)
 		deployment.Spec = desired.Spec
 		return nil
@@ -580,6 +589,9 @@ func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Contex
 	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, serviceAccount, func() error {
 		ensureManagedLabels(serviceAccount, labelsForOvnRecon(ovnRecon.Name))
+		if err := setManagedOwner(ovnRecon, serviceAccount, r.Scheme); err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		return err
@@ -592,6 +604,9 @@ func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Contex
 	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, clusterRole, func() error {
 		ensureManagedLabels(clusterRole, labelsForOvnRecon(ovnRecon.Name))
+		if err := setManagedOwner(ovnRecon, clusterRole, r.Scheme); err != nil {
+			return err
+		}
 		clusterRole.Rules = []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{""},
@@ -632,6 +647,9 @@ func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Contex
 		}
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, roleBinding, func() error {
 			ensureManagedLabels(roleBinding, labelsForOvnRecon(ovnRecon.Name))
+			if err := setManagedOwner(ovnRecon, roleBinding, r.Scheme); err != nil {
+				return err
+			}
 			roleBinding.Subjects = []rbacv1.Subject{
 				{
 					Kind:      rbacv1.ServiceAccountKind,
@@ -667,6 +685,9 @@ func (r *OvnReconReconciler) reconcileCollectorService(ctx context.Context, ovnR
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
 		desired := DesiredCollectorService(ovnRecon)
 		ensureManagedLabels(service, desired.Labels)
+		if err := setManagedOwner(ovnRecon, service, r.Scheme); err != nil {
+			return err
+		}
 		service.Annotations = mergeStringMap(service.Annotations, desired.Annotations)
 		service.Spec = desired.Spec
 		return nil
@@ -987,9 +1008,12 @@ func (r *OvnReconReconciler) reconcileConsolePlugin(ctx context.Context, ovnReco
 				return err
 			}
 		}
-		// ConsolePlugin is cluster-scoped, so we don't set a controller reference
-		// We use finalizers instead for cleanup
-		return nil
+		// ConsolePlugin is cluster-scoped, and so is OvnRecon, which is exactly
+		// what makes an owner reference valid here. The finalizer still drives
+		// cleanup because it must de-register the plugin from the Console
+		// operator before this object goes away, and garbage collection gives
+		// no such ordering.
+		return setManagedOwner(ovnRecon, plugin, r.Scheme)
 	})
 	return err
 }
@@ -1082,7 +1106,10 @@ func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *recon
 	log := log.FromContext(ctx)
 
 	if controllerutil.ContainsFinalizer(ovnRecon, finalizerName) {
-		// Delete namespaced resources (no owner refs with cluster-scoped CRs).
+		// Managed resources now carry owner references, but the finalizer still
+		// deletes them explicitly: garbage collection is asynchronous and
+		// unordered, and removePluginFromConsole below must run before the
+		// ConsolePlugin is removed. GC is the backstop for when this never runs.
 		if err := r.deleteNamespacedResources(ctx, ovnRecon); err != nil {
 			log.Error(err, "Failed to delete namespaced resources")
 			return reconcile.Result{}, err
