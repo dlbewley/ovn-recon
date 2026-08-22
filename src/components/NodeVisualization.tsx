@@ -1387,13 +1387,18 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     };
 
     const handleBackgroundClick = () => {
-        setIsHighlightActive(false);
-        setHighlightedPath(new Set());
         handlePopoverClose();
     };
 
+    /**
+     * Clearing the selection must clear the highlight with it. The drawer's close
+     * button used to drop only activeNode, leaving the graph dimmed with nothing
+     * selected and no way to tell why short of clicking the background.
+     */
     const handlePopoverClose = () => {
         setActiveNode(null);
+        setIsHighlightActive(false);
+        setHighlightedPath(new Set());
     };
 
 
