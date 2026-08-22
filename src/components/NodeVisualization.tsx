@@ -259,7 +259,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                             ))}
                                         </ul>
                                     ) : (
-                                        <span style={{ color: 'var(--pf-global--Color--200)' }}>No bridge ports reported in NNS.</span>
+                                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No bridge ports reported in NNS.</span>
                                     )}
                                 </DescriptionListDescription>
                             </DescriptionListGroup>
@@ -323,7 +323,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                             <DescriptionListGroup>
                                 <DescriptionListTerm>Referenced by CUDNs</DescriptionListTerm>
                                 <DescriptionListDescription>
-                                    <span style={{ color: 'var(--pf-global--Color--200)' }}>No CUDNs reference this bridge mapping</span>
+                                    <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No CUDNs reference this bridge mapping</span>
                                 </DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
@@ -698,7 +698,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         ))}
                                     </ul>
                                 ) : (
-                                    <span style={{ color: 'var(--pf-global--Color--200)' }}>No associated routes found in NNS.</span>
+                                    <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No associated routes found in NNS.</span>
                                 )}
                             </DescriptionListDescription>
                         </DescriptionListGroup>
@@ -725,7 +725,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         })}
                                     </ul>
                                 ) : (
-                                    <span style={{ color: 'var(--pf-global--Color--200)' }}>No matching br-int ports inferred from NNS.</span>
+                                    <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No matching br-int ports inferred from NNS.</span>
                                 )}
                             </DescriptionListDescription>
                         </DescriptionListGroup>
@@ -1612,7 +1612,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                             </DescriptionListGroup>
                         </DescriptionList>
                     ) : (
-                        <div style={{ color: 'var(--pf-global--Color--200)' }}>No links available.</div>
+                        <div style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No links available.</div>
                     )}
                 </div>
             )
@@ -1624,7 +1624,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
                     {node.raw && (
                         <>
-                            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
+                            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-t--global--border--color--default)' }}>
                                 <CodeEditor
                                     isDarkTheme
                                     isLineNumbersVisible
@@ -1635,8 +1635,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     style={{ height: '100%' }}
                                 />
                             </div>
-                            <div style={{ flex: '0 0 auto', padding: 'var(--pf-global--spacer--md)', backgroundColor: 'var(--pf-global--BackgroundColor--100)' }}>
-                                <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-global--spacer--sm)' }} />
+                            <div style={{ flex: '0 0 auto', padding: 'var(--pf-t--global--spacer--md)', backgroundColor: 'var(--pf-t--global--background--color--primary--default)' }}>
+                                <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-t--global--spacer--sm)' }} />
                                 <a
                                     href={(() => {
                                         if (node.resourceRef) {
@@ -1664,7 +1664,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                         </>
                     )}
                     {!node.raw && (
-                        <span style={{ fontSize: '0.9em', color: 'var(--pf-global--Color--200)', padding: '16px' }}>No YAML content available.</span>
+                        <span style={{ fontSize: '0.9em', color: 'var(--pf-t--global--text--color--subtle)', padding: '16px' }}>No YAML content available.</span>
                     )}
                 </div>
             )
@@ -1722,7 +1722,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 onClick={(e) => handleNodeClick(e, viewNode)}
             >
                 <title>{displayName} ({displayType})</title>
-                <rect width={itemWidth} height={nodeHeight} rx={5} fill={color} stroke="var(--pf-global--BorderColor--100)" strokeWidth={1} />
+                <rect width={itemWidth} height={nodeHeight} rx={5} fill={color} stroke="var(--pf-t--global--border--color--default)" strokeWidth={1} />
                 <foreignObject x={10} y={10} width={20} height={20}>
                     <div style={{ color: '#fff' }}>{Icon}</div>
                 </foreignObject>
@@ -1767,7 +1767,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                         </Flex>
                     </FlexItem>
                     <FlexItem>
-                        {activeNode?.subtitle && <span style={{ color: 'var(--pf-global--Color--200)', fontSize: '0.9em' }}>{activeNode.subtitle}</span>}
+                        {activeNode?.subtitle && <span style={{ color: 'var(--pf-t--global--text--color--subtle)', fontSize: '0.9em' }}>{activeNode.subtitle}</span>}
                     </FlexItem>
                 </Flex>
                 <DrawerActions>
@@ -1862,9 +1862,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 viewBox={viewBox ? `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}` : `0 0 ${width} ${calculatedHeight}`}
                                 preserveAspectRatio="xMinYMin meet"
                                 style={{
-                                    border: '1px solid var(--pf-global--BorderColor--100)',
-                                    background: 'var(--pf-global--BackgroundColor--200)',
-                                    color: 'var(--pf-global--Color--100)',
+                                    border: '1px solid var(--pf-t--global--border--color--default)',
+                                    background: 'var(--pf-t--global--background--color--secondary--default)',
+                                    color: 'var(--pf-t--global--text--color--regular)',
                                     cursor: isPanning ? 'grabbing' : 'grab'
                                 }}
                                 onWheel={handleWheel}
@@ -2025,7 +2025,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     const pos = nodePositions[getAttachmentNodeId(node)];
                                     return (
                                         <React.Fragment key={getAttachmentNodeId(node)}>
-                                            {pos && renderInterfaceNode(node, pos.x, pos.y, 'var(--pf-global--palette--gold-400)', 'attachment', getAttachmentHeight(node))}
+                                            {pos && renderInterfaceNode(node, pos.x, pos.y, '#F0AB00', 'attachment', getAttachmentHeight(node))}
                                         </React.Fragment>
                                     );
                                 })}
@@ -2066,7 +2066,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     <Button variant="secondary" onClick={handleResetZoom} aria-label="Reset zoom" style={{ marginRight: '16px' }}>Reset</Button>
                                 </FlexItem>
                                 <FlexItem>
-                                    <span style={{ fontSize: '0.9em', color: 'var(--pf-global--Color--200)' }}>
+                                    <span style={{ fontSize: '0.9em', color: 'var(--pf-t--global--text--color--subtle)' }}>
                                         Zoom: {Math.round(zoomLevel * 100)}% | Use Ctrl/Cmd + Scroll to zoom | Shift + Drag to pan
                                     </span>
                                 </FlexItem>
