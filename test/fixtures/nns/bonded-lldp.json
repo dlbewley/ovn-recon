@@ -1,0 +1,867 @@
+{
+  "apiVersion": "nmstate.io/v1beta1",
+  "kind": "NodeNetworkState",
+  "metadata": {
+    "name": "worker-2.example.com"
+  },
+  "status": {
+    "currentState": {
+      "interfaces": [
+        {
+          "name": "bond0",
+          "type": "bond",
+          "state": "up",
+          "controller": "br-ex",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:10:00",
+          "link-aggregation": {
+            "mode": "802.3ad",
+            "port": [
+              "ens2f0np0",
+              "ens5f0np0"
+            ]
+          }
+        },
+        {
+          "name": "bond1",
+          "type": "bond",
+          "state": "up",
+          "description": "bond1 for VM network",
+          "controller": "ovs-vm",
+          "mtu": 9000,
+          "mac-address": "02:00:00:00:10:01",
+          "link-aggregation": {
+            "mode": "802.3ad",
+            "port": [
+              "ens2f1np1",
+              "ens5f1np1"
+            ]
+          }
+        },
+        {
+          "name": "bond2",
+          "type": "bond",
+          "state": "up",
+          "description": "bond for portworx dedicated traffic",
+          "mtu": 9000,
+          "mac-address": "02:00:00:00:10:02",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "203.0.113.24",
+                "prefix-length": 24
+              }
+            ]
+          },
+          "link-aggregation": {
+            "mode": "802.3ad",
+            "port": [
+              "ens2f2np2",
+              "ens5f2np2"
+            ]
+          }
+        },
+        {
+          "name": "br-ex",
+          "type": "ovs-bridge",
+          "state": "up",
+          "bridge": {
+            "port": [
+              {
+                "name": "bond0"
+              },
+              {
+                "name": "br-ex"
+              },
+              {
+                "name": "patch-br-ex_worker-2.example.com-to-br-int"
+              }
+            ]
+          }
+        },
+        {
+          "name": "br-ex",
+          "type": "ovs-interface",
+          "state": "up",
+          "controller": "br-ex",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:10:00",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "192.0.2.27",
+                "prefix-length": 25
+              },
+              {
+                "ip": "169.254.0.2",
+                "prefix-length": 17
+              }
+            ]
+          }
+        },
+        {
+          "name": "br-int",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "mtu": 1400,
+          "mac-address": "02:00:00:00:30:00"
+        },
+        {
+          "name": "ens2f0np0",
+          "type": "ethernet",
+          "state": "up",
+          "controller": "bond0",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:10:00",
+          "permanent-mac-address": "02:00:00:00:10:00",
+          "lldp": {
+            "enabled": true,
+            "neighbors": [
+              [
+                {
+                  "system-name": "lab-fabric-lf001",
+                  "type": 5
+                },
+                {
+                  "system-description": "topology/pod-1/node-101",
+                  "type": 6
+                },
+                {
+                  "system-capabilities": [
+                    "MAC Bridge component",
+                    "Router"
+                  ],
+                  "type": 7
+                },
+                {
+                  "_description": "MAC address",
+                  "chassis-id": "02:00:00:00:40:12",
+                  "chassis-id-type": 4,
+                  "type": 1
+                },
+                {
+                  "_description": "Locally assigned",
+                  "port-id": "Eth1/22",
+                  "port-id-type": 7,
+                  "type": 2
+                },
+                {
+                  "management-addresses": [
+                    {
+                      "address": "198.51.100.183",
+                      "address-subtype": "IPv4",
+                      "interface-number": 83886080,
+                      "interface-number-subtype": 2
+                    }
+                  ],
+                  "type": 8
+                }
+              ]
+            ]
+          },
+          "ethernet": {
+            "speed": 25000,
+            "duplex": "full"
+          }
+        },
+        {
+          "name": "ens2f1np1",
+          "type": "ethernet",
+          "state": "up",
+          "controller": "bond1",
+          "mtu": 9000,
+          "mac-address": "02:00:00:00:10:01",
+          "permanent-mac-address": "02:00:00:00:10:01",
+          "lldp": {
+            "enabled": true,
+            "neighbors": [
+              [
+                {
+                  "system-name": "lab-fabric-lf001",
+                  "type": 5
+                },
+                {
+                  "system-description": "topology/pod-1/node-101",
+                  "type": 6
+                },
+                {
+                  "system-capabilities": [
+                    "MAC Bridge component",
+                    "Router"
+                  ],
+                  "type": 7
+                },
+                {
+                  "_description": "MAC address",
+                  "chassis-id": "02:00:00:00:40:13",
+                  "chassis-id-type": 4,
+                  "type": 1
+                },
+                {
+                  "_description": "Locally assigned",
+                  "port-id": "Eth1/23",
+                  "port-id-type": 7,
+                  "type": 2
+                },
+                {
+                  "management-addresses": [
+                    {
+                      "address": "198.51.100.183",
+                      "address-subtype": "IPv4",
+                      "interface-number": 83886080,
+                      "interface-number-subtype": 2
+                    }
+                  ],
+                  "type": 8
+                }
+              ]
+            ]
+          },
+          "ethernet": {
+            "speed": 25000,
+            "duplex": "full"
+          }
+        },
+        {
+          "name": "ens2f2np2",
+          "type": "ethernet",
+          "state": "up",
+          "controller": "bond2",
+          "mtu": 9000,
+          "mac-address": "02:00:00:00:10:02",
+          "permanent-mac-address": "02:00:00:00:10:02",
+          "lldp": {
+            "enabled": true,
+            "neighbors": [
+              [
+                {
+                  "system-name": "lab-fabric-lf001",
+                  "type": 5
+                },
+                {
+                  "system-description": "topology/pod-1/node-101",
+                  "type": 6
+                },
+                {
+                  "system-capabilities": [
+                    "MAC Bridge component",
+                    "Router"
+                  ],
+                  "type": 7
+                },
+                {
+                  "_description": "MAC address",
+                  "chassis-id": "02:00:00:00:40:14",
+                  "chassis-id-type": 4,
+                  "type": 1
+                },
+                {
+                  "_description": "Locally assigned",
+                  "port-id": "Eth1/24",
+                  "port-id-type": 7,
+                  "type": 2
+                },
+                {
+                  "management-addresses": [
+                    {
+                      "address": "198.51.100.183",
+                      "address-subtype": "IPv4",
+                      "interface-number": 83886080,
+                      "interface-number-subtype": 2
+                    }
+                  ],
+                  "type": 8
+                }
+              ]
+            ]
+          },
+          "ethernet": {
+            "speed": 25000,
+            "duplex": "full"
+          }
+        },
+        {
+          "name": "ens2f3np3",
+          "type": "ethernet",
+          "state": "down",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:10:03",
+          "permanent-mac-address": "02:00:00:00:10:03"
+        },
+        {
+          "name": "ens5f0np0",
+          "type": "ethernet",
+          "state": "up",
+          "controller": "bond0",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:10:00",
+          "permanent-mac-address": "02:00:00:00:20:00",
+          "lldp": {
+            "enabled": true,
+            "neighbors": [
+              [
+                {
+                  "system-name": "lab-fabric-lf002",
+                  "type": 5
+                },
+                {
+                  "system-description": "topology/pod-1/node-102",
+                  "type": 6
+                },
+                {
+                  "system-capabilities": [
+                    "MAC Bridge component",
+                    "Router"
+                  ],
+                  "type": 7
+                },
+                {
+                  "_description": "MAC address",
+                  "chassis-id": "02:00:00:00:41:46",
+                  "chassis-id-type": 4,
+                  "type": 1
+                },
+                {
+                  "_description": "Locally assigned",
+                  "port-id": "Eth1/22",
+                  "port-id-type": 7,
+                  "type": 2
+                },
+                {
+                  "management-addresses": [
+                    {
+                      "address": "198.51.100.184",
+                      "address-subtype": "IPv4",
+                      "interface-number": 83886080,
+                      "interface-number-subtype": 2
+                    }
+                  ],
+                  "type": 8
+                }
+              ]
+            ]
+          },
+          "ethernet": {
+            "speed": 25000,
+            "duplex": "full"
+          }
+        },
+        {
+          "name": "ens5f1np1",
+          "type": "ethernet",
+          "state": "up",
+          "controller": "bond1",
+          "mtu": 9000,
+          "mac-address": "02:00:00:00:10:01",
+          "permanent-mac-address": "02:00:00:00:20:01",
+          "lldp": {
+            "enabled": true,
+            "neighbors": [
+              [
+                {
+                  "system-name": "lab-fabric-lf002",
+                  "type": 5
+                },
+                {
+                  "system-description": "topology/pod-1/node-102",
+                  "type": 6
+                },
+                {
+                  "system-capabilities": [
+                    "MAC Bridge component",
+                    "Router"
+                  ],
+                  "type": 7
+                },
+                {
+                  "_description": "MAC address",
+                  "chassis-id": "02:00:00:00:41:47",
+                  "chassis-id-type": 4,
+                  "type": 1
+                },
+                {
+                  "_description": "Locally assigned",
+                  "port-id": "Eth1/23",
+                  "port-id-type": 7,
+                  "type": 2
+                },
+                {
+                  "management-addresses": [
+                    {
+                      "address": "198.51.100.184",
+                      "address-subtype": "IPv4",
+                      "interface-number": 83886080,
+                      "interface-number-subtype": 2
+                    }
+                  ],
+                  "type": 8
+                }
+              ]
+            ]
+          },
+          "ethernet": {
+            "speed": 25000,
+            "duplex": "full"
+          }
+        },
+        {
+          "name": "ens5f2np2",
+          "type": "ethernet",
+          "state": "up",
+          "controller": "bond2",
+          "mtu": 9000,
+          "mac-address": "02:00:00:00:10:02",
+          "permanent-mac-address": "02:00:00:00:20:02",
+          "lldp": {
+            "enabled": true,
+            "neighbors": [
+              [
+                {
+                  "system-name": "lab-fabric-lf002",
+                  "type": 5
+                },
+                {
+                  "system-description": "topology/pod-1/node-102",
+                  "type": 6
+                },
+                {
+                  "system-capabilities": [
+                    "MAC Bridge component",
+                    "Router"
+                  ],
+                  "type": 7
+                },
+                {
+                  "_description": "MAC address",
+                  "chassis-id": "02:00:00:00:41:48",
+                  "chassis-id-type": 4,
+                  "type": 1
+                },
+                {
+                  "_description": "Locally assigned",
+                  "port-id": "Eth1/24",
+                  "port-id-type": 7,
+                  "type": 2
+                },
+                {
+                  "management-addresses": [
+                    {
+                      "address": "198.51.100.184",
+                      "address-subtype": "IPv4",
+                      "interface-number": 83886080,
+                      "interface-number-subtype": 2
+                    }
+                  ],
+                  "type": 8
+                }
+              ]
+            ]
+          },
+          "ethernet": {
+            "speed": 25000,
+            "duplex": "full"
+          }
+        },
+        {
+          "name": "ens5f3np3",
+          "type": "ethernet",
+          "state": "down",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:20:03",
+          "permanent-mac-address": "02:00:00:00:20:03"
+        },
+        {
+          "name": "genev_sys_6081",
+          "type": "ethernet",
+          "state": "ignore",
+          "controller": "ovs-system",
+          "mtu": 65000,
+          "mac-address": "02:00:00:00:30:01"
+        },
+        {
+          "name": "lo",
+          "type": "loopback",
+          "state": "up",
+          "mtu": 65536,
+          "mac-address": "00:00:00:00:00:00",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "127.0.0.1",
+                "prefix-length": 8
+              }
+            ]
+          }
+        },
+        {
+          "name": "ovn-k8s-mp0",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "mtu": 1400,
+          "mac-address": "0A:58:AC:16:18:02",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "172.22.24.2",
+                "prefix-length": 21
+              }
+            ]
+          }
+        },
+        {
+          "name": "ovs-vm",
+          "type": "ovs-bridge",
+          "state": "up",
+          "description": "OVS bridge for VM",
+          "bridge": {
+            "port": [
+              {
+                "name": "bond1"
+              },
+              {
+                "name": "patch-tenant.b.db_ovn_localnet_port-to-br-int"
+              },
+              {
+                "name": "patch-tenant.d.app_ovn_localnet_port-to-br-int"
+              },
+              {
+                "name": "patch-tenant.d.db_ovn_localnet_port-to-br-int"
+              },
+              {
+                "name": "patch-shared.infra.sec_ovn_localnet_port-to-br-int"
+              },
+              {
+                "name": "patch-shared.infra.sys_ovn_localnet_port-to-br-int"
+              }
+            ]
+          }
+        },
+        {
+          "name": "patch-br-ex_worker-2.example.com-to-br-int",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-ex",
+          "patch": {
+            "peer": "patch-br-int-to-br-ex_worker-2.example.com"
+          }
+        },
+        {
+          "name": "patch-br-int-to-br-ex_worker-2.example.com",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "patch": {
+            "peer": "patch-br-ex_worker-2.example.com-to-br-int"
+          }
+        },
+        {
+          "name": "patch-br-int-to-tenant.b.db_ovn_localnet_port",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "patch": {
+            "peer": "patch-tenant.b.db_ovn_localnet_port-to-br-int"
+          }
+        },
+        {
+          "name": "patch-br-int-to-tenant.d.app_ovn_localnet_port",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "patch": {
+            "peer": "patch-tenant.d.app_ovn_localnet_port-to-br-int"
+          }
+        },
+        {
+          "name": "patch-br-int-to-tenant.d.db_ovn_localnet_port",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "patch": {
+            "peer": "patch-tenant.d.db_ovn_localnet_port-to-br-int"
+          }
+        },
+        {
+          "name": "patch-br-int-to-shared.infra.sec_ovn_localnet_port",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "patch": {
+            "peer": "patch-shared.infra.sec_ovn_localnet_port-to-br-int"
+          }
+        },
+        {
+          "name": "patch-br-int-to-shared.infra.sys_ovn_localnet_port",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "patch": {
+            "peer": "patch-shared.infra.sys_ovn_localnet_port-to-br-int"
+          }
+        },
+        {
+          "name": "patch-tenant.a.infra_ovn_localnet_port-to-br-int",
+          "type": "ovs-interface",
+          "state": "down"
+        },
+        {
+          "name": "patch-tenant.b.db_ovn_localnet_port-to-br-int",
+          "type": "ovs-interface",
+          "state": "down",
+          "controller": "ovs-vm",
+          "patch": {
+            "peer": "patch-br-int-to-tenant.b.db_ovn_localnet_port"
+          }
+        },
+        {
+          "name": "patch-tenant.d.app_ovn_localnet_port-to-br-int",
+          "type": "ovs-interface",
+          "state": "down",
+          "controller": "ovs-vm",
+          "patch": {
+            "peer": "patch-br-int-to-tenant.d.app_ovn_localnet_port"
+          }
+        },
+        {
+          "name": "patch-tenant.d.db_ovn_localnet_port-to-br-int",
+          "type": "ovs-interface",
+          "state": "down",
+          "controller": "ovs-vm",
+          "patch": {
+            "peer": "patch-br-int-to-tenant.d.db_ovn_localnet_port"
+          }
+        },
+        {
+          "name": "patch-shared.infra.sec_ovn_localnet_port-to-br-int",
+          "type": "ovs-interface",
+          "state": "down",
+          "controller": "ovs-vm",
+          "patch": {
+            "peer": "patch-br-int-to-shared.infra.sec_ovn_localnet_port"
+          }
+        },
+        {
+          "name": "patch-shared.infra.sys_ovn_localnet_port-to-br-int",
+          "type": "ovs-interface",
+          "state": "down",
+          "controller": "ovs-vm",
+          "patch": {
+            "peer": "patch-br-int-to-shared.infra.sys_ovn_localnet_port"
+          }
+        }
+      ],
+      "ovn": {
+        "bridge-mappings": [
+          {
+            "bridge": "br-ex",
+            "localnet": "physnet"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-a-infra"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-b-app"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-b-db"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-b-web"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-c-app-processing"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-c-primary-db"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-c-reporting-db"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-c-infra"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-d-app"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-d-db"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-d-web"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-e-desktop04"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-f-epg-svc-business"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-f-epg-svc-clearing"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-f-epg-svc-infra"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "shared-infra-db"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "shared-infra-mon"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "shared-infra-prov"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "shared-infra-sec"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "shared-infra-sys"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "shared-infra-uc"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "shared-infra-web"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-g-epg058-two"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-g-epg143-three"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-g-epg151"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-h-vis-app"
+          },
+          {
+            "bridge": "ovs-vm",
+            "localnet": "tenant-h-vis-viewer"
+          }
+        ]
+      },
+      "routes": {
+        "running": [
+          {
+            "destination": "172.31.0.0/16",
+            "next-hop-address": "172.22.24.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 7,
+            "state": "ignore"
+          },
+          {
+            "destination": "169.254.0.1/32",
+            "next-hop-address": "0.0.0.0",
+            "next-hop-interface": "br-ex",
+            "table-id": 254,
+            "source": "192.0.2.27"
+          },
+          {
+            "destination": "169.254.0.3/32",
+            "next-hop-address": "172.22.24.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 254,
+            "state": "ignore"
+          },
+          {
+            "destination": "172.20.0.0/14",
+            "next-hop-address": "172.22.24.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 254,
+            "state": "ignore"
+          },
+          {
+            "destination": "172.31.0.0/16",
+            "next-hop-address": "169.254.0.4",
+            "next-hop-interface": "br-ex",
+            "table-id": 254,
+            "mtu": 1400,
+            "source": "169.254.0.2"
+          },
+          {
+            "destination": "0.0.0.0/0",
+            "next-hop-address": "192.0.2.1",
+            "next-hop-interface": "br-ex",
+            "table-id": 254
+          }
+        ],
+        "config": [
+          {
+            "destination": "172.31.0.0/16",
+            "next-hop-address": "172.22.24.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 7,
+            "state": "ignore"
+          },
+          {
+            "destination": "169.254.0.1/32",
+            "next-hop-address": "0.0.0.0",
+            "next-hop-interface": "br-ex",
+            "table-id": 254,
+            "source": "192.0.2.27"
+          },
+          {
+            "destination": "169.254.0.3/32",
+            "next-hop-address": "172.22.24.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 254,
+            "state": "ignore"
+          },
+          {
+            "destination": "172.20.0.0/14",
+            "next-hop-address": "172.22.24.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 254,
+            "state": "ignore"
+          },
+          {
+            "destination": "172.31.0.0/16",
+            "next-hop-address": "169.254.0.4",
+            "next-hop-interface": "br-ex",
+            "table-id": 254,
+            "mtu": 1400,
+            "source": "169.254.0.2"
+          },
+          {
+            "destination": "0.0.0.0/0",
+            "next-hop-address": "192.0.2.1",
+            "next-hop-interface": "br-ex",
+            "table-id": 254
+          }
+        ]
+      }
+    }
+  }
+}

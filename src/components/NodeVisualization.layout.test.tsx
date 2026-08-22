@@ -196,4 +196,33 @@ describe('NodeVisualization node placement', () => {
             expect(distinct.size).toBe(origins.length); // nothing drawn on top of anything else
         });
     });
+
+    describe('bonded-lldp (captured from a bonded UCS worker)', () => {
+        it('renders every lane with connectors meeting their nodes', () => {
+            render(loadFixture('bonded-lldp'));
+            expectEdgesToMeetNodes();
+        });
+
+        it('stays aligned with LLDP neighbours shown', () => {
+            render(loadFixture('bonded-lldp'));
+            const toggle = container.querySelector<HTMLInputElement>('#show-lldp-neighbors-toggle');
+            expect(toggle).not.toBeNull();
+            act(() => toggle!.click());
+            expectEdgesToMeetNodes();
+        });
+
+        it('stays aligned at a 27-mapping fan-out on one bridge', () => {
+            render(loadFixture('bonded-lldp'));
+            const titles = Array.from(container.querySelectorAll('title')).map((t) => t.textContent ?? '');
+            expect(titles.filter((t) => t.endsWith('(OVN Bridge Mapping)')).length).toBe(28);
+            expectEdgesToMeetNodes();
+        });
+
+        it('draws all three bonds and keeps their members distinct', () => {
+            render(loadFixture('bonded-lldp'));
+            const titles = Array.from(container.querySelectorAll('title')).map((t) => t.textContent ?? '');
+            ['bond0', 'bond1', 'bond2'].forEach((b) => expect(titles).toContain(`${b} (bond)`));
+            ['ens2f0np0', 'ens5f0np0'].forEach((n) => expect(titles).toContain(`${n} (ethernet)`));
+        });
+    });
 });
