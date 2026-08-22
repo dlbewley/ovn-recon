@@ -254,16 +254,51 @@ To release a new version:
     - Run linting and tests.
     - Create a git commit and tag (e.g., `v1.0.1`).
 
-3.  Push the changes and tags to GitHub:
+3.  **Update the file-based catalog.** The FBC under `operator/catalog/` is source of truth in
+    git and is *not* written back by CI — release prep adds the entry, and `Operator Release`
+    fails the tag if it is missing. Stamp the operand images first, exactly as CI does, so
+    `relatedImages` carries the release version rather than the `:dev` placeholder:
+
+    ```bash
+    cd operator
+    V=1.0.2-a1
+    sed -i '' "s/value: dev/value: v${V}/" config/manager/manager.yaml
+    sed -i '' "s|quay.io/dbewley/ovn-recon:dev|quay.io/dbewley/ovn-recon:v${V}|" config/manager/manager.yaml
+    sed -i '' "s|quay.io/dbewley/ovn-collector:dev|quay.io/dbewley/ovn-collector:v${V}|" config/manager/manager.yaml
+
+    make bundle VERSION=$V IMG=quay.io/dbewley/ovn-recon-operator:v$V
+    make catalog-fbc-add \
+      BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v$V \
+      BUNDLE_SRC=bundle \
+      CHANNELS=latest        # stable releases: CHANNELS=stable,latest
+    ```
+
+    `BUNDLE_SRC=bundle` renders the local `bundle/` directory, which is what you want for a
+    release whose bundle image does not exist yet. Commit **only** `operator/catalog/…/catalog.json`
+    alongside the version bump — revert `bundle.Dockerfile`, `bundle/metadata/annotations.yaml`,
+    `config/manager/kustomization.yaml` and `config/manager/manager.yaml`, since CI regenerates them.
+
+4.  Push the changes and tags to GitHub:
     ```bash
     git push --follow-tags
     ```
 
-4.  The CI pipeline will automatically:
+5.  The CI pipeline will automatically:
     - Build the container image.
     - Push the versioned tag (e.g., `quay.io/dbewley/ovn-recon:1.0.1`).
     - If it is a stable release (no hyphen, e.g., `v1.0.0`), it will also update the `latest` tag. Prereleases containing a `-` (e.g., `v1.0.1-beta.1`) will **not** update `latest`.
     - **Create a GitHub Release** with automatically generated release notes. Pre-releases will be marked accordingly.
+
+> [!WARNING]
+> **A tag builds every component, whatever it touched.** `operator-release.yaml` and
+> `collector-release.yaml` carry `paths:` filters for `operator/**` and `collector/**`, but
+> **GitHub does not apply `paths:` filters to tag pushes**. Tagging a plugin-only change still
+> runs all three workflows and still requires the catalog entry from step 3. Assuming otherwise
+> produced a half-published `v1.0.2-a0`: images pushed, catalog gate failed, catalog image
+> skipped.
+>
+> If that happens, do not re-cut the same version — the images are already published and
+> re-tagging overwrites them. Do the catalog prep and cut the next prerelease instead.
 
 > [!WARNING]
 > **`--follow-tags` only pushes _annotated_ tags.** `npm version` creates one, so the plugin flow
