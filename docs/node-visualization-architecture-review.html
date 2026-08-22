@@ -132,10 +132,10 @@ hr{border:0;border-top:1px solid var(--rule);margin:52px 0}
 <thead><tr><th>Finding</th><th>Severity</th><th>Where</th><th>Bead</th></tr></thead>
 <tbody>
 <tr><td>Adding one node type costs ~10 coordinated edits, all failing silently</td><td><span class="sev h">Structural</span></td><td>throughout</td><td><span class="bead">s3t.9</span></td></tr>
-<tr><td>Node Y position computed twice from two disagreeing sources</td><td><span class="sev h">Bug</span></td><td><code>:1902–1999</code></td><td><span class="bead">s3t.3</span></td></tr>
+<tr><td>Node Y position computed twice from two disagreeing sources</td><td><span class="done">Resolved</span></td><td><code>:1902–1999</code></td><td><span class="bead closed">s3t.3</span></td></tr>
 <tr><td>Gravity layout is unpredictable magic with falsy-zero defects</td><td><span class="done">Resolved</span></td><td><code>layout.ts:28</code></td><td><span class="bead closed">s3t.2</span> <span class="bead closed">s3t.11</span></td></tr>
 <tr><td>Drawer renders a click-time snapshot, not live watch data</td><td><span class="sev h">Bug</span></td><td><code>:1336</code></td><td><span class="bead">s3t.4</span></td></tr>
-<tr><td>PatternFly v4 tokens are dead in v6; attachment nodes render black</td><td><span class="sev h">Bug</span></td><td>16 sites</td><td><span class="bead">s3t.1</span></td></tr>
+<tr><td>PatternFly v4 tokens are dead in v6; attachment nodes render black</td><td><span class="done">Resolved</span></td><td>16 sites</td><td><span class="bead closed">s3t.1</span></td></tr>
 <tr><td>nmstate <code>type</code> used where topology <em>role</em> is meant</td><td><span class="sev m">Structural</span></td><td><code>:880–911</code></td><td><span class="bead">s3t.8</span></td></tr>
 <tr><td>Bare interface names as node IDs force two workarounds</td><td><span class="sev m">Structural</span></td><td><code>:866</code>, <code>:1856</code></td><td><span class="bead">s3t.6</span></td></tr>
 <tr><td>~500 lines of bespoke per-kind drawer JSX against <code>any</code></td><td><span class="sev m">Structural</span></td><td><code>:180–775</code></td><td><span class="bead">s3t.12</span></td></tr>
@@ -226,22 +226,26 @@ hr{border:0;border-top:1px solid var(--rule);margin:52px 0}
 
 <hr>
 
-<h2><span class="num">04</span>Two sources of truth for Y position</h2>
+<h2><span class="num">04</span>Two sources of truth for Y position <em style="font-weight:500;color:var(--sev-low)">— resolved</em></h2>
 
-<p>Node Y is computed twice, from sources that can disagree:</p>
+<div class="callout" style="background:var(--sev-low-bg);border-color:transparent">
+<span class="lbl" style="color:var(--sev-low)">Closed 2026-08-21 · s3t.3</span>
+<p>All six render branches now read <code>pos.y</code>; the <code>renderIndex</code> parameter is gone. There is one source of truth, so nodes and their connectors agree by construction rather than by coincidence.</p>
+</div>
 
-<ul>
-<li><strong>Source A</strong> — the <code>nodePositions</code> map, built at <code>:1052–1184</code>.</li>
-<li><strong>Source B</strong> — the JSX branches, which <em>ignore</em> the stored <code>pos.y</code> and recompute <code>padding + (renderIndex * (itemHeight + 20))</code> for the eth, bond, vlan, bridge, logical and networks columns at <code>:1902</code>, <code>:1912</code>, <code>:1922</code>, <code>:1933</code>, <code>:1943</code>, <code>:1999</code>.</li>
-</ul>
+<p>Node Y was computed into the <code>nodePositions</code> map that <code>renderConnector</code> reads, and again from the render index inside the eth, bond, vlan, bridge, logical and networks branches. The l3 and attachment columns already used the map. Where the two disagreed, a node was drawn in one place and its edges terminated in another — and they agreed only while the preceding <code>.filter(nodePositions[...])</code> dropped nothing.</p>
 
-<p><code>renderConnector</code> (<code>:1233</code>) reads <code>nodePositions</code>. The Layer 3 and attachment columns use <code>pos.y</code>. So for six of the columns, <strong>boxes are drawn at one Y and their edges terminate at another.</strong> They agree only while the preceding <code>.filter(nodePositions[...])</code> drops nothing — any dropped node shifts <code>renderIndex</code> and desynchronizes everything below it.</p>
+<p>The comment at the old <code>:1929</code> — <em>“Recalculate Y position based on render index to eliminate gaps”</em> — marked where this was worked around instead of fixed. It went with the code it described.</p>
 
-<p>The comment at <code>:1929</code> — <em>“Recalculate Y position based on render index to eliminate gaps”</em> — records where this was worked around instead of fixed. It is the likely cause of intermittent reports of connector lines pointing at the wrong box.</p>
+<h3>The test asserts the invariant, not the arithmetic</h3>
 
-<p>The fix is local: delete the recomputation, render from <code>nodePositions</code> only. If gaps appear, that is a layout-assignment bug to fix in the position pass — where it also affects edges.</p>
+<p><code>NodeVisualization.layout.test.tsx</code> renders the component and checks that <strong>every connector endpoint lands on the connection point of a node that was actually rendered</strong>. That survives future layout changes in a way that asserting specific coordinates would not. It covers the default view, the view after revealing a hidden column (which shifts every lane rightward), and a fixture that draws no edges at all.</p>
 
-<div class="beadrow"><span class="k">Bead</span><span class="bead">s3t.3 single source of truth</span></div>
+<div class="callout">
+<span class="lbl">Found on the way</span>
+<p>Those tests surfaced a broken fixture: <code>basic-host.json</code> declared the same bridge mapping twice, byte for byte. OVN does not emit a duplicate mapping for one localnet/bridge pair, so the fixture was simply wrong — it rendered two nodes at identical coordinates and tripped React's duplicate-key warning. Deduplicated.</p>
+<p>The residual point is real though: <code>resolveNodeId</code> is neither total nor checked for collisions, so bad input degrades into an unsupported React state rather than a visible error. Recorded on <code>s3t.6</code>.</p>
+</div>
 
 <hr>
 
