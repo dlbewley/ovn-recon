@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Node Visualization Architecture Review</title>
+<style>
+:root{
+  --bg:#fbfbfa; --surface:#ffffff; --surface-2:#f4f4f2; --ink:#1c1d1f; --ink-2:#5a5f66;
+  --ink-3:#868d96; --rule:#e2e2df; --rule-2:#d0d0cc;
+  --accent:#0b5cad; --accent-soft:#e8f1fb;
+  --sev-high:#b3261e; --sev-high-bg:#fdecea;
+  --sev-med:#8a5a00; --sev-med-bg:#fdf3e0;
+  --sev-low:#3d6b3d; --sev-low-bg:#ecf5ec;
+  --code-bg:#f1f1ee; --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+:root:not([data-theme="light"]){
+  --bg:#16171a; --surface:#1d1f23; --surface-2:#25272c; --ink:#e8e9ea; --ink-2:#a8adb5;
+  --ink-3:#7c828b; --rule:#2f3238; --rule-2:#3c4048;
+  --accent:#6fb2f0; --accent-soft:#16283c;
+  --sev-high:#f2857c; --sev-high-bg:#331c1a;
+  --sev-med:#e2b25f; --sev-med-bg:#2f2718;
+  --sev-low:#8fc98f; --sev-low-bg:#1c2a1c;
+  --code-bg:#232529;
+}}
+:root[data-theme="dark"]{
+  --bg:#16171a; --surface:#1d1f23; --surface-2:#25272c; --ink:#e8e9ea; --ink-2:#a8adb5;
+  --ink-3:#7c828b; --rule:#2f3238; --rule-2:#3c4048;
+  --accent:#6fb2f0; --accent-soft:#16283c;
+  --sev-high:#f2857c; --sev-high-bg:#331c1a;
+  --sev-med:#e2b25f; --sev-med-bg:#2f2718;
+  --sev-low:#8fc98f; --sev-low-bg:#1c2a1c;
+  --code-bg:#232529;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:960px;margin:0 auto;padding:56px 28px 96px}
+header.doc{border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:14px}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:14px}
+h1{font-size:2.35rem;line-height:1.12;margin:0 0 14px;letter-spacing:-.022em;font-weight:680}
+.standfirst{font-size:1.075rem;color:var(--ink-2);margin:0;max-width:62ch}
+.meta{margin-top:20px;font:13px/1.6 var(--mono);color:var(--ink-3)}
+.meta span+span:before{content:"·";margin:0 9px;color:var(--rule-2)}
+h2{font-size:1.42rem;margin:56px 0 6px;letter-spacing:-.014em;font-weight:660;scroll-margin-top:20px}
+h2 .num{font:600 .78em/1 var(--mono);color:var(--ink-3);margin-right:.6em}
+h3{font-size:1.06rem;margin:34px 0 8px;font-weight:650;letter-spacing:-.006em}
+p{margin:0 0 15px;max-width:70ch}
+ul,ol{margin:0 0 15px;padding-left:22px;max-width:70ch}
+li{margin:0 0 7px}
+code{font:.875em var(--mono);background:var(--code-bg);padding:.14em .38em;border-radius:4px;
+     border:1px solid var(--rule);white-space:nowrap}
+pre{background:var(--code-bg);border:1px solid var(--rule);border-radius:8px;padding:15px 17px;
+    overflow-x:auto;margin:0 0 18px;font:13px/1.6 var(--mono)}
+pre code{background:none;border:0;padding:0;white-space:pre}
+a{color:var(--accent)}
+.lede{background:var(--surface);border:1px solid var(--rule);border-left:4px solid var(--accent);
+      border-radius:0 10px 10px 0;padding:20px 24px;margin:30px 0}
+.lede p:last-child{margin-bottom:0}
+.callout{background:var(--surface-2);border:1px solid var(--rule);border-radius:10px;
+         padding:16px 20px;margin:20px 0}
+.callout p:last-child{margin-bottom:0}
+.callout .lbl{font:600 11px/1 var(--mono);letter-spacing:.11em;text-transform:uppercase;
+              color:var(--ink-3);display:block;margin-bottom:9px}
+.callout.ask{background:var(--sev-med-bg);border-color:transparent}
+.callout.ask .lbl{color:var(--sev-med)}
+.tw{overflow-x:auto;margin:0 0 22px;border:1px solid var(--rule);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th{text-align:left;font:600 11px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+   color:var(--ink-3);padding:12px 14px;border-bottom:1px solid var(--rule-2);white-space:nowrap;
+   background:var(--surface-2)}
+td{padding:11px 14px;border-bottom:1px solid var(--rule);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td code{white-space:nowrap;font-size:.84em}
+.sev{display:inline-block;font:600 10px/1 var(--mono);letter-spacing:.07em;text-transform:uppercase;
+     padding:5px 8px;border-radius:5px;white-space:nowrap}
+.sev.h{color:var(--sev-high);background:var(--sev-high-bg)}
+.sev.m{color:var(--sev-med);background:var(--sev-med-bg)}
+.sev.l{color:var(--sev-low);background:var(--sev-low-bg)}
+.done{display:inline-block;font:600 10px/1 var(--mono);letter-spacing:.07em;text-transform:uppercase;
+      padding:5px 8px;border-radius:5px;white-space:nowrap;color:var(--sev-low);background:var(--sev-low-bg)}
+.bead.closed{opacity:.6;text-decoration:line-through}
+.bead{display:inline-block;font:600 11.5px/1 var(--mono);color:var(--accent);background:var(--accent-soft);
+      border:1px solid color-mix(in srgb,var(--accent) 26%,transparent);
+      padding:5px 8px;border-radius:5px;white-space:nowrap;text-decoration:none;margin:0 3px 3px 0}
+.beadrow{margin:16px 0 22px;display:flex;flex-wrap:wrap;gap:2px;align-items:center}
+.beadrow .k{font:600 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
+            color:var(--ink-3);margin-right:9px}
+figure{margin:26px 0;padding:22px 18px;background:var(--surface);border:1px solid var(--rule);border-radius:10px}
+figure svg{display:block;width:100%;height:auto;max-width:820px;margin:0 auto}
+figcaption{font-size:.83rem;color:var(--ink-3);margin-top:16px;text-align:center;max-width:none}
+.phase{border:1px solid var(--rule);border-radius:10px;background:var(--surface);
+       padding:17px 20px;margin:0 0 12px}
+.phase h4{margin:0 0 5px;font-size:.98rem;font-weight:650}
+.phase h4 .tag{font:600 10px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+               color:var(--ink-3);background:var(--surface-2);border:1px solid var(--rule);
+               padding:4px 7px;border-radius:4px;margin-right:10px;vertical-align:2px}
+.phase p{font-size:.9rem;color:var(--ink-2);margin:0 0 11px}
+hr{border:0;border-top:1px solid var(--rule);margin:52px 0}
+.foot{margin-top:60px;padding-top:22px;border-top:1px solid var(--rule);
+      font-size:.86rem;color:var(--ink-3)}
+@media(max-width:640px){
+  .wrap{padding:36px 18px 64px} h1{font-size:1.85rem} .standfirst{font-size:1rem}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <div class="eyebrow">OVN Recon · Architecture Review</div>
+  <h1>Node Visualization</h1>
+  <p class="standfirst">A structural review of the physical topology view, the complexity that is holding it back, and a staged plan for reworking it before VTEP and VRF support land.</p>
+  <div class="meta">
+    <span>2026-08-20</span><span>epic <strong>ovn-recon-s3t</strong></span><span>23 tasks</span>
+  </div>
+</header>
+
+<div class="lede">
+<p>The three extracted pure modules — <code>nodeVisualizationSelectors.ts</code>, <code>nodeVisualizationModel.ts</code>, <code>nodeVisualizationLayout.ts</code> — are the healthy part of this code. Right idea, tested, no React entanglement.</p>
+<p>Everything else lives in one 2067-line function body where the graph model, the layout math, the SVG renderer, the drawer, and the per-kind detail panels are interleaved. It works. But the cost of adding the next node type is far higher than it should be, and the drawer's problems are structural rather than cosmetic.</p>
+</div>
+
+<h2><span class="num">01</span>Findings at a glance</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>Finding</th><th>Severity</th><th>Where</th><th>Bead</th></tr></thead>
+<tbody>
+<tr><td>Adding one node type costs ~10 coordinated edits, all failing silently</td><td><span class="sev h">Structural</span></td><td>throughout</td><td><span class="bead">s3t.9</span></td></tr>
+<tr><td>Node Y position computed twice from two disagreeing sources</td><td><span class="done">Resolved</span></td><td><code>:1902–1999</code></td><td><span class="bead closed">s3t.3</span></td></tr>
+<tr><td>Gravity layout is unpredictable magic with falsy-zero defects</td><td><span class="done">Resolved</span></td><td><code>layout.ts:28</code></td><td><span class="bead closed">s3t.2</span> <span class="bead closed">s3t.11</span></td></tr>
+<tr><td>Drawer renders a click-time snapshot, not live watch data</td><td><span class="sev h">Bug</span></td><td><code>:1336</code></td><td><span class="bead">s3t.4</span></td></tr>
+<tr><td>PatternFly v4 tokens are dead in v6; attachment nodes render black</td><td><span class="done">Resolved</span></td><td>16 sites</td><td><span class="bead closed">s3t.1</span></td></tr>
+<tr><td>nmstate <code>type</code> used where topology <em>role</em> is meant</td><td><span class="sev m">Structural</span></td><td><code>:880–911</code></td><td><span class="bead">s3t.8</span></td></tr>
+<tr><td>Bare interface names as node IDs force two workarounds</td><td><span class="sev m">Structural</span></td><td><code>:866</code>, <code>:1856</code></td><td><span class="bead">s3t.6</span></td></tr>
+<tr><td>~500 lines of bespoke per-kind drawer JSX against <code>any</code></td><td><span class="sev m">Structural</span></td><td><code>:180–775</code></td><td><span class="bead">s3t.12</span></td></tr>
+<tr><td>Inferred facts presented with the same confidence as observed ones</td><td><span class="sev m">Design</span></td><td>4 heuristics</td><td><span class="bead">s3t.12</span></td></tr>
+<tr><td>Console links built four different ways with inconsistent behavior</td><td><span class="sev l">Quality</span></td><td>6 sites</td><td><span class="bead">s3t.18</span></td></tr>
+<tr><td>Graph nodes unreachable by keyboard</td><td><span class="sev m">A11y</span></td><td><code>:1698</code></td><td><span class="bead">s3t.17</span></td></tr>
+<tr><td>Selection is not in the URL; no shareable views</td><td><span class="sev l">Design</span></td><td><code>:1336</code></td><td><span class="bead">s3t.16</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<p style="font-size:.88rem;color:var(--ink-3)">Unqualified <code>:NNN</code> line references are <code>src/components/NodeVisualization.tsx</code>.</p>
+
+<hr>
+
+<h2><span class="num">02</span>Adding one node type costs ten edits</h2>
+
+<p>This is the direct answer to the VTEP question. To add a type today you must touch all of the following, and nothing enforces that you did:</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>#</th><th>Site</th><th>Location</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>An <code>interfaces.filter(...)</code> bucket</td><td><code>:857–911</code></td></tr>
+<tr><td>2</td><td>The <code>columns</code> array</td><td><code>:915</code></td></tr>
+<tr><td>3</td><td>A near-identical position block</td><td><code>:1052–1146</code> <em>(7 copies)</em></td></tr>
+<tr><td>4</td><td>A <code>sortByGravity</code> call</td><td><code>:986–998</code> <em>(12 copies)</em></td></tr>
+<tr><td>5</td><td>The <code>maxRows</code> <code>Math.max</code> list</td><td><code>:1189</code></td></tr>
+<tr><td>6</td><td>A <code>col.key === 'x' &amp;&amp; …map()</code> JSX branch</td><td><code>:1897–2003</code> <em>(7 copies)</em></td></tr>
+<tr><td>7</td><td><code>getIcon</code> switch + a hex literal at the call site</td><td><code>:1213</code>, <code>:1902</code></td></tr>
+<tr><td>8</td><td>The <code>buildNodeViewModel</code> if/else ladder</td><td><code>:1386–1520</code></td></tr>
+<tr><td>9</td><td><code>NodeKind</code> union + <code>nodeKindRegistry</code> entry</td><td><code>:44</code>, <code>:180</code></td></tr>
+<tr><td>10</td><td>Edge construction</td><td><code>model.ts:60</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>Each omission fails silently and differently.</strong> Miss #3 and the node has no coordinates. Miss #6 and it is positioned but invisible. The connector code at <code>:1856</code> then quietly <code>return null</code>s its edges — so the whole thing reads as a data problem rather than a missing case.</p>
+
+<p><code>nodeKindRegistry</code> at <code>:180</code> was the attempt at an extension point, and it is the right instinct — it just covers steps 9 and part of 8. Widen it into one descriptor that owns all ten concerns:</p>
+
+<pre><code>interface NodeTypeDescriptor&lt;T&gt; {
+  kind:    NodeKind;
+  lane:    LaneId;                                    // 2, 3, 5
+  match?:  (iface: Interface, ctx: GraphContext) =&gt; boolean;   // 1
+  id:      (item: T) =&gt; string;
+  icon:    React.ComponentType;                       // 7
+  color:   string;                                    // 7
+  label:   (item: T) =&gt; string;                       // 8
+  badge?:  (item: T) =&gt; string;                       // 'VRF' | 'VTEP' | 'CUDN'
+  status?: (item: T) =&gt; 'up' | 'down' | 'unknown';
+  edges:   (item: T, ctx: GraphContext) =&gt; Edge[];    // 10
+  facts:   (item: T, ctx: GraphContext) =&gt; Fact[];    // drives the drawer
+}</code></pre>
+
+<p>The <code>ctx</code> carries <code>{ nns, interfaces, cudns, udns, nads, routeAdvertisements }</code>. That context object is precisely why the registry has to live inside the component today — the render closures capture props. Pass it explicitly and the registry moves to a module and becomes testable.</p>
+
+<p>With that in place, VTEP-on-dummy is one descriptor plus one lane entry. Today it is a day of whack-a-mole.</p>
+
+<div class="beadrow"><span class="k">Beads</span>
+<span class="bead">s3t.5 extract model</span><span class="bead">s3t.7 lane table</span><span class="bead">s3t.9 descriptor registry</span></div>
+
+<hr>
+
+<h2><span class="num">03</span><code>type</code> is used where <em>role</em> is meant</h2>
+
+<p>Columns key off the raw nmstate <code>type</code> string, but the property that matters is the interface's <strong>role in the topology</strong>. Where the two diverge, ad hoc heuristics fill the gap. <code>isBridge</code> at <code>:880</code>:</p>
+
+<ul>
+<li>An <code>ovs-interface</code> is a bridge if it is a controller and has no patch…</li>
+<li>…<em>unless</em> an explicit bridge shadows its name (<code>:887</code>), in which case it is not…</li>
+<li>…but <code>logicalInterfaces</code> (<code>:894–909</code>) re-includes that same interface anyway via a second rule.</li>
+</ul>
+
+<p>That knot exists purely because there is no role concept to express it in.</p>
+
+<p><code>otherInterfaces</code> at <code>:911</code> is a catch-all <em>negation</em>: not ethernet/bond/vlan/mac-vlan/vrf, not a bridge, not an ovs-interface. Anything unrecognized lands in a grey four-wide grid pinned to the bottom of the canvas with no edges drawn at all.</p>
+
+<div class="callout">
+<span class="lbl">Why this matters for VTEPs</span>
+<p>A dummy interface carrying a VTEP will land in that catch-all today — invisible as a topology participant. The temptation will be to add a third heuristic in <code>isBridge</code>'s style. Don't. Extract <code>classify(iface, ctx) → role</code> as a pure, ordered rule table first, with each rule named and commented with the nmstate reality it encodes. It is the single highest-value place for tests in the whole epic.</p>
+</div>
+
+<p>The same applies to VRFs. Today a VRF is a column-6 tenant sharing space with bridge mappings via a hand-stacked <code>currentY</code> and a synthetic header positioned by locating the first VRF node (<code>:1968</code>). If VRFs are to be <em>well represented</em>, they likely want to be a <strong>grouping</strong> — a container others sit inside — not a column entry. That is a layout-model change, not a rendering tweak.</p>
+
+<div class="beadrow"><span class="k">Beads</span>
+<span class="bead">s3t.8 classify()</span><span class="bead">s3t.20 VTEP support</span><span class="bead">s3t.21 VRF containers</span></div>
+
+<hr>
+
+<h2><span class="num">04</span>Two sources of truth for Y position <em style="font-weight:500;color:var(--sev-low)">— resolved</em></h2>
+
+<div class="callout" style="background:var(--sev-low-bg);border-color:transparent">
+<span class="lbl" style="color:var(--sev-low)">Closed 2026-08-21 · s3t.3</span>
+<p>All six render branches now read <code>pos.y</code>; the <code>renderIndex</code> parameter is gone. There is one source of truth, so nodes and their connectors agree by construction rather than by coincidence.</p>
+</div>
+
+<p>Node Y was computed into the <code>nodePositions</code> map that <code>renderConnector</code> reads, and again from the render index inside the eth, bond, vlan, bridge, logical and networks branches. The l3 and attachment columns already used the map. Where the two disagreed, a node was drawn in one place and its edges terminated in another — and they agreed only while the preceding <code>.filter(nodePositions[...])</code> dropped nothing.</p>
+
+<p>The comment at the old <code>:1929</code> — <em>“Recalculate Y position based on render index to eliminate gaps”</em> — marked where this was worked around instead of fixed. It went with the code it described.</p>
+
+<h3>The test asserts the invariant, not the arithmetic</h3>
+
+<p><code>NodeVisualization.layout.test.tsx</code> renders the component and checks that <strong>every connector endpoint lands on the connection point of a node that was actually rendered</strong>. That survives future layout changes in a way that asserting specific coordinates would not. It covers the default view, the view after revealing a hidden column (which shifts every lane rightward), and a fixture that draws no edges at all.</p>
+
+<div class="callout">
+<span class="lbl">Found on the way</span>
+<p>Those tests surfaced a broken fixture: <code>basic-host.json</code> declared the same bridge mapping twice, byte for byte. OVN does not emit a duplicate mapping for one localnet/bridge pair, so the fixture was simply wrong — it rendered two nodes at identical coordinates and tripped React's duplicate-key warning. Deduplicated.</p>
+<p>The residual point is real though: <code>resolveNodeId</code> is neither total nor checked for collisions, so bad input degrades into an unsupported React state rather than a visible error. Recorded on <code>s3t.6</code>.</p>
+</div>
+
+<hr>
+
+<h2><span class="num">05</span>The gravity layout <em style="font-weight:500;color:var(--sev-low)">— resolved</em></h2>
+
+<div class="callout" style="background:var(--sev-low-bg);border-color:transparent">
+<span class="lbl" style="color:var(--sev-low)">Closed 2026-08-21 · s3t.2, s3t.11</span>
+<p><code>computeGravityById</code> is deleted. Ordering is now layered barycenter within fixed lanes. On a representative two-NIC bonded topology with VLANs, VRFs, CUDNs, UDNs and NADs, edge crossings dropped from <strong>8 to 1</strong>.</p>
+</div>
+
+<p>What was there: ~150 lines scoring nodes as <code>1000 - (pathLength * 100) - position - (important ? 500 : 0)</code>, then tiered subtraction of 5000 / 500 / 50 by band, with <code>br-ex</code> hardcoded as the important node and every id starting with <code>udn-</code> given <code>+50000</code>. Nobody could predict what a new node type would do to ordering.</p>
+
+<p>Three latent defects were confirmed and fixed on the way out:</p>
+
+<ul>
+<li><strong>Falsy-zero, three sites.</strong> <code>pathGravity</code> reaches exactly 0 on a five-node path through an important node. The fill pass (<code>!gravityById[id]</code>), the important-path chain, and <code>sortByGravity</code>'s <code>|| 10000</code> each read that 0 as “absent” — the last of which sorted the highest-priority node to the <em>bottom</em> of its column.</li>
+<li><strong>Exponential path search.</strong> Measured on cliques: 22ms at n=8, 169ms at n=9, 1.7s at n=10, <strong>20.8s at n=11</strong> — roughly 11× per added node. A bridge with a wide fan-out could hang the render.</li>
+<li><strong>Dead code.</strong> <code>sortedCudns</code> and <code>anchorElement</code>, both confirmed by lint.</li>
+</ul>
+
+<h3>What replaced it</h3>
+
+<p>Lane membership was never the hard part — it is decided by node type. The only open question is order <em>within</em> a lane, which is the standard layered-graph problem. The barycenter heuristic places each node at the average position of its neighbours in adjacent lanes, sweeping left-to-right then right-to-left and keeping the best result by measured crossing count.</p>
+
+<p>Two properties matter as much as the crossing reduction:</p>
+
+<ul>
+<li><strong>Deterministic and arrival-order independent.</strong> Watched resources arrive in arbitrary order; the seed is group rank then id, so the graph does not rearrange itself between renders. Both are asserted.</li>
+<li><strong>No hardcoded identities.</strong> <code>br-ex</code> centres naturally because nearly everything connects to it. Product ordering preferences — bridge mappings above VRFs, CUDNs above UDNs — now travel as a <code>groupRankById</code> map supplied by the caller, so the layout module no longer knows what a UDN is.</li>
+</ul>
+
+<p><code>countCrossings</code> is exported alongside it, so a future change has to prove it improves the layout rather than merely altering it.</p>
+
+<hr>
+
+<h2><span class="num">06</span>Node identity</h2>
+
+<p><code>resolveNodeId</code> (<code>:866</code>) returns a bare <code>iface.name</code> for most interfaces, so interface names share one ID namespace with everything else, and edges are matched by name string. Two workarounds exist because of it:</p>
+
+<ul>
+<li>The ovs-interface-shadowing-a-bridge special case at <code>:874</code>, returning <code>interface-&lt;name&gt;</code> for one specific collision.</li>
+<li>The connector renderer at <code>:1856–1864</code>, which probes both <code>X</code> and <code>interface-X</code> before giving up and silently dropping the edge.</li>
+</ul>
+
+<p>And <code>getFlowPath</code> (<code>:1159</code>) inserts both <code>a-b</code> and <code>b-a</code> edge keys <em>“for safety”</em> because edge identity is not canonical.</p>
+
+<p>One exported <code>nodeId(kind, key)</code> producing <code>iface:br-ex</code>, <code>vrf:blue</code>, <code>cudn:foo</code>, <code>vtep:vxlan0</code> makes all three disappear — and is a precondition for deep-linkable selection.</p>
+
+<div class="beadrow"><span class="k">Beads</span><span class="bead">s3t.6 canonical IDs</span><span class="bead">s3t.16 deep links</span></div>
+
+<hr>
+
+<h2><span class="num">07</span>The drawer</h2>
+
+<p>Four separable problems sit behind the sense that this panel is troublesome.</p>
+
+<h3>It shows stale data</h3>
+<p><code>activeNode</code> (<code>:1336</code>) stores a <em>snapshot</em> view model whose <code>.raw</code> is captured at click time. <code>useK8sWatchResource</code> keeps streaming updates, but the drawer never re-derives — the panel shows whatever the cluster looked like when you clicked. Store <code>selectedNodeId</code> and derive with <code>useMemo</code> from current props.</p>
+
+<h3>It is expensive</h3>
+<p><code>buildNodeViewModel</code> runs inside <code>renderInterfaceNode</code> (<code>:1675</code>) for <em>every node on every render</em>. For VRFs it calls <code>getVrfRoutesForInterface</code>, which walks and dedupes the entire NNS route table — per VRF, per render. All of that work exists solely to feed the drawer.</p>
+
+<h3>Per-kind panels are bespoke JSX against <code>any</code></h3>
+<p>~500 lines of hand-written <code>DescriptionList</code> (<code>:180–775</code>) reaching into <code>node.raw?.spec?.network?.localNet ?? …localnet</code>. None testable. Summary is a near-strict subset of Details for most kinds, so the tab split earns nothing — and the <code>tabs?: DrawerTabId[]</code> knob at <code>:80</code> is never populated by any entry. Dead configuration.</p>
+
+<h3>Links are built four different ways</h3>
+<p><code>getResourceLinks</code> (<code>:93</code>), plus inline template strings at <code>:405</code>, <code>:470</code>, <code>:486</code>, <code>:736</code>, <code>:754</code>, plus a fifth reconstruction in an IIFE in the YAML tab. Some get <code>window.location.origin</code> and <code>target="_blank"</code>, some stay relative. Raw <code>&lt;a href&gt;</code> into a console route causes a <strong>full page reload</strong>, and identical-looking links behave differently depending on which path built them.</p>
+
+<div class="callout">
+<span class="lbl">Concrete bug — your PatternFly tokens are dead</span>
+<p>Sixteen uses of <code>--pf-global--*</code> remain in <code>src/</code>. Those are PatternFly v4/v5 names; the project is on v6, which ships <strong>none</strong> of them — <code>grep -c -- "--pf-global--Color--200"</code> against <code>react-core</code>'s <code>base.css</code> returns <code>0</code>, versus 2846 hits for <code>--pf-t--global--*</code>. Every one silently resolves to nothing.</p>
+<p>Most visibly: attachment nodes pass <code>var(--pf-global--palette--gold-400)</code> as the rect <code>fill</code> (<code>:2011</code>). An unresolved <code>var()</code> in a paint value is invalid — so <strong>attachment nodes render black, not gold.</strong> Three call sites already use the correct v6 form, so this is unfinished migration, not a design choice.</p>
+</div>
+
+<h3>What would make it genuinely useful</h3>
+
+<p><strong>A uniform Fact model instead of bespoke JSX.</strong> Per-kind code becomes a pure ~15-line function; one shared renderer handles presentation.</p>
+
+<pre><code>type Provenance = 'observed' | 'declared' | 'inferred';
+
+type Fact = {
+  label:      string;
+  value:      string | string[];
+  ref?:       ResourceRef;   // renders as an SDK ResourceLink
+  provenance: Provenance;
+  hint?:      string;        // why we believe this
+};</code></pre>
+
+<p><strong>Provenance is the point.</strong> This is a recon tool, and a large share of what it displays is inferred — yet all of it is presented with identical confidence:</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Displayed as fact</th><th>Actually</th><th>Source</th></tr></thead>
+<tbody>
+<tr><td>VRF ↔ RouteAdvertisement match</td><td>A 15-character name-truncation guess (undocumented IFNAMSIZ heuristic)</td><td><code>selectors.ts:97</code></td></tr>
+<tr><td>CUDN associated namespaces</td><td>Regex-scraped out of a status condition <em>message string</em></td><td><code>selectors.ts:290</code></td></tr>
+<tr><td>NAD upstream bridge</td><td>Regex-extracted from raw config when JSON parse fails</td><td><code>selectors.ts:394</code></td></tr>
+<tr><td>VRF br-int ports</td><td>Set intersection; already labelled “inferred” in prose only</td><td><code>selectors.ts:118</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>An operator debugging a mismatch needs to know which claims to distrust. An <em>inferred</em> chip with a tooltip naming the rule turns a liability into a feature.</p>
+
+<p><strong>Retitle the tabs Overview / Relationships / Config.</strong> Relationships is the new value: list the selected node's neighbors as <em>clickable</em> entries that move the selection and re-highlight the path. The data already exists and is simply not exposed — adjacency is built at <code>:778</code> and <code>getFlowPath</code> (<code>:1146</code>) already walks both directions. That turns the drawer from a leaf view into a navigation instrument.</p>
+
+<p><strong>Answer the question the operator actually has.</strong> For a physical NIC the useful fact is not its MTU — it is <em>which CUDNs and UDNs ultimately ride on this wire</em>. That is <code>getFlowPath</code> filtered to network-kind nodes: two lines of derivation on machinery you already have, and the reason someone opened the panel.</p>
+
+<p><strong>Surface diagnostics.</strong> You already compute most of the detection implicitly and discard it — a bridge mapping no CUDN references (<code>:275</code>), a VRF port matching no interface, a NAD whose config failed to parse. Surfaced as per-node findings with a badge on the canvas, the tool crosses from diagram to diagnostic.</p>
+
+<div class="beadrow"><span class="k">Beads</span>
+<span class="bead">s3t.1 PF v6 tokens</span><span class="bead">s3t.4 live derivation</span><span class="bead">s3t.12 Fact model</span><span class="bead">s3t.13 tab rework</span><span class="bead">s3t.14 reachable networks</span><span class="bead">s3t.15 diagnostics</span><span class="bead">s3t.17 keyboard a11y</span><span class="bead">s3t.18 ResourceLink</span></div>
+
+<hr>
+
+<h2><span class="num">08</span>Sequencing</h2>
+
+<figure>
+<svg viewBox="0 0 820 300" role="img" aria-label="Dependency graph: fixtures precede extraction, which fans out to IDs, lane table, classify, Fact model; those converge on the descriptor registry, which precedes VTEP and VRF work, which precede documentation.">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+    <style>
+      .bx{fill:var(--surface-2);stroke:var(--rule-2);stroke-width:1.5;rx:7}
+      .bx.key{fill:var(--accent-soft);stroke:var(--accent)}
+      .tl{font:600 12px var(--mono);fill:var(--ink)}
+      .ts{font:10px var(--mono);fill:var(--ink-3)}
+      .ln{stroke:var(--rule-2);stroke-width:1.5;fill:none;color:var(--rule-2)}
+    </style>
+  </defs>
+
+  <rect class="bx" x="8" y="122" width="118" height="50"/>
+  <text class="tl" x="67" y="143" text-anchor="middle">s3t.23</text>
+  <text class="ts" x="67" y="159" text-anchor="middle">fixtures</text>
+
+  <rect class="bx key" x="162" y="122" width="118" height="50"/>
+  <text class="tl" x="221" y="143" text-anchor="middle">s3t.5</text>
+  <text class="ts" x="221" y="159" text-anchor="middle">extract model</text>
+
+  <rect class="bx" x="316" y="20" width="118" height="44"/>
+  <text class="tl" x="375" y="39" text-anchor="middle">s3t.6</text>
+  <text class="ts" x="375" y="54" text-anchor="middle">canonical ids</text>
+
+  <rect class="bx" x="316" y="80" width="118" height="44"/>
+  <text class="tl" x="375" y="99" text-anchor="middle">s3t.7</text>
+  <text class="ts" x="375" y="114" text-anchor="middle">lane table</text>
+
+  <rect class="bx" x="316" y="140" width="118" height="44"/>
+  <text class="tl" x="375" y="159" text-anchor="middle">s3t.8</text>
+  <text class="ts" x="375" y="174" text-anchor="middle">classify()</text>
+
+  <rect class="bx" x="316" y="216" width="118" height="44"/>
+  <text class="tl" x="375" y="235" text-anchor="middle">s3t.12</text>
+  <text class="ts" x="375" y="250" text-anchor="middle">Fact model</text>
+
+  <rect class="bx key" x="470" y="80" width="118" height="50"/>
+  <text class="tl" x="529" y="101" text-anchor="middle">s3t.9</text>
+  <text class="ts" x="529" y="117" text-anchor="middle">descriptors</text>
+
+  <rect class="bx" x="470" y="216" width="118" height="44"/>
+  <text class="tl" x="529" y="235" text-anchor="middle">s3t.13→.14</text>
+  <text class="ts" x="529" y="250" text-anchor="middle">drawer utility</text>
+
+  <rect class="bx" x="624" y="46" width="118" height="44"/>
+  <text class="tl" x="683" y="65" text-anchor="middle">s3t.20</text>
+  <text class="ts" x="683" y="80" text-anchor="middle">VTEP</text>
+
+  <rect class="bx" x="624" y="120" width="118" height="44"/>
+  <text class="tl" x="683" y="139" text-anchor="middle">s3t.21</text>
+  <text class="ts" x="683" y="154" text-anchor="middle">VRF groups</text>
+
+  <rect class="bx" x="624" y="194" width="118" height="44"/>
+  <text class="tl" x="683" y="213" text-anchor="middle">s3t.22</text>
+  <text class="ts" x="683" y="228" text-anchor="middle">docs</text>
+
+  <path class="ln" marker-end="url(#ar)" d="M126,147 H158"/>
+  <path class="ln" marker-end="url(#ar)" d="M280,140 C298,140 298,42 312,42"/>
+  <path class="ln" marker-end="url(#ar)" d="M280,145 C298,145 298,102 312,102"/>
+  <path class="ln" marker-end="url(#ar)" d="M280,152 C298,152 298,162 312,162"/>
+  <path class="ln" marker-end="url(#ar)" d="M280,160 C298,160 298,238 312,238"/>
+  <path class="ln" marker-end="url(#ar)" d="M434,42 C452,42 452,98 466,98"/>
+  <path class="ln" marker-end="url(#ar)" d="M434,102 C452,102 452,105 466,105"/>
+  <path class="ln" marker-end="url(#ar)" d="M434,162 C452,162 452,112 466,112"/>
+  <path class="ln" marker-end="url(#ar)" d="M434,238 H466"/>
+  <path class="ln" marker-end="url(#ar)" d="M588,98 C606,98 606,68 620,68"/>
+  <path class="ln" marker-end="url(#ar)" d="M588,110 C606,110 606,142 620,142"/>
+  <path class="ln" marker-end="url(#ar)" d="M742,68 C764,68 764,206 746,210 L740,212"/>
+  <path class="ln" marker-end="url(#ar)" d="M683,164 V190"/>
+</svg>
+<figcaption>Critical path through the epic. The react-topology spike (<code>s3t.10</code>) runs ahead of all of this. Phase 0 bug fixes (<code>s3t.1–.4</code>) and selector normalization (<code>s3t.19</code>) are independent and can proceed in parallel at any time.</figcaption>
+</figure>
+
+<div class="phase">
+<h4><span class="tag">Phase 0</span>Standalone fixes — no architecture change</h4>
+<p>Immediate visible wins, all independently shippable.</p>
+<div class="beadrow"><span class="bead">s3t.1 PF v6 tokens</span><span class="bead">s3t.2 gravity defects</span><span class="bead">s3t.3 single-source positions</span><span class="bead">s3t.4 live drawer</span><span class="bead">s3t.19 selector normalization</span></div>
+</div>
+
+<div class="phase">
+<h4><span class="tag">Phase 1</span>Extraction — mechanical, behavior-preserving</h4>
+<p>Capture fixtures first so the refactor has a safety net rather than acquiring one afterward. This is the step that makes everything downstream testable.</p>
+<div class="beadrow"><span class="bead">s3t.23 fixtures</span><span class="bead">s3t.5 extract model</span><span class="bead">s3t.6 canonical ids</span><span class="bead">s3t.18 ResourceLink</span></div>
+</div>
+
+<div class="phase">
+<h4><span class="tag">Phase 2</span>Model — lanes, roles, descriptors</h4>
+<p>The structural payoff. After this, adding a node type is a one-descriptor change.</p>
+<div class="beadrow"><span class="bead">s3t.7 lane table</span><span class="bead">s3t.8 classify()</span><span class="bead">s3t.9 descriptor registry</span></div>
+</div>
+
+<div class="phase">
+<h4><span class="tag">Phase 3</span>Layout <em style="font-weight:500;color:var(--sev-med)">— spike runs first</em></h4>
+<p>The spike is sequenced ahead of everything else. It also gates keyboard a11y, since react-topology owns node interaction if adopted.</p>
+<div class="beadrow"><span class="bead">s3t.10 react-topology spike</span><span class="bead">s3t.11 barycenter ordering</span><span class="bead">s3t.17 keyboard a11y</span></div>
+</div>
+
+<div class="phase">
+<h4><span class="tag">Phase 4</span>Drawer utility</h4>
+<p>Facts with provenance, then navigation, then diagnostics.</p>
+<div class="beadrow"><span class="bead">s3t.12 Fact model</span><span class="bead">s3t.13 tab rework</span><span class="bead">s3t.14 reachable networks</span><span class="bead">s3t.15 diagnostics</span><span class="bead">s3t.16 deep links</span></div>
+</div>
+
+<div class="phase">
+<h4><span class="tag">Phase 5</span>New capability — the motivating work</h4>
+<p>If these are not small diffs at this point, the registry work was incomplete.</p>
+<div class="beadrow"><span class="bead">s3t.20 VTEP on dummy</span><span class="bead">s3t.21 VRF containers</span></div>
+</div>
+
+<div class="phase">
+<h4><span class="tag">Phase 6</span>Documentation</h4>
+<p>Rewrite once, at the end, against what actually exists.</p>
+<div class="beadrow"><span class="bead">s3t.22 readme-visualization.md</span></div>
+</div>
+
+<hr>
+
+<h2><span class="num">09</span>The spike runs first</h2>
+
+<p><strong>Decision, 2026-08-20: this runs ahead of the rest of the epic.</strong> It is half a day, and it gates the two largest downstream investments — the layout replacement and VRF containers — plus keyboard accessibility, since react-topology owns node interaction if adopted.</p>
+
+<p><code>@patternfly/react-topology</code> is what the OpenShift console's own topology view uses. It would provide pan/zoom, selection, side panels, edge routing, node badges, status decorators and <strong>grouping</strong> out of the box — several hundred lines of hand-rolled code here does that today.</p>
+
+<h3>Two questions, and only two</h3>
+
+<div class="callout">
+<span class="lbl">Q1 — primary, kill criterion</span>
+<p><strong>Can a custom layout reproduce the fixed vertical lanes exactly?</strong> The left-to-right arrangement encodes the physical-to-logical progression an operator reads, and it is a confirmed value proposition of the app — not an implementation accident. It is not negotiable in a migration. The library accepts custom layouts, so this should be achievable, but verify it against the real lane count (up to ten today) rather than a toy example. <strong>If lanes cannot be reproduced cleanly, reject and stop</strong> — nothing else matters.</p>
+</div>
+
+<div class="callout">
+<span class="lbl">Q2 — the reason to adopt</span>
+<p><strong>What does grouping look like for VRF, and would it extend to EVPN/VTEP constructs?</strong> The hard part is that VRF members live in <em>other</em> lanes, so a container must <strong>span</strong> lanes. Confirm lane-spanning containers actually work — a grouping feature that cannot cross lanes does not solve the VRF problem.</p>
+</div>
+
+<h3>Explicitly deferred</h3>
+
+<p><strong>Shared-module version skew</strong> against the console's provided modules. A real hazard for a dynamic plugin, but solving skew detection is wasted effort if the spike fails on Q1 or Q2. Assume it is workable for the spike's duration. If the spike passes, this becomes a <em>gating</em> question before adoption is committed — file it as a follow-up bead then, and do not let it slip.</p>
+
+<p><strong>Migration cost.</strong> Hard to answer honestly against the current 2067-line component, and much cheaper after the model extraction (<code>s3t.5</code>) and descriptor registry (<code>s3t.9</code>) land. Revisit then, when it is a smaller question.</p>
+
+<div class="callout">
+<span class="lbl">What the spike does not protect</span>
+<p>Worth being clear about scope: react-topology <em>consumes</em> a model you hand it, so it does not own most of what this epic rebuilds. Fixtures (<code>s3t.23</code>), extraction (<code>s3t.5</code>), canonical IDs (<code>s3t.6</code>), the lane table (<code>s3t.7</code>), <code>classify()</code> (<code>s3t.8</code>), the descriptor registry (<code>s3t.9</code>) and the entire drawer rework (<code>s3t.12</code>–<code>s3t.16</code>) are required either way. Only <code>s3t.11</code>, <code>s3t.21</code> and <code>s3t.17</code> are genuinely gated.</p>
+<p>The Phase 0 bug fixes are worth doing regardless. <code>s3t.3</code> deletes six lines to fix a visible bug that ships this week, against a migration that ships in weeks — fixing something you may later delete is shipping, not waste.</p>
+</div>
+
+<p><strong>A rejection is a successful spike.</strong> Record the outcome on the bead either way, with reasons, so the option is not revisited without new information.</p>
+
+<div class="beadrow"><span class="k">Bead</span><span class="bead">s3t.10 spike · P1 · do this first</span></div>
+
+<hr>
+
+<h2><span class="num">10</span>Open questions</h2>
+
+<div class="callout ask">
+<span class="lbl">Needs input — s3t.20 VTEP on dummy interfaces</span>
+<ol style="margin-bottom:0">
+<li>What identifies a VTEP-bearing dummy in NodeNetworkState? A naming convention, an address referenced by other config, or does nmstate report vxlan interfaces separately?</li>
+<li>What does it connect to in the graph — the underlay interface, the VRF, the EVPN/BGP config, the CUDN?</li>
+<li>Is the data in NNS at all, or does this need the collector to interrogate FRR? The plugin already reaches <code>openshift-frr-k8s</code> for logical snapshots, so the plumbing exists.</li>
+<li>Which lane — alongside VRFs in Layer 3, or a new one?</li>
+</ol>
+</div>
+
+<div class="callout ask">
+<span class="lbl">Needs input — s3t.21 VRF containers</span>
+<p>Visual treatment: a bounding region behind member nodes, a swimlane, or a collapsible group? Membership derived from <code>vrf.port</code>, from route table ID, or both? Members currently live in <em>other</em> columns, so a container has to span lanes — that is the hard part against the current renderer. Recommend sketching two options against a real cluster's NNS before building either.</p>
+</div>
+
+<div class="callout ask">
+<span class="lbl">Needs input — s3t.15 diagnostics</span>
+<p>Which checks are genuinely actionable versus normal-and-expected in real clusters? A bridge mapping with no CUDN is presumably fine on a node with no such workload. A diagnostic that cries wolf is worse than none — worth confirming the list before implementing.</p>
+</div>
+
+<div class="foot">
+<p><strong>Using this document.</strong> It is the touchstone for epic <code>ovn-recon-s3t</code>. Bead <code>s3t.22</code> carries the obligation to mark findings resolved here as they close, so it stays a working reference rather than becoming a historical artifact.</p>
+<p style="margin-bottom:0"><code>bd show ovn-recon-s3t</code> &nbsp;·&nbsp; <code>bd ready</code></p>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,188 +1,284 @@
-import { Interface } from '../types';
 import { TopologyEdge } from './nodeVisualizationModel';
 
-interface ComputeGravityByIdParams {
-    topologyEdges: TopologyEdge[];
-    interfaces: Interface[];
-    physicalNodeIds: Set<string>;
-    importantNodes?: Set<string>;
+/**
+ * Node ordering for the fixed-lane topology graph.
+ *
+ * Lane membership (which column a node sits in) is decided by node type, not here.
+ * The only open question is the order of nodes *within* a lane, and the goal is to
+ * minimise edge crossings. That is the standard layered-graph problem, solved with
+ * the barycenter heuristic: a node wants to sit level with the average position of
+ * the nodes it connects to in neighbouring lanes. Sweeping left-to-right then
+ * right-to-left and keeping the best result converges quickly and is deterministic.
+ *
+ * Replaces an earlier "gravity" scheme that scored nodes with tiered magic constants
+ * and hardcoded both a node name (br-ex) and an id prefix (udn-). Product ordering
+ * preferences now travel as `groupRankById` instead, so this module stays ignorant
+ * of what any particular node means.
+ */
+
+/** Sweeps of the barycenter heuristic. Converges well before this on real topologies. */
+const DEFAULT_ITERATIONS = 8;
+
+/** Rank given to nodes with no lane assignment, sorting them after ranked nodes. */
+const UNRANKED = Number.MAX_SAFE_INTEGER;
+
+export interface LayoutLane {
+    /** Stable lane key, e.g. 'eth'. Only used for diagnostics. */
+    id: string;
+    /** Node ids in this lane. Order is a starting point, not a constraint. */
+    nodeIds: string[];
 }
 
-const buildConnectionGraph = (topologyEdges: TopologyEdge[]): Record<string, string[]> => {
-    const connectionGraph: Record<string, string[]> = {};
-    const addConnectionEdge = (source: string, target: string) => {
-        if (!connectionGraph[source]) connectionGraph[source] = [];
-        if (!connectionGraph[target]) connectionGraph[target] = [];
-        if (!connectionGraph[source].includes(target)) connectionGraph[source].push(target);
-        if (!connectionGraph[target].includes(source)) connectionGraph[target].push(source);
-    };
+export interface ComputeNodeOrderParams {
+    /** Lanes in left-to-right render order. */
+    lanes: LayoutLane[];
+    edges: TopologyEdge[];
+    /**
+     * Optional hard grouping within a lane. Nodes sort by group rank first and
+     * barycenter second, so a lane can hold ordered sub-groups (bridge mappings
+     * above VRFs, CUDNs above UDNs) without this module knowing why.
+     */
+    groupRankById?: Record<string, number>;
+    iterations?: number;
+}
 
-    topologyEdges.forEach((edge) => addConnectionEdge(edge.source, edge.target));
-    return connectionGraph;
+type LaneOrder = string[][];
+
+const buildLaneIndex = (lanes: LayoutLane[]): Map<string, number> => {
+    const laneIndexById = new Map<string, number>();
+    lanes.forEach((lane, laneIndex) => {
+        lane.nodeIds.forEach((nodeId) => {
+            if (!laneIndexById.has(nodeId)) {
+                laneIndexById.set(nodeId, laneIndex);
+            }
+        });
+    });
+    return laneIndexById;
 };
 
-export const computeGravityById = ({
-    topologyEdges,
-    interfaces,
-    physicalNodeIds,
-    importantNodes = new Set<string>(['br-ex'])
-}: ComputeGravityByIdParams): Record<string, number> => {
-    const connectionGraph = buildConnectionGraph(topologyEdges);
-
-    const findLongestPath = (startNode: string, visited: Set<string> = new Set(), path: string[] = []): string[] => {
-        if (visited.has(startNode)) return path;
-        visited.add(startNode);
-        const currentPath = [...path, startNode];
-        const neighbors = connectionGraph[startNode] || [];
-
-        if (neighbors.length === 0) {
-            return currentPath;
+/**
+ * Adjacency limited to edges that actually carry ordering information: both endpoints
+ * placed, and in different lanes. A same-lane edge says nothing about vertical order.
+ */
+const buildNeighbors = (
+    edges: TopologyEdge[],
+    laneIndexById: Map<string, number>
+): Map<string, string[]> => {
+    const neighbors = new Map<string, string[]>();
+    const link = (from: string, to: string) => {
+        const existing = neighbors.get(from);
+        if (!existing) {
+            neighbors.set(from, [to]);
+        } else if (!existing.includes(to)) {
+            existing.push(to);
         }
-
-        let longestPath = currentPath;
-        for (const neighbor of neighbors) {
-            if (!currentPath.includes(neighbor)) {
-                const subPath = findLongestPath(neighbor, new Set(visited), currentPath);
-                if (subPath.length > longestPath.length) {
-                    longestPath = subPath;
-                }
-            }
-        }
-
-        return longestPath;
     };
 
-    const allPaths: string[][] = [];
-    physicalNodeIds.forEach((nodeId) => {
-        if (connectionGraph[nodeId]) {
-            const path = findLongestPath(nodeId);
-            if (path.length >= 2) {
-                allPaths.push(path);
-            }
-        }
+    edges.forEach(({ source, target }) => {
+        const sourceLane = laneIndexById.get(source);
+        const targetLane = laneIndexById.get(target);
+        if (sourceLane === undefined || targetLane === undefined) return;
+        if (sourceLane === targetLane) return;
+        link(source, target);
+        link(target, source);
     });
 
-    const pathsWithImportantNodes = new Set<number>();
-    allPaths.forEach((path, pathIndex) => {
-        if (path.some((nodeId) => importantNodes.has(nodeId))) {
-            pathsWithImportantNodes.add(pathIndex);
-        }
+    return neighbors;
+};
+
+const rankLookup = (order: LaneOrder): Map<string, number> => {
+    const rankById = new Map<string, number>();
+    order.forEach((nodeIds) => {
+        nodeIds.forEach((nodeId, rank) => rankById.set(nodeId, rank));
+    });
+    return rankById;
+};
+
+/**
+ * Average rank of a node's neighbours that live in lanes on the given side.
+ * Returns null when the node has nothing to anchor to, in which case it keeps
+ * its current position rather than being flung to the top of the lane.
+ */
+const barycenterOf = (
+    nodeId: string,
+    laneIndex: number,
+    direction: 'forward' | 'backward',
+    neighbors: Map<string, string[]>,
+    laneIndexById: Map<string, number>,
+    rankById: Map<string, number>
+): number | null => {
+    const adjacent = neighbors.get(nodeId);
+    if (!adjacent || adjacent.length === 0) return null;
+
+    let total = 0;
+    let count = 0;
+    adjacent.forEach((neighborId) => {
+        const neighborLane = laneIndexById.get(neighborId);
+        if (neighborLane === undefined) return;
+        const isReference = direction === 'forward' ? neighborLane < laneIndex : neighborLane > laneIndex;
+        if (!isReference) return;
+        const rank = rankById.get(neighborId);
+        if (rank === undefined) return;
+        total += rank;
+        count += 1;
     });
 
-    const pathMetadata = allPaths.map((path, index) => ({
-        path,
-        index,
-        hasImportantNode: pathsWithImportantNodes.has(index),
-        length: path.length
+    return count === 0 ? null : total / count;
+};
+
+const orderLane = (
+    nodeIds: string[],
+    laneIndex: number,
+    direction: 'forward' | 'backward',
+    neighbors: Map<string, string[]>,
+    laneIndexById: Map<string, number>,
+    rankById: Map<string, number>,
+    groupRankById: Record<string, number>
+): string[] => {
+    const keyed = nodeIds.map((nodeId, currentRank) => ({
+        nodeId,
+        currentRank,
+        groupRank: groupRankById[nodeId] ?? 0,
+        // Nodes with no anchor hold station at their current rank.
+        barycenter: barycenterOf(nodeId, laneIndex, direction, neighbors, laneIndexById, rankById) ?? currentRank
     }));
 
-    pathMetadata.sort((a, b) => {
-        if (a.hasImportantNode !== b.hasImportantNode) {
-            return a.hasImportantNode ? -1 : 1;
-        }
-        return b.length - a.length;
-    });
-
-    const gravityById: Record<string, number> = {};
-    const pathMembership: Record<string, { pathLength: number; position: number; hasImportantNode: boolean }[]> = {};
-
-    pathMetadata.forEach((meta) => {
-        const pathLength = meta.path.length;
-        const hasImportantNode = meta.hasImportantNode;
-        meta.path.forEach((nodeId, position) => {
-            if (!pathMembership[nodeId]) {
-                pathMembership[nodeId] = [];
-            }
-            pathMembership[nodeId].push({ pathLength, position, hasImportantNode });
-        });
-    });
-
-    Object.keys(pathMembership).forEach((nodeId) => {
-        const memberships = pathMembership[nodeId];
-        const bestPath = memberships.reduce((best, current) => {
-            if (current.hasImportantNode && !best.hasImportantNode) return current;
-            if (!current.hasImportantNode && best.hasImportantNode) return best;
-            if (current.pathLength > best.pathLength) return current;
-            if (current.pathLength < best.pathLength) return best;
-            return current.position < best.position ? current : best;
-        });
-        const importantBonus = bestPath.hasImportantNode ? 500 : 0;
-        const pathGravity = 1000 - (bestPath.pathLength * 100) - bestPath.position - importantBonus;
-        gravityById[nodeId] = pathGravity;
-    });
-
-    Object.keys(connectionGraph).forEach((nodeId) => {
-        if (!gravityById[nodeId]) {
-            const connectionCount = connectionGraph[nodeId]?.length || 0;
-            gravityById[nodeId] = 10000 + connectionCount;
-        }
-    });
-
-    const nodesInImportantPath = new Set<string>();
-    const findImportantPathNodes = (nodeId: string, visited: Set<string> = new Set(), depth = 0) => {
-        if (visited.has(nodeId) || depth > 5) return;
-        visited.add(nodeId);
-        nodesInImportantPath.add(nodeId);
-
-        const neighbors = connectionGraph[nodeId] || [];
-        neighbors.forEach((neighbor) => {
-            if (!visited.has(neighbor)) {
-                findImportantPathNodes(neighbor, new Set(visited), depth + 1);
-            }
-        });
-    };
-
-    importantNodes.forEach((nodeId) => {
-        nodesInImportantPath.add(nodeId);
-        if (connectionGraph[nodeId]) {
-            findImportantPathNodes(nodeId);
-        }
-    });
-
-    const physicalInterfacesSlaveToImportantNode = new Set<string>();
-    interfaces.forEach((iface) => {
-        const master = iface.controller || iface.master;
-        if (master && importantNodes.has(master)) {
-            physicalInterfacesSlaveToImportantNode.add(iface.name);
-        }
-    });
-
-    physicalInterfacesSlaveToImportantNode.forEach((ifaceName) => {
-        gravityById[ifaceName] = 25;
-    });
-
-    nodesInImportantPath.forEach((nodeId) => {
-        if (importantNodes.has(nodeId)) {
-            if (!physicalInterfacesSlaveToImportantNode.has(nodeId)) {
-                gravityById[nodeId] = 50;
-            }
-        } else if (physicalInterfacesSlaveToImportantNode.has(nodeId)) {
-            return;
-        } else if (gravityById[nodeId] && gravityById[nodeId] >= 10000) {
-            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 5000);
-        } else if (gravityById[nodeId] && gravityById[nodeId] >= 1000) {
-            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 500);
-        } else if (gravityById[nodeId] && gravityById[nodeId] >= 100) {
-            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 50);
-        } else if (!gravityById[nodeId]) {
-            gravityById[nodeId] = 200;
-        }
-    });
-
-    Object.keys(gravityById)
-        .filter((id) => id.startsWith('udn-'))
-        .forEach((id) => {
-            gravityById[id] = (gravityById[id] ?? 10000) + 50000;
-        });
-
-    return gravityById;
+    return keyed
+        .slice()
+        .sort((a, b) => {
+            if (a.groupRank !== b.groupRank) return a.groupRank - b.groupRank;
+            if (a.barycenter !== b.barycenter) return a.barycenter - b.barycenter;
+            // Stable and deterministic: previous rank, then id.
+            if (a.currentRank !== b.currentRank) return a.currentRank - b.currentRank;
+            return a.nodeId.localeCompare(b.nodeId);
+        })
+        .map((entry) => entry.nodeId);
 };
 
-export const sortByGravity = <T,>(items: T[], getId: (item: T) => string, gravityById: Record<string, number>): T[] =>
+/**
+ * Edge crossings under a given ordering. Two edges spanning the same pair of lanes
+ * cross when their endpoints are in opposite vertical order at each end.
+ *
+ * Exported so tests can assert that a change actually improves the layout rather
+ * than merely changing it.
+ */
+export const countCrossings = (
+    lanes: LayoutLane[],
+    edges: TopologyEdge[],
+    rankById: Record<string, number>
+): number => {
+    const laneIndexById = buildLaneIndex(lanes);
+
+    // Normalise each edge to (lower lane endpoint, higher lane endpoint) and bucket
+    // by the lane pair it spans; only edges in the same bucket can cross.
+    const buckets = new Map<string, { lo: string; hi: string }[]>();
+    edges.forEach(({ source, target }) => {
+        const sourceLane = laneIndexById.get(source);
+        const targetLane = laneIndexById.get(target);
+        if (sourceLane === undefined || targetLane === undefined) return;
+        if (sourceLane === targetLane) return;
+        const [lo, hi] = sourceLane < targetLane ? [source, target] : [target, source];
+        const [loLane, hiLane] = sourceLane < targetLane ? [sourceLane, targetLane] : [targetLane, sourceLane];
+        const key = `${loLane}:${hiLane}`;
+        const bucket = buckets.get(key);
+        if (bucket) {
+            bucket.push({ lo, hi });
+        } else {
+            buckets.set(key, [{ lo, hi }]);
+        }
+    });
+
+    let crossings = 0;
+    buckets.forEach((bucket) => {
+        for (let i = 0; i < bucket.length; i += 1) {
+            for (let j = i + 1; j < bucket.length; j += 1) {
+                const loDelta = (rankById[bucket[i].lo] ?? 0) - (rankById[bucket[j].lo] ?? 0);
+                const hiDelta = (rankById[bucket[i].hi] ?? 0) - (rankById[bucket[j].hi] ?? 0);
+                if (loDelta * hiDelta < 0) crossings += 1;
+            }
+        }
+    });
+
+    return crossings;
+};
+
+const toRankRecord = (order: LaneOrder): Record<string, number> => {
+    const rankById: Record<string, number> = {};
+    order.forEach((nodeIds) => {
+        nodeIds.forEach((nodeId, rank) => {
+            rankById[nodeId] = rank;
+        });
+    });
+    return rankById;
+};
+
+/**
+ * Rank of each node within its lane, chosen to minimise edge crossings.
+ * Deterministic: identical input always yields identical output.
+ */
+export const computeNodeOrder = ({
+    lanes,
+    edges,
+    groupRankById = {},
+    iterations = DEFAULT_ITERATIONS
+}: ComputeNodeOrderParams): Record<string, number> => {
+    const laneIndexById = buildLaneIndex(lanes);
+    const neighbors = buildNeighbors(edges, laneIndexById);
+
+    // Seed deterministically: group rank first, then id. Without a stable seed the
+    // result would depend on the order resources happened to arrive from the API.
+    let order: LaneOrder = lanes.map((lane) =>
+        Array.from(new Set(lane.nodeIds)).sort((a, b) => {
+            const groupDelta = (groupRankById[a] ?? 0) - (groupRankById[b] ?? 0);
+            return groupDelta !== 0 ? groupDelta : a.localeCompare(b);
+        })
+    );
+
+    let best = order;
+    let bestCrossings = countCrossings(lanes, edges, toRankRecord(order));
+
+    for (let pass = 0; pass < iterations && bestCrossings > 0; pass += 1) {
+        const direction: 'forward' | 'backward' = pass % 2 === 0 ? 'forward' : 'backward';
+        const laneSequence = direction === 'forward'
+            ? order.map((_, index) => index)
+            : order.map((_, index) => order.length - 1 - index);
+
+        const next: LaneOrder = order.map((nodeIds) => nodeIds.slice());
+        laneSequence.forEach((laneIndex) => {
+            // Rebuild ranks each lane so a sweep sees the lanes it has already moved.
+            const rankById = rankLookup(next);
+            next[laneIndex] = orderLane(
+                next[laneIndex],
+                laneIndex,
+                direction,
+                neighbors,
+                laneIndexById,
+                rankById,
+                groupRankById
+            );
+        });
+
+        order = next;
+        const crossings = countCrossings(lanes, edges, toRankRecord(order));
+        if (crossings < bestCrossings) {
+            bestCrossings = crossings;
+            best = order;
+        }
+    }
+
+    return toRankRecord(best);
+};
+
+/**
+ * Sort items into their computed within-lane order. Items with no rank sort last,
+ * then alphabetically, so an unranked node never silently jumps to the top.
+ */
+export const sortByRank = <T,>(items: T[], getId: (item: T) => string, rankById: Record<string, number>): T[] =>
     items.slice().sort((a, b) => {
         const aId = getId(a);
         const bId = getId(b);
-        const gravityDiff = (gravityById[aId] || 10000) - (gravityById[bId] || 10000);
-        if (gravityDiff !== 0) return gravityDiff;
+        // `??`, not `||`: rank 0 is the top of the lane.
+        const rankDelta = (rankById[aId] ?? UNRANKED) - (rankById[bId] ?? UNRANKED);
+        if (rankDelta !== 0) return rankDelta;
         return aId.localeCompare(bId);
     });

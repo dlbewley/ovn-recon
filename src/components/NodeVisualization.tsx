@@ -21,7 +21,7 @@ import {
     parseNadConfig
 } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
-import { computeGravityById, sortByGravity } from './nodeVisualizationLayout';
+import { computeNodeOrder, sortByRank, LayoutLane } from './nodeVisualizationLayout';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -259,7 +259,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                             ))}
                                         </ul>
                                     ) : (
-                                        <span style={{ color: 'var(--pf-global--Color--200)' }}>No bridge ports reported in NNS.</span>
+                                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No bridge ports reported in NNS.</span>
                                     )}
                                 </DescriptionListDescription>
                             </DescriptionListGroup>
@@ -323,7 +323,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                             <DescriptionListGroup>
                                 <DescriptionListTerm>Referenced by CUDNs</DescriptionListTerm>
                                 <DescriptionListDescription>
-                                    <span style={{ color: 'var(--pf-global--Color--200)' }}>No CUDNs reference this bridge mapping</span>
+                                    <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No CUDNs reference this bridge mapping</span>
                                 </DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
@@ -698,7 +698,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         ))}
                                     </ul>
                                 ) : (
-                                    <span style={{ color: 'var(--pf-global--Color--200)' }}>No associated routes found in NNS.</span>
+                                    <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No associated routes found in NNS.</span>
                                 )}
                             </DescriptionListDescription>
                         </DescriptionListGroup>
@@ -725,7 +725,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         })}
                                     </ul>
                                 ) : (
-                                    <span style={{ color: 'var(--pf-global--Color--200)' }}>No matching br-int ports inferred from NNS.</span>
+                                    <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No matching br-int ports inferred from NNS.</span>
                                 )}
                             </DescriptionListDescription>
                         </DescriptionListGroup>
@@ -970,32 +970,56 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         getNadNodeId
     });
 
-    const gravityById = computeGravityById({
-        topologyEdges,
-        interfaces,
-        physicalNodeIds: new Set([
-            ...ethInterfaces.map((i) => i.name),
-            ...bondInterfaces.map((i) => i.name),
-            ...vrfInterfaces.map((i) => i.name),
-            ...vlanInterfaces.map((i) => i.name),
-            ...bridgeInterfaces.map((i) => i.name)
-        ]),
-        importantNodes: new Set<string>(['br-ex'])
+    // Lanes fed to the ordering pass. Left-to-right order must match `columns` plus
+    // the two trailing pseudo-columns, since a node's barycenter is the average
+    // position of its neighbours in adjacent lanes.
+    // Note the l3 lane holds two stacked groups (bridge mappings above VRFs) and the
+    // networks lane holds CUDNs above UDNs; both are expressed as group ranks below
+    // rather than as ordering hacks inside the layout module.
+    const layoutLanes: LayoutLane[] = [
+        { id: 'lldp', nodeIds: lldpNeighbors.map((neighbor) => neighbor.id) },
+        { id: 'eth', nodeIds: ethInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
+        { id: 'bond', nodeIds: bondInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
+        { id: 'vlan', nodeIds: vlanInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
+        { id: 'bridge', nodeIds: bridgeInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
+        { id: 'logical', nodeIds: logicalInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
+        {
+            id: 'l3',
+            nodeIds: [
+                ...bridgeMappings.map((mapping) => `ovn-${mapping.localnet || ''}`),
+                ...vrfInterfaces.map((iface) => resolveNodeId(iface, iface.type))
+            ]
+        },
+        { id: 'networks', nodeIds: networkItems.map(getNetworkNodeId) },
+        { id: 'attachments', nodeIds: attachmentNodes.map(getAttachmentNodeId) },
+        { id: 'nads', nodeIds: nads.map(getNadNodeId) }
+    ];
+
+    // Sub-group ordering within a lane: bridge mappings above VRFs, CUDNs above UDNs.
+    const groupRankById: Record<string, number> = {};
+    vrfInterfaces.forEach((iface) => {
+        groupRankById[resolveNodeId(iface, iface.type)] = 1;
+    });
+    networkItems.forEach((item) => {
+        if (item.kind === 'udn') groupRankById[getNetworkNodeId(item)] = 1;
     });
 
-    const sortedEthInterfaces = sortByGravity(ethInterfaces, (iface) => iface.name, gravityById);
-    const sortedLldpNeighbors = sortByGravity(lldpNeighbors, (neighbor) => neighbor.id, gravityById);
-    const sortedBondInterfaces = sortByGravity(bondInterfaces, (iface) => iface.name, gravityById);
-    const sortedVrfInterfaces = sortByGravity(vrfInterfaces, (iface) => iface.name, gravityById);
-    const sortedVlanInterfaces = sortByGravity(vlanInterfaces, (iface) => iface.name, gravityById);
-    const sortedBridgeInterfaces = sortByGravity(bridgeInterfaces, (iface) => iface.name, gravityById);
-    const sortedLogicalInterfaces = sortByGravity(logicalInterfaces, (iface) => iface.name, gravityById);
-    const sortedBridgeMappings = sortByGravity(bridgeMappings, (mapping) => `ovn-${mapping.localnet || ''}`, gravityById);
-    const sortedCudns = sortByGravity(cudns, (cudn) => `cudn-${cudn.metadata?.name || ''}`, gravityById);
-    const sortedNetworkItems = sortByGravity(networkItems, getNetworkNodeId, gravityById);
-    const sortedAttachmentNodes = sortByGravity(attachmentNodes, getAttachmentNodeId, gravityById);
-    const sortedNads = sortByGravity(nads, (nad) => getNadNodeId(nad), gravityById);
-    const sortedOtherInterfaces = sortByGravity(otherInterfaces, (iface) => iface.name, gravityById);
+    const rankById = computeNodeOrder({ lanes: layoutLanes, edges: topologyEdges, groupRankById });
+
+    const rankOfIface = (iface: Interface) => resolveNodeId(iface, iface.type);
+    const sortedEthInterfaces = sortByRank(ethInterfaces, rankOfIface, rankById);
+    const sortedLldpNeighbors = sortByRank(lldpNeighbors, (neighbor) => neighbor.id, rankById);
+    const sortedBondInterfaces = sortByRank(bondInterfaces, rankOfIface, rankById);
+    const sortedVrfInterfaces = sortByRank(vrfInterfaces, rankOfIface, rankById);
+    const sortedVlanInterfaces = sortByRank(vlanInterfaces, rankOfIface, rankById);
+    const sortedBridgeInterfaces = sortByRank(bridgeInterfaces, rankOfIface, rankById);
+    const sortedLogicalInterfaces = sortByRank(logicalInterfaces, rankOfIface, rankById);
+    const sortedBridgeMappings = sortByRank(bridgeMappings, (mapping) => `ovn-${mapping.localnet || ''}`, rankById);
+    const sortedNetworkItems = sortByRank(networkItems, getNetworkNodeId, rankById);
+    const sortedAttachmentNodes = sortByRank(attachmentNodes, getAttachmentNodeId, rankById);
+    const sortedNads = sortByRank(nads, (nad) => getNadNodeId(nad), rankById);
+    // Not laned: rendered in a grid at the foot of the canvas, so plain alphabetical.
+    const sortedOtherInterfaces = otherInterfaces.slice().sort((a, b) => a.name.localeCompare(b.name));
 
     // Calculate positions with dynamic column visibility
     const nodePositions: { [name: string]: { x: number, y: number } } = {};
@@ -1347,14 +1371,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         setZoomLevel(1);
     };
 
-    // State for Popover
+    // Drawer selection state
     const [activeNode, setActiveNode] = React.useState<NodeViewModel | null>(null);
-    const [anchorElement, setAnchorElement] = React.useState<HTMLElement | null>(null);
     const [activePopoverTab, setActivePopoverTab] = React.useState<DrawerTabId>('summary');
 
     const handleNodeClick = (event: React.MouseEvent, node: NodeViewModel) => {
         event.stopPropagation(); // Prevent clearing highlight when clicking a node
-        setAnchorElement(event.currentTarget as HTMLElement);
 
         const wasDrawerOpen = activeNode !== null;
 
@@ -1378,7 +1400,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     const handlePopoverClose = () => {
         setActiveNode(null);
-        setAnchorElement(null);
     };
 
 
@@ -1591,7 +1612,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                             </DescriptionListGroup>
                         </DescriptionList>
                     ) : (
-                        <div style={{ color: 'var(--pf-global--Color--200)' }}>No links available.</div>
+                        <div style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No links available.</div>
                     )}
                 </div>
             )
@@ -1603,7 +1624,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
                     {node.raw && (
                         <>
-                            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
+                            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-t--global--border--color--default)' }}>
                                 <CodeEditor
                                     isDarkTheme
                                     isLineNumbersVisible
@@ -1614,8 +1635,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     style={{ height: '100%' }}
                                 />
                             </div>
-                            <div style={{ flex: '0 0 auto', padding: 'var(--pf-global--spacer--md)', backgroundColor: 'var(--pf-global--BackgroundColor--100)' }}>
-                                <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-global--spacer--sm)' }} />
+                            <div style={{ flex: '0 0 auto', padding: 'var(--pf-t--global--spacer--md)', backgroundColor: 'var(--pf-t--global--background--color--primary--default)' }}>
+                                <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-t--global--spacer--sm)' }} />
                                 <a
                                     href={(() => {
                                         if (node.resourceRef) {
@@ -1643,7 +1664,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                         </>
                     )}
                     {!node.raw && (
-                        <span style={{ fontSize: '0.9em', color: 'var(--pf-global--Color--200)', padding: '16px' }}>No YAML content available.</span>
+                        <span style={{ fontSize: '0.9em', color: 'var(--pf-t--global--text--color--subtle)', padding: '16px' }}>No YAML content available.</span>
                     )}
                 </div>
             )
@@ -1701,7 +1722,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 onClick={(e) => handleNodeClick(e, viewNode)}
             >
                 <title>{displayName} ({displayType})</title>
-                <rect width={itemWidth} height={nodeHeight} rx={5} fill={color} stroke="var(--pf-global--BorderColor--100)" strokeWidth={1} />
+                <rect width={itemWidth} height={nodeHeight} rx={5} fill={color} stroke="var(--pf-t--global--border--color--default)" strokeWidth={1} />
                 <foreignObject x={10} y={10} width={20} height={20}>
                     <div style={{ color: '#fff' }}>{Icon}</div>
                 </foreignObject>
@@ -1746,7 +1767,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                         </Flex>
                     </FlexItem>
                     <FlexItem>
-                        {activeNode?.subtitle && <span style={{ color: 'var(--pf-global--Color--200)', fontSize: '0.9em' }}>{activeNode.subtitle}</span>}
+                        {activeNode?.subtitle && <span style={{ color: 'var(--pf-t--global--text--color--subtle)', fontSize: '0.9em' }}>{activeNode.subtitle}</span>}
                     </FlexItem>
                 </Flex>
                 <DrawerActions>
@@ -1841,9 +1862,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 viewBox={viewBox ? `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}` : `0 0 ${width} ${calculatedHeight}`}
                                 preserveAspectRatio="xMinYMin meet"
                                 style={{
-                                    border: '1px solid var(--pf-global--BorderColor--100)',
-                                    background: 'var(--pf-global--BackgroundColor--200)',
-                                    color: 'var(--pf-global--Color--100)',
+                                    border: '1px solid var(--pf-t--global--border--color--default)',
+                                    background: 'var(--pf-t--global--background--color--secondary--default)',
+                                    color: 'var(--pf-t--global--text--color--regular)',
                                     cursor: isPanning ? 'grabbing' : 'grab'
                                 }}
                                 onWheel={handleWheel}
@@ -1895,52 +1916,51 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                 })}
                                             {col.key === 'eth' && sortedEthInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface, renderIndex: number) => {
+                                                .map((iface: Interface) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return (
                                                         <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0066CC')}
+                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#0066CC')}
                                                         </React.Fragment>
                                                     );
                                                 })}
                                             {col.key === 'bond' && sortedBondInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface, renderIndex: number) => {
+                                                .map((iface: Interface) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return (
                                                         <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#663399')}
+                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#663399')}
                                                         </React.Fragment>
                                                     );
                                                 })}
                                             {col.key === 'vlan' && sortedVlanInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface, renderIndex: number) => {
+                                                .map((iface: Interface) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return (
                                                         <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#9933CC')}
+                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#9933CC')}
                                                         </React.Fragment>
                                                     );
                                                 })}
                                             {col.key === 'bridge' && sortedBridgeInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface, renderIndex: number) => {
+                                                .map((iface: Interface) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                    // Recalculate Y position based on render index to eliminate gaps
                                                     return (
                                                         <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#FF6600')}
+                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#FF6600')}
                                                         </React.Fragment>
                                                     );
                                                 })}
                                             {col.key === 'logical' && sortedLogicalInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface, renderIndex: number) => {
+                                                .map((iface: Interface) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return (
                                                         <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0099CC')}
+                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#0099CC')}
                                                         </React.Fragment>
                                                     );
                                                 })}
@@ -1951,14 +1971,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                     {sortedBridgeMappings
                                                         .filter((mapping: OvnBridgeMapping) => nodePositions[`ovn-${mapping.localnet}`])
                                                         .map((mapping: OvnBridgeMapping) => {
+                                                            // Bridge mappings and VRFs share this lane as two stacked
+                                                            // sub-groups, kept apart by their group rank in computeNodeOrder.
                                                             const pos = nodePositions[`ovn-${mapping.localnet}`];
-                                                            // For l3 column, we rely on the pre-calculated nodePositions.
-                                                            // However, if we want to visually separate them, we might need to adjust Y manually if nodePositions wasn't aware of the split.
-                                                            // But gravity sort assumes a single column.
-                                                            // To strictly stack them, we should rely on the sorting *logic* to have put them in order.
-                                                            // OR, we just render them based on position.
-                                                            // The user wants TWO headers.
-                                                            // So we find the Y range of the first group.
                                                             return (
                                                                 <React.Fragment key={`ovn-${mapping.localnet}`}>
                                                                     {renderInterfaceNode(mapping, pos.x, pos.y, '#009900', 'ovn-mapping')}
@@ -1991,12 +2006,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                             )}
                                             {col.key === 'cudn' && sortedNetworkItems
                                                 .filter((n: NetworkColumnItem) => nodePositions[getNetworkNodeId(n)])
-                                                .map((n: NetworkColumnItem, renderIndex: number) => {
+                                                .map((n: NetworkColumnItem) => {
                                                     const pos = nodePositions[getNetworkNodeId(n)];
                                                     const color = n.kind === 'cudn' ? CUDN_NODE_COLOR : UDN_NODE_COLOR;
                                                     return (
                                                         <React.Fragment key={getNetworkNodeId(n)}>
-                                                            {renderInterfaceNode(n.item, pos.x, padding + (renderIndex * (itemHeight + 20)), color, n.kind)}
+                                                            {renderInterfaceNode(n.item, pos.x, pos.y, color, n.kind)}
                                                         </React.Fragment>
                                                     );
                                                 })}
@@ -2010,7 +2025,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     const pos = nodePositions[getAttachmentNodeId(node)];
                                     return (
                                         <React.Fragment key={getAttachmentNodeId(node)}>
-                                            {pos && renderInterfaceNode(node, pos.x, pos.y, 'var(--pf-global--palette--gold-400)', 'attachment', getAttachmentHeight(node))}
+                                            {pos && renderInterfaceNode(node, pos.x, pos.y, '#F0AB00', 'attachment', getAttachmentHeight(node))}
                                         </React.Fragment>
                                     );
                                 })}
@@ -2051,7 +2066,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     <Button variant="secondary" onClick={handleResetZoom} aria-label="Reset zoom" style={{ marginRight: '16px' }}>Reset</Button>
                                 </FlexItem>
                                 <FlexItem>
-                                    <span style={{ fontSize: '0.9em', color: 'var(--pf-global--Color--200)' }}>
+                                    <span style={{ fontSize: '0.9em', color: 'var(--pf-t--global--text--color--subtle)' }}>
                                         Zoom: {Math.round(zoomLevel * 100)}% | Use Ctrl/Cmd + Scroll to zoom | Shift + Drag to pan
                                     </span>
                                 </FlexItem>

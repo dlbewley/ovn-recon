@@ -2,6 +2,8 @@
 module.exports = {
     preset: 'ts-jest',
     testEnvironment: 'jsdom',
+    // spike/ carries its own config (see spike/react-topology/jest.config.js)
+    testPathIgnorePatterns: ['/node_modules/', '/spike/'],
     setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
     moduleNameMapper: {
         "\\.(css|less|scss|sass)$": "<rootDir>/__mocks__/styleMock.js",

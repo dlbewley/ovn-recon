@@ -48,10 +48,6 @@
           {
             "localnet": "physnet",
             "bridge": "br-ex"
-          },
-          {
-            "localnet": "physnet",
-            "bridge": "br-ex"
           }
         ]
       }
