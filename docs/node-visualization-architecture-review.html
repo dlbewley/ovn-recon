@@ -81,6 +81,9 @@ td code{white-space:nowrap;font-size:.84em}
 .sev.h{color:var(--sev-high);background:var(--sev-high-bg)}
 .sev.m{color:var(--sev-med);background:var(--sev-med-bg)}
 .sev.l{color:var(--sev-low);background:var(--sev-low-bg)}
+.done{display:inline-block;font:600 10px/1 var(--mono);letter-spacing:.07em;text-transform:uppercase;
+      padding:5px 8px;border-radius:5px;white-space:nowrap;color:var(--sev-low);background:var(--sev-low-bg)}
+.bead.closed{opacity:.6;text-decoration:line-through}
 .bead{display:inline-block;font:600 11.5px/1 var(--mono);color:var(--accent);background:var(--accent-soft);
       border:1px solid color-mix(in srgb,var(--accent) 26%,transparent);
       padding:5px 8px;border-radius:5px;white-space:nowrap;text-decoration:none;margin:0 3px 3px 0}
@@ -130,7 +133,7 @@ hr{border:0;border-top:1px solid var(--rule);margin:52px 0}
 <tbody>
 <tr><td>Adding one node type costs ~10 coordinated edits, all failing silently</td><td><span class="sev h">Structural</span></td><td>throughout</td><td><span class="bead">s3t.9</span></td></tr>
 <tr><td>Node Y position computed twice from two disagreeing sources</td><td><span class="sev h">Bug</span></td><td><code>:1902–1999</code></td><td><span class="bead">s3t.3</span></td></tr>
-<tr><td>Gravity layout is unpredictable magic with falsy-zero defects</td><td><span class="sev h">Structural</span></td><td><code>layout.ts:28</code></td><td><span class="bead">s3t.2</span> <span class="bead">s3t.11</span></td></tr>
+<tr><td>Gravity layout is unpredictable magic with falsy-zero defects</td><td><span class="done">Resolved</span></td><td><code>layout.ts:28</code></td><td><span class="bead closed">s3t.2</span> <span class="bead closed">s3t.11</span></td></tr>
 <tr><td>Drawer renders a click-time snapshot, not live watch data</td><td><span class="sev h">Bug</span></td><td><code>:1336</code></td><td><span class="bead">s3t.4</span></td></tr>
 <tr><td>PatternFly v4 tokens are dead in v6; attachment nodes render black</td><td><span class="sev h">Bug</span></td><td>16 sites</td><td><span class="bead">s3t.1</span></td></tr>
 <tr><td>nmstate <code>type</code> used where topology <em>role</em> is meant</td><td><span class="sev m">Structural</span></td><td><code>:880–911</code></td><td><span class="bead">s3t.8</span></td></tr>
@@ -242,31 +245,35 @@ hr{border:0;border-top:1px solid var(--rule);margin:52px 0}
 
 <hr>
 
-<h2><span class="num">05</span>The gravity layout is the complexity hindering you</h2>
+<h2><span class="num">05</span>The gravity layout <em style="font-weight:500;color:var(--sev-low)">— resolved</em></h2>
 
-<p><code>computeGravityById</code> (<code>nodeVisualizationLayout.ts:28–175</code>) is ~150 lines of unexplainable magic:</p>
-
-<pre><code>pathGravity = 1000 - (pathLength * 100) - position - (hasImportantNode ? 500 : 0)
-// then tiered subtraction of 5000 / 500 / 50 depending on which band it lands in
-// then 'br-ex' hardcoded as the important node
-// then every id starting with 'udn-' gets +50000</code></pre>
-
-<p>Nobody can predict what happens to ordering when a new node type joins — which is exactly what this epic is about to do repeatedly. It also carries real defects:</p>
-
-<ul>
-<li><strong>Falsy-zero.</strong> <code>Math.max(0, …)</code> can produce gravity <code>0</code>. Downstream, <code>if (gravityById[nodeId] &amp;&amp; …)</code> treats <code>0</code> as absent and reassigns <code>200</code>; and <code>sortByGravity</code>'s <code>gravityById[aId] || 10000</code> (<code>:184</code>) promotes a highest-priority node to <code>10000</code> and sorts it to the <em>bottom</em> of its column.</li>
-<li><strong>Exponential path enumeration.</strong> <code>findLongestPath</code> (<code>:37</code>) clones the visited set per neighbor and recurses across all simple paths, seeded from every physical node. Longest-path is NP-hard in general; on a node with a wide bridge fan-out this is a hang risk.</li>
-<li><strong>Dead code.</strong> <code>sortedCudns</code> at <code>:994</code> is computed and never used.</li>
-</ul>
-
-<div class="callout">
-<span class="lbl">The problem is smaller than the solution applied to it</span>
-<p>Columns are already fixed by type. The only open question is <em>ordering within a column</em> — which is textbook Sugiyama crossing reduction: iterate barycenter ordering (each node's position becomes the mean of its neighbors' positions in the adjacent layer) for a handful of forward/backward passes. Roughly 40 lines, deterministic, explainable.</p>
-<p>It also removes the special cases. <code>br-ex</code> ends up centered because nearly everything connects to it, so <code>importantNodes</code> disappears — and so does the <code>udn-</code> prefix hack.</p>
+<div class="callout" style="background:var(--sev-low-bg);border-color:transparent">
+<span class="lbl" style="color:var(--sev-low)">Closed 2026-08-21 · s3t.2, s3t.11</span>
+<p><code>computeGravityById</code> is deleted. Ordering is now layered barycenter within fixed lanes. On a representative two-NIC bonded topology with VLANs, VRFs, CUDNs, UDNs and NADs, edge crossings dropped from <strong>8 to 1</strong>.</p>
 </div>
 
-<div class="beadrow"><span class="k">Beads</span>
-<span class="bead">s3t.2 stopgap fixes</span><span class="bead">s3t.10 react-topology spike</span><span class="bead">s3t.11 barycenter ordering</span></div>
+<p>What was there: ~150 lines scoring nodes as <code>1000 - (pathLength * 100) - position - (important ? 500 : 0)</code>, then tiered subtraction of 5000 / 500 / 50 by band, with <code>br-ex</code> hardcoded as the important node and every id starting with <code>udn-</code> given <code>+50000</code>. Nobody could predict what a new node type would do to ordering.</p>
+
+<p>Three latent defects were confirmed and fixed on the way out:</p>
+
+<ul>
+<li><strong>Falsy-zero, three sites.</strong> <code>pathGravity</code> reaches exactly 0 on a five-node path through an important node. The fill pass (<code>!gravityById[id]</code>), the important-path chain, and <code>sortByGravity</code>'s <code>|| 10000</code> each read that 0 as “absent” — the last of which sorted the highest-priority node to the <em>bottom</em> of its column.</li>
+<li><strong>Exponential path search.</strong> Measured on cliques: 22ms at n=8, 169ms at n=9, 1.7s at n=10, <strong>20.8s at n=11</strong> — roughly 11× per added node. A bridge with a wide fan-out could hang the render.</li>
+<li><strong>Dead code.</strong> <code>sortedCudns</code> and <code>anchorElement</code>, both confirmed by lint.</li>
+</ul>
+
+<h3>What replaced it</h3>
+
+<p>Lane membership was never the hard part — it is decided by node type. The only open question is order <em>within</em> a lane, which is the standard layered-graph problem. The barycenter heuristic places each node at the average position of its neighbours in adjacent lanes, sweeping left-to-right then right-to-left and keeping the best result by measured crossing count.</p>
+
+<p>Two properties matter as much as the crossing reduction:</p>
+
+<ul>
+<li><strong>Deterministic and arrival-order independent.</strong> Watched resources arrive in arbitrary order; the seed is group rank then id, so the graph does not rearrange itself between renders. Both are asserted.</li>
+<li><strong>No hardcoded identities.</strong> <code>br-ex</code> centres naturally because nearly everything connects to it. Product ordering preferences — bridge mappings above VRFs, CUDNs above UDNs — now travel as a <code>groupRankById</code> map supplied by the caller, so the layout module no longer knows what a UDN is.</li>
+</ul>
+
+<p><code>countCrossings</code> is exported alongside it, so a future change has to prove it improves the layout rather than merely altering it.</p>
 
 <hr>
 

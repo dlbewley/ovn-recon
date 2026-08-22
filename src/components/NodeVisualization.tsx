@@ -21,7 +21,7 @@ import {
     parseNadConfig
 } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
-import { computeGravityById, sortByGravity } from './nodeVisualizationLayout';
+import { computeNodeOrder, sortByRank, LayoutLane } from './nodeVisualizationLayout';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -970,31 +970,56 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         getNadNodeId
     });
 
-    const gravityById = computeGravityById({
-        topologyEdges,
-        interfaces,
-        physicalNodeIds: new Set([
-            ...ethInterfaces.map((i) => i.name),
-            ...bondInterfaces.map((i) => i.name),
-            ...vrfInterfaces.map((i) => i.name),
-            ...vlanInterfaces.map((i) => i.name),
-            ...bridgeInterfaces.map((i) => i.name)
-        ]),
-        importantNodes: new Set<string>(['br-ex'])
+    // Lanes fed to the ordering pass. Left-to-right order must match `columns` plus
+    // the two trailing pseudo-columns, since a node's barycenter is the average
+    // position of its neighbours in adjacent lanes.
+    // Note the l3 lane holds two stacked groups (bridge mappings above VRFs) and the
+    // networks lane holds CUDNs above UDNs; both are expressed as group ranks below
+    // rather than as ordering hacks inside the layout module.
+    const layoutLanes: LayoutLane[] = [
+        { id: 'lldp', nodeIds: lldpNeighbors.map((neighbor) => neighbor.id) },
+        { id: 'eth', nodeIds: ethInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
+        { id: 'bond', nodeIds: bondInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
+        { id: 'vlan', nodeIds: vlanInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
+        { id: 'bridge', nodeIds: bridgeInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
+        { id: 'logical', nodeIds: logicalInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
+        {
+            id: 'l3',
+            nodeIds: [
+                ...bridgeMappings.map((mapping) => `ovn-${mapping.localnet || ''}`),
+                ...vrfInterfaces.map((iface) => resolveNodeId(iface, iface.type))
+            ]
+        },
+        { id: 'networks', nodeIds: networkItems.map(getNetworkNodeId) },
+        { id: 'attachments', nodeIds: attachmentNodes.map(getAttachmentNodeId) },
+        { id: 'nads', nodeIds: nads.map(getNadNodeId) }
+    ];
+
+    // Sub-group ordering within a lane: bridge mappings above VRFs, CUDNs above UDNs.
+    const groupRankById: Record<string, number> = {};
+    vrfInterfaces.forEach((iface) => {
+        groupRankById[resolveNodeId(iface, iface.type)] = 1;
+    });
+    networkItems.forEach((item) => {
+        if (item.kind === 'udn') groupRankById[getNetworkNodeId(item)] = 1;
     });
 
-    const sortedEthInterfaces = sortByGravity(ethInterfaces, (iface) => iface.name, gravityById);
-    const sortedLldpNeighbors = sortByGravity(lldpNeighbors, (neighbor) => neighbor.id, gravityById);
-    const sortedBondInterfaces = sortByGravity(bondInterfaces, (iface) => iface.name, gravityById);
-    const sortedVrfInterfaces = sortByGravity(vrfInterfaces, (iface) => iface.name, gravityById);
-    const sortedVlanInterfaces = sortByGravity(vlanInterfaces, (iface) => iface.name, gravityById);
-    const sortedBridgeInterfaces = sortByGravity(bridgeInterfaces, (iface) => iface.name, gravityById);
-    const sortedLogicalInterfaces = sortByGravity(logicalInterfaces, (iface) => iface.name, gravityById);
-    const sortedBridgeMappings = sortByGravity(bridgeMappings, (mapping) => `ovn-${mapping.localnet || ''}`, gravityById);
-    const sortedNetworkItems = sortByGravity(networkItems, getNetworkNodeId, gravityById);
-    const sortedAttachmentNodes = sortByGravity(attachmentNodes, getAttachmentNodeId, gravityById);
-    const sortedNads = sortByGravity(nads, (nad) => getNadNodeId(nad), gravityById);
-    const sortedOtherInterfaces = sortByGravity(otherInterfaces, (iface) => iface.name, gravityById);
+    const rankById = computeNodeOrder({ lanes: layoutLanes, edges: topologyEdges, groupRankById });
+
+    const rankOfIface = (iface: Interface) => resolveNodeId(iface, iface.type);
+    const sortedEthInterfaces = sortByRank(ethInterfaces, rankOfIface, rankById);
+    const sortedLldpNeighbors = sortByRank(lldpNeighbors, (neighbor) => neighbor.id, rankById);
+    const sortedBondInterfaces = sortByRank(bondInterfaces, rankOfIface, rankById);
+    const sortedVrfInterfaces = sortByRank(vrfInterfaces, rankOfIface, rankById);
+    const sortedVlanInterfaces = sortByRank(vlanInterfaces, rankOfIface, rankById);
+    const sortedBridgeInterfaces = sortByRank(bridgeInterfaces, rankOfIface, rankById);
+    const sortedLogicalInterfaces = sortByRank(logicalInterfaces, rankOfIface, rankById);
+    const sortedBridgeMappings = sortByRank(bridgeMappings, (mapping) => `ovn-${mapping.localnet || ''}`, rankById);
+    const sortedNetworkItems = sortByRank(networkItems, getNetworkNodeId, rankById);
+    const sortedAttachmentNodes = sortByRank(attachmentNodes, getAttachmentNodeId, rankById);
+    const sortedNads = sortByRank(nads, (nad) => getNadNodeId(nad), rankById);
+    // Not laned: rendered in a grid at the foot of the canvas, so plain alphabetical.
+    const sortedOtherInterfaces = otherInterfaces.slice().sort((a, b) => a.name.localeCompare(b.name));
 
     // Calculate positions with dynamic column visibility
     const nodePositions: { [name: string]: { x: number, y: number } } = {};
@@ -1947,14 +1972,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                     {sortedBridgeMappings
                                                         .filter((mapping: OvnBridgeMapping) => nodePositions[`ovn-${mapping.localnet}`])
                                                         .map((mapping: OvnBridgeMapping) => {
+                                                            // Bridge mappings and VRFs share this lane as two stacked
+                                                            // sub-groups, kept apart by their group rank in computeNodeOrder.
                                                             const pos = nodePositions[`ovn-${mapping.localnet}`];
-                                                            // For l3 column, we rely on the pre-calculated nodePositions.
-                                                            // However, if we want to visually separate them, we might need to adjust Y manually if nodePositions wasn't aware of the split.
-                                                            // But gravity sort assumes a single column.
-                                                            // To strictly stack them, we should rely on the sorting *logic* to have put them in order.
-                                                            // OR, we just render them based on position.
-                                                            // The user wants TWO headers.
-                                                            // So we find the Y range of the first group.
                                                             return (
                                                                 <React.Fragment key={`ovn-${mapping.localnet}`}>
                                                                     {renderInterfaceNode(mapping, pos.x, pos.y, '#009900', 'ovn-mapping')}
