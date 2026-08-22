@@ -1916,52 +1916,51 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                 })}
                                             {col.key === 'eth' && sortedEthInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface, renderIndex: number) => {
+                                                .map((iface: Interface) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return (
                                                         <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0066CC')}
+                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#0066CC')}
                                                         </React.Fragment>
                                                     );
                                                 })}
                                             {col.key === 'bond' && sortedBondInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface, renderIndex: number) => {
+                                                .map((iface: Interface) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return (
                                                         <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#663399')}
+                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#663399')}
                                                         </React.Fragment>
                                                     );
                                                 })}
                                             {col.key === 'vlan' && sortedVlanInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface, renderIndex: number) => {
+                                                .map((iface: Interface) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return (
                                                         <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#9933CC')}
+                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#9933CC')}
                                                         </React.Fragment>
                                                     );
                                                 })}
                                             {col.key === 'bridge' && sortedBridgeInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface, renderIndex: number) => {
+                                                .map((iface: Interface) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                    // Recalculate Y position based on render index to eliminate gaps
                                                     return (
                                                         <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#FF6600')}
+                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#FF6600')}
                                                         </React.Fragment>
                                                     );
                                                 })}
                                             {col.key === 'logical' && sortedLogicalInterfaces
                                                 .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface, renderIndex: number) => {
+                                                .map((iface: Interface) => {
                                                     const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                     return (
                                                         <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, padding + (renderIndex * (itemHeight + 20)), '#0099CC')}
+                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#0099CC')}
                                                         </React.Fragment>
                                                     );
                                                 })}
@@ -2007,12 +2006,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                             )}
                                             {col.key === 'cudn' && sortedNetworkItems
                                                 .filter((n: NetworkColumnItem) => nodePositions[getNetworkNodeId(n)])
-                                                .map((n: NetworkColumnItem, renderIndex: number) => {
+                                                .map((n: NetworkColumnItem) => {
                                                     const pos = nodePositions[getNetworkNodeId(n)];
                                                     const color = n.kind === 'cudn' ? CUDN_NODE_COLOR : UDN_NODE_COLOR;
                                                     return (
                                                         <React.Fragment key={getNetworkNodeId(n)}>
-                                                            {renderInterfaceNode(n.item, pos.x, padding + (renderIndex * (itemHeight + 20)), color, n.kind)}
+                                                            {renderInterfaceNode(n.item, pos.x, pos.y, color, n.kind)}
                                                         </React.Fragment>
                                                     );
                                                 })}
