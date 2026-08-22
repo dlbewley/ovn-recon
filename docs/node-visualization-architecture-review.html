@@ -114,15 +114,16 @@ hr{border:0;border-top:1px solid var(--rule);margin:52px 0}
 <header class="doc">
   <div class="eyebrow">OVN Recon · Architecture Review</div>
   <h1>Node Visualization</h1>
-  <p class="standfirst">A structural review of the physical topology view, the complexity that is holding it back, and a staged plan for reworking it before VTEP and VRF support land.</p>
+  <p class="standfirst">A structural review of the physical topology view, the complexity holding it back, and a staged plan for reworking it before VTEP and VRF support land. Revised 22 August after design discussion: the sharpest problem turned out not to be the layout but the edges.</p>
   <div class="meta">
-    <span>2026-08-20</span><span>epic <strong>ovn-recon-s3t</strong></span><span>23 tasks</span>
+    <span>2026-08-20 · rev. 2026-08-22</span><span>epic <strong>ovn-recon-s3t</strong></span><span>34 tasks · 7 closed</span>
   </div>
 </header>
 
 <div class="lede">
 <p>The three extracted pure modules — <code>nodeVisualizationSelectors.ts</code>, <code>nodeVisualizationModel.ts</code>, <code>nodeVisualizationLayout.ts</code> — are the healthy part of this code. Right idea, tested, no React entanglement.</p>
 <p>Everything else lives in one 2067-line function body where the graph model, the layout math, the SVG renderer, the drawer, and the per-kind detail panels are interleaved. It works. But the cost of adding the next node type is far higher than it should be, and the drawer's problems are structural rather than cosmetic.</p>
+<p><strong>A goal of this application is to educate OpenShift users, not only to diagnose.</strong> That raises the stakes on everything below. A diagram that implies traffic flows through a bridge mapping does not merely look odd to an expert — it teaches a newcomer something false.</p>
 </div>
 
 <h2><span class="num">01</span>Findings at a glance</h2>
@@ -131,8 +132,13 @@ hr{border:0;border-top:1px solid var(--rule);margin:52px 0}
 <table>
 <thead><tr><th>Finding</th><th>Severity</th><th>Where</th><th>Bead</th></tr></thead>
 <tbody>
+<tr><td><strong>One edge type is doing three different jobs</strong></td><td><span class="sev h">Structural</span></td><td><code>model.ts:60</code></td><td><span class="bead">s3t.25</span></td></tr>
 <tr><td>Adding one node type costs ~10 coordinated edits, all failing silently</td><td><span class="sev h">Structural</span></td><td>throughout</td><td><span class="bead">s3t.9</span></td></tr>
 <tr><td>Node Y position computed twice from two disagreeing sources</td><td><span class="done">Resolved</span></td><td><code>:1902–1999</code></td><td><span class="bead closed">s3t.3</span></td></tr>
+<tr><td>The VRF a Primary CUDN creates renders as an orphan, with no edges</td><td><span class="sev h">Bug</span></td><td><code>model.ts:126</code></td><td><span class="bead">s3t.28</span></td></tr>
+<tr><td>Overlay CUDNs have no link to anything physical</td><td><span class="sev m">Gap</span></td><td><code>model.ts:60</code></td><td><span class="bead">s3t.29</span></td></tr>
+<tr><td>Two configuration domains are mixed with no visible boundary</td><td><span class="sev m">Design</span></td><td>lanes</td><td><span class="bead">s3t.31</span></td></tr>
+<tr><td>Nothing explains why an edge exists, or what a kind means</td><td><span class="sev m">Design</span></td><td>drawer</td><td><span class="bead">s3t.30</span> <span class="bead">s3t.33</span></td></tr>
 <tr><td>Gravity layout is unpredictable magic with falsy-zero defects</td><td><span class="done">Resolved</span></td><td><code>layout.ts:28</code></td><td><span class="bead closed">s3t.2</span> <span class="bead closed">s3t.11</span></td></tr>
 <tr><td>Drawer renders a click-time snapshot, not live watch data</td><td><span class="sev h">Bug</span></td><td><code>:1336</code></td><td><span class="bead">s3t.4</span></td></tr>
 <tr><td>PatternFly v4 tokens are dead in v6; attachment nodes render black</td><td><span class="done">Resolved</span></td><td>16 sites</td><td><span class="bead closed">s3t.1</span></td></tr>
@@ -200,29 +206,59 @@ hr{border:0;border-top:1px solid var(--rule);margin:52px 0}
 
 <hr>
 
-<h2><span class="num">03</span><code>type</code> is used where <em>role</em> is meant</h2>
+<h2><span class="num">03</span>The model conflates things it should distinguish</h2>
 
-<p>Columns key off the raw nmstate <code>type</code> string, but the property that matters is the interface's <strong>role in the topology</strong>. Where the two diverge, ad hoc heuristics fill the gap. <code>isBridge</code> at <code>:880</code>:</p>
+<p>Two conflations, one inherited from nmstate and one of our own making. The second is the more damaging, and it was only diagnosed properly on 22 August.</p>
 
-<ul>
-<li>An <code>ovs-interface</code> is a bridge if it is a controller and has no patch…</li>
-<li>…<em>unless</em> an explicit bridge shadows its name (<code>:887</code>), in which case it is not…</li>
-<li>…but <code>logicalInterfaces</code> (<code>:894–909</code>) re-includes that same interface anyway via a second rule.</li>
-</ul>
+<h3><code>type</code> is used where <em>role</em> is meant</h3>
 
-<p>That knot exists purely because there is no role concept to express it in.</p>
+<p>Columns key off the raw nmstate <code>type</code> string, but the property that matters is the interface's <strong>role in the topology</strong>. Where the two diverge, ad hoc heuristics fill the gap. <code>isBridge</code> at <code>:880</code>: an <code>ovs-interface</code> is a bridge if it is a controller and has no patch, <em>unless</em> an explicit bridge shadows its name, in which case it is not — but <code>logicalInterfaces</code> re-includes that same interface anyway via a second rule. That knot exists purely because there is no role concept to express it in.</p>
 
-<p><code>otherInterfaces</code> at <code>:911</code> is a catch-all <em>negation</em>: not ethernet/bond/vlan/mac-vlan/vrf, not a bridge, not an ovs-interface. Anything unrecognized lands in a grey four-wide grid pinned to the bottom of the canvas with no edges drawn at all.</p>
+<p><code>otherInterfaces</code> at <code>:911</code> is a catch-all <em>negation</em>. Anything unrecognized lands in a grey grid at the foot of the canvas with no edges — which is where a VTEP-bearing dummy would land today, and where the Geneve tunnel currently sits.</p>
 
-<div class="callout">
-<span class="lbl">Why this matters for VTEPs</span>
-<p>A dummy interface carrying a VTEP will land in that catch-all today — invisible as a topology participant. The temptation will be to add a third heuristic in <code>isBridge</code>'s style. Don't. Extract <code>classify(iface, ctx) → role</code> as a pure, ordered rule table first, with each rule named and commented with the nmstate reality it encodes. It is the single highest-value place for tests in the whole epic.</p>
+<h3>One edge type is doing three different jobs</h3>
+
+<p>The graph draws one kind of line. The edges mean three different things:</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Kind</th><th>Example</th><th>What it actually is</th></tr></thead>
+<tbody>
+<tr><td><strong>Membership</strong></td><td><code>ens192 → br-ex</code></td><td>the port is <em>part of</em> the bridge</td></tr>
+<tr><td><strong>Layering</strong></td><td><code>ens224 → ens224.456</code></td><td>traffic really does flow through</td></tr>
+<tr><td><strong>Reference</strong></td><td><code>br-ex → physnet → machinenet</code></td><td>an <em>alias</em>; nothing flows through it</td></tr>
+</tbody>
+</table>
 </div>
 
-<p>The same applies to VRFs. Today a VRF is a column-6 tenant sharing space with bridge mappings via a hand-stacked <code>currentY</code> and a synthetic header positioned by locating the first VRF node (<code>:1968</code>). If VRFs are to be <em>well represented</em>, they likely want to be a <strong>grouping</strong> — a container others sit inside — not a column entry. That is a layout-model change, not a rendering tweak.</p>
+<p>The columnar layout then adds a fourth semantic that nobody declared: <strong>column position = position in a path</strong>. Membership edges violate it — they point back at their container. Reference edges fabricate a hop.</p>
 
-<div class="beadrow"><span class="k">Beads</span>
-<span class="bead">s3t.8 classify()</span><span class="bead">s3t.20 VTEP support</span><span class="bead">s3t.21 VRF containers</span></div>
+<div class="callout">
+<span class="lbl">Verified, not theorised</span>
+<p>Rendering <code>primary-cudn-vrf.json</code> with every lane revealed:</p>
+<pre><code>x=680   br-ex (ovs-bridge)
+x=900   br-ex (ovs-interface)
+x=1120  physnet (OVN Bridge Mapping)
+
+br-ex (ovs-interface) → br-ex (ovs-bridge)    points LEFT, against every other edge
+br-ex (ovs-bridge)    → physnet               spans straight THROUGH x=900</code></pre>
+<p>So the OVS internal port sits in the visual path between the bridge and its mapping, while its own edge runs backwards. <strong>No amount of reordering or hiding fixes this, because the edge is lying, not the position.</strong> That is why <code>s3t.25</code> is the root of this whole family of work.</p>
+</div>
+
+<h3>What follows from it</h3>
+
+<p><strong>An OVS internal port is a port, not a peer.</strong> Rendering it in its own lane is the modelling error. Drawn on its bridge instead, a real dilemma dissolves: <code>br-ex</code>'s internal port is installer boilerplate nobody wants as a topology node, yet it holds the node's address. As an attribute of the bridge it is exactly as important as it should be — its address visible by default, with no toggle, occupying no position in any path. The visibility rule is <em>does it carry an address</em>, not the name; an OVS interface with an address on an unroutable network qualifies, and patch ports fall away for free. <span class="bead">s3t.26</span></p>
+
+<p><strong>The bridge mapping stays a node.</strong> An earlier draft of this document proposed demoting it to an edge label. Withdrawn: a bridge mapping is <em>user-created configuration</em> — visualising that is part of why this app exists — and several Localnet CUDNs converging on one mapping is the normal case, making it a genuine many-to-one point rather than a repeated label. Only the relationship was wrong. <span class="bead">s3t.27</span></p>
+
+<p><strong>The VRF is an orphan.</strong> A Primary CUDN creates a VRF, and the two render as unconnected nodes in adjacent lanes, because edges between them are only drawn when a RouteAdvertisement exists. The subnet signal needs no RA at all: <code>vrf.port</code> names <code>ovn-k8s-mp3</code>, whose <code>10.1.2.2/24</code> sits inside the CUDN's <code>10.1.2.0/24</code>. Names corroborate, but only tolerantly — VRF names are sometimes truncations of the CUDN name. <span class="bead">s3t.28</span></p>
+
+<p><strong>Overlay CUDNs do have a physical anchor.</strong> Layer2 and Layer3 CUDNs name no <code>physicalNetworkName</code>, so unlike Localnet ones they have no mapping to link them to the node. An appealing idea — anchor them at the Geneve tunnel — does not survive the data: <code>genev_sys_6081</code> appears once, <code>type: unknown</code>, <code>state: ignore</code>, with nothing referencing it. But the per-CUDN OVS patch pair is right there and is fully observable:</p>
+
+<pre><code>br-ex ports:  patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int
+              patch-br-ex_worker-1-to-br-int          ← cluster default network</code></pre>
+
+<p>The CUDN name is embedded as <code>cluster_udn_&lt;name&gt;_&lt;node&gt;</code>, dashes rendered as dots. Localnet CUDNs get no such pair, which is consistent — they reach the bridge through the mapping instead. <span class="bead">s3t.29</span></p>
 
 <hr>
 
@@ -361,6 +397,60 @@ type Fact = {
 
 <hr>
 
+<h2><span class="num">07b</span>Two domains, one view</h2>
+
+<p>The view mixes two configuration domains and never says so. The boundary is not a matter of taste — it is checkable: <strong>does nmstate report it, or does the Kubernetes API?</strong></p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Region</th><th>Configured through</th><th>Contains</th></tr></thead>
+<tbody>
+<tr><td>nmstate region</td><td>NNCP / nmstate</td><td>NICs, bonds, VLANs, bridges and their ports, VRFs, <strong>bridge mappings</strong>, and VTEPs once they land</td></tr>
+<tr><td>OVN region</td><td>Kubernetes API</td><td>CUDN, UDN, NAD, Attachment</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Everything from the bridge-mappings lane leftward is the first region. Marking that boundary is itself a teaching device: <em>this side you change with an NNCP, that side with a custom resource</em> is one of the genuinely confusing things about OVN-Kubernetes, and the view can answer it at a glance. <span class="bead">s3t.31</span></p>
+
+<h3>The seam has exactly two crossing points</h3>
+
+<p>Which follows from how CUDN topologies differ:</p>
+
+<ul>
+<li><strong>Localnet</strong> maps to a physical VLAN and <em>must</em> name a <code>physicalNetworkName</code>, hence a specific bridge. Several Localnet CUDNs sharing one mapping is normal. They cross at the <strong>bridge mapping</strong>.</li>
+<li><strong>Layer2 and Layer3</strong> are overlays with no such reference. They cross at the <strong>per-CUDN patch pair into <code>br-ex</code></strong>, and travel between nodes over the Geneve tunnel.</li>
+</ul>
+
+<p>Those two points are what a future logical view will want to point back at — the ingress and egress of this node.</p>
+
+<h3>Provenance within the nmstate region</h3>
+
+<p>A second, finer distinction lives inside the first: <em>you configured this</em> versus <em>the cluster did</em>. It is fully observable through NodeNetworkConfigurationEnactments, which carry <code>nmstate.io/node</code> and <code>nmstate.io/policy</code> labels and a <code>desiredState</code> naming exactly what each policy configured — interfaces <em>and</em> bridge mappings:</p>
+
+<pre><code>nnce/cnv-1.br-vmdata     → br-vmdata (ovs-bridge), ovs-vlan-1920 (ovs-interface)
+                           ovn.bridge-mappings: physnet-vmdata → br-vmdata
+nnce/cnv-1.storage-vlan  → ens224.456 (vlan)</code></pre>
+
+<p>No name matching. And the case where two policies touch one interface — possible though contraindicated — needs no special handling: both are shown, which <em>surfaces</em> the overlap rather than guessing which won. The absence of a link is informative too: anything unclaimed was created by the installer or OVN-Kubernetes, not by the user. <span class="bead">s3t.34</span></p>
+
+<h2><span class="num">07c</span>The view teaches, so the model must be true</h2>
+
+<div class="lede">
+<p>A goal of this application is to educate OpenShift users, not only to diagnose. That is a design constraint, not a nice-to-have, and it changes how the rest of this document should be read.</p>
+</div>
+
+<ul>
+<li><strong>Explanatory surfaces are primary product.</strong> Explaining why an edge exists <span class="bead">s3t.30</span> and what a kind means <span class="bead">s3t.33</span> stop being polish and become a main reason the app exists.</li>
+<li><strong>Prefer explaining to hiding.</strong> Where noise must go, the reason should stay discoverable rather than the object silently vanishing.</li>
+<li><strong>Model correctness matters more than it would for a pure diagnostic tool.</strong> An expert shrugs at a misleading line; a learner absorbs it. That is the real cost of leaving <code>s3t.25</code> unfixed.</li>
+<li><strong>Never teach a guess as a fact.</strong> Several relationships here are inferred — a truncated-name match must not look identical to <code>iface.controller</code>. This is what raises <code>s3t.12</code>'s provenance chips from nicety to requirement.</li>
+</ul>
+
+<p>Each rationale carries two layers: the <strong>derivation</strong>, for the user debugging their own cluster, and the <strong>concept</strong>, for the user learning OVN-Kubernetes. For a bridge mapping, the derivation is <em>“localnet physnet resolves to bridge br-ex”</em>; the concept is the part a newcomer needs — <em>a bridge mapping is the name OVN uses for an OVS bridge, you create it with an NNCP except for the default physnet, and nothing flows through it</em>. Concept text is written once on the kind, so it does not nag an expert.</p>
+
+<hr>
+
 <h2><span class="num">08</span>Sequencing</h2>
 
 <figure>
@@ -470,13 +560,19 @@ type Fact = {
 </div>
 
 <div class="phase">
-<h4><span class="tag">Phase 5</span>New capability — the motivating work</h4>
-<p>If these are not small diffs at this point, the registry work was incomplete.</p>
-<div class="beadrow"><span class="bead">s3t.20 VTEP on dummy</span><span class="bead">s3t.21 VRF containers</span></div>
+<h4><span class="tag">Phase 5</span>Relationship model — added 22 Aug</h4>
+<p>The root fix and everything that depends on saying what an edge <em>means</em>. <code>s3t.25</code> gates the rest.</p>
+<div class="beadrow"><span class="bead">s3t.25 edge kinds</span><span class="bead">s3t.26 ports on bridges</span><span class="bead">s3t.27 mapping not a hop</span><span class="bead">s3t.28 VRF↔CUDN edge</span><span class="bead">s3t.29 patch-port anchor</span><span class="bead">s3t.30 edge rationale</span><span class="bead">s3t.31 the seam</span></div>
 </div>
 
 <div class="phase">
-<h4><span class="tag">Phase 6</span>Documentation</h4>
+<h4><span class="tag">Phase 6</span>New capability — the motivating work</h4>
+<p>If these are not small diffs at this point, the registry work was incomplete.</p>
+<div class="beadrow"><span class="bead">s3t.20 VTEP on dummy</span><span class="bead">s3t.21 VRF containers</span><span class="bead">s3t.33 concept text</span><span class="bead">s3t.34 NNCP provenance</span></div>
+</div>
+
+<div class="phase">
+<h4><span class="tag">Phase 7</span>Documentation</h4>
 <p>Rewrite once, at the end, against what actually exists.</p>
 <div class="beadrow"><span class="bead">s3t.22 readme-visualization.md</span></div>
 </div>
@@ -521,28 +617,33 @@ type Fact = {
 
 <h2><span class="num">10</span>Open questions</h2>
 
+<p>Three of the original questions were answered by the 22 August discussion and the real-cluster capture; they are recorded in the beads rather than repeated here. What remains open:</p>
+
 <div class="callout ask">
 <span class="lbl">Needs input — s3t.20 VTEP on dummy interfaces</span>
-<ol style="margin-bottom:0">
-<li>What identifies a VTEP-bearing dummy in NodeNetworkState? A naming convention, an address referenced by other config, or does nmstate report vxlan interfaces separately?</li>
-<li>What does it connect to in the graph — the underlay interface, the VRF, the EVPN/BGP config, the CUDN?</li>
-<li>Is the data in NNS at all, or does this need the collector to interrogate FRR? The plugin already reaches <code>openshift-frr-k8s</code> for logical snapshots, so the plumbing exists.</li>
-<li>Which lane — alongside VRFs in Layer 3, or a new one?</li>
-</ol>
+<p><strong>The lane question may be the wrong question.</strong> A VTEP is a tunnel endpoint to <em>other nodes</em>, so it has no left-to-right position on a single-node view at all — likely an annotation on the underlay interface, with the tunnel belonging to a logical or multi-node view. Its configuration is NNCP, so wherever it renders it sits inside the nmstate region.</p>
+<p>Still unanswered: what identifies a VTEP-bearing dummy in NodeNetworkState, and whether the data is in NNS at all or needs the collector to interrogate FRR.</p>
 </div>
 
 <div class="callout ask">
 <span class="lbl">Needs input — s3t.21 VRF containers</span>
-<p>Visual treatment: a bounding region behind member nodes, a swimlane, or a collapsible group? Membership derived from <code>vrf.port</code>, from route table ID, or both? Members currently live in <em>other</em> columns, so a container has to span lanes — that is the hard part against the current renderer. Recommend sketching two options against a real cluster's NNS before building either.</p>
+<p>Visual treatment, and how membership is derived. Members live in <em>other</em> lanes, so a container must span them — confirmed viable by the react-topology spike at a 600px span against a 220px lane.</p>
+<p>Design it together with <code>s3t.26</code>: VRF containment and bridge ports are the same relationship at different scales, and if they render differently the view teaches two things about one concept.</p>
 </div>
 
 <div class="callout ask">
-<span class="lbl">Needs input — s3t.15 diagnostics</span>
-<p>Which checks are genuinely actionable versus normal-and-expected in real clusters? A bridge mapping with no CUDN is presumably fine on a node with no such workload. A diagnostic that cries wolf is worse than none — worth confirming the list before implementing.</p>
+<span class="lbl">Needs input — s3t.27 default versus user-created mappings</span>
+<p>User-created bridge mappings are the interesting configuration; the installer's default <code>physnet</code> is not. Whether the two can be told apart reliably — name alone seems unlikely — is unresolved. <code>s3t.34</code> may answer it for free: a mapping claimed by an NNCE was user-created, one that is not was the installer's.</p>
+</div>
+
+<div class="callout ask">
+<span class="lbl">Needs review — s3t.33 concept wording</span>
+<p>The concept text is the part of the app that teaches. A confidently wrong sentence about OVN is worse than no sentence, so the wording wants review rather than generation.</p>
 </div>
 
 <div class="foot">
 <p><strong>Using this document.</strong> It is the touchstone for epic <code>ovn-recon-s3t</code>. Bead <code>s3t.22</code> carries the obligation to mark findings resolved here as they close, so it stays a working reference rather than becoming a historical artifact.</p>
+<p><strong>Revision history.</strong> 20 Aug: original review. 21 Aug: <code>s3t.1</code>–<code>.3</code>, <code>.10</code>, <code>.11</code>, <code>.24</code> closed; sections 04, 05 and 09 rewritten as resolved. 22 Aug: real-cluster fixture added; the edge-semantics diagnosis in section 03, the seam in 07b and the education constraint in 07c added after design discussion.</p>
 <p style="margin-bottom:0"><code>bd show ovn-recon-s3t</code> &nbsp;·&nbsp; <code>bd ready</code></p>
 </div>
 
