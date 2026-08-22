@@ -135,17 +135,29 @@ describe('LLDP', () => {
     });
 });
 
-describe('many localnets on one bridge', () => {
+describe('many localnets on one bridge (a legacy shape)', () => {
     it('has twenty-seven mappings on a single bridge', () => {
-        // Answers a design question directly: one bridge carrying many localnets is
-        // not only possible, it is the normal shape on a VM-hosting node. Any
-        // treatment of bridge mappings has to stay readable at this fan-out.
+        // NOT exemplary configuration. Before Localnet CUDNs, every NetworkAttachment-
+        // Definition had to name its own distinct localnet, so one bridge mapping per
+        // network was a necessity. Since roughly OpenShift 4.19 a CUDN creates the NAD
+        // and several CUDNs reference one physicalNetworkName, so the expected shape is
+        // now ONE mapping per bridge. A fan-out like this reads as pre-4.19 leftovers.
+        //
+        // Kept because such clusters exist and must still render legibly, and because
+        // it is the kind of thing the view should be able to point out (ovn-recon-s3t.15).
         const perBridge = bridgeMappings.reduce<Record<string, number>>((acc, m) => {
             acc[m.bridge] = (acc[m.bridge] ?? 0) + 1;
             return acc;
         }, {});
 
         expect(perBridge).toEqual({ 'br-ex': 1, 'ovs-vm': 27 });
+    });
+
+    it('has one mapping on br-ex, which is the shape current guidance expects', () => {
+        // The contrast within a single capture: br-ex carries exactly one localnet,
+        // ovs-vm carries the legacy pile.
+        expect(bridgeMappings.filter((m) => m.bridge === 'br-ex')).toHaveLength(1);
+        expect(bridgeMappings.find((m) => m.bridge === 'br-ex')!.localnet).toBe('physnet');
     });
 
     it('names every mapped bridge as a real interface on the node', () => {

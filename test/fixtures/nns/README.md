@@ -41,7 +41,7 @@ Optional sections such as routes and bridge mappings should be included only whe
 | `vrf-mixed-routes.json` | synthetic | VRF route matching across route key spellings |
 | `partial-missing-fields.json` | synthetic | absent optional sections; parsers must not throw |
 | `primary-cudn-vrf.json` | real CNV worker | ovs-interface shadowing a same-named ovs-bridge and holding the node IP; linux VLAN interface; VRF created by a Primary (Layer2) CUDN with its own route table; two OVS bridges with two localnet mappings; patch/veth/geneve/loopback tail |
-| `bonded-lldp.json` | real bonded UCS worker | three 802.3ad bonds — one into `br-ex`, one into a second OVS bridge, one standalone carrying its own address; LLDP neighbours on six NICs across two leaf switches; **27 localnet mappings on a single bridge**; a half-configured localnet patch port that is down and unattached; two unused NICs in `down` state |
+| `bonded-lldp.json` | real bonded UCS worker | three 802.3ad bonds — one into `br-ex`, one into a second OVS bridge, one standalone carrying its own address; LLDP neighbours on six NICs across two leaf switches; **27 localnet mappings on a single bridge** — a legacy, now-discouraged shape (see note below), retained because such clusters exist and must render; a half-configured localnet patch port that is down and unattached; two unused NICs in `down` state |
 
 `primary-cudn-vrf.json` has a companion in `test/fixtures/cudn/` holding the
 `ClusterUserDefinedNetwork` objects from the same cluster, since the VRF, the localnet
@@ -49,8 +49,14 @@ mappings and the attachment namespaces only make sense together.
 
 Prefer extending a real capture over inventing a synthetic one. Synthetic fixtures only
 prove the parsers handle shapes we already thought of — the real captures are what surfaced
-the `prefix-length` / `prefix_length` split, the bridge-shadowing case, and the fact that one
-bridge routinely carries dozens of localnet mappings.
+the `prefix-length` / `prefix_length` split and the bridge-shadowing case.
+
+A fixture being real does not make it exemplary. `bonded-lldp.json` carries 27 localnet mappings
+on one bridge, which was a **necessity before Localnet CUDNs** — every NetworkAttachmentDefinition
+had to name its own distinct localnet. Since roughly OpenShift 4.19 a CUDN creates the NAD and
+several CUDNs reference a single `physicalNetworkName`, so one mapping per bridge is the expected
+shape and a large fan-out reads as pre-4.19 leftovers. Note in the fixture inventory when a capture
+shows a legacy or discouraged pattern, so nobody mistakes it for a model to build toward.
 
 Anonymisation must preserve relationships, not just replace strings. In `bonded-lldp.json` the
 802.3ad members share their bond's MAC while `permanent-mac-address` keeps the burned-in one, and
