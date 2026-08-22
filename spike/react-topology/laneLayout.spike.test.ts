@@ -5,7 +5,15 @@
  * Q2: can a group span lanes, as VRF containment requires?
  *
  * Headless: exercises Controller + model + a custom Layout. No DOM rendering.
- * Delete this directory once the decision is recorded on the bead.
+ *
+ * The decision (ADOPT) is recorded on the bead; this is kept as the reference
+ * implementation for two findings that are easy to rediscover the hard way:
+ * grouped children leave graph.getNodes() and must be reached by walking the
+ * tree, and group membership is a tree so a node has at most one parent.
+ * Retire it when ovn-recon-s3t.9 lands a real layout in src/.
+ *
+ * Excluded from `npm test`; run with:
+ *   npx jest -c spike/react-topology/jest.config.js
  */
 import {
     Visualization,
