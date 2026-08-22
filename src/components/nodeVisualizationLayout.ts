@@ -1,6 +1,12 @@
 import { Interface } from '../types';
 import { TopologyEdge } from './nodeVisualizationModel';
 
+/** Gravity assigned to nodes the ranking never reached; sorts them after ranked nodes. */
+const UNRANKED_GRAVITY = 10000;
+
+/** Upper bound on nodes visited per longest-path search. See findLongestPath. */
+const MAX_PATH_SEARCH_STEPS = 20000;
+
 interface ComputeGravityByIdParams {
     topologyEdges: TopologyEdge[];
     interfaces: Interface[];
@@ -29,27 +35,46 @@ export const computeGravityById = ({
 }: ComputeGravityByIdParams): Record<string, number> => {
     const connectionGraph = buildConnectionGraph(topologyEdges);
 
-    const findLongestPath = (startNode: string, visited: Set<string> = new Set(), path: string[] = []): string[] => {
-        if (visited.has(startNode)) return path;
-        visited.add(startNode);
-        const currentPath = [...path, startNode];
-        const neighbors = connectionGraph[startNode] || [];
+    /**
+     * Walks every simple path from `startNode` and keeps the longest. Longest-path is
+     * NP-hard in general, so on a dense graph (a bridge with many ports) this does not
+     * terminate in reasonable time. The search is therefore capped by a step budget and
+     * returns the best path found when the budget runs out — a shorter path degrades
+     * column ordering, which is recoverable; a hung render is not.
+     *
+     * Stopgap. ovn-recon-s3t.11 replaces gravity with layered barycenter ordering and
+     * deletes this outright.
+     */
+    const findLongestPath = (startNode: string): string[] => {
+        let stepsUsed = 0;
 
-        if (neighbors.length === 0) {
-            return currentPath;
-        }
+        const walk = (nodeId: string, visited: Set<string>, path: string[]): string[] => {
+            if (visited.has(nodeId)) return path;
+            stepsUsed += 1;
+            visited.add(nodeId);
+            const currentPath = [...path, nodeId];
+            const neighbors = connectionGraph[nodeId] || [];
 
-        let longestPath = currentPath;
-        for (const neighbor of neighbors) {
-            if (!currentPath.includes(neighbor)) {
-                const subPath = findLongestPath(neighbor, new Set(visited), currentPath);
-                if (subPath.length > longestPath.length) {
-                    longestPath = subPath;
+            if (neighbors.length === 0) {
+                return currentPath;
+            }
+
+            let longestPath = currentPath;
+            for (const neighbor of neighbors) {
+                if (stepsUsed >= MAX_PATH_SEARCH_STEPS) break;
+                // `visited` holds exactly this path's nodes, so it doubles as the cycle check.
+                if (!visited.has(neighbor)) {
+                    const subPath = walk(neighbor, new Set(visited), currentPath);
+                    if (subPath.length > longestPath.length) {
+                        longestPath = subPath;
+                    }
                 }
             }
-        }
 
-        return longestPath;
+            return longestPath;
+        };
+
+        return walk(startNode, new Set<string>(), []);
     };
 
     const allPaths: string[][] = [];
@@ -112,9 +137,11 @@ export const computeGravityById = ({
     });
 
     Object.keys(connectionGraph).forEach((nodeId) => {
-        if (!gravityById[nodeId]) {
+        // Presence check, not truthiness: a computed gravity of 0 is the highest
+        // priority there is, and must not be mistaken for "not yet assigned".
+        if (!(nodeId in gravityById)) {
             const connectionCount = connectionGraph[nodeId]?.length || 0;
-            gravityById[nodeId] = 10000 + connectionCount;
+            gravityById[nodeId] = UNRANKED_GRAVITY + connectionCount;
         }
     });
 
@@ -158,21 +185,21 @@ export const computeGravityById = ({
             }
         } else if (physicalInterfacesSlaveToImportantNode.has(nodeId)) {
             return;
-        } else if (gravityById[nodeId] && gravityById[nodeId] >= 10000) {
-            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 5000);
-        } else if (gravityById[nodeId] && gravityById[nodeId] >= 1000) {
-            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 500);
-        } else if (gravityById[nodeId] && gravityById[nodeId] >= 100) {
-            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 50);
-        } else if (!gravityById[nodeId]) {
+        } else if (!(nodeId in gravityById)) {
             gravityById[nodeId] = 200;
+        } else if (gravityById[nodeId] >= 10000) {
+            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 5000);
+        } else if (gravityById[nodeId] >= 1000) {
+            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 500);
+        } else if (gravityById[nodeId] >= 100) {
+            gravityById[nodeId] = Math.max(0, gravityById[nodeId] - 50);
         }
     });
 
     Object.keys(gravityById)
         .filter((id) => id.startsWith('udn-'))
         .forEach((id) => {
-            gravityById[id] = (gravityById[id] ?? 10000) + 50000;
+            gravityById[id] = (gravityById[id] ?? UNRANKED_GRAVITY) + 50000;
         });
 
     return gravityById;
@@ -182,7 +209,8 @@ export const sortByGravity = <T,>(items: T[], getId: (item: T) => string, gravit
     items.slice().sort((a, b) => {
         const aId = getId(a);
         const bId = getId(b);
-        const gravityDiff = (gravityById[aId] || 10000) - (gravityById[bId] || 10000);
+        // `??`, not `||`: gravity 0 is valid and sorts first.
+        const gravityDiff = (gravityById[aId] ?? UNRANKED_GRAVITY) - (gravityById[bId] ?? UNRANKED_GRAVITY);
         if (gravityDiff !== 0) return gravityDiff;
         return aId.localeCompare(bId);
     });

@@ -991,7 +991,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const sortedBridgeInterfaces = sortByGravity(bridgeInterfaces, (iface) => iface.name, gravityById);
     const sortedLogicalInterfaces = sortByGravity(logicalInterfaces, (iface) => iface.name, gravityById);
     const sortedBridgeMappings = sortByGravity(bridgeMappings, (mapping) => `ovn-${mapping.localnet || ''}`, gravityById);
-    const sortedCudns = sortByGravity(cudns, (cudn) => `cudn-${cudn.metadata?.name || ''}`, gravityById);
     const sortedNetworkItems = sortByGravity(networkItems, getNetworkNodeId, gravityById);
     const sortedAttachmentNodes = sortByGravity(attachmentNodes, getAttachmentNodeId, gravityById);
     const sortedNads = sortByGravity(nads, (nad) => getNadNodeId(nad), gravityById);
@@ -1347,14 +1346,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         setZoomLevel(1);
     };
 
-    // State for Popover
+    // Drawer selection state
     const [activeNode, setActiveNode] = React.useState<NodeViewModel | null>(null);
-    const [anchorElement, setAnchorElement] = React.useState<HTMLElement | null>(null);
     const [activePopoverTab, setActivePopoverTab] = React.useState<DrawerTabId>('summary');
 
     const handleNodeClick = (event: React.MouseEvent, node: NodeViewModel) => {
         event.stopPropagation(); // Prevent clearing highlight when clicking a node
-        setAnchorElement(event.currentTarget as HTMLElement);
 
         const wasDrawerOpen = activeNode !== null;
 
@@ -1378,7 +1375,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     const handlePopoverClose = () => {
         setActiveNode(null);
-        setAnchorElement(null);
     };
 
 
