@@ -1,6 +1,7 @@
 import {
     ClusterUserDefinedNetwork,
     Interface,
+    Ipv4AddressEntry,
     NodeNetworkState,
     NetworkAttachmentDefinition,
     RouteAdvertisements
@@ -116,6 +117,21 @@ export const getCudnsSelectedByRouteAdvertisement = (
     }
 
     return cudns.filter((cudn) => routeAdvertisementSelectsCudn(routeAdvertisement, cudn));
+};
+
+/**
+ * IPv4 addresses as display strings. nmstate emits `prefix-length`, but some
+ * captures carry `prefix_length`; reading only one spelling renders "10.0.0.1/undefined".
+ */
+export const getIpv4Addresses = (iface: { ipv4?: { address?: Ipv4AddressEntry[] } } | undefined): string[] => {
+    const addresses = iface?.ipv4?.address;
+    if (!Array.isArray(addresses)) return [];
+    return addresses
+        .filter((entry) => entry && typeof entry.ip === 'string')
+        .map((entry) => {
+            const prefix = entry['prefix-length'] ?? entry.prefix_length;
+            return prefix == null ? entry.ip : `${entry.ip}/${prefix}`;
+        });
 };
 
 export const getVrfConnectionInfo = (

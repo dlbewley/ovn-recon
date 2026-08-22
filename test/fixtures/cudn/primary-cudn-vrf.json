@@ -1,0 +1,162 @@
+[
+  {
+    "apiVersion": "k8s.ovn.org/v1",
+    "kind": "ClusterUserDefinedNetwork",
+    "metadata": {
+      "name": "example-p-cudn",
+      "labels": {
+        "network/cudn-p-10-1-2-0": ""
+      }
+    },
+    "spec": {
+      "namespaceSelector": {
+        "matchLabels": {
+          "network/cudn-p-10-1-2-0": ""
+        }
+      },
+      "network": {
+        "layer2": {
+          "ipam": {
+            "lifecycle": "Persistent"
+          },
+          "role": "Primary",
+          "subnets": [
+            "10.1.2.0/24"
+          ]
+        },
+        "topology": "Layer2"
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "NetworkCreated",
+          "status": "True",
+          "reason": "NetworkAttachmentDefinitionCreated",
+          "message": "NetworkAttachmentDefinition has been created in following namespaces: [demo-vm-primary-udn]"
+        },
+        {
+          "type": "NetworkAllocationSucceeded",
+          "status": "True",
+          "reason": "NetworkAllocationSucceeded",
+          "message": "Network allocation succeeded for all synced nodes."
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "k8s.ovn.org/v1",
+    "kind": "ClusterUserDefinedNetwork",
+    "metadata": {
+      "name": "machinenet"
+    },
+    "spec": {
+      "namespaceSelector": {
+        "matchLabels": {
+          "network/machine": ""
+        }
+      },
+      "network": {
+        "localnet": {
+          "ipam": {
+            "mode": "Disabled"
+          },
+          "mtu": 1500,
+          "physicalNetworkName": "physnet",
+          "role": "Secondary"
+        },
+        "topology": "Localnet"
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "NetworkCreated",
+          "status": "True",
+          "reason": "NetworkAttachmentDefinitionCreated",
+          "message": "NetworkAttachmentDefinition has been created in following namespaces: [demo-mirror]"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "k8s.ovn.org/v1",
+    "kind": "ClusterUserDefinedNetwork",
+    "metadata": {
+      "name": "vlan-1924"
+    },
+    "spec": {
+      "namespaceSelector": {
+        "matchLabels": {
+          "network/vlan-1924": ""
+        }
+      },
+      "network": {
+        "localnet": {
+          "ipam": {
+            "mode": "Disabled"
+          },
+          "physicalNetworkName": "physnet-vmdata",
+          "role": "Secondary",
+          "vlan": {
+            "access": {
+              "id": 1924
+            },
+            "mode": "Access"
+          }
+        },
+        "topology": "Localnet"
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "NetworkCreated",
+          "status": "True",
+          "reason": "NetworkAttachmentDefinitionCreated",
+          "message": "NetworkAttachmentDefinition has been created in following namespaces: [demo-mirror]"
+        }
+      ]
+    }
+  },
+  {
+    "apiVersion": "k8s.ovn.org/v1",
+    "kind": "ClusterUserDefinedNetwork",
+    "metadata": {
+      "name": "vlan-1926"
+    },
+    "spec": {
+      "namespaceSelector": {
+        "matchLabels": {
+          "network/vlan-1926": ""
+        }
+      },
+      "network": {
+        "localnet": {
+          "ipam": {
+            "mode": "Disabled"
+          },
+          "physicalNetworkName": "physnet-vmdata",
+          "role": "Secondary",
+          "vlan": {
+            "access": {
+              "id": 1926
+            },
+            "mode": "Access"
+          }
+        },
+        "topology": "Localnet"
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "NetworkCreated",
+          "status": "True",
+          "reason": "NetworkAttachmentDefinitionCreated",
+          "message": "NetworkAttachmentDefinition has been created in following namespaces: []"
+        }
+      ]
+    }
+  }
+]

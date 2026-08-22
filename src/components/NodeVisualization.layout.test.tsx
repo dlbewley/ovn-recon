@@ -5,7 +5,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 import * as yaml from 'js-yaml';
 
-import { NodeNetworkState } from '../types';
+import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
 import NodeVisualization from './NodeVisualization';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
@@ -24,6 +24,10 @@ const loadFixture = (name: string): NodeNetworkState => {
         return yaml.load(raw) as NodeNetworkState;
     }
 };
+
+const loadCudns = (name: string): ClusterUserDefinedNetwork[] =>
+    JSON.parse(fs.readFileSync(
+        path.join(process.cwd(), 'test', 'fixtures', 'cudn', `${name}.json`), 'utf-8')) as ClusterUserDefinedNetwork[];
 
 const parseTranslate = (element: Element): { x: number; y: number } | null => {
     const match = /translate\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\)/.exec(element.getAttribute('transform') || '');
@@ -59,10 +63,10 @@ describe('NodeVisualization node placement', () => {
     let container: HTMLDivElement;
     let root: Root;
 
-    const render = (nns: NodeNetworkState) => {
+    const render = (nns: NodeNetworkState, cudns: ClusterUserDefinedNetwork[] = []) => {
         act(() => {
             root.render(
-                <NodeVisualization nns={nns} cudns={[]} udns={[]} nads={[]} routeAdvertisements={[]} />
+                <NodeVisualization nns={nns} cudns={cudns} udns={[]} nads={[]} routeAdvertisements={[]} />
             );
         });
     };
@@ -146,6 +150,50 @@ describe('NodeVisualization node placement', () => {
                 const delta = y - sorted[index];
                 expect(delta === ITEM_HEIGHT + 20 || delta === ITEM_HEIGHT + 60).toBe(true);
             });
+        });
+    });
+
+    describe('primary-cudn-vrf (captured from a real CNV worker)', () => {
+        it('renders every lane with connectors meeting their nodes', () => {
+            render(loadFixture('primary-cudn-vrf'), loadCudns('primary-cudn-vrf'));
+            expectEdgesToMeetNodes();
+        });
+
+        it('still aligns once the hidden logical lane is revealed', () => {
+            // The ovs-interface holding this node's IP lives in the logical lane, which
+            // is hidden by default -- so revealing it is the interesting case, not a
+            // corner one. See ovn-recon-x23.
+            render(loadFixture('primary-cudn-vrf'), loadCudns('primary-cudn-vrf'));
+            const toggle = container.querySelector<HTMLInputElement>('#show-hidden-columns-toggle')!;
+            act(() => toggle.click());
+            expectEdgesToMeetNodes();
+        });
+
+        it('draws the VRF, both bridges and both localnets', () => {
+            render(loadFixture('primary-cudn-vrf'), loadCudns('primary-cudn-vrf'));
+
+            const titles = Array.from(container.querySelectorAll('title')).map((t) => t.textContent ?? '');
+            expect(titles).toContain('example-p-cudn (VRF)');
+            expect(titles).toContain('br-ex (ovs-bridge)');
+            expect(titles).toContain('br-vmdata (ovs-bridge)');
+            expect(titles).toContain('physnet (OVN Bridge Mapping)');
+            expect(titles).toContain('physnet-vmdata (OVN Bridge Mapping)');
+            expect(titles).toContain('ens224.456 (vlan)');
+        });
+
+        it('gives the shadowing ovs-interface its own node, distinct from the bridge', () => {
+            render(loadFixture('primary-cudn-vrf'), loadCudns('primary-cudn-vrf'));
+            const toggle = container.querySelector<HTMLInputElement>('#show-hidden-columns-toggle')!;
+            act(() => toggle.click());
+
+            const titles = Array.from(container.querySelectorAll('title')).map((t) => t.textContent ?? '');
+            // Same name, two nodes: the bridge, and the interface carrying the node IP.
+            expect(titles).toContain('br-ex (ovs-bridge)');
+            expect(titles).toContain('br-ex (ovs-interface)');
+
+            const origins = nodeOrigins(container);
+            const distinct = new Set(origins.map(({ x, y }) => `${x},${y}`));
+            expect(distinct.size).toBe(origins.length); // nothing drawn on top of anything else
         });
     });
 });

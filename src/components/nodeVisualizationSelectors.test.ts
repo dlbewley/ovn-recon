@@ -3,7 +3,13 @@ import path from 'path';
 import * as yaml from 'js-yaml';
 
 import { Interface, NodeNetworkState } from '../types';
-import { extractLldpNeighbors, getVrfConnectionInfo, getVrfRoutesForInterface, hasLldpNeighbors } from './nodeVisualizationSelectors';
+import {
+    extractLldpNeighbors,
+    getIpv4Addresses,
+    getVrfConnectionInfo,
+    getVrfRoutesForInterface,
+    hasLldpNeighbors
+} from './nodeVisualizationSelectors';
 
 const loadFixture = (name: string): NodeNetworkState => {
     const fixturePath = path.join(process.cwd(), 'test', 'fixtures', 'nns', `${name}.json`);
@@ -120,5 +126,33 @@ describe('nodeVisualizationSelectors fixture coverage', () => {
         ];
 
         expect(hasLldpNeighbors(interfaces)).toBe(true);
+    });
+});
+
+describe('getIpv4Addresses', () => {
+    it('reads the hyphenated spelling nmstate actually emits', () => {
+        expect(getIpv4Addresses({ ipv4: { address: [{ ip: '192.0.2.72', 'prefix-length': 24 }] } }))
+            .toEqual(['192.0.2.72/24']);
+    });
+
+    it('reads the underscored spelling too', () => {
+        // Regression: the interface Details panel read only prefix_length, so a real
+        // capture rendered "192.0.2.72/undefined".
+        expect(getIpv4Addresses({ ipv4: { address: [{ ip: '192.0.2.72', prefix_length: 24 }] } }))
+            .toEqual(['192.0.2.72/24']);
+    });
+
+    it('returns every address, not just the first', () => {
+        expect(getIpv4Addresses({ ipv4: { address: [
+            { ip: '192.0.2.72', 'prefix-length': 24 },
+            { ip: '169.254.0.2', 'prefix-length': 17 }
+        ] } })).toEqual(['192.0.2.72/24', '169.254.0.2/17']);
+    });
+
+    it('degrades gracefully on missing or malformed input', () => {
+        expect(getIpv4Addresses(undefined)).toEqual([]);
+        expect(getIpv4Addresses({})).toEqual([]);
+        expect(getIpv4Addresses({ ipv4: { address: [] } })).toEqual([]);
+        expect(getIpv4Addresses({ ipv4: { address: [{ ip: '10.0.0.1' }] } })).toEqual(['10.0.0.1']);
     });
 });

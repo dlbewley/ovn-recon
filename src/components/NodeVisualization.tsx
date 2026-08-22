@@ -18,6 +18,7 @@ import {
     getVrfRoutesForInterface,
     VrfAssociatedRoute,
     getVrfConnectionInfo,
+    getIpv4Addresses,
     parseNadConfig
 } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
@@ -242,10 +243,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 <DescriptionListDescription>{node.raw.mtu}</DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
-                        {node.raw?.ipv4?.address && node.raw.ipv4.address.length > 0 && (
+                        {getIpv4Addresses(node.raw).length > 0 && (
                             <DescriptionListGroup>
                                 <DescriptionListTerm>IPv4</DescriptionListTerm>
-                                <DescriptionListDescription>{node.raw.ipv4.address[0].ip}/{node.raw.ipv4.address[0].prefix_length}</DescriptionListDescription>
+                                <DescriptionListDescription>{getIpv4Addresses(node.raw).join(', ')}</DescriptionListDescription>
                             </DescriptionListGroup>
                         )}
                         {isBridgeNode && (
@@ -708,18 +709,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 {brIntPorts.length > 0 ? (
                                     <ul className="pf-v6-c-list">
                                         {brIntPorts.map((iface) => {
-                                            const ipv4Addresses = iface.ipv4?.address || [];
+                                            const addresses = getIpv4Addresses(iface);
                                             return (
                                                 <li key={iface.name}>
                                                     {iface.name}
-                                                    {ipv4Addresses.length > 0
-                                                        ? ` ${ipv4Addresses
-                                                            .map((addr: Record<string, unknown>) => {
-                                                                const prefixLength = addr.prefix_length ?? addr['prefix-length'];
-                                                                return `${String(addr.ip)}/${String(prefixLength)}`;
-                                                            })
-                                                            .join(', ')}`
-                                                        : ''}
+                                                    {addresses.length > 0 ? ` ${addresses.join(', ')}` : ''}
                                                 </li>
                                             );
                                         })}

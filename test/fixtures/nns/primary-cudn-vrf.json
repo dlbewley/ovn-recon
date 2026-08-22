@@ -1,0 +1,406 @@
+{
+  "apiVersion": "nmstate.io/v1beta1",
+  "kind": "NodeNetworkState",
+  "metadata": {
+    "name": "worker-1"
+  },
+  "status": {
+    "currentState": {
+      "interfaces": [
+        {
+          "name": "0cb0de1976d0c71",
+          "type": "veth",
+          "state": "up",
+          "controller": "ovs-system",
+          "mtu": 1400,
+          "mac-address": "02:00:00:00:00:00"
+        },
+        {
+          "name": "br-ex",
+          "type": "ovs-bridge",
+          "state": "up",
+          "bridge": {
+            "port": [
+              {
+                "name": "br-ex"
+              },
+              {
+                "name": "ens192"
+              },
+              {
+                "name": "patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int"
+              },
+              {
+                "name": "patch-br-ex_worker-1-to-br-int"
+              }
+            ]
+          }
+        },
+        {
+          "name": "br-ex",
+          "type": "ovs-interface",
+          "state": "up",
+          "controller": "br-ex",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:00:01",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "192.0.2.72",
+                "prefix-length": 24
+              },
+              {
+                "ip": "169.254.0.2",
+                "prefix-length": 17
+              }
+            ]
+          }
+        },
+        {
+          "name": "br-int",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "mtu": 1400,
+          "mac-address": "02:00:00:00:00:02"
+        },
+        {
+          "name": "br-vmdata",
+          "type": "ovs-bridge",
+          "state": "up",
+          "description": "Bridge to the trunk network for VM traffic",
+          "bridge": {
+            "port": [
+              {
+                "name": "ens224"
+              },
+              {
+                "name": "ovs-vlan-1920",
+                "vlan": {
+                  "mode": "access",
+                  "tag": 1920
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "ens161",
+          "type": "ethernet",
+          "state": "down",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:00:03"
+        },
+        {
+          "name": "ens192",
+          "type": "ethernet",
+          "state": "up",
+          "controller": "br-ex",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:00:01"
+        },
+        {
+          "name": "ens224",
+          "type": "ethernet",
+          "state": "up",
+          "controller": "br-vmdata",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:00:04"
+        },
+        {
+          "name": "ens224.456",
+          "type": "vlan",
+          "state": "up",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:00:04",
+          "vlan": {
+            "base-iface": "ens224",
+            "id": 456,
+            "protocol": "802.1q"
+          }
+        },
+        {
+          "name": "ens256",
+          "type": "ethernet",
+          "state": "down",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:00:05"
+        },
+        {
+          "name": "example-p-cudn",
+          "type": "vrf",
+          "state": "up",
+          "mtu": 65575,
+          "mac-address": "02:00:00:00:00:06",
+          "vrf": {
+            "port": [
+              "ovn-k8s-mp3"
+            ],
+            "route-table-id": 5775
+          }
+        },
+        {
+          "name": "genev_sys_6081",
+          "type": "unknown",
+          "state": "ignore",
+          "mac-address": "02:00:00:00:00:07"
+        },
+        {
+          "name": "lo",
+          "type": "loopback",
+          "state": "up",
+          "mtu": 65536,
+          "mac-address": "02:00:00:00:00:08",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "127.0.0.1",
+                "prefix-length": 8
+              }
+            ]
+          }
+        },
+        {
+          "name": "ovn-k8s-mp0",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "mtu": 1400,
+          "mac-address": "02:00:00:00:00:09",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "10.131.0.2",
+                "prefix-length": 23
+              }
+            ]
+          }
+        },
+        {
+          "name": "ovn-k8s-mp3",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "mtu": 1400,
+          "mac-address": "02:00:00:00:00:0A",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "10.1.2.2",
+                "prefix-length": 24
+              }
+            ]
+          }
+        },
+        {
+          "name": "ovs-vlan-1920",
+          "type": "ovs-interface",
+          "state": "up",
+          "description": "OVS inferface on VLAN 1920",
+          "controller": "br-vmdata",
+          "mtu": 1500,
+          "mac-address": "02:00:00:00:00:0B"
+        },
+        {
+          "name": "patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-ex",
+          "patch": {
+            "peer": "patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1"
+          }
+        },
+        {
+          "name": "patch-br-ex_worker-1-to-br-int",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-ex",
+          "patch": {
+            "peer": "patch-br-int-to-br-ex_worker-1"
+          }
+        },
+        {
+          "name": "patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "patch": {
+            "peer": "patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int"
+          }
+        },
+        {
+          "name": "patch-br-int-to-br-ex_worker-1",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "patch": {
+            "peer": "patch-br-ex_worker-1-to-br-int"
+          }
+        }
+      ],
+      "ovn": {
+        "bridge-mappings": [
+          {
+            "bridge": "br-ex",
+            "localnet": "physnet"
+          },
+          {
+            "bridge": "br-vmdata",
+            "localnet": "physnet-vmdata"
+          }
+        ]
+      },
+      "routes": {
+        "running": [
+          {
+            "destination": "172.30.0.0/16",
+            "next-hop-address": "10.131.0.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 7,
+            "state": "ignore"
+          },
+          {
+            "destination": "0.0.0.0/0",
+            "next-hop-address": "192.0.2.1",
+            "next-hop-interface": "br-ex",
+            "table-id": 5775,
+            "vrf-name": "example-p-cudn",
+            "mtu": 1400
+          },
+          {
+            "destination": "169.254.0.3/32",
+            "next-hop-address": "10.1.2.1",
+            "next-hop-interface": "ovn-k8s-mp3",
+            "table-id": 5775,
+            "state": "ignore",
+            "vrf-name": "example-p-cudn"
+          },
+          {
+            "destination": "169.254.0.16/32",
+            "next-hop-address": "0.0.0.0",
+            "next-hop-interface": "ovn-k8s-mp3",
+            "table-id": 5775,
+            "state": "ignore",
+            "vrf-name": "example-p-cudn",
+            "mtu": 1400
+          },
+          {
+            "destination": "172.30.0.0/16",
+            "next-hop-address": "169.254.0.4",
+            "next-hop-interface": "br-ex",
+            "table-id": 5775,
+            "vrf-name": "example-p-cudn",
+            "mtu": 1400
+          },
+          {
+            "destination": "10.128.0.0/14",
+            "next-hop-address": "10.131.0.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 254,
+            "state": "ignore"
+          },
+          {
+            "destination": "169.254.0.1/32",
+            "next-hop-address": "0.0.0.0",
+            "next-hop-interface": "br-ex",
+            "table-id": 254
+          },
+          {
+            "destination": "169.254.0.3/32",
+            "next-hop-address": "10.131.0.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 254,
+            "state": "ignore"
+          },
+          {
+            "destination": "172.30.0.0/16",
+            "next-hop-address": "169.254.0.4",
+            "next-hop-interface": "br-ex",
+            "table-id": 254,
+            "mtu": 1400
+          },
+          {
+            "destination": "0.0.0.0/0",
+            "next-hop-address": "192.0.2.1",
+            "next-hop-interface": "br-ex",
+            "table-id": 254,
+            "metric": 48
+          }
+        ],
+        "config": [
+          {
+            "destination": "172.30.0.0/16",
+            "next-hop-address": "10.131.0.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 7,
+            "state": "ignore"
+          },
+          {
+            "destination": "0.0.0.0/0",
+            "next-hop-address": "192.0.2.1",
+            "next-hop-interface": "br-ex",
+            "table-id": 5775,
+            "vrf-name": "example-p-cudn",
+            "mtu": 1400
+          },
+          {
+            "destination": "169.254.0.3/32",
+            "next-hop-address": "10.1.2.1",
+            "next-hop-interface": "ovn-k8s-mp3",
+            "table-id": 5775,
+            "state": "ignore",
+            "vrf-name": "example-p-cudn"
+          },
+          {
+            "destination": "169.254.0.16/32",
+            "next-hop-address": "0.0.0.0",
+            "next-hop-interface": "ovn-k8s-mp3",
+            "table-id": 5775,
+            "state": "ignore",
+            "vrf-name": "example-p-cudn",
+            "mtu": 1400
+          },
+          {
+            "destination": "172.30.0.0/16",
+            "next-hop-address": "169.254.0.4",
+            "next-hop-interface": "br-ex",
+            "table-id": 5775,
+            "vrf-name": "example-p-cudn",
+            "mtu": 1400
+          },
+          {
+            "destination": "10.128.0.0/14",
+            "next-hop-address": "10.131.0.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 254,
+            "state": "ignore"
+          },
+          {
+            "destination": "169.254.0.1/32",
+            "next-hop-address": "0.0.0.0",
+            "next-hop-interface": "br-ex",
+            "table-id": 254
+          },
+          {
+            "destination": "169.254.0.3/32",
+            "next-hop-address": "10.131.0.1",
+            "next-hop-interface": "ovn-k8s-mp0",
+            "table-id": 254,
+            "state": "ignore"
+          },
+          {
+            "destination": "172.30.0.0/16",
+            "next-hop-address": "169.254.0.4",
+            "next-hop-interface": "br-ex",
+            "table-id": 254,
+            "mtu": 1400
+          }
+        ]
+      }
+    }
+  }
+}
