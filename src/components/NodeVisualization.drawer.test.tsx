@@ -230,6 +230,24 @@ describe('NodeVisualization drawer', () => {
         });
     });
 
+    it('shows an icon in the drawer header, matching the one on the node', () => {
+        // Regression: the drawer looked its icon up by a type string that changed
+        // meaning when descriptors landed, so every interface silently fell back to the
+        // default icon. Nothing covered it, which is why it nearly shipped.
+        renderPrimary();
+        clickNode('ens192 (ethernet)');
+
+        const panel = container.querySelector('.pf-v6-c-drawer__panel')!;
+        const headerIcon = panel.querySelector('svg');
+        expect(headerIcon).not.toBeNull();
+
+        // The node on the canvas draws the same icon.
+        const nodeIcon = nodeGroups()
+            .find((g) => g.querySelector('title')?.textContent === 'ens192 (ethernet)')!
+            .querySelector('svg');
+        expect(headerIcon!.innerHTML).toBe(nodeIcon!.innerHTML);
+    });
+
     describe('selection behaviour', () => {
         it('dims unrelated nodes while a node is selected, and restores them on close', () => {
             renderPrimary();

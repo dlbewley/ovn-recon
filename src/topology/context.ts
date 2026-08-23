@@ -1,3 +1,5 @@
+import { extractLldpNeighbors, getCudnAssociatedNamespaces, LldpNeighborNode } from '../components/nodeVisualizationSelectors';
+import { AttachmentNode } from './types';
 import {
     ClusterUserDefinedNetwork,
     Interface,
@@ -32,7 +34,43 @@ export interface GraphContext {
     explicitBridgeNames: Set<string>;
     /** Names appearing as some interface's controller or master. */
     controllerNames: Set<string>;
+    /** LLDP neighbours parsed out of the interfaces. */
+    lldpNeighbors: LldpNeighborNode[];
+    /**
+     * Synthetic nodes for the namespaces attached to each network. Derived rather than
+     * reported: CUDN namespaces are scraped from a status condition message, and each
+     * UDN implies one attachment for the NAD its controller creates.
+     */
+    attachmentNodes: AttachmentNode[];
 }
+
+/** Namespaces attached to each CUDN, plus one node per UDN. */
+const buildAttachmentNodes = (
+    cudns: ClusterUserDefinedNetwork[],
+    udns: UserDefinedNetwork[]
+): AttachmentNode[] => {
+    const nodes: AttachmentNode[] = [];
+    cudns.forEach((cudn) => {
+        const namespaces = getCudnAssociatedNamespaces(cudn);
+        if (namespaces.length > 0) {
+            nodes.push({
+                name: cudn.metadata?.name || '',
+                type: 'attachment',
+                namespaces,
+                cudn: cudn.metadata?.name || ''
+            });
+        }
+    });
+    udns.forEach((udn) => {
+        const name = udn.metadata?.name || '';
+        if (!name) return;
+        const namespace = udn.metadata?.namespace || 'default';
+        nodes.push({
+            name, type: 'attachment', namespaces: [namespace], udn: { namespace, name }
+        });
+    });
+    return nodes;
+};
 
 export interface GraphContextInput {
     nns: NodeNetworkState;
@@ -68,6 +106,8 @@ export const buildGraphContext = ({
             interfaces
                 .map((i) => i.controller || i.master)
                 .filter((name): name is string => Boolean(name))
-        )
+        ),
+        lldpNeighbors: extractLldpNeighbors(interfaces),
+        attachmentNodes: buildAttachmentNodes(cudns, udns)
     };
 };

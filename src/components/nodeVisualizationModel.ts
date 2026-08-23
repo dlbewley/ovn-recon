@@ -1,26 +1,7 @@
-import { Interface } from '../types';
 import { GraphContext } from '../topology/context';
-import {
-    attachmentNodeId,
-    attachmentSourceNodeId,
-    bridgeMappingNodeId,
-    cudnNodeId,
-    interfaceNodeId,
-    nadNodeId,
-    resolveInterfaceRef,
-    udnNodeId
-} from '../topology/ids';
-import { AttachmentNode } from '../topology/types';
-import {
-    findCudnNameForNad,
-    LldpNeighborNode,
-    findRouteAdvertisementForVrf,
-    getCudnsSelectedByRouteAdvertisement,
-    getNadUpstreamNodeIdsForEdges
-} from './nodeVisualizationSelectors';
-
-/** @deprecated Use AttachmentNode from ../topology/types. Kept for one release. */
-export type AttachmentNodeModel = AttachmentNode;
+import { NODE_TYPES } from '../topology/descriptors';
+import { resolveInterfaceRef } from '../topology/ids';
+import { LaneViewState, visibleItems } from '../topology/lanes';
 
 export interface TopologyEdge {
     source: string;
@@ -46,15 +27,6 @@ export interface TopologyEdgeResult {
     unresolved: UnresolvedEdge[];
 }
 
-interface BuildTopologyEdgesParams {
-    ctx: GraphContext;
-    vrfInterfaces: Interface[];
-    lldpNeighbors: LldpNeighborNode[];
-    attachmentNodes: AttachmentNode[];
-    showNads: boolean;
-    showLldpNeighbors: boolean;
-}
-
 /**
  * Controllers that legitimately name something nmstate does not report as an interface.
  *
@@ -65,109 +37,50 @@ interface BuildTopologyEdgesParams {
  */
 const KNOWN_UNREPORTED_CONTROLLERS = new Set(['ovs-system']);
 
-export const buildTopologyEdges = ({
-    ctx,
-    vrfInterfaces,
-    lldpNeighbors,
-    attachmentNodes,
-    showNads,
-    showLldpNeighbors
-}: BuildTopologyEdgesParams): TopologyEdgeResult => {
+/**
+ * Collect every edge the node types contribute.
+ *
+ * The rules used to live here as one block per relationship, so adding a node type meant
+ * editing this file as well as the lane table, the renderer and the view model. Each
+ * descriptor now owns the edges it draws, and this walks the table.
+ */
+export const buildTopologyEdges = (ctx: GraphContext, view: LaneViewState): TopologyEdgeResult => {
     const edges: TopologyEdge[] = [];
     const edgeKeys = new Set<string>();
     const unresolved: UnresolvedEdge[] = [];
 
-    const pushEdge = (source: string | undefined, target: string | undefined) => {
-        if (!source || !target) return;
-        const key = `${source}=>${target}`;
-        if (edgeKeys.has(key)) return;
-        edgeKeys.add(key);
-        edges.push({ source, target });
+    const sink = {
+        edge: (source: string | undefined, target: string | undefined) => {
+            if (!source || !target) return;
+            const key = `${source}=>${target}`;
+            if (edgeKeys.has(key)) return;
+            edgeKeys.add(key);
+            edges.push({ source, target });
+        },
+        named: (
+            rule: string,
+            from: string,
+            reference: string | undefined,
+            direction: 'to' | 'from'
+        ) => {
+            if (!reference) return;
+            const target = resolveInterfaceRef(reference, ctx);
+            if (!target) {
+                if (!KNOWN_UNREPORTED_CONTROLLERS.has(reference)) {
+                    unresolved.push({ rule, reference, from });
+                }
+                return;
+            }
+            if (direction === 'to') sink.edge(from, target);
+            else sink.edge(target, from);
+        }
     };
 
-    /** Follow a name reference, recording it when it points at nothing. */
-    const pushNamedEdge = (
-        rule: string,
-        from: string,
-        reference: string | undefined,
-        direction: 'to' | 'from'
-    ) => {
-        if (!reference) return;
-        const target = resolveInterfaceRef(reference, ctx);
-        if (!target) {
-            if (!KNOWN_UNREPORTED_CONTROLLERS.has(reference)) {
-                unresolved.push({ rule, reference, from });
-            }
-            return;
-        }
-        if (direction === 'to') pushEdge(from, target);
-        else pushEdge(target, from);
-    };
-
-    ctx.interfaces.forEach((iface) => {
-        const ifaceId = interfaceNodeId(iface, ctx);
-        // Enslavement: this interface is a port of its controller.
-        pushNamedEdge('controller', ifaceId, iface.controller || iface.master, 'to');
-        // Layering: a VLAN or MACVLAN device is built on its base interface.
-        pushNamedEdge(
-            'base-iface',
-            ifaceId,
-            iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'],
-            'from'
-        );
-    });
-
-    ctx.bridgeMappings.forEach((mapping) => {
-        pushNamedEdge('bridge-mapping', bridgeMappingNodeId(mapping.localnet), mapping.bridge, 'from');
-    });
-
-    if (showLldpNeighbors) {
-        lldpNeighbors.forEach((neighbor) => {
-            pushNamedEdge('lldp', neighbor.id, neighbor.localInterface, 'to');
-        });
-    }
-
-    ctx.cudns.forEach((cudn) => {
-        const physicalNetworkName =
-            cudn.spec?.network?.localNet?.physicalNetworkName
-            || cudn.spec?.network?.localnet?.physicalNetworkName;
-        if (physicalNetworkName) {
-            pushEdge(bridgeMappingNodeId(physicalNetworkName), cudnNodeId(cudn.metadata?.name));
-        }
-    });
-
-    attachmentNodes.forEach((attachment) => {
-        pushEdge(attachmentSourceNodeId(attachment), attachmentNodeId(attachment));
-    });
-
-    if (showNads) {
-        ctx.nads.forEach((nad) => {
-            const nadId = nadNodeId(nad);
-            const cudnName = findCudnNameForNad(nad, ctx.cudns);
-            if (cudnName) {
-                pushEdge(cudnNodeId(cudnName), nadId);
-            }
-            const udnForNad = ctx.udns.find(
-                (u) => u.metadata?.namespace === nad.metadata?.namespace
-                    && u.metadata?.name === nad.metadata?.name
-            );
-            if (udnForNad) {
-                pushEdge(udnNodeId(udnForNad), nadId);
-            }
-            getNadUpstreamNodeIdsForEdges(nad, ctx.cudns).forEach((upstreamId) => {
-                // Bridge references arrive as bare names; localnet references already
-                // arrive as canonical ovn: ids.
-                if (upstreamId.startsWith('ovn:')) pushEdge(upstreamId, nadId);
-                else pushNamedEdge('nad-bridge', nadId, upstreamId, 'from');
-            });
-        });
-    }
-
-    vrfInterfaces.forEach((vrf) => {
-        const ra = findRouteAdvertisementForVrf(ctx.routeAdvertisements, vrf.name);
-        getCudnsSelectedByRouteAdvertisement(ra, ctx.cudns).forEach((cudn) => {
-            pushEdge(interfaceNodeId(vrf, ctx), cudnNodeId(cudn.metadata?.name));
-        });
+    NODE_TYPES.forEach((descriptor) => {
+        if (!descriptor.edges) return;
+        // A hidden lane contributes no edges, so path highlighting cannot walk into
+        // nodes that are not drawn.
+        visibleItems(ctx, view, descriptor).forEach((item) => descriptor.edges!(item, ctx, sink));
     });
 
     return { edges, unresolved };
