@@ -1,11 +1,16 @@
+import { Interface } from '../types';
+import { GraphContext } from '../topology/context';
 import {
-    ClusterUserDefinedNetwork,
-    Interface,
-    NetworkAttachmentDefinition,
-    OvnBridgeMapping,
-    RouteAdvertisements,
-    UserDefinedNetwork
-} from '../types';
+    attachmentNodeId,
+    attachmentSourceNodeId,
+    bridgeMappingNodeId,
+    cudnNodeId,
+    interfaceNodeId,
+    nadNodeId,
+    resolveInterfaceRef,
+    udnNodeId
+} from '../topology/ids';
+import { AttachmentNode } from '../topology/types';
 import {
     findCudnNameForNad,
     LldpNeighborNode,
@@ -14,129 +19,156 @@ import {
     getNadUpstreamNodeIdsForEdges
 } from './nodeVisualizationSelectors';
 
-export interface AttachmentNodeModel {
-    name: string;
-    type: string;
-    namespaces: string[];
-    cudn?: string;
-    udnId?: string;
-}
+/** @deprecated Use AttachmentNode from ../topology/types. Kept for one release. */
+export type AttachmentNodeModel = AttachmentNode;
 
 export interface TopologyEdge {
     source: string;
     target: string;
 }
 
-interface BuildTopologyEdgesParams {
-    interfaces: Interface[];
-    vrfInterfaces: Interface[];
-    bridgeMappings: OvnBridgeMapping[];
-    lldpNeighbors: LldpNeighborNode[];
-    cudns: ClusterUserDefinedNetwork[];
-    udns: UserDefinedNetwork[];
-    attachmentNodes: AttachmentNodeModel[];
-    nads: NetworkAttachmentDefinition[];
-    routeAdvertisements: RouteAdvertisements[] | undefined;
-    showNads: boolean;
-    showLldpNeighbors: boolean;
-    resolveNodeId: (item: Interface, type: string) => string;
-    getAttachmentNodeId: (attachment: AttachmentNodeModel) => string;
-    getUdnNodeId: (udn: UserDefinedNetwork) => string;
-    getNadNodeId: (nad: NetworkAttachmentDefinition) => string;
+/** An edge that could not be drawn because one end names something not on this node. */
+export interface UnresolvedEdge {
+    /** What produced it, e.g. 'controller' or 'bridge-mapping'. */
+    rule: string;
+    /** The name that did not resolve. */
+    reference: string;
+    /** The node that carried the reference. */
+    from: string;
 }
 
-const pushEdge = (
-    edges: TopologyEdge[],
-    edgeKeys: Set<string>,
-    source: string | undefined,
-    target: string | undefined
-) => {
-    if (!source || !target) return;
-    const key = `${source}=>${target}`;
-    if (edgeKeys.has(key)) return;
-    edgeKeys.add(key);
-    edges.push({ source, target });
-};
+export interface TopologyEdgeResult {
+    edges: TopologyEdge[];
+    /**
+     * References that pointed at nothing. Previously these were dropped in silence,
+     * which made a dangling controller look identical to a node with no edges.
+     */
+    unresolved: UnresolvedEdge[];
+}
+
+interface BuildTopologyEdgesParams {
+    ctx: GraphContext;
+    vrfInterfaces: Interface[];
+    lldpNeighbors: LldpNeighborNode[];
+    attachmentNodes: AttachmentNode[];
+    showNads: boolean;
+    showLldpNeighbors: boolean;
+}
+
+/**
+ * Controllers that legitimately name something nmstate does not report as an interface.
+ *
+ * `ovs-system` is the OVS kernel datapath device. Veths and the Geneve tunnel are
+ * enslaved to it, and it appears in no NodeNetworkState -- both real captures show it.
+ * Reporting these would fire on every cluster, which is how a useful warning becomes
+ * noise nobody reads.
+ */
+const KNOWN_UNREPORTED_CONTROLLERS = new Set(['ovs-system']);
 
 export const buildTopologyEdges = ({
-    interfaces,
+    ctx,
     vrfInterfaces,
-    bridgeMappings,
     lldpNeighbors,
-    cudns,
-    udns,
     attachmentNodes,
-    nads,
-    routeAdvertisements,
     showNads,
-    showLldpNeighbors,
-    resolveNodeId,
-    getAttachmentNodeId,
-    getUdnNodeId,
-    getNadNodeId
-}: BuildTopologyEdgesParams): TopologyEdge[] => {
+    showLldpNeighbors
+}: BuildTopologyEdgesParams): TopologyEdgeResult => {
     const edges: TopologyEdge[] = [];
     const edgeKeys = new Set<string>();
+    const unresolved: UnresolvedEdge[] = [];
 
-    interfaces.forEach((iface) => {
-        const ifaceId = resolveNodeId(iface, iface.type);
-        const master = iface.controller || iface.master;
-        if (master) {
-            pushEdge(edges, edgeKeys, ifaceId, master);
+    const pushEdge = (source: string | undefined, target: string | undefined) => {
+        if (!source || !target) return;
+        const key = `${source}=>${target}`;
+        if (edgeKeys.has(key)) return;
+        edgeKeys.add(key);
+        edges.push({ source, target });
+    };
+
+    /** Follow a name reference, recording it when it points at nothing. */
+    const pushNamedEdge = (
+        rule: string,
+        from: string,
+        reference: string | undefined,
+        direction: 'to' | 'from'
+    ) => {
+        if (!reference) return;
+        const target = resolveInterfaceRef(reference, ctx);
+        if (!target) {
+            if (!KNOWN_UNREPORTED_CONTROLLERS.has(reference)) {
+                unresolved.push({ rule, reference, from });
+            }
+            return;
         }
-        const baseIface = iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'];
-        if (baseIface) {
-            pushEdge(edges, edgeKeys, baseIface, ifaceId);
-        }
+        if (direction === 'to') pushEdge(from, target);
+        else pushEdge(target, from);
+    };
+
+    ctx.interfaces.forEach((iface) => {
+        const ifaceId = interfaceNodeId(iface, ctx);
+        // Enslavement: this interface is a port of its controller.
+        pushNamedEdge('controller', ifaceId, iface.controller || iface.master, 'to');
+        // Layering: a VLAN or MACVLAN device is built on its base interface.
+        pushNamedEdge(
+            'base-iface',
+            ifaceId,
+            iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'],
+            'from'
+        );
     });
 
-    bridgeMappings.forEach((mapping) => {
-        pushEdge(edges, edgeKeys, mapping.bridge, `ovn-${mapping.localnet}`);
+    ctx.bridgeMappings.forEach((mapping) => {
+        pushNamedEdge('bridge-mapping', bridgeMappingNodeId(mapping.localnet), mapping.bridge, 'from');
     });
 
     if (showLldpNeighbors) {
         lldpNeighbors.forEach((neighbor) => {
-            pushEdge(edges, edgeKeys, neighbor.id, neighbor.localInterface);
+            pushNamedEdge('lldp', neighbor.id, neighbor.localInterface, 'to');
         });
     }
 
-    cudns.forEach((cudn) => {
-        const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
+    ctx.cudns.forEach((cudn) => {
+        const physicalNetworkName =
+            cudn.spec?.network?.localNet?.physicalNetworkName
+            || cudn.spec?.network?.localnet?.physicalNetworkName;
         if (physicalNetworkName) {
-            pushEdge(edges, edgeKeys, `ovn-${physicalNetworkName}`, `cudn-${cudn.metadata?.name}`);
+            pushEdge(bridgeMappingNodeId(physicalNetworkName), cudnNodeId(cudn.metadata?.name));
         }
     });
 
-    attachmentNodes.forEach((attachmentNode) => {
-        const sourceId = attachmentNode.cudn != null ? `cudn-${attachmentNode.cudn}` : `udn-${attachmentNode.udnId}`;
-        pushEdge(edges, edgeKeys, sourceId, getAttachmentNodeId(attachmentNode));
+    attachmentNodes.forEach((attachment) => {
+        pushEdge(attachmentSourceNodeId(attachment), attachmentNodeId(attachment));
     });
 
     if (showNads) {
-        nads.forEach((nad) => {
-            const nadNodeId = getNadNodeId(nad);
-            const cudnName = findCudnNameForNad(nad, cudns);
+        ctx.nads.forEach((nad) => {
+            const nadId = nadNodeId(nad);
+            const cudnName = findCudnNameForNad(nad, ctx.cudns);
             if (cudnName) {
-                pushEdge(edges, edgeKeys, `cudn-${cudnName}`, nadNodeId);
+                pushEdge(cudnNodeId(cudnName), nadId);
             }
-            const udnForNad = udns.find((u) => u.metadata?.namespace === nad.metadata?.namespace && u.metadata?.name === nad.metadata?.name);
+            const udnForNad = ctx.udns.find(
+                (u) => u.metadata?.namespace === nad.metadata?.namespace
+                    && u.metadata?.name === nad.metadata?.name
+            );
             if (udnForNad) {
-                pushEdge(edges, edgeKeys, getUdnNodeId(udnForNad), nadNodeId);
+                pushEdge(udnNodeId(udnForNad), nadId);
             }
-            getNadUpstreamNodeIdsForEdges(nad, cudns).forEach((upstreamId) => {
-                pushEdge(edges, edgeKeys, upstreamId, nadNodeId);
+            getNadUpstreamNodeIdsForEdges(nad, ctx.cudns).forEach((upstreamId) => {
+                // Bridge references arrive as bare names; localnet references already
+                // arrive as canonical ovn: ids.
+                if (upstreamId.startsWith('ovn:')) pushEdge(upstreamId, nadId);
+                else pushNamedEdge('nad-bridge', nadId, upstreamId, 'from');
             });
         });
     }
 
-    if (routeAdvertisements) {
-        vrfInterfaces.forEach((vrf) => {
-            const ra = findRouteAdvertisementForVrf(routeAdvertisements, vrf.name);
-            getCudnsSelectedByRouteAdvertisement(ra, cudns).forEach((cudn) => {
-                pushEdge(edges, edgeKeys, resolveNodeId(vrf, vrf.type), `cudn-${cudn.metadata?.name}`);
-            });
+    vrfInterfaces.forEach((vrf) => {
+        const ra = findRouteAdvertisementForVrf(ctx.routeAdvertisements, vrf.name);
+        getCudnsSelectedByRouteAdvertisement(ra, ctx.cudns).forEach((cudn) => {
+            pushEdge(interfaceNodeId(vrf, ctx), cudnNodeId(cudn.metadata?.name));
         });
-    }
+    });
 
-    return edges;
+    return { edges, unresolved };
 };

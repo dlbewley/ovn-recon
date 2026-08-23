@@ -15,7 +15,13 @@ import { buildGraphContext, GraphContext } from '../topology/context';
 import { buildDrawerTabs, getDrawerTabsForNode } from '../topology/drawerTabs';
 import { getIcon } from '../topology/icons';
 import {
-    getAttachmentNodeId, getNadNodeId, getNetworkNodeId, getUdnNodeId, resolveNodeId as resolveId
+    attachmentNodeId as getAttachmentNodeId,
+    bridgeMappingNodeId,
+    edgeKey,
+    findDuplicateIds,
+    nadNodeId as getNadNodeId,
+    networkNodeId as getNetworkNodeId,
+    resolveNodeId as resolveId
 } from '../topology/ids';
 import {
     AttachmentNode, DrawerTabId, Graph, NetworkColumnItem, NodeViewModel
@@ -182,27 +188,18 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 name,
                 type: 'attachment',
                 namespaces: [ns],
-                udnId: `${ns}-${name}`
+                udn: { namespace: ns, name }
             });
         }
     });
 
-    const topologyEdges = buildTopologyEdges({
-        interfaces,
+    const { edges: topologyEdges, unresolved } = buildTopologyEdges({
+        ctx,
         vrfInterfaces,
-        bridgeMappings,
         lldpNeighbors,
-        cudns,
-        udns,
         attachmentNodes,
-        nads,
-        routeAdvertisements,
         showNads,
-        showLldpNeighbors: showLldpColumn,
-        resolveNodeId,
-        getAttachmentNodeId,
-        getUdnNodeId,
-        getNadNodeId
+        showLldpNeighbors: showLldpColumn
     });
 
     // Lanes fed to the ordering pass. Left-to-right order must match `columns` plus
@@ -221,7 +218,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         {
             id: 'l3',
             nodeIds: [
-                ...bridgeMappings.map((mapping) => `ovn-${mapping.localnet || ''}`),
+                ...bridgeMappings.map((mapping) => bridgeMappingNodeId(mapping.localnet)),
                 ...vrfInterfaces.map((iface) => resolveNodeId(iface, iface.type))
             ]
         },
@@ -249,12 +246,43 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const sortedVlanInterfaces = sortByRank(vlanInterfaces, rankOfIface, rankById);
     const sortedBridgeInterfaces = sortByRank(bridgeInterfaces, rankOfIface, rankById);
     const sortedLogicalInterfaces = sortByRank(logicalInterfaces, rankOfIface, rankById);
-    const sortedBridgeMappings = sortByRank(bridgeMappings, (mapping) => `ovn-${mapping.localnet || ''}`, rankById);
+    const sortedBridgeMappings = sortByRank(bridgeMappings, (mapping) => bridgeMappingNodeId(mapping.localnet), rankById);
     const sortedNetworkItems = sortByRank(networkItems, getNetworkNodeId, rankById);
     const sortedAttachmentNodes = sortByRank(attachmentNodes, getAttachmentNodeId, rankById);
     const sortedNads = sortByRank(nads, (nad) => getNadNodeId(nad), rankById);
     // Not laned: rendered in a grid at the foot of the canvas, so plain alphabetical.
     const sortedOtherInterfaces = otherInterfaces.slice().sort((a, b) => a.name.localeCompare(b.name));
+
+    /**
+     * Two classes of problem that used to be invisible.
+     *
+     * A reference naming something not on this node -- a controller, a bridge mapping's
+     * bridge -- used to be dropped in silence, so a dangling reference looked exactly
+     * like a node with no edges. And a duplicated id makes React draw one node on top of
+     * another and log a duplicate-key warning, which reads as missing data.
+     *
+     * Reported to the console for now. ovn-recon-s3t.15 surfaces them in the UI.
+     */
+    React.useEffect(() => {
+        unresolved.forEach(({ rule, reference, from }) => {
+             
+            console.warn(`[ovn-recon] ${from} names "${reference}" via ${rule}, which is not an interface on this node.`);
+        });
+    }, [unresolved]);
+
+    React.useEffect(() => {
+        const duplicates = findDuplicateIds([
+            ...interfaces.map((iface) => resolveNodeId(iface, iface.type)),
+            ...bridgeMappings.map((mapping) => bridgeMappingNodeId(mapping.localnet)),
+            ...networkItems.map(getNetworkNodeId),
+            ...attachmentNodes.map(getAttachmentNodeId),
+            ...nads.map(getNadNodeId)
+        ]);
+        if (duplicates.length > 0) {
+             
+            console.warn(`[ovn-recon] duplicate node ids, which will draw on top of each other: ${duplicates.join(', ')}`);
+        }
+    }, [interfaces, bridgeMappings, networkItems, attachmentNodes, nads]);
 
     // Calculate positions with dynamic column visibility
     const nodePositions: { [name: string]: { x: number, y: number } } = {};
@@ -341,7 +369,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
             // Stack Bridge Mappings first
             sortedBridgeMappings.forEach((mapping: OvnBridgeMapping) => {
-                nodePositions[`ovn-${mapping.localnet}`] = { x: padding + (colOffset * colSpacing), y: currentY };
+                nodePositions[bridgeMappingNodeId(mapping.localnet)] = { x: padding + (colOffset * colSpacing), y: currentY };
                 currentY += (itemHeight + 20);
             });
 
@@ -415,8 +443,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
             const nextNodes = direction === 'upstream' ? node.upstream : node.downstream;
             nextNodes.forEach(nextId => {
-                path.add(`${nodeId}-${nextId}`); // Add Edge ID (source-target)
-                path.add(`${nextId}-${nodeId}`); // Add Edge ID (reverse for safety)
+                // One key per edge: edgeKey normalises direction, so the reverse
+                // spelling this used to add "for safety" is no longer needed.
+                path.add(edgeKey(nodeId, nextId));
                 traverse(nextId, direction);
             });
         };
@@ -484,9 +513,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             <line
                 key={`${startNode}-${endNode}`}
                 x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={isHighlightActive ? (highlightedPath.has(`${startNode}-${endNode}`) || highlightedPath.has(`${endNode}-${startNode}`) ? '#0066CC' : '#ccc') : 'currentColor'}
-                strokeWidth={isHighlightActive ? (highlightedPath.has(`${startNode}-${endNode}`) || highlightedPath.has(`${endNode}-${startNode}`) ? 4 : 1) : 2}
-                opacity={isHighlightActive ? (highlightedPath.has(`${startNode}-${endNode}`) || highlightedPath.has(`${endNode}-${startNode}`) ? 1 : 0.1) : 1}
+                stroke={isHighlightActive ? (highlightedPath.has(edgeKey(startNode, endNode)) ? '#0066CC' : '#ccc') : 'currentColor'}
+                strokeWidth={isHighlightActive ? (highlightedPath.has(edgeKey(startNode, endNode)) ? 4 : 1) : 2}
+                opacity={isHighlightActive ? (highlightedPath.has(edgeKey(startNode, endNode)) ? 1 : 0.1) : 1}
             />
         );
     };
@@ -829,28 +858,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 onClick={handleBackgroundClick}
                             >
                                 {/* Connectors */}
-                                {topologyEdges.map((edge: TopologyEdge) => {
-                                    const renderSourceId = nodePositions[edge.source]
-                                        ? edge.source
-                                        : !edge.source.startsWith('ovn-') && nodePositions[`interface-${edge.source}`]
-                                            ? `interface-${edge.source}`
-                                            : null;
-                                    const renderTargetId = nodePositions[edge.target]
-                                        ? edge.target
-                                        : !edge.target.startsWith('ovn-') && nodePositions[`interface-${edge.target}`]
-                                            ? `interface-${edge.target}`
-                                            : null;
-
-                                    if (!renderSourceId || !renderTargetId) {
-                                        return null;
-                                    }
-
-                                    return (
-                                        <React.Fragment key={`edge-${edge.source}-${edge.target}`}>
-                                            {renderConnector(renderSourceId, renderTargetId)}
-                                        </React.Fragment>
-                                    );
-                                })}
+                                {topologyEdges.map((edge: TopologyEdge) => (
+                                    <React.Fragment key={`edge-${edge.source}-${edge.target}`}>
+                                        {renderConnector(edge.source, edge.target)}
+                                    </React.Fragment>
+                                ))}
 
                                 {/* Render visible columns dynamically */}
                                 {visibleColumns.map((col, idx) => {
@@ -923,13 +935,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                     {/* Bridge Mappings Section */}
                                                     <text x={xPos} y={padding - 10} fontWeight="bold" fill="currentColor">Bridge Mappings</text>
                                                     {sortedBridgeMappings
-                                                        .filter((mapping: OvnBridgeMapping) => nodePositions[`ovn-${mapping.localnet}`])
+                                                        .filter((mapping: OvnBridgeMapping) => nodePositions[bridgeMappingNodeId(mapping.localnet)])
                                                         .map((mapping: OvnBridgeMapping) => {
                                                             // Bridge mappings and VRFs share this lane as two stacked
                                                             // sub-groups, kept apart by their group rank in computeNodeOrder.
-                                                            const pos = nodePositions[`ovn-${mapping.localnet}`];
+                                                            const pos = nodePositions[bridgeMappingNodeId(mapping.localnet)];
                                                             return (
-                                                                <React.Fragment key={`ovn-${mapping.localnet}`}>
+                                                                <React.Fragment key={bridgeMappingNodeId(mapping.localnet)}>
                                                                     {renderInterfaceNode(mapping, pos.x, pos.y, '#009900', 'ovn-mapping')}
                                                                 </React.Fragment>
                                                             );
@@ -937,9 +949,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
                                                     {/* VRFs Section Header - Position it above the first VRF node */}
                                                     {(() => {
-                                                        const firstVrf = sortedVrfInterfaces.find(iface => nodePositions[iface.name]);
+                                                        const firstVrf = sortedVrfInterfaces.find(iface => nodePositions[resolveNodeId(iface, iface.type)]);
                                                         if (firstVrf) {
-                                                            const pos = nodePositions[firstVrf.name];
+                                                            const pos = nodePositions[resolveNodeId(firstVrf, firstVrf.type)];
                                                             // Draw header slightly above the first VRF node
                                                             return <text x={xPos} y={pos.y - 15} fontWeight="bold" fill="currentColor">VRFs</text>;
                                                         }
@@ -947,9 +959,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                     })()}
 
                                                     {sortedVrfInterfaces
-                                                        .filter((iface: Interface) => nodePositions[iface.name])
+                                                        .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
                                                         .map((iface: Interface) => {
-                                                            const pos = nodePositions[iface.name];
+                                                            const pos = nodePositions[resolveNodeId(iface, iface.type)];
                                                             return (
                                                                 <React.Fragment key={iface.name}>
                                                                     {renderInterfaceNode(iface, pos.x, pos.y, '#CC6600', 'vrf')}

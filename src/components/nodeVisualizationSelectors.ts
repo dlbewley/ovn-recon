@@ -1,3 +1,4 @@
+import { bridgeMappingNodeId, lldpNodeId } from '../topology/ids';
 import {
     ClusterUserDefinedNetwork,
     Interface,
@@ -209,7 +210,7 @@ const normalizeLldpNeighbor = (
     const label = systemName || chassisId || `LLDP Neighbor ${neighborIndex + 1}`;
 
     return {
-        id: `lldp-${localInterface}-${neighborIndex}`,
+        id: lldpNodeId(localInterface, neighborIndex),
         label,
         localInterface,
         neighborIndex,
@@ -410,7 +411,7 @@ export const getNadUpstreamNodeIds = (nad: NetworkAttachmentDefinition): string[
             upstream.push(config.bridge);
         }
         if (typeof config.physicalNetworkName === 'string') {
-            upstream.push(`ovn-${config.physicalNetworkName}`);
+            upstream.push(bridgeMappingNodeId(config.physicalNetworkName));
         }
     }
 
@@ -428,7 +429,7 @@ export const getNadUpstreamNodeIds = (nad: NetworkAttachmentDefinition): string[
     }
     const physMatch = configStr.match(/"physicalNetworkName"\s*:\s*"([^"]+)"/);
     if (physMatch && physMatch[1]) {
-        upstream.push(`ovn-${physMatch[1]}`);
+        upstream.push(bridgeMappingNodeId(physMatch[1]));
     }
     return upstream;
 };
@@ -441,7 +442,7 @@ export const getNadUpstreamNodeIdsForEdges = (
     const upstream = getNadUpstreamNodeIds(nad);
     const cudnName = findCudnNameForNad(nad, cudns);
     if (cudnName) {
-        return upstream.filter((id) => !id.startsWith('ovn-'));
+        return upstream.filter((id) => !id.startsWith('ovn:'));
     }
     return upstream;
 };

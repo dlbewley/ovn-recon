@@ -2,96 +2,165 @@ import fs from 'fs';
 import path from 'path';
 import * as yaml from 'js-yaml';
 
-import { NodeNetworkState, OvnBridgeMapping } from '../types';
+import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
+import { buildGraphContext } from '../topology/context';
 import { buildTopologyEdges } from './nodeVisualizationModel';
 import { extractLldpNeighbors } from './nodeVisualizationSelectors';
 
 const loadFixture = (name: string): NodeNetworkState => {
-    const fixturePath = path.join(process.cwd(), 'test', 'fixtures', 'nns', `${name}.json`);
-    const fixtureContent = fs.readFileSync(fixturePath, 'utf-8');
+    const raw = fs.readFileSync(
+        path.join(process.cwd(), 'test', 'fixtures', 'nns', `${name}.json`), 'utf-8');
     try {
-        return JSON.parse(fixtureContent) as NodeNetworkState;
+        return JSON.parse(raw) as NodeNetworkState;
     } catch {
-        return yaml.load(fixtureContent) as NodeNetworkState;
+        return yaml.load(raw) as NodeNetworkState;
     }
 };
 
-describe('nodeVisualizationModel fixture coverage', () => {
-    it('builds deduped topology edges from interface masters/controllers and bridge mappings', () => {
-        const nns = loadFixture('basic-host');
-        const interfaces = nns.status?.currentState?.interfaces || [];
-        const bridgeMappings = (nns.status?.currentState?.ovn?.['bridge-mappings'] || []) as OvnBridgeMapping[];
+const loadCudns = (name: string): ClusterUserDefinedNetwork[] =>
+    JSON.parse(fs.readFileSync(
+        path.join(process.cwd(), 'test', 'fixtures', 'cudn', `${name}.json`), 'utf-8'));
 
-        const edges = buildTopologyEdges({
-            interfaces,
-            vrfInterfaces: [],
-            bridgeMappings,
-            lldpNeighbors: [],
-            cudns: [],
-            udns: [],
-            attachmentNodes: [],
-            nads: [],
-            routeAdvertisements: [],
-            showNads: false,
-            showLldpNeighbors: false,
-            resolveNodeId: (item) => item.name,
-            getAttachmentNodeId: (attachment) => `attachment-${attachment.name}`,
-            getUdnNodeId: (udn) => `udn-${udn.metadata?.namespace}-${udn.metadata?.name}`,
-            getNadNodeId: (nad) => `nad-${nad.metadata?.namespace}-${nad.metadata?.name}`
-        });
+const build = (
+    nns: NodeNetworkState,
+    overrides: Partial<Parameters<typeof buildTopologyEdges>[0]> = {}
+) => {
+    const ctx = buildGraphContext({ nns, ...(overrides.ctx ?? {}) as object });
+    return buildTopologyEdges({
+        ctx: overrides.ctx ?? ctx,
+        vrfInterfaces: [],
+        lldpNeighbors: [],
+        attachmentNodes: [],
+        showNads: false,
+        showLldpNeighbors: false,
+        ...overrides
+    });
+};
 
-        expect(edges.map((edge) => `${edge.source}->${edge.target}`).sort()).toEqual([
-            'br-ex->ovn-physnet',
-            'eno1->br-ex',
-            'ovn-k8s-mp0->br-int'
+const arrows = (result: ReturnType<typeof buildTopologyEdges>) =>
+    result.edges.map((e) => `${e.source} -> ${e.target}`).sort();
+
+describe('buildTopologyEdges', () => {
+    it('draws enslavement and bridge-mapping edges with canonical ids', () => {
+        expect(arrows(build(loadFixture('basic-host')))).toEqual([
+            'iface:br-ex -> ovn:physnet',
+            'iface:eno1 -> iface:br-ex',
+            'iface:ovn-k8s-mp0 -> iface:br-int'
         ]);
     });
 
-    it('adds LLDP neighbor edges to local interfaces only when LLDP rendering is enabled', () => {
+    it('adds LLDP edges only when neighbours are being shown', () => {
         const nns = loadFixture('host-lldp');
-        const interfaces = nns.status?.currentState?.interfaces || [];
-        const lldpNeighbors = extractLldpNeighbors(interfaces);
+        const lldpNeighbors = extractLldpNeighbors(nns.status?.currentState?.interfaces ?? []);
 
-        const withoutLldpEdges = buildTopologyEdges({
-            interfaces,
-            vrfInterfaces: [],
-            bridgeMappings: [],
-            lldpNeighbors,
-            cudns: [],
-            udns: [],
-            attachmentNodes: [],
-            nads: [],
-            routeAdvertisements: [],
-            showNads: false,
-            showLldpNeighbors: false,
-            resolveNodeId: (item) => item.name,
-            getAttachmentNodeId: (attachment) => `attachment-${attachment.name}`,
-            getUdnNodeId: (udn) => `udn-${udn.metadata?.namespace}-${udn.metadata?.name}`,
-            getNadNodeId: (nad) => `nad-${nad.metadata?.namespace}-${nad.metadata?.name}`
-        });
+        expect(build(nns, { lldpNeighbors }).edges.some((e) => e.source.startsWith('lldp:'))).toBe(false);
+        expect(arrows(build(nns, { lldpNeighbors, showLldpNeighbors: true }))).toEqual(
+            expect.arrayContaining(['lldp:enp44s0/0 -> iface:enp44s0', 'lldp:enp45s0/0 -> iface:enp45s0'])
+        );
+    });
 
-        const withLldpEdges = buildTopologyEdges({
-            interfaces,
-            vrfInterfaces: [],
-            bridgeMappings: [],
-            lldpNeighbors,
-            cudns: [],
-            udns: [],
-            attachmentNodes: [],
-            nads: [],
-            routeAdvertisements: [],
-            showNads: false,
-            showLldpNeighbors: true,
-            resolveNodeId: (item) => item.name,
-            getAttachmentNodeId: (attachment) => `attachment-${attachment.name}`,
-            getUdnNodeId: (udn) => `udn-${udn.metadata?.namespace}-${udn.metadata?.name}`,
-            getNadNodeId: (nad) => `nad-${nad.metadata?.namespace}-${nad.metadata?.name}`
-        });
+    it('distinguishes a bridge from the internal port that shares its name', () => {
+        // The collision the old bare-name scheme papered over with an 'interface-'
+        // prefix. ens192 is enslaved to the BRIDGE br-ex, and so is the port.
+        const ctx = buildGraphContext({ nns: loadFixture('primary-cudn-vrf') });
+        const result = arrows(buildTopologyEdges({
+            ctx, vrfInterfaces: [], lldpNeighbors: [], attachmentNodes: [],
+            showNads: false, showLldpNeighbors: false
+        }));
 
-        expect(withoutLldpEdges.some((edge) => edge.source.startsWith('lldp-'))).toBe(false);
-        expect(withLldpEdges.map((edge) => `${edge.source}->${edge.target}`)).toEqual(expect.arrayContaining([
-            'lldp-enp44s0-0->enp44s0',
-            'lldp-enp45s0-0->enp45s0'
+        expect(result).toEqual(expect.arrayContaining([
+            'iface:ens192 -> iface:br-ex',
+            'port:br-ex -> iface:br-ex'
         ]));
+        // The bridge must not be enslaved to itself.
+        expect(result).not.toContain('iface:br-ex -> iface:br-ex');
+    });
+
+    it('links a localnet CUDN to its bridge mapping', () => {
+        const ctx = buildGraphContext({
+            nns: loadFixture('primary-cudn-vrf'),
+            cudns: loadCudns('primary-cudn-vrf')
+        });
+        const result = arrows(buildTopologyEdges({
+            ctx, vrfInterfaces: [], lldpNeighbors: [], attachmentNodes: [],
+            showNads: false, showLldpNeighbors: false
+        }));
+
+        expect(result).toEqual(expect.arrayContaining([
+            'ovn:physnet -> cudn:machinenet',
+            'ovn:physnet-vmdata -> cudn:vlan-1924'
+        ]));
+    });
+
+    it('hangs an attachment off the network that produced it', () => {
+        const ctx = buildGraphContext({ nns: loadFixture('basic-host') });
+        const result = arrows(buildTopologyEdges({
+            ctx, vrfInterfaces: [], lldpNeighbors: [],
+            attachmentNodes: [
+                { name: 'blue', type: 'attachment', namespaces: ['ns1'], cudn: 'blue' },
+                { name: 'green', type: 'attachment', namespaces: ['ns2'], udn: { namespace: 'ns2', name: 'green' } }
+            ],
+            showNads: false, showLldpNeighbors: false
+        }));
+
+        expect(result).toEqual(expect.arrayContaining([
+            'cudn:blue -> attachment:cudn/blue',
+            'udn:ns2/green -> attachment:udn/ns2/green'
+        ]));
+    });
+
+    it('survives a namespace containing dashes', () => {
+        // The previous scheme joined namespace and name with a dash and could not undo
+        // it, so a dashed namespace produced the wrong UDN id.
+        const ctx = buildGraphContext({ nns: loadFixture('basic-host') });
+        const result = arrows(buildTopologyEdges({
+            ctx, vrfInterfaces: [], lldpNeighbors: [],
+            attachmentNodes: [{
+                name: 'app', type: 'attachment', namespaces: ['demo-vm-primary-udn'],
+                udn: { namespace: 'demo-vm-primary-udn', name: 'app' }
+            }],
+            showNads: false, showLldpNeighbors: false
+        }));
+
+        expect(result).toEqual([
+            ...arrows(build(loadFixture('basic-host'))),
+            'udn:demo-vm-primary-udn/app -> attachment:udn/demo-vm-primary-udn/app'
+        ].sort());
+    });
+});
+
+describe('unresolved references', () => {
+    it('reports a controller naming an interface that is not on this node', () => {
+        const nns = loadFixture('basic-host');
+        const interfaces = nns.status!.currentState!.interfaces;
+        interfaces.push({ name: 'orphan', type: 'ethernet', state: 'up', controller: 'br-nonexistent' });
+
+        const result = buildTopologyEdges({
+            ctx: buildGraphContext({ nns }),
+            vrfInterfaces: [], lldpNeighbors: [], attachmentNodes: [],
+            showNads: false, showLldpNeighbors: false
+        });
+
+        expect(result.unresolved).toContainEqual({
+            rule: 'controller', reference: 'br-nonexistent', from: 'iface:orphan'
+        });
+        // The dangling reference is reported, not turned into an edge.
+        expect(result.edges.some((e) => e.source === 'iface:orphan')).toBe(false);
+    });
+
+    it('reports nothing on real captures, where every reference either resolves or is known', () => {
+        expect(build(loadFixture('primary-cudn-vrf')).unresolved).toEqual([]);
+        expect(build(loadFixture('bonded-lldp')).unresolved).toEqual([]);
+    });
+
+    it('stays quiet about ovs-system, which nmstate never reports', () => {
+        // Both real captures enslave something to the OVS datapath device -- a veth in
+        // one, the Geneve tunnel in the other -- and it appears in neither interface
+        // list. Warning about it would fire on every cluster.
+        const nns = loadFixture('primary-cudn-vrf');
+        const veth = nns.status!.currentState!.interfaces.find((i) => i.type === 'veth')!;
+
+        expect(veth.controller).toBe('ovs-system');
+        expect(build(nns).unresolved).toEqual([]);
     });
 });
