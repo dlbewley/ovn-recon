@@ -9,6 +9,7 @@ import {
 import { getResourceLinks, getResourcePath } from './links';
 import { nodeKindRegistry } from './registry';
 import { buildNodeViewModel } from './viewModel';
+import { descriptorFor, NODE_TYPES } from './descriptors';
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
 
 /**
@@ -166,7 +167,7 @@ describe('buildNodeViewModel', () => {
 
     it('maps a VRF, resolving its routes off the context', () => {
         const vrf = ctx.interfaces.find((i) => i.type === 'vrf')!;
-        const model = buildNodeViewModel(vrf, 'vrf', ctx);
+        const model = buildNodeViewModel(vrf, descriptorFor('vrf')!, ctx);
 
         expect(model.kind).toBe('vrf');
         expect(model.id).toBe('vrf:example-p-cudn');
@@ -177,7 +178,7 @@ describe('buildNodeViewModel', () => {
 
     it('maps a CUDN, folding topology and subnets into the state line', () => {
         const cudn = ctx.cudns.find((c) => c.metadata?.name === 'example-p-cudn')!;
-        const model = buildNodeViewModel(cudn, 'cudn', ctx);
+        const model = buildNodeViewModel(cudn, descriptorFor('cudn')!, ctx);
 
         expect(model.kind).toBe('cudn');
         expect(model.subtitle).toBe('Layer2 ClusterUserDefinedNetwork');
@@ -187,7 +188,7 @@ describe('buildNodeViewModel', () => {
     });
 
     it('maps a bridge mapping to its localnet, not its bridge', () => {
-        const model = buildNodeViewModel({ localnet: 'physnet', bridge: 'br-ex' }, 'ovn-mapping', ctx);
+        const model = buildNodeViewModel({ localnet: 'physnet', bridge: 'br-ex' }, descriptorFor('ovn-mapping')!, ctx);
 
         expect(model.id).toBe('ovn:physnet');
         expect(model.label).toBe('physnet');
@@ -196,16 +197,15 @@ describe('buildNodeViewModel', () => {
 
     it('marks an attachment as synthetic and carries its namespaces', () => {
         const model = buildNodeViewModel(
-            { name: 'blue', type: 'attachment', namespaces: ['ns1', 'ns2'], cudn: 'blue' }, 'attachment', ctx);
+            { name: 'blue', type: 'attachment', namespaces: ['ns1', 'ns2'], cudn: 'blue' }, descriptorFor('attachment')!, ctx);
 
         expect(model.isSynthetic).toBe(true);
         expect(model.namespaces).toEqual(['ns1', 'ns2']);
         expect(model.badges).toEqual(['synthetic', 'derived']);
     });
 
-    it('falls back to the interface kind for a type it does not know', () => {
-        // The catch-all that ovn-recon-s3t.8 replaces with an explicit role table.
-        const model = buildNodeViewModel(iface('lo'), 'loopback', ctx);
+    it('renders an unlaned interface through the catch-all descriptor', () => {
+        const model = buildNodeViewModel(iface('lo'), descriptorFor('other')!, ctx);
         expect(model.kind).toBe('interface');
         expect(model.id).toBe('iface:lo');
     });
@@ -216,8 +216,32 @@ describe('buildNodeViewModel', () => {
         const vrf = bare.interfaces.find((i) => i.type === 'vrf')!;
 
         expect(nodeKindRegistry.vrf.renderSummary).toBeDefined();
-        expect(buildNodeViewModel(vrf, 'vrf', bare).vrfRoutes).toHaveLength(4);
+        expect(buildNodeViewModel(vrf, descriptorFor('vrf')!, bare).vrfRoutes).toHaveLength(4);
         expect(bare.cudns).toEqual([]);
+    });
+});
+
+describe('the descriptor table', () => {
+    it('covers every node type exactly once', () => {
+        const types = NODE_TYPES.map((d) => d.type);
+        expect(new Set(types).size).toBe(types.length);
+    });
+
+    it('requires each descriptor to supply the fields the graph needs', () => {
+        NODE_TYPES.forEach((d) => {
+            expect(typeof d.items).toBe('function');
+            expect(typeof d.id).toBe('function');
+            expect(typeof d.present).toBe('function');
+            expect(d.color).toMatch(/^#[0-9A-Fa-f]{3,6}$/);
+            expect(d.icon).toBeDefined();
+        });
+    });
+
+    it('stacks bridge mappings above VRFs in the Layer 3 lane', () => {
+        // Descriptor order within a lane IS the group order, and getting it backwards
+        // inverts the lane. It did, once, before the snapshot caught it.
+        const l3 = NODE_TYPES.filter((d) => d.lane === 'l3').map((d) => d.type);
+        expect(l3).toEqual(['ovn-mapping', 'vrf']);
     });
 });
 

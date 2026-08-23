@@ -4,33 +4,19 @@ import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 
 
 import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, Interface, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
-import {
-    extractLldpNeighbors,
-    getCudnAssociatedNamespaces,
-    hasLldpNeighbors
-} from './nodeVisualizationSelectors';
+import { hasLldpNeighbors } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import { buildGraphContext, GraphContext } from '../topology/context';
 import { interfacesWithRole, roleOf } from '../topology/classify';
 import { buildDrawerTabs, getDrawerTabsForNode } from '../topology/drawerTabs';
-import { getIcon } from '../topology/icons';
+import { edgeKey, findDuplicateIds, resolveNodeId as resolveId } from '../topology/ids';
 import {
-    attachmentNodeId as getAttachmentNodeId,
-    bridgeMappingNodeId,
-    edgeKey,
-    findDuplicateIds,
-    nadNodeId as getNadNodeId,
-    networkNodeId as getNetworkNodeId,
-    resolveNodeId as resolveId
-} from '../topology/ids';
-import {
-    AttachmentNode, DrawerTabId, Graph, NetworkColumnItem, NodeViewModel
+    DrawerTabId, Graph, NodeViewModel
 } from '../topology/types';
 import { buildNodeViewModel } from '../topology/viewModel';
 import { computeNodeOrder, sortByRank } from './nodeVisualizationLayout';
-import {
-    buildLanes, laneOrderingInput, layoutLanes, LaneViewState, PlacedNode
-} from '../topology/lanes';
+import { laneOrderingInput, layoutLanes, LaneViewState, PlacedNode } from '../topology/lanes';
+import { descriptorFor, iconFor, NodeTypeId, NODE_TYPES } from '../topology/descriptors';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -84,8 +70,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         () => buildGraphContext({ nns, cudns, udns, nads, routeAdvertisements }),
         [nns, cudns, udns, nads, routeAdvertisements]
     );
-    const { interfaces, bridgeMappings } = ctx;
-    const lldpNeighbors = extractLldpNeighbors(interfaces);
+    const { interfaces } = ctx;
+    const { lldpNeighbors } = ctx;
     const hasLldpData = hasLldpNeighbors(interfaces);
 
     // State for toggle
@@ -115,71 +101,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const resolveNodeId = (iface: any, type: string) => resolveId(iface, type, ctx);
 
     // Lanes are populated by topology ROLE, not by nmstate type. See topology/classify.
-    const vrfInterfaces = interfacesWithRole(ctx, 'vrf');
     // The catch-all grid at the foot of the canvas. 'unclassified' landing here is a
     // prompt to add a rule, not a resting place.
     const otherInterfaces = ctx.interfaces.filter((iface) =>
         ['host-local', 'unclassified'].includes(roleOf(iface, ctx)));
 
-    // Define columns with their data
-    const networkItems: NetworkColumnItem[] = [...cudns.map((c): NetworkColumnItem => ({ kind: 'cudn', item: c })), ...udns.map((u): NetworkColumnItem => ({ kind: 'udn', item: u }))];
-    const getAttachmentHeight = (node: AttachmentNode) => {
-        const nsString = node.namespaces.join(', ');
-        const charsPerLine = 25; // Approximate characters per line
-        const lines = Math.ceil(nsString.length / charsPerLine);
-        // Base height (60px for icon/title) + text height (approx 12px per line) + padding
-        return Math.max(itemHeight, 60 + (lines * 12) + 10);
-    };
-
-    // Attachments (from CUDN status + one per UDN for controller-created NAD)
-    const attachmentNodes: AttachmentNode[] = [];
-    cudns.forEach((cudn: ClusterUserDefinedNetwork) => {
-        const namespaces = getCudnAssociatedNamespaces(cudn);
-        if (namespaces.length > 0) {
-            attachmentNodes.push({
-                name: cudn.metadata?.name || '',
-                type: 'attachment',
-                namespaces,
-                cudn: cudn.metadata?.name || ''
-            });
-        }
-    });
-    udns.forEach((udn: UserDefinedNetwork) => {
-        const ns = udn.metadata?.namespace || 'default';
-        const name = udn.metadata?.name || '';
-        if (name) {
-            attachmentNodes.push({
-                name,
-                type: 'attachment',
-                namespaces: [ns],
-                udn: { namespace: ns, name }
-            });
-        }
-    });
-
-    // Lane identity lives in ONE ordered table: src/topology/lanes.ts.
     const laneView: LaneViewState = { showHiddenColumns, showNads, showLldp: showLldpColumn };
-    const lanes = buildLanes({
-        byRole: interfacesWithRole,
-        interfaceId: (iface: Interface) => resolveNodeId(iface, iface.type),
-        bridgeMappingId: bridgeMappingNodeId,
-        networkId: getNetworkNodeId,
-        attachmentId: getAttachmentNodeId,
-        attachmentHeight: getAttachmentHeight,
-        nadId: getNadNodeId,
-        lldpNeighbors,
-        networkItems,
-        attachmentNodes
-    });
 
-    const { edges: topologyEdges, unresolved } = buildTopologyEdges({
-        ctx,
-        vrfInterfaces,
-        lldpNeighbors,
-        attachmentNodes,
-        showNads,
-        showLldpNeighbors: showLldpColumn
-    });
+    const { edges: topologyEdges, unresolved } = buildTopologyEdges(ctx, laneView);
 
     // Lanes fed to the ordering pass. Left-to-right order must match `columns` plus
     // the two trailing pseudo-columns, since a node's barycenter is the average
@@ -190,7 +119,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Ordering input comes from the same table the layout uses, so the two cannot drift.
     // Group order within a lane supplies the group rank -- bridge mappings above VRFs,
     // CUDNs above UDNs -- which used to be written out longhand, by name.
-    const ordering = laneOrderingInput(lanes, ctx, laneView);
+    const ordering = laneOrderingInput(ctx, laneView);
     const rankById = computeNodeOrder({
         lanes: ordering.lanes,
         edges: topologyEdges,
@@ -218,24 +147,34 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     }, [unresolved]);
 
     React.useEffect(() => {
-        const duplicates = findDuplicateIds([
-            ...interfaces.map((iface) => resolveNodeId(iface, iface.type)),
-            ...bridgeMappings.map((mapping) => bridgeMappingNodeId(mapping.localnet)),
-            ...networkItems.map(getNetworkNodeId),
-            ...attachmentNodes.map(getAttachmentNodeId),
-            ...nads.map(getNadNodeId)
-        ]);
+        // Every id the graph can draw, gathered from the descriptor table so a new node
+        // type is covered without touching this.
+        const duplicates = findDuplicateIds(
+            NODE_TYPES.flatMap((descriptor) =>
+                descriptor.items(ctx).map((item: unknown) => descriptor.id(item, ctx)))
+        );
         if (duplicates.length > 0) {
              
             console.warn(`[ovn-recon] duplicate node ids, which will draw on top of each other: ${duplicates.join(', ')}`);
         }
-    }, [interfaces, bridgeMappings, networkItems, attachmentNodes, nads]);
+    }, [ctx]);
 
     /**
      * LLDP neighbours do not stack from the top of their lane: each aligns with the
      * physical interface it was seen on, and several on one interface fan downwards.
      * The lane table marks this a custom layout rather than pretending it is a stack.
      */
+    const lldpDescriptor = descriptorFor('lldp-neighbor')!;
+    const otherDescriptor = descriptorFor('other')!;
+
+    /**
+     * Icon for the drawer header. Comes off the same descriptor the canvas uses, so the
+     * panel and the node can never show different pictures for the same thing.
+     */
+    const drawerIcon = (node: NodeViewModel) => {
+        const descriptor = descriptorFor(node.iconType as NodeTypeId);
+        return descriptor ? iconFor(descriptor, node.raw) : null;
+    };
     const placeLldpNeighbors = (x: number): PlacedNode[] => {
         const anchorY = new Map<string, number>();
         sortByRank(interfacesWithRole(ctx, 'physical'), (i) => resolveNodeId(i, i.type), rankById)
@@ -247,9 +186,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             const anchor = anchorY.get(neighbor.localInterface);
             depthByInterface.set(neighbor.localInterface, depth + 1);
             return {
-                id: neighbor.id, item: neighbor, laneId: 'lldp', x,
+                id: neighbor.id, item: neighbor, descriptor: lldpDescriptor, laneId: 'lldp', x,
                 y: anchor != null ? anchor + depth * 24 : padding + index * (itemHeight + 20),
-                height: itemHeight, renderType: 'lldp-neighbor', color: '#2E7D32'
+                height: itemHeight, color: lldpDescriptor.color
             };
         });
     };
@@ -305,7 +244,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     };
 
     const laneLayout = layoutLanes(
-        lanes, ctx, laneView,
+        ctx, laneView,
         { padding, itemHeight, itemGap: 20, colSpacing },
         rankById,
         (laneId, x) => (laneId === 'lldp' ? placeLldpNeighbors(x) : null)
@@ -504,48 +443,44 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     }, [activeNode, activeNodeTabs, activePopoverTab]);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const renderInterfaceNode = (iface: any, x: number, y: number, color: string, typeOverride?: string, heightOverride?: number) => {
-        const type = typeOverride || iface.type;
-        const Icon = getIcon(type);
-        const viewNode = buildNodeViewModel(iface, type, ctx);
-        const displayName = viewNode.label;
-        const displayType = viewNode.graphDisplayLabel || viewNode.subtitle; // Use abbreviation for graph, verbose for drawer
-        const displayState = viewNode.state;
-        let extraInfo = null;
-        const nodeHeight = heightOverride || itemHeight;
-
-        if (type === 'ovn-mapping') {
-            // Already handled in buildNodeViewModel.
-        } else if (type === 'cudn') {
-            // Already handled in buildNodeViewModel.
-        } else if (type === 'attachment') {
-            extraInfo = (
-                <foreignObject x={10} y={60} width={itemWidth - 20} height={nodeHeight - 70}>
-                    <div style={{ fontSize: '10px', color: '#eee', wordWrap: 'break-word', lineHeight: '1.2' }}>
-                        {viewNode.namespaces?.join(', ') || ''}
-                    </div>
-                </foreignObject>
-            );
-        }
+     
+    /**
+     * Draw one placed node. Every per-type decision -- icon, colour, label, status dot,
+     * extra content -- comes off its descriptor, so this has no knowledge of what it is
+     * drawing.
+     */
+    const renderNode = (node: PlacedNode) => {
+        const { descriptor, item } = node;
+        const viewNode = buildNodeViewModel(item, descriptor, ctx);
+        const displayType = viewNode.graphDisplayLabel || viewNode.subtitle;
+        const status = descriptor.status?.(item);
 
         return (
             <g
-                transform={`translate(${x}, ${y})`}
+                transform={`translate(${node.x}, ${node.y})`}
                 style={{ cursor: 'pointer', opacity: isHighlightActive ? (highlightedPath.has(viewNode.id) ? 1 : 0.3) : 1 }}
                 onClick={(e) => handleNodeClick(e, viewNode)}
             >
-                <title>{displayName} ({displayType})</title>
-                <rect width={itemWidth} height={nodeHeight} rx={5} fill={color} stroke="var(--pf-t--global--border--color--default)" strokeWidth={1} />
+                <title>{viewNode.label} ({displayType})</title>
+                <rect
+                    width={itemWidth}
+                    height={node.height}
+                    rx={5}
+                    fill={descriptor.color}
+                    stroke="var(--pf-t--global--border--color--default)"
+                    strokeWidth={1}
+                />
                 <foreignObject x={10} y={10} width={20} height={20}>
-                    <div style={{ color: '#fff' }}>{Icon}</div>
+                    <div style={{ color: '#fff' }}>{iconFor(descriptor, item)}</div>
                 </foreignObject>
-                <text x={35} y={25} fontSize="12" fontWeight="bold" fill="#fff">{displayName}</text>
+                <text x={35} y={25} fontSize="12" fontWeight="bold" fill="#fff">{viewNode.label}</text>
                 <text x={10} y={45} fontSize="10" fill="#eee">{displayType}</text>
-                {type !== 'attachment' && displayState && <text x={10} y={60} fontSize="10" fill="#eee">{displayState}</text>}
-                {extraInfo}
-                {type !== 'ovn-mapping' && type !== 'cudn' && type !== 'udn' && type !== 'attachment' && type !== 'lldp-neighbor' && (
-                    <circle cx={itemWidth - 15} cy={15} r={5} fill={iface.state === 'up' ? '#4CAF50' : '#F44336'} />
+                {!descriptor.detail && viewNode.state && (
+                    <text x={10} y={60} fontSize="10" fill="#eee">{viewNode.state}</text>
+                )}
+                {descriptor.detail?.(item, { width: itemWidth, height: node.height })}
+                {status && (
+                    <circle cx={itemWidth - 15} cy={15} r={5} fill={status === 'up' ? '#4CAF50' : '#F44336'} />
                 )}
             </g>
         );
@@ -570,7 +505,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                         <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsSm' }}>
                             <FlexItem>
                                 <span style={{ display: 'inline-flex' }}>
-                                    {activeNode ? getIcon(activeNode.iconType) : null}
+                                    {activeNode ? drawerIcon(activeNode) : null}
                                 </span>
                             </FlexItem>
                             <FlexItem>
@@ -716,10 +651,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                                 )}
                                                 {group.nodes.map((node) => (
                                                     <React.Fragment key={node.id}>
-                                                        {renderInterfaceNode(
-                                                            node.item, node.x, node.y, node.color,
-                                                            node.renderType, node.height
-                                                        )}
+                                                        {renderNode(node)}
                                                     </React.Fragment>
                                                 ))}
                                             </React.Fragment>
@@ -730,15 +662,20 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 {/* Layer 8: Others */}
                                 <text x={padding} y={calculatedHeight - 150} fontWeight="bold" fill="currentColor">Other Interfaces</text>
                                 <g transform={`translate(${padding}, ${calculatedHeight - 140})`}>
-                                    {sortedOtherInterfaces.map((iface: Interface, index: number) => {
-                                        const col = index % 4;
-                                        const row = Math.floor(index / 4);
-                                        return (
-                                            <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                {renderInterfaceNode(iface, col * (itemWidth + 20), row * (itemHeight + 20), '#666')}
-                                            </React.Fragment>
-                                        );
-                                    })}
+                                    {sortedOtherInterfaces.map((iface: Interface, index: number) => (
+                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
+                                            {renderNode({
+                                                id: resolveNodeId(iface, iface.type),
+                                                item: iface,
+                                                descriptor: otherDescriptor,
+                                                laneId: 'other',
+                                                x: (index % 4) * (itemWidth + 20),
+                                                y: Math.floor(index / 4) * (itemHeight + 20),
+                                                height: itemHeight,
+                                                color: otherDescriptor.color
+                                            })}
+                                        </React.Fragment>
+                                    ))}
                                 </g>
                             </svg>
                             <Flex style={{ marginTop: '16px', alignItems: 'center' }}>

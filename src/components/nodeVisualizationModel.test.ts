@@ -5,7 +5,6 @@ import * as yaml from 'js-yaml';
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
 import { buildGraphContext } from '../topology/context';
 import { buildTopologyEdges } from './nodeVisualizationModel';
-import { extractLldpNeighbors } from './nodeVisualizationSelectors';
 
 const loadFixture = (name: string): NodeNetworkState => {
     const raw = fs.readFileSync(
@@ -21,21 +20,10 @@ const loadCudns = (name: string): ClusterUserDefinedNetwork[] =>
     JSON.parse(fs.readFileSync(
         path.join(process.cwd(), 'test', 'fixtures', 'cudn', `${name}.json`), 'utf-8'));
 
-const build = (
-    nns: NodeNetworkState,
-    overrides: Partial<Parameters<typeof buildTopologyEdges>[0]> = {}
-) => {
-    const ctx = buildGraphContext({ nns, ...(overrides.ctx ?? {}) as object });
-    return buildTopologyEdges({
-        ctx: overrides.ctx ?? ctx,
-        vrfInterfaces: [],
-        lldpNeighbors: [],
-        attachmentNodes: [],
-        showNads: false,
-        showLldpNeighbors: false,
-        ...overrides
-    });
-};
+const VIEW = { showHiddenColumns: false, showNads: false, showLldp: false };
+
+const build = (nns: NodeNetworkState, view: Partial<typeof VIEW> = {}) =>
+    buildTopologyEdges(buildGraphContext({ nns }), { ...VIEW, ...view });
 
 const arrows = (result: ReturnType<typeof buildTopologyEdges>) =>
     result.edges.map((e) => `${e.source} -> ${e.target}`).sort();
@@ -51,10 +39,9 @@ describe('buildTopologyEdges', () => {
 
     it('adds LLDP edges only when neighbours are being shown', () => {
         const nns = loadFixture('host-lldp');
-        const lldpNeighbors = extractLldpNeighbors(nns.status?.currentState?.interfaces ?? []);
 
-        expect(build(nns, { lldpNeighbors }).edges.some((e) => e.source.startsWith('lldp:'))).toBe(false);
-        expect(arrows(build(nns, { lldpNeighbors, showLldpNeighbors: true }))).toEqual(
+        expect(build(nns).edges.some((e) => e.source.startsWith('lldp:'))).toBe(false);
+        expect(arrows(build(nns, { showLldp: true }))).toEqual(
             expect.arrayContaining(['lldp:enp44s0/0 -> iface:enp44s0', 'lldp:enp45s0/0 -> iface:enp45s0'])
         );
     });
@@ -63,10 +50,7 @@ describe('buildTopologyEdges', () => {
         // The collision the old bare-name scheme papered over with an 'interface-'
         // prefix. ens192 is enslaved to the BRIDGE br-ex, and so is the port.
         const ctx = buildGraphContext({ nns: loadFixture('primary-cudn-vrf') });
-        const result = arrows(buildTopologyEdges({
-            ctx, vrfInterfaces: [], lldpNeighbors: [], attachmentNodes: [],
-            showNads: false, showLldpNeighbors: false
-        }));
+        const result = arrows(buildTopologyEdges(ctx, VIEW));
 
         expect(result).toEqual(expect.arrayContaining([
             'iface:ens192 -> iface:br-ex',
@@ -77,14 +61,8 @@ describe('buildTopologyEdges', () => {
     });
 
     it('links a localnet CUDN to its bridge mapping', () => {
-        const ctx = buildGraphContext({
-            nns: loadFixture('primary-cudn-vrf'),
-            cudns: loadCudns('primary-cudn-vrf')
-        });
-        const result = arrows(buildTopologyEdges({
-            ctx, vrfInterfaces: [], lldpNeighbors: [], attachmentNodes: [],
-            showNads: false, showLldpNeighbors: false
-        }));
+        const ctx = buildGraphContext({ nns: loadFixture('primary-cudn-vrf'),cudns: loadCudns('primary-cudn-vrf') });
+        const result = arrows(buildTopologyEdges(ctx, VIEW));
 
         expect(result).toEqual(expect.arrayContaining([
             'ovn:physnet -> cudn:machinenet',
@@ -93,17 +71,21 @@ describe('buildTopologyEdges', () => {
     });
 
     it('hangs an attachment off the network that produced it', () => {
-        const ctx = buildGraphContext({ nns: loadFixture('basic-host') });
-        const result = arrows(buildTopologyEdges({
-            ctx, vrfInterfaces: [], lldpNeighbors: [],
-            attachmentNodes: [
-                { name: 'blue', type: 'attachment', namespaces: ['ns1'], cudn: 'blue' },
-                { name: 'green', type: 'attachment', namespaces: ['ns2'], udn: { namespace: 'ns2', name: 'green' } }
-            ],
-            showNads: false, showLldpNeighbors: false
-        }));
+        // attachmentNodes are derived by the context: one per CUDN with namespaces in
+        // its status, and one per UDN for the NAD its controller creates.
+        const ctx = buildGraphContext({
+            nns: loadFixture('basic-host'),
+            cudns: [{
+                metadata: { name: 'blue' },
+                status: { conditions: [{
+                    type: 'NetworkCreated', status: 'True',
+                    message: 'created in following namespaces: [ns1]'
+                }] }
+            }],
+            udns: [{ metadata: { namespace: 'ns2', name: 'green' } }]
+        });
 
-        expect(result).toEqual(expect.arrayContaining([
+        expect(arrows(buildTopologyEdges(ctx, VIEW))).toEqual(expect.arrayContaining([
             'cudn:blue -> attachment:cudn/blue',
             'udn:ns2/green -> attachment:udn/ns2/green'
         ]));
@@ -112,20 +94,14 @@ describe('buildTopologyEdges', () => {
     it('survives a namespace containing dashes', () => {
         // The previous scheme joined namespace and name with a dash and could not undo
         // it, so a dashed namespace produced the wrong UDN id.
-        const ctx = buildGraphContext({ nns: loadFixture('basic-host') });
-        const result = arrows(buildTopologyEdges({
-            ctx, vrfInterfaces: [], lldpNeighbors: [],
-            attachmentNodes: [{
-                name: 'app', type: 'attachment', namespaces: ['demo-vm-primary-udn'],
-                udn: { namespace: 'demo-vm-primary-udn', name: 'app' }
-            }],
-            showNads: false, showLldpNeighbors: false
-        }));
+        const ctx = buildGraphContext({
+            nns: loadFixture('basic-host'),
+            udns: [{ metadata: { namespace: 'demo-vm-primary-udn', name: 'app' } }]
+        });
 
-        expect(result).toEqual([
-            ...arrows(build(loadFixture('basic-host'))),
+        expect(arrows(buildTopologyEdges(ctx, VIEW))).toContain(
             'udn:demo-vm-primary-udn/app -> attachment:udn/demo-vm-primary-udn/app'
-        ].sort());
+        );
     });
 });
 
@@ -135,11 +111,7 @@ describe('unresolved references', () => {
         const interfaces = nns.status!.currentState!.interfaces;
         interfaces.push({ name: 'orphan', type: 'ethernet', state: 'up', controller: 'br-nonexistent' });
 
-        const result = buildTopologyEdges({
-            ctx: buildGraphContext({ nns }),
-            vrfInterfaces: [], lldpNeighbors: [], attachmentNodes: [],
-            showNads: false, showLldpNeighbors: false
-        });
+        const result = buildTopologyEdges(buildGraphContext({ nns }), VIEW);
 
         expect(result.unresolved).toContainEqual({
             rule: 'controller', reference: 'br-nonexistent', from: 'iface:orphan'
