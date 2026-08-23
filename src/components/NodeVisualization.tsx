@@ -12,6 +12,7 @@ import {
 } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import { buildGraphContext, GraphContext } from '../topology/context';
+import { interfacesWithRole, roleOf } from '../topology/classify';
 import { buildDrawerTabs, getDrawerTabsForNode } from '../topology/drawerTabs';
 import { getIcon } from '../topology/icons';
 import {
@@ -110,46 +111,20 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     // Identify controllers
 
-    // Group interfaces
-    const ethInterfaces = interfaces.filter((iface: Interface) => iface.type === 'ethernet' && iface.state !== 'ignore');
-    const bondInterfaces = interfaces.filter((iface: Interface) => iface.type === 'bond');
-    const vrfInterfaces = interfaces.filter((iface: Interface) => iface.type === 'vrf');
-    const vlanInterfaces = interfaces.filter((iface: Interface) => iface.type === 'vlan' || iface.type === 'mac-vlan'); // Includes mac-vlan
-
-
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resolveNodeId = (iface: any, type: string) => resolveId(iface, type, ctx);
-    const isBridge = (iface: Interface) => {
-        if (['linux-bridge', 'ovs-bridge', 'openvswitch'].includes(iface.type)) return true;
 
-        // ovs-interface is a bridge if it is a controller AND does NOT have a patch
-        if (iface.type === 'ovs-interface' && ctx.controllerNames.has(iface.name) && !iface.patch && iface.state !== 'ignore') {
-            // CRITICAL: If there is an explicit bridge with this name, this ovs-interface is NOT the bridge.
-            // It is the internal interface of the bridge.
-            if (ctx.explicitBridgeNames.has(iface.name)) return false;
-            return true;
-        }
-        return false;
-    };
-
-    const bridgeInterfaces = interfaces.filter(isBridge);
-
-    // Logical interfaces: ovs-interface that are NOT bridges and NOT ignored
-    const logicalInterfaces = interfaces.filter((iface: Interface) => {
-        if (iface.type !== 'ovs-interface') return false;
-        if (iface.state === 'ignore') return false;
-        if (iface.name.startsWith('patch')) return false;
-
-        // Condition 1: It is NOT considered a bridge
-        if (!isBridge(iface)) return true;
-
-        // Condition 2: It MIGHT be considered a bridge by heuristic, BUT we want to forcefully include it
-        // if it shadows an explicit bridge.
-        if (ctx.explicitBridgeNames.has(iface.name)) return true;
-
-        return false;
-    });
-
-    const otherInterfaces = interfaces.filter((iface: Interface) => !['ethernet', 'bond', 'vlan', 'mac-vlan', 'vrf'].includes(iface.type) && !isBridge(iface) && iface.type !== 'ovs-interface');
+    // Lanes are populated by topology ROLE, not by nmstate type. See topology/classify.
+    const ethInterfaces = interfacesWithRole(ctx, 'physical');
+    const bondInterfaces = interfacesWithRole(ctx, 'bond');
+    const vrfInterfaces = interfacesWithRole(ctx, 'vrf');
+    const vlanInterfaces = interfacesWithRole(ctx, 'vlan');
+    const bridgeInterfaces = interfacesWithRole(ctx, 'bridge');
+    const logicalInterfaces = interfacesWithRole(ctx, 'bridge-port');
+    // The catch-all grid at the foot of the canvas. 'unclassified' landing here is a
+    // prompt to add a rule, not a resting place.
+    const otherInterfaces = ctx.interfaces.filter((iface) =>
+        ['host-local', 'unclassified'].includes(roleOf(iface, ctx)));
 
     // Define columns with their data
     const networkItems: NetworkColumnItem[] = [...cudns.map((c): NetworkColumnItem => ({ kind: 'cudn', item: c })), ...udns.map((u): NetworkColumnItem => ({ kind: 'udn', item: u }))];
