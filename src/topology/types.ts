@@ -24,9 +24,14 @@ export interface AttachmentNode {
     name: string;
     type: string;
     namespaces: string[];
+    /** Name of the backing CUDN, when CUDN-backed. */
     cudn?: string;
-    /** 'namespace-name' for UDN-backed attachments. */
-    udnId?: string;
+    /**
+     * Identity of the backing UDN, when UDN-backed. Held as its parts rather than a
+     * joined string: namespaces and names both contain dashes, so a join cannot be
+     * reliably undone to build the UDN's own node id.
+     */
+    udn?: { namespace: string; name: string };
 }
 
 /** CUDNs and UDNs share the Networks lane but are different resources. */

@@ -2,7 +2,10 @@ import fs from 'fs';
 import path from 'path';
 
 import { buildGraphContext } from './context';
-import { getAttachmentNodeId, getNadNodeId, getNetworkNodeId, getUdnNodeId, resolveNodeId } from './ids';
+import {
+    attachmentNodeId, edgeKey, findDuplicateIds, nadNodeId, networkNodeId,
+    parseNodeId, resolveInterfaceRef, resolveNodeId, udnNodeId
+} from './ids';
 import { getResourceLinks, getResourcePath } from './links';
 import { nodeKindRegistry } from './registry';
 import { buildNodeViewModel } from './viewModel';
@@ -50,41 +53,93 @@ describe('buildGraphContext', () => {
 describe('resolveNodeId', () => {
     const iface = (name: string, type: string) => ({ name, type });
 
-    it('gives a shadowing ovs-interface an id distinct from its bridge', () => {
-        expect(resolveNodeId(iface('br-ex', 'ovs-bridge'), 'ovs-bridge', ctx)).toBe('br-ex');
-        expect(resolveNodeId(iface('br-ex', 'ovs-interface'), 'ovs-interface', ctx)).toBe('interface-br-ex');
+    it('gives a shadowing ovs-interface its own kind, not a name hack', () => {
+        expect(resolveNodeId(iface('br-ex', 'ovs-bridge'), 'ovs-bridge', ctx)).toBe('iface:br-ex');
+        expect(resolveNodeId(iface('br-ex', 'ovs-interface'), 'ovs-interface', ctx)).toBe('port:br-ex');
     });
 
-    it('leaves an ovs-interface that shadows nothing under its own name', () => {
+    it('leaves an ovs-interface that shadows nothing as an ordinary interface', () => {
         expect(resolveNodeId(iface('ovs-vlan-1920', 'ovs-interface'), 'ovs-interface', ctx))
-            .toBe('ovs-vlan-1920');
+            .toBe('iface:ovs-vlan-1920');
     });
 
-    it('prefixes the resource-backed kinds', () => {
-        expect(resolveNodeId({ localnet: 'physnet' }, 'ovn-mapping', ctx)).toBe('ovn-physnet');
-        expect(resolveNodeId({ metadata: { name: 'blue' } }, 'cudn', ctx)).toBe('cudn-blue');
-        expect(resolveNodeId({ id: 'lldp-eno1-0' }, 'lldp-neighbor', ctx)).toBe('lldp-eno1-0');
+    it('gives a VRF its own kind', () => {
+        expect(resolveNodeId(iface('blue', 'vrf'), 'vrf', ctx)).toBe('vrf:blue');
+    });
+
+    it('namespaces every kind', () => {
+        expect(resolveNodeId({ localnet: 'physnet' }, 'ovn-mapping', ctx)).toBe('ovn:physnet');
+        expect(resolveNodeId({ metadata: { name: 'blue' } }, 'cudn', ctx)).toBe('cudn:blue');
+        expect(resolveNodeId({ id: 'lldp:eno1/0' }, 'lldp-neighbor', ctx)).toBe('lldp:eno1/0');
+    });
+
+    it('round-trips through parseNodeId', () => {
+        expect(parseNodeId('udn:ns1/blue')).toEqual({ kind: 'udn', key: 'ns1/blue' });
+        expect(parseNodeId('iface:br-ex')).toEqual({ kind: 'iface', key: 'br-ex' });
+        expect(parseNodeId('not-an-id')).toBeNull();
+    });
+});
+
+describe('resolveInterfaceRef', () => {
+    it('resolves a name reference to the bridge, never to its internal port', () => {
+        // br-ex names both. A controller reference means the bridge.
+        expect(resolveInterfaceRef('br-ex', ctx)).toBe('iface:br-ex');
+    });
+
+    it('returns undefined for a name no interface carries', () => {
+        expect(resolveInterfaceRef('br-nonexistent', ctx)).toBeUndefined();
+        expect(resolveInterfaceRef(undefined, ctx)).toBeUndefined();
+    });
+});
+
+describe('edgeKey', () => {
+    it('is the same whichever way round the edge is given', () => {
+        expect(edgeKey('iface:a', 'iface:b')).toBe(edgeKey('iface:b', 'iface:a'));
+    });
+
+    it('distinguishes different edges', () => {
+        expect(edgeKey('iface:a', 'iface:b')).not.toBe(edgeKey('iface:a', 'iface:c'));
+    });
+});
+
+describe('findDuplicateIds', () => {
+    it('reports each duplicated id once, sorted', () => {
+        expect(findDuplicateIds(['a', 'b', 'a', 'c', 'b', 'a'])).toEqual(['a', 'b']);
+        expect(findDuplicateIds(['a', 'b'])).toEqual([]);
+    });
+
+    it('finds no duplicates across the real captures', () => {
+        const ids = ctx.interfaces.map((i) => resolveNodeId(i, i.type, ctx));
+        expect(findDuplicateIds(ids)).toEqual([]);
     });
 });
 
 describe('id helpers', () => {
-    it('namespaces NAD and UDN ids, defaulting a missing namespace', () => {
-        expect(getNadNodeId({ metadata: { namespace: 'ns1', name: 'a' } })).toBe('nad-ns1-a');
-        expect(getNadNodeId({ metadata: { name: 'a' } })).toBe('nad-default-a');
-        expect(getUdnNodeId({ metadata: { namespace: 'ns1', name: 'u' } })).toBe('udn-ns1-u');
+    it('separates namespace from name, defaulting a missing namespace', () => {
+        expect(nadNodeId({ metadata: { namespace: 'ns1', name: 'a' } })).toBe('nad:ns1/a');
+        expect(nadNodeId({ metadata: { name: 'a' } })).toBe('nad:default/a');
+        expect(udnNodeId({ metadata: { namespace: 'ns1', name: 'u' } })).toBe('udn:ns1/u');
+    });
+
+    it('keeps namespaces containing dashes intact', () => {
+        // The old scheme joined with a dash, so this namespace was indistinguishable
+        // from several other namespace/name splits.
+        expect(udnNodeId({ metadata: { namespace: 'demo-vm-primary-udn', name: 'app' } }))
+            .toBe('udn:demo-vm-primary-udn/app');
     });
 
     it('distinguishes CUDN-backed from UDN-backed attachments', () => {
-        expect(getAttachmentNodeId({ name: 'a', type: 'attachment', namespaces: [], cudn: 'blue' }))
-            .toBe('attachment-blue');
-        expect(getAttachmentNodeId({ name: 'a', type: 'attachment', namespaces: [], udnId: 'ns1-u' }))
-            .toBe('attachment-udn-ns1-u');
+        expect(attachmentNodeId({ name: 'a', type: 'attachment', namespaces: [], cudn: 'blue' }))
+            .toBe('attachment:cudn/blue');
+        expect(attachmentNodeId({
+            name: 'a', type: 'attachment', namespaces: [], udn: { namespace: 'ns1', name: 'u' }
+        })).toBe('attachment:udn/ns1/u');
     });
 
     it('routes the shared Networks lane to the right id per kind', () => {
-        expect(getNetworkNodeId({ kind: 'cudn', item: { metadata: { name: 'blue' } } })).toBe('cudn-blue');
-        expect(getNetworkNodeId({ kind: 'udn', item: { metadata: { namespace: 'ns1', name: 'u' } } }))
-            .toBe('udn-ns1-u');
+        expect(networkNodeId({ kind: 'cudn', item: { metadata: { name: 'blue' } } })).toBe('cudn:blue');
+        expect(networkNodeId({ kind: 'udn', item: { metadata: { namespace: 'ns1', name: 'u' } } }))
+            .toBe('udn:ns1/u');
     });
 });
 
@@ -114,7 +169,7 @@ describe('buildNodeViewModel', () => {
         const model = buildNodeViewModel(vrf, 'vrf', ctx);
 
         expect(model.kind).toBe('vrf');
-        expect(model.id).toBe('example-p-cudn');
+        expect(model.id).toBe('vrf:example-p-cudn');
         expect(model.graphDisplayLabel).toBe('VRF');
         expect(model.state).toContain('ovn-k8s-mp3');
         expect(model.vrfRoutes).toHaveLength(4);
@@ -134,7 +189,7 @@ describe('buildNodeViewModel', () => {
     it('maps a bridge mapping to its localnet, not its bridge', () => {
         const model = buildNodeViewModel({ localnet: 'physnet', bridge: 'br-ex' }, 'ovn-mapping', ctx);
 
-        expect(model.id).toBe('ovn-physnet');
+        expect(model.id).toBe('ovn:physnet');
         expect(model.label).toBe('physnet');
         expect(model.state).toBe('Bridge: br-ex');
     });
@@ -152,7 +207,7 @@ describe('buildNodeViewModel', () => {
         // The catch-all that ovn-recon-s3t.8 replaces with an explicit role table.
         const model = buildNodeViewModel(iface('lo'), 'loopback', ctx);
         expect(model.kind).toBe('interface');
-        expect(model.id).toBe('lo');
+        expect(model.id).toBe('iface:lo');
     });
 
     it('does not reach outside the context it was given', () => {
