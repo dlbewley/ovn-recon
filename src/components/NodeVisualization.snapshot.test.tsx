@@ -57,8 +57,14 @@ describe('NodeVisualization rendered structure', () => {
             };
         }).sort((a, b) => `${a.x},${a.y},${a.title}`.localeCompare(`${b.x},${b.y},${b.title}`));
 
+        // Endpoints AND appearance: a reference edge is dashed, and that distinction is
+        // the whole point of ovn-recon-s3t.25, so the baseline has to be able to see it.
         const edges = Array.from(container.querySelectorAll('line'))
-            .map((l) => `${l.getAttribute('x1')},${l.getAttribute('y1')} -> ${l.getAttribute('x2')},${l.getAttribute('y2')}`)
+            .map((l) => [
+                `${l.getAttribute('x1')},${l.getAttribute('y1')} -> ${l.getAttribute('x2')},${l.getAttribute('y2')}`,
+                l.getAttribute('stroke-dasharray') ? 'dashed' : 'solid',
+                l.querySelector('title')?.textContent ?? ''
+            ].join('  '))
             .sort();
 
         const laneHeaders = Array.from(container.querySelectorAll('svg > text')).map((t) => t.textContent);

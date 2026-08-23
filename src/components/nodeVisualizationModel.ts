@@ -3,9 +3,33 @@ import { NODE_TYPES } from '../topology/descriptors';
 import { resolveInterfaceRef } from '../topology/ids';
 import { LaneViewState, visibleItems } from '../topology/lanes';
 
+/**
+ * What an edge MEANS. The graph used to draw one kind of line for all of these, and the
+ * columnar layout then added a fifth semantic nobody declared -- that column position is
+ * position in a path. Membership edges violate that by pointing back at their container;
+ * reference edges fabricate a hop that does not exist.
+ *
+ * The review named three kinds. There are four: LLDP does not fit any of them, because a
+ * neighbour is neither part of the interface nor layered on it nor a name for it -- it is
+ * the device at the other end of a cable. Forcing it into `layering` would have been
+ * tidier and wrong.
+ */
+export type EdgeKind =
+    /** The source is a port OF the target. `ens192` is a port of `br-ex`. */
+    | 'membership'
+    /** Traffic flows through. `ens224.456` is carried on `ens224`. */
+    | 'layering'
+    /** A name for the same thing, or a declaration about it. Nothing flows through. */
+    | 'reference'
+    /** Two devices at opposite ends of a physical link, on different nodes. */
+    | 'peer';
+
 export interface TopologyEdge {
     source: string;
     target: string;
+    kind: EdgeKind;
+    /** The rule that produced it, e.g. 'controller'. Carries a rationale under s3t.30. */
+    rule: string;
 }
 
 /** An edge that could not be drawn because one end names something not on this node. */
@@ -50,15 +74,21 @@ export const buildTopologyEdges = (ctx: GraphContext, view: LaneViewState): Topo
     const unresolved: UnresolvedEdge[] = [];
 
     const sink = {
-        edge: (source: string | undefined, target: string | undefined) => {
+        edge: (
+            source: string | undefined,
+            target: string | undefined,
+            kind: EdgeKind,
+            rule: string
+        ) => {
             if (!source || !target) return;
             const key = `${source}=>${target}`;
             if (edgeKeys.has(key)) return;
             edgeKeys.add(key);
-            edges.push({ source, target });
+            edges.push({ source, target, kind, rule });
         },
         named: (
             rule: string,
+            kind: EdgeKind,
             from: string,
             reference: string | undefined,
             direction: 'to' | 'from'
@@ -71,8 +101,8 @@ export const buildTopologyEdges = (ctx: GraphContext, view: LaneViewState): Topo
                 }
                 return;
             }
-            if (direction === 'to') sink.edge(from, target);
-            else sink.edge(target, from);
+            if (direction === 'to') sink.edge(from, target, kind, rule);
+            else sink.edge(target, from, kind, rule);
         }
     };
 

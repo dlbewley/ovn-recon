@@ -1,6 +1,12 @@
 import { TopologyEdge } from './nodeVisualizationModel';
 
 /**
+ * Ordering only needs to know WHICH nodes are connected, not what the connection means.
+ * Taking the narrow shape keeps edge kinds out of the layout entirely.
+ */
+type Connection = Pick<TopologyEdge, 'source' | 'target'>;
+
+/**
  * Node ordering for the fixed-lane topology graph.
  *
  * Lane membership (which column a node sits in) is decided by node type, not here.
@@ -32,7 +38,7 @@ export interface LayoutLane {
 export interface ComputeNodeOrderParams {
     /** Lanes in left-to-right render order. */
     lanes: LayoutLane[];
-    edges: TopologyEdge[];
+    edges: Connection[];
     /**
      * Optional hard grouping within a lane. Nodes sort by group rank first and
      * barycenter second, so a lane can hold ordered sub-groups (bridge mappings
@@ -61,7 +67,7 @@ const buildLaneIndex = (lanes: LayoutLane[]): Map<string, number> => {
  * placed, and in different lanes. A same-lane edge says nothing about vertical order.
  */
 const buildNeighbors = (
-    edges: TopologyEdge[],
+    edges: Connection[],
     laneIndexById: Map<string, number>
 ): Map<string, string[]> => {
     const neighbors = new Map<string, string[]>();
@@ -164,7 +170,7 @@ const orderLane = (
  */
 export const countCrossings = (
     lanes: LayoutLane[],
-    edges: TopologyEdge[],
+    edges: Connection[],
     rankById: Record<string, number>
 ): number => {
     const laneIndexById = buildLaneIndex(lanes);
