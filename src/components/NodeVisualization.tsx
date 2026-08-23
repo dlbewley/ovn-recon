@@ -3,12 +3,11 @@ import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, D
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 
 
-import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, Interface, OvnBridgeMapping, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
+import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, Interface, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
 import {
     extractLldpNeighbors,
     getCudnAssociatedNamespaces,
-    hasLldpNeighbors,
-    LldpNeighborNode
+    hasLldpNeighbors
 } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import { buildGraphContext, GraphContext } from '../topology/context';
@@ -28,7 +27,10 @@ import {
     AttachmentNode, DrawerTabId, Graph, NetworkColumnItem, NodeViewModel
 } from '../topology/types';
 import { buildNodeViewModel } from '../topology/viewModel';
-import { computeNodeOrder, sortByRank, LayoutLane } from './nodeVisualizationLayout';
+import { computeNodeOrder, sortByRank } from './nodeVisualizationLayout';
+import {
+    buildLanes, laneOrderingInput, layoutLanes, LaneViewState, PlacedNode
+} from '../topology/lanes';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -39,8 +41,6 @@ interface NodeVisualizationProps {
 }
 
 const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], udns = [], nads = [], routeAdvertisements = [] }) => {
-    const CUDN_NODE_COLOR = '#CC0099';
-    const UDN_NODE_COLOR = '#0084A8';
 
 
 
@@ -115,12 +115,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const resolveNodeId = (iface: any, type: string) => resolveId(iface, type, ctx);
 
     // Lanes are populated by topology ROLE, not by nmstate type. See topology/classify.
-    const ethInterfaces = interfacesWithRole(ctx, 'physical');
-    const bondInterfaces = interfacesWithRole(ctx, 'bond');
     const vrfInterfaces = interfacesWithRole(ctx, 'vrf');
-    const vlanInterfaces = interfacesWithRole(ctx, 'vlan');
-    const bridgeInterfaces = interfacesWithRole(ctx, 'bridge');
-    const logicalInterfaces = interfacesWithRole(ctx, 'bridge-port');
     // The catch-all grid at the foot of the canvas. 'unclassified' landing here is a
     // prompt to add a rule, not a resting place.
     const otherInterfaces = ctx.interfaces.filter((iface) =>
@@ -128,19 +123,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     // Define columns with their data
     const networkItems: NetworkColumnItem[] = [...cudns.map((c): NetworkColumnItem => ({ kind: 'cudn', item: c })), ...udns.map((u): NetworkColumnItem => ({ kind: 'udn', item: u }))];
-    const columns = [
-        ...(showLldpColumn ? [{ name: 'LLDP Neighbors', data: lldpNeighbors, key: 'lldp' }] : []),
-        { name: 'Physical Interfaces', data: ethInterfaces, key: 'eth' },
-        { name: 'Bonds', data: bondInterfaces, key: 'bond' },
-        { name: 'VLAN Interfaces', data: vlanInterfaces, key: 'vlan' },
-        { name: 'Bridges', data: bridgeInterfaces, key: 'bridge' },
-        { name: 'Logical Interfaces', data: logicalInterfaces, key: 'logical' },
-        { name: 'Layer 3', data: [...bridgeMappings, ...vrfInterfaces], key: 'l3' },
-        { name: 'Networks', data: networkItems, key: 'cudn' },
-    ];
-
-    // Filter columns based on showHiddenColumns
-    const visibleColumns = showHiddenColumns ? columns : columns.filter(col => col.data.length > 0 && col.key !== 'logical');
+    const getAttachmentHeight = (node: AttachmentNode) => {
+        const nsString = node.namespaces.join(', ');
+        const charsPerLine = 25; // Approximate characters per line
+        const lines = Math.ceil(nsString.length / charsPerLine);
+        // Base height (60px for icon/title) + text height (approx 12px per line) + padding
+        return Math.max(itemHeight, 60 + (lines * 12) + 10);
+    };
 
     // Attachments (from CUDN status + one per UDN for controller-created NAD)
     const attachmentNodes: AttachmentNode[] = [];
@@ -168,6 +157,21 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     });
 
+    // Lane identity lives in ONE ordered table: src/topology/lanes.ts.
+    const laneView: LaneViewState = { showHiddenColumns, showNads, showLldp: showLldpColumn };
+    const lanes = buildLanes({
+        byRole: interfacesWithRole,
+        interfaceId: (iface: Interface) => resolveNodeId(iface, iface.type),
+        bridgeMappingId: bridgeMappingNodeId,
+        networkId: getNetworkNodeId,
+        attachmentId: getAttachmentNodeId,
+        attachmentHeight: getAttachmentHeight,
+        nadId: getNadNodeId,
+        lldpNeighbors,
+        networkItems,
+        attachmentNodes
+    });
+
     const { edges: topologyEdges, unresolved } = buildTopologyEdges({
         ctx,
         vrfInterfaces,
@@ -183,48 +187,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Note the l3 lane holds two stacked groups (bridge mappings above VRFs) and the
     // networks lane holds CUDNs above UDNs; both are expressed as group ranks below
     // rather than as ordering hacks inside the layout module.
-    const layoutLanes: LayoutLane[] = [
-        { id: 'lldp', nodeIds: lldpNeighbors.map((neighbor) => neighbor.id) },
-        { id: 'eth', nodeIds: ethInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
-        { id: 'bond', nodeIds: bondInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
-        { id: 'vlan', nodeIds: vlanInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
-        { id: 'bridge', nodeIds: bridgeInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
-        { id: 'logical', nodeIds: logicalInterfaces.map((iface) => resolveNodeId(iface, iface.type)) },
-        {
-            id: 'l3',
-            nodeIds: [
-                ...bridgeMappings.map((mapping) => bridgeMappingNodeId(mapping.localnet)),
-                ...vrfInterfaces.map((iface) => resolveNodeId(iface, iface.type))
-            ]
-        },
-        { id: 'networks', nodeIds: networkItems.map(getNetworkNodeId) },
-        { id: 'attachments', nodeIds: attachmentNodes.map(getAttachmentNodeId) },
-        { id: 'nads', nodeIds: nads.map(getNadNodeId) }
-    ];
-
-    // Sub-group ordering within a lane: bridge mappings above VRFs, CUDNs above UDNs.
-    const groupRankById: Record<string, number> = {};
-    vrfInterfaces.forEach((iface) => {
-        groupRankById[resolveNodeId(iface, iface.type)] = 1;
-    });
-    networkItems.forEach((item) => {
-        if (item.kind === 'udn') groupRankById[getNetworkNodeId(item)] = 1;
+    // Ordering input comes from the same table the layout uses, so the two cannot drift.
+    // Group order within a lane supplies the group rank -- bridge mappings above VRFs,
+    // CUDNs above UDNs -- which used to be written out longhand, by name.
+    const ordering = laneOrderingInput(lanes, ctx, laneView);
+    const rankById = computeNodeOrder({
+        lanes: ordering.lanes,
+        edges: topologyEdges,
+        groupRankById: ordering.groupRankById
     });
 
-    const rankById = computeNodeOrder({ lanes: layoutLanes, edges: topologyEdges, groupRankById });
-
-    const rankOfIface = (iface: Interface) => resolveNodeId(iface, iface.type);
-    const sortedEthInterfaces = sortByRank(ethInterfaces, rankOfIface, rankById);
-    const sortedLldpNeighbors = sortByRank(lldpNeighbors, (neighbor) => neighbor.id, rankById);
-    const sortedBondInterfaces = sortByRank(bondInterfaces, rankOfIface, rankById);
-    const sortedVrfInterfaces = sortByRank(vrfInterfaces, rankOfIface, rankById);
-    const sortedVlanInterfaces = sortByRank(vlanInterfaces, rankOfIface, rankById);
-    const sortedBridgeInterfaces = sortByRank(bridgeInterfaces, rankOfIface, rankById);
-    const sortedLogicalInterfaces = sortByRank(logicalInterfaces, rankOfIface, rankById);
-    const sortedBridgeMappings = sortByRank(bridgeMappings, (mapping) => bridgeMappingNodeId(mapping.localnet), rankById);
-    const sortedNetworkItems = sortByRank(networkItems, getNetworkNodeId, rankById);
-    const sortedAttachmentNodes = sortByRank(attachmentNodes, getAttachmentNodeId, rankById);
-    const sortedNads = sortByRank(nads, (nad) => getNadNodeId(nad), rankById);
     // Not laned: rendered in a grid at the foot of the canvas, so plain alphabetical.
     const sortedOtherInterfaces = otherInterfaces.slice().sort((a, b) => a.name.localeCompare(b.name));
 
@@ -259,127 +231,27 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     }, [interfaces, bridgeMappings, networkItems, attachmentNodes, nads]);
 
-    // Calculate positions with dynamic column visibility
-    const nodePositions: { [name: string]: { x: number, y: number } } = {};
+    /**
+     * LLDP neighbours do not stack from the top of their lane: each aligns with the
+     * physical interface it was seen on, and several on one interface fan downwards.
+     * The lane table marks this a custom layout rather than pretending it is a stack.
+     */
+    const placeLldpNeighbors = (x: number): PlacedNode[] => {
+        const anchorY = new Map<string, number>();
+        sortByRank(interfacesWithRole(ctx, 'physical'), (i) => resolveNodeId(i, i.type), rankById)
+            .forEach((iface, index) => anchorY.set(iface.name, padding + index * (itemHeight + 20)));
 
-    // Position nodes based on visible columns
-    // const currentColIndex = 0; // Unused
-
-    if (showLldpColumn && lldpNeighbors.length > 0) {
-        const colOffset = visibleColumns.findIndex(col => col.key === 'lldp');
-        if (colOffset >= 0) {
-            const baseYByInterface = new Map<string, number>();
-            sortedEthInterfaces.forEach((iface: Interface, index: number) => {
-                baseYByInterface.set(iface.name, padding + (index * (itemHeight + 20)));
-            });
-            const stackByInterface = new Map<string, number>();
-
-            sortedLldpNeighbors.forEach((neighbor: LldpNeighborNode, index: number) => {
-                const stackIndex = stackByInterface.get(neighbor.localInterface) || 0;
-                const baseY = baseYByInterface.get(neighbor.localInterface);
-                const fallbackY = padding + (index * (itemHeight + 20));
-                nodePositions[neighbor.id] = {
-                    x: padding + (colOffset * colSpacing),
-                    y: baseY != null ? baseY + (stackIndex * 24) : fallbackY
-                };
-                stackByInterface.set(neighbor.localInterface, stackIndex + 1);
-            });
-        }
-    }
-
-    if (showHiddenColumns || ethInterfaces.length > 0) {
-        const colOffset = visibleColumns.findIndex(col => col.key === 'eth');
-        if (colOffset >= 0) {
-            // Defensive guard: avoid assigning off-canvas positions for hidden columns.
-            // Hidden columns previously produced x<0 nodes and phantom connectors.
-            sortedEthInterfaces.forEach((iface: Interface, index: number) => {
-                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-            });
-        }
-    }
-
-    if (showHiddenColumns || bondInterfaces.length > 0) {
-        const colOffset = visibleColumns.findIndex(col => col.key === 'bond');
-        if (colOffset >= 0) {
-            sortedBondInterfaces.forEach((iface: Interface, index: number) => {
-                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-            });
-        }
-    }
-
-
-
-    if (showHiddenColumns || vlanInterfaces.length > 0) {
-        const colOffset = visibleColumns.findIndex(col => col.key === 'vlan');
-        if (colOffset >= 0) {
-            sortedVlanInterfaces.forEach((iface: Interface, index: number) => {
-                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-            });
-        }
-    }
-
-    if (showHiddenColumns || bridgeInterfaces.length > 0) {
-        const colOffset = visibleColumns.findIndex(col => col.key === 'bridge');
-        if (colOffset >= 0) {
-            sortedBridgeInterfaces.forEach((iface: Interface, index: number) => {
-                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-            });
-        }
-    }
-
-    if (showHiddenColumns || logicalInterfaces.length > 0) {
-        const colOffset = visibleColumns.findIndex(col => col.key === 'logical');
-        if (colOffset >= 0) {
-            sortedLogicalInterfaces.forEach((iface: Interface, index: number) => {
-                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-            });
-        }
-    }
-
-    // Combine Bridge Mappings and VRFs in 'l3' column
-    if (showHiddenColumns || bridgeMappings.length > 0 || vrfInterfaces.length > 0) {
-        const colOffset = visibleColumns.findIndex(col => col.key === 'l3');
-        if (colOffset >= 0) {
-            let currentY = padding;
-
-            // Stack Bridge Mappings first
-            sortedBridgeMappings.forEach((mapping: OvnBridgeMapping) => {
-                nodePositions[bridgeMappingNodeId(mapping.localnet)] = { x: padding + (colOffset * colSpacing), y: currentY };
-                currentY += (itemHeight + 20);
-            });
-
-            // Add gap for VRF header if we have VRFs
-            if (sortedVrfInterfaces.length > 0) {
-                // If we had bridge mappings, add a bit more space for the header
-                if (sortedBridgeMappings.length > 0) {
-                    currentY += 40; // Extra gap for header
-                }
-            }
-
-            // Stack VRFs below
-            sortedVrfInterfaces.forEach((iface: Interface) => {
-                nodePositions[resolveNodeId(iface, iface.type)] = { x: padding + (colOffset * colSpacing), y: currentY };
-                currentY += (itemHeight + 20);
-            });
-        }
-    }
-
-    if (showHiddenColumns || networkItems.length > 0) {
-        const colOffset = visibleColumns.findIndex(col => col.key === 'cudn');
-        if (colOffset >= 0) {
-            sortedNetworkItems.forEach((n: NetworkColumnItem, index: number) => {
-                nodePositions[getNetworkNodeId(n)] = { x: padding + (colOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-            });
-        }
-    }
-
-    // Helper to calculate attachment node height
-    const getAttachmentHeight = (node: AttachmentNode) => {
-        const nsString = node.namespaces.join(', ');
-        const charsPerLine = 25; // Approximate characters per line
-        const lines = Math.ceil(nsString.length / charsPerLine);
-        // Base height (60px for icon/title) + text height (approx 12px per line) + padding
-        return Math.max(itemHeight, 60 + (lines * 12) + 10);
+        const depthByInterface = new Map<string, number>();
+        return sortByRank(lldpNeighbors, (n) => n.id, rankById).map((neighbor, index) => {
+            const depth = depthByInterface.get(neighbor.localInterface) ?? 0;
+            const anchor = anchorY.get(neighbor.localInterface);
+            depthByInterface.set(neighbor.localInterface, depth + 1);
+            return {
+                id: neighbor.id, item: neighbor, laneId: 'lldp', x,
+                y: anchor != null ? anchor + depth * 24 : padding + index * (itemHeight + 20),
+                height: itemHeight, renderType: 'lldp-neighbor', color: '#2E7D32'
+            };
+        });
     };
 
     // Build Graph
@@ -432,37 +304,21 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         return path;
     };
 
-    // Attachments positions with dynamic spacing
-    let currentAttachmentY = padding;
-    const attachmentColOffset = visibleColumns.length; // Attachments always after visible columns
-    sortedAttachmentNodes.forEach((node: AttachmentNode) => {
-        const height = getAttachmentHeight(node);
-        nodePositions[getAttachmentNodeId(node)] = { x: padding + (attachmentColOffset * colSpacing), y: currentAttachmentY };
-        currentAttachmentY += height + 20; // Add gap
-    });
-
-    const nadColOffset = attachmentColOffset + 1; // NADs render to the right of Attachments
-    if (showNads && (showHiddenColumns || nads.length > 0)) {
-        sortedNads.forEach((nad: NetworkAttachmentDefinition, index: number) => {
-            nodePositions[getNadNodeId(nad)] = { x: padding + (nadColOffset * colSpacing), y: padding + (index * (itemHeight + 20)) };
-        });
-    }
-
-    // Dynamic height calculation
-    const maxRows = Math.max(
-        showLldpColumn ? lldpNeighbors.length : 0,
-        ethInterfaces.length,
-        bondInterfaces.length,
-        bridgeInterfaces.length,
-        logicalInterfaces.length,
-        bridgeMappings.length,
-        vrfInterfaces.length,
-        networkItems.length,
-        showNads ? nads.length : 0,
-        Math.ceil(otherInterfaces.length / 4) + 2
+    const laneLayout = layoutLanes(
+        lanes, ctx, laneView,
+        { padding, itemHeight, itemGap: 20, colSpacing },
+        rankById,
+        (laneId, x) => (laneId === 'lldp' ? placeLldpNeighbors(x) : null)
     );
-    // Use currentAttachmentY for attachment column height
-    const calculatedHeight = Math.max(600, padding + (maxRows * (itemHeight + 20)) + 200, currentAttachmentY + 100);
+    const nodePositions = laneLayout.positions;
+
+    // The catch-all grid sits below every lane, four across.
+    const otherGridRows = Math.ceil(otherInterfaces.length / 4) + 2;
+    const calculatedHeight = Math.max(
+        600,
+        laneLayout.maxY + 100,
+        padding + otherGridRows * (itemHeight + 20) + 200
+    );
 
     // Initialize viewBox after calculatedHeight is computed
     React.useEffect(() => {
@@ -839,148 +695,37 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     </React.Fragment>
                                 ))}
 
-                                {/* Render visible columns dynamically */}
-                                {visibleColumns.map((col, idx) => {
-                                    const xPos = padding + (idx * colSpacing);
-                                    return (
-                                        <React.Fragment key={col.key}>
-                                            {col.key !== 'l3' && <text x={xPos} y={padding - 10} fontWeight="bold" fill="currentColor">{col.name}</text>}
-                                            {col.key === 'lldp' && sortedLldpNeighbors
-                                                .filter((neighbor: LldpNeighborNode) => nodePositions[neighbor.id])
-                                                .map((neighbor: LldpNeighborNode) => {
-                                                    const pos = nodePositions[neighbor.id];
-                                                    return (
-                                                        <React.Fragment key={neighbor.id}>
-                                                            {renderInterfaceNode(neighbor, pos.x, pos.y, '#2E7D32', 'lldp-neighbor')}
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                            {col.key === 'eth' && sortedEthInterfaces
-                                                .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface) => {
-                                                    const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                    return (
-                                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#0066CC')}
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                            {col.key === 'bond' && sortedBondInterfaces
-                                                .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface) => {
-                                                    const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                    return (
-                                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#663399')}
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                            {col.key === 'vlan' && sortedVlanInterfaces
-                                                .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface) => {
-                                                    const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                    return (
-                                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#9933CC')}
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                            {col.key === 'bridge' && sortedBridgeInterfaces
-                                                .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface) => {
-                                                    const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                    return (
-                                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#FF6600')}
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                            {col.key === 'logical' && sortedLogicalInterfaces
-                                                .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                .map((iface: Interface) => {
-                                                    const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                    return (
-                                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                                            {renderInterfaceNode(iface, pos.x, pos.y, '#0099CC')}
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                            {col.key === 'l3' && (
-                                                <>
-                                                    {/* Bridge Mappings Section */}
-                                                    <text x={xPos} y={padding - 10} fontWeight="bold" fill="currentColor">Bridge Mappings</text>
-                                                    {sortedBridgeMappings
-                                                        .filter((mapping: OvnBridgeMapping) => nodePositions[bridgeMappingNodeId(mapping.localnet)])
-                                                        .map((mapping: OvnBridgeMapping) => {
-                                                            // Bridge mappings and VRFs share this lane as two stacked
-                                                            // sub-groups, kept apart by their group rank in computeNodeOrder.
-                                                            const pos = nodePositions[bridgeMappingNodeId(mapping.localnet)];
-                                                            return (
-                                                                <React.Fragment key={bridgeMappingNodeId(mapping.localnet)}>
-                                                                    {renderInterfaceNode(mapping, pos.x, pos.y, '#009900', 'ovn-mapping')}
-                                                                </React.Fragment>
-                                                            );
-                                                        })}
-
-                                                    {/* VRFs Section Header - Position it above the first VRF node */}
-                                                    {(() => {
-                                                        const firstVrf = sortedVrfInterfaces.find(iface => nodePositions[resolveNodeId(iface, iface.type)]);
-                                                        if (firstVrf) {
-                                                            const pos = nodePositions[resolveNodeId(firstVrf, firstVrf.type)];
-                                                            // Draw header slightly above the first VRF node
-                                                            return <text x={xPos} y={pos.y - 15} fontWeight="bold" fill="currentColor">VRFs</text>;
-                                                        }
-                                                        return null;
-                                                    })()}
-
-                                                    {sortedVrfInterfaces
-                                                        .filter((iface: Interface) => nodePositions[resolveNodeId(iface, iface.type)])
-                                                        .map((iface: Interface) => {
-                                                            const pos = nodePositions[resolveNodeId(iface, iface.type)];
-                                                            return (
-                                                                <React.Fragment key={iface.name}>
-                                                                    {renderInterfaceNode(iface, pos.x, pos.y, '#CC6600', 'vrf')}
-                                                                </React.Fragment>
-                                                            );
-                                                        })}
-                                                </>
-                                            )}
-                                            {col.key === 'cudn' && sortedNetworkItems
-                                                .filter((n: NetworkColumnItem) => nodePositions[getNetworkNodeId(n)])
-                                                .map((n: NetworkColumnItem) => {
-                                                    const pos = nodePositions[getNetworkNodeId(n)];
-                                                    const color = n.kind === 'cudn' ? CUDN_NODE_COLOR : UDN_NODE_COLOR;
-                                                    return (
-                                                        <React.Fragment key={getNetworkNodeId(n)}>
-                                                            {renderInterfaceNode(n.item, pos.x, pos.y, color, n.kind)}
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                        </React.Fragment>
-                                    );
-                                })}
-
-                                {/* Layer 7: Attachments (from CUDN status) */}
-                                <text x={padding + (attachmentColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">Attachments</text>
-                                {sortedAttachmentNodes.map((node: AttachmentNode) => {
-                                    const pos = nodePositions[getAttachmentNodeId(node)];
-                                    return (
-                                        <React.Fragment key={getAttachmentNodeId(node)}>
-                                            {pos && renderInterfaceNode(node, pos.x, pos.y, '#F0AB00', 'attachment', getAttachmentHeight(node))}
-                                        </React.Fragment>
-                                    );
-                                })}
-
-                                {showNads && (
-                                    <>
-                                        <text x={padding + (nadColOffset * colSpacing)} y={padding - 10} fontWeight="bold" fill="currentColor">NADs</text>
-                                        {sortedNads.map((nad: NetworkAttachmentDefinition) => (
-                                            <React.Fragment key={getNadNodeId(nad)}>
-                                                {nodePositions[getNadNodeId(nad)] && renderInterfaceNode(nad, nodePositions[getNadNodeId(nad)].x, nodePositions[getNadNodeId(nad)].y, '#CC9900', 'nad')}
+                                {/*
+                                  * One pass over the placed lanes. This replaced sixteen
+                                  * branches keyed on a column name, each of which had to
+                                  * repeat the filter, the position lookup and the colour.
+                                  */}
+                                {laneLayout.lanes.map(({ lane, x, groups }) => (
+                                    <React.Fragment key={lane.id}>
+                                        {lane.title && (
+                                            <text x={x} y={padding - 10} fontWeight="bold" fill="currentColor">
+                                                {lane.title}
+                                            </text>
+                                        )}
+                                        {groups.map((group, groupIndex) => (
+                                            <React.Fragment key={group.title ?? groupIndex}>
+                                                {group.title && group.nodes.length > 0 && (
+                                                    <text x={x} y={group.nodes[0].y - 15} fontWeight="bold" fill="currentColor">
+                                                        {group.title}
+                                                    </text>
+                                                )}
+                                                {group.nodes.map((node) => (
+                                                    <React.Fragment key={node.id}>
+                                                        {renderInterfaceNode(
+                                                            node.item, node.x, node.y, node.color,
+                                                            node.renderType, node.height
+                                                        )}
+                                                    </React.Fragment>
+                                                ))}
                                             </React.Fragment>
                                         ))}
-                                    </>
-                                )}
+                                    </React.Fragment>
+                                ))}
 
                                 {/* Layer 8: Others */}
                                 <text x={padding} y={calculatedHeight - 150} fontWeight="bold" fill="currentColor">Other Interfaces</text>
