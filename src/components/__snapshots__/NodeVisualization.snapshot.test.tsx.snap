@@ -1,0 +1,1157 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`NodeVisualization rendered structure bonded-lldp, with neighbours shown 1`] = `
+{
+  "edges": [
+    "180,160 -> 240,160",
+    "180,260 -> 240,260",
+    "180,360 -> 240,360",
+    "180,460 -> 240,460",
+    "180,560 -> 240,560",
+    "180,60 -> 240,60",
+    "400,160 -> 460,60",
+    "400,260 -> 460,160",
+    "400,360 -> 460,160",
+    "400,460 -> 460,260",
+    "400,560 -> 460,260",
+    "400,60 -> 460,60",
+    "620,160 -> 680,160",
+    "620,60 -> 680,60",
+    "840,160 -> 900,1060",
+    "840,160 -> 900,1160",
+    "840,160 -> 900,1260",
+    "840,160 -> 900,1360",
+    "840,160 -> 900,1460",
+    "840,160 -> 900,1560",
+    "840,160 -> 900,160",
+    "840,160 -> 900,1660",
+    "840,160 -> 900,1760",
+    "840,160 -> 900,1860",
+    "840,160 -> 900,1960",
+    "840,160 -> 900,2060",
+    "840,160 -> 900,2160",
+    "840,160 -> 900,2260",
+    "840,160 -> 900,2360",
+    "840,160 -> 900,2460",
+    "840,160 -> 900,2560",
+    "840,160 -> 900,260",
+    "840,160 -> 900,2660",
+    "840,160 -> 900,2760",
+    "840,160 -> 900,360",
+    "840,160 -> 900,460",
+    "840,160 -> 900,560",
+    "840,160 -> 900,660",
+    "840,160 -> 900,760",
+    "840,160 -> 900,860",
+    "840,160 -> 900,960",
+    "840,60 -> 900,60",
+  ],
+  "laneHeaders": [
+    "LLDP Neighbors",
+    "Physical Interfaces",
+    "Bonds",
+    "Bridges",
+    "Bridge Mappings",
+    "Attachments",
+    "Other Interfaces",
+  ],
+  "nodes": [
+    {
+      "fill": "#666",
+      "labels": [
+        "lo",
+        "loopback",
+        "up",
+      ],
+      "title": "lo (loopback)",
+      "x": 0,
+      "y": 0,
+    },
+    {
+      "fill": "#2E7D32",
+      "labels": [
+        "lab-fabric-lf002",
+        "LLDP",
+        "Local: ens5f0np0 · Port: Eth1/22",
+      ],
+      "title": "lab-fabric-lf002 (LLDP)",
+      "x": 20,
+      "y": 120,
+    },
+    {
+      "fill": "#2E7D32",
+      "labels": [
+        "lab-fabric-lf001",
+        "LLDP",
+        "Local: ens2f0np0 · Port: Eth1/22",
+      ],
+      "title": "lab-fabric-lf001 (LLDP)",
+      "x": 20,
+      "y": 20,
+    },
+    {
+      "fill": "#2E7D32",
+      "labels": [
+        "lab-fabric-lf001",
+        "LLDP",
+        "Local: ens2f1np1 · Port: Eth1/23",
+      ],
+      "title": "lab-fabric-lf001 (LLDP)",
+      "x": 20,
+      "y": 220,
+    },
+    {
+      "fill": "#2E7D32",
+      "labels": [
+        "lab-fabric-lf002",
+        "LLDP",
+        "Local: ens5f1np1 · Port: Eth1/23",
+      ],
+      "title": "lab-fabric-lf002 (LLDP)",
+      "x": 20,
+      "y": 320,
+    },
+    {
+      "fill": "#2E7D32",
+      "labels": [
+        "lab-fabric-lf001",
+        "LLDP",
+        "Local: ens2f2np2 · Port: Eth1/24",
+      ],
+      "title": "lab-fabric-lf001 (LLDP)",
+      "x": 20,
+      "y": 420,
+    },
+    {
+      "fill": "#2E7D32",
+      "labels": [
+        "lab-fabric-lf002",
+        "LLDP",
+        "Local: ens5f2np2 · Port: Eth1/24",
+      ],
+      "title": "lab-fabric-lf002 (LLDP)",
+      "x": 20,
+      "y": 520,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens5f0np0",
+        "ethernet",
+        "up",
+      ],
+      "title": "ens5f0np0 (ethernet)",
+      "x": 240,
+      "y": 120,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens2f0np0",
+        "ethernet",
+        "up",
+      ],
+      "title": "ens2f0np0 (ethernet)",
+      "x": 240,
+      "y": 20,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens2f1np1",
+        "ethernet",
+        "up",
+      ],
+      "title": "ens2f1np1 (ethernet)",
+      "x": 240,
+      "y": 220,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens5f1np1",
+        "ethernet",
+        "up",
+      ],
+      "title": "ens5f1np1 (ethernet)",
+      "x": 240,
+      "y": 320,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens2f2np2",
+        "ethernet",
+        "up",
+      ],
+      "title": "ens2f2np2 (ethernet)",
+      "x": 240,
+      "y": 420,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens5f2np2",
+        "ethernet",
+        "up",
+      ],
+      "title": "ens5f2np2 (ethernet)",
+      "x": 240,
+      "y": 520,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens2f3np3",
+        "ethernet",
+        "down",
+      ],
+      "title": "ens2f3np3 (ethernet)",
+      "x": 240,
+      "y": 620,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens5f3np3",
+        "ethernet",
+        "down",
+      ],
+      "title": "ens5f3np3 (ethernet)",
+      "x": 240,
+      "y": 720,
+    },
+    {
+      "fill": "#663399",
+      "labels": [
+        "bond1",
+        "bond",
+        "up",
+      ],
+      "title": "bond1 (bond)",
+      "x": 460,
+      "y": 120,
+    },
+    {
+      "fill": "#663399",
+      "labels": [
+        "bond0",
+        "bond",
+        "up",
+      ],
+      "title": "bond0 (bond)",
+      "x": 460,
+      "y": 20,
+    },
+    {
+      "fill": "#663399",
+      "labels": [
+        "bond2",
+        "bond",
+        "up",
+      ],
+      "title": "bond2 (bond)",
+      "x": 460,
+      "y": 220,
+    },
+    {
+      "fill": "#FF6600",
+      "labels": [
+        "ovs-vm",
+        "ovs-bridge",
+        "up",
+      ],
+      "title": "ovs-vm (ovs-bridge)",
+      "x": 680,
+      "y": 120,
+    },
+    {
+      "fill": "#FF6600",
+      "labels": [
+        "br-ex",
+        "ovs-bridge",
+        "up",
+      ],
+      "title": "br-ex (ovs-bridge)",
+      "x": 680,
+      "y": 20,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-b-db",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-b-db (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 1020,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-b-web",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-b-web (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 1120,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "shared-infra-db",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "shared-infra-db (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 120,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-c-app-processing",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-c-app-processing (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 1220,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-c-infra",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-c-infra (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 1320,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-c-primary-db",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-c-primary-db (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 1420,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-c-reporting-db",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-c-reporting-db (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 1520,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-d-app",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-d-app (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 1620,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-d-db",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-d-db (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 1720,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-d-web",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-d-web (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 1820,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-e-desktop04",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-e-desktop04 (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 1920,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "physnet",
+        "OVN Bridge Mapping",
+        "Bridge: br-ex",
+      ],
+      "title": "physnet (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 20,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-f-epg-svc-business",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-f-epg-svc-business (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 2020,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-f-epg-svc-clearing",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-f-epg-svc-clearing (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 2120,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "shared-infra-mon",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "shared-infra-mon (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 220,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-f-epg-svc-infra",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-f-epg-svc-infra (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 2220,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-g-epg058-two",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-g-epg058-two (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 2320,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-g-epg143-three",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-g-epg143-three (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 2420,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-g-epg151",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-g-epg151 (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 2520,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-h-vis-app",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-h-vis-app (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 2620,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-h-vis-viewer",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-h-vis-viewer (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 2720,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "shared-infra-prov",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "shared-infra-prov (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 320,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "shared-infra-sec",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "shared-infra-sec (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 420,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "shared-infra-sys",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "shared-infra-sys (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 520,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "shared-infra-uc",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "shared-infra-uc (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 620,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "shared-infra-web",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "shared-infra-web (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 720,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-a-infra",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-a-infra (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 820,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "tenant-b-app",
+        "OVN Bridge Mapping",
+        "Bridge: ovs-vm",
+      ],
+      "title": "tenant-b-app (OVN Bridge Mapping)",
+      "x": 900,
+      "y": 920,
+    },
+  ],
+}
+`;
+
+exports[`NodeVisualization rendered structure drawer content for br-ex (ovs-bridge) 1`] = `
+{
+  "Details": "br-exovs-bridgeSummaryDetailsLinksYAMLTypeovs-bridgeStateupPortsbr-exens192patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-intpatch-br-ex_worker-1-to-br-int",
+  "Links": "br-exovs-bridgeSummaryDetailsLinksYAMLNo links available.",
+  "Summary": "br-exovs-bridgeSummaryDetailsLinksYAMLTypeovs-bridgeStateup",
+}
+`;
+
+exports[`NodeVisualization rendered structure drawer content for ens192 (ethernet) 1`] = `
+{
+  "Details": "ens192ethernetSummaryDetailsLinksYAMLTypeethernetStateupMAC Address02:00:00:00:00:01MTU1500",
+  "Links": "ens192ethernetSummaryDetailsLinksYAMLNo links available.",
+  "Summary": "ens192ethernetSummaryDetailsLinksYAMLTypeethernetStateup",
+}
+`;
+
+exports[`NodeVisualization rendered structure drawer content for example-p-cudn (VRF) 1`] = `
+{
+  "Details": "example-p-cudnVRF InterfaceSummaryDetailsLinksYAMLMAC Address02:00:00:00:00:06Route Table5775Routes0.0.0.0/0 via 192.0.2.1 dev br-ex169.254.0.3/32 via 10.1.2.1 dev ovn-k8s-mp3169.254.0.16/32 via 0.0.0.0 dev ovn-k8s-mp3172.30.0.0/16 via 169.254.0.4 dev br-exbr-int Portsovn-k8s-mp3 10.1.2.2/24",
+  "Links": "example-p-cudnVRF InterfaceSummaryDetailsLinksYAMLNo links available.",
+  "Summary": "example-p-cudnVRF InterfaceSummaryDetailsLinksYAMLTypeVRF InterfaceStateovn-k8s-mp3 Tbl 5775Matched CUDNsN/A",
+}
+`;
+
+exports[`NodeVisualization rendered structure drawer content for machinenet (CUDN) 1`] = `
+{
+  "Details": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespacesdemo-mirror",
+  "Links": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLAvailable LinksResourceYAML",
+  "Summary": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLTypeLocalnet ClusterUserDefinedNetworkStateLocalnetCUDNmachinenet",
+}
+`;
+
+exports[`NodeVisualization rendered structure drawer content for machinenet (NAD) 1`] = `
+{
+  "Details": "machinenetNetworkAttachmentDefinitionSummaryDetailsLinksYAMLTypeNetworkAttachmentDefinitionNamespacesdemo-mirrorNetworkAttachmentDefinitionsNo matching NetworkAttachmentDefinition found.",
+  "Links": "machinenetNetworkAttachmentDefinitionSummaryDetailsLinksYAMLAvailable LinksNamespace: demo-mirror",
+  "Summary": "machinenetNetworkAttachmentDefinitionSummaryDetailsLinksYAMLTypeNetworkAttachmentDefinitionStateNamespaces:",
+}
+`;
+
+exports[`NodeVisualization rendered structure drawer content for physnet (OVN Bridge Mapping) 1`] = `
+{
+  "Details": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLBridgebr-exReferenced by CUDNsmachinenet",
+  "Links": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLNo links available.",
+  "Summary": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLTypeOVN Bridge MappingStateBridge: br-ex",
+}
+`;
+
+exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes revealed 1`] = `
+{
+  "edges": [
+    "1060,160 -> 680,160",
+    "1060,60 -> 680,60",
+    "1280,160 -> 1340,260",
+    "1280,160 -> 1340,360",
+    "1280,60 -> 1340,160",
+    "1500,160 -> 1560,162",
+    "1500,260 -> 1560,264",
+    "1500,60 -> 1560,60",
+    "180,160 -> 680,60",
+    "180,260 -> 460,60",
+    "180,260 -> 680,160",
+    "840,160 -> 1120,160",
+    "840,60 -> 1120,60",
+  ],
+  "laneHeaders": [
+    "Physical Interfaces",
+    "Bonds",
+    "VLAN Interfaces",
+    "Bridges",
+    "Logical Interfaces",
+    "Bridge Mappings",
+    "VRFs",
+    "Networks",
+    "Attachments",
+    "Other Interfaces",
+  ],
+  "nodes": [
+    {
+      "fill": "#666",
+      "labels": [
+        "0cb0de1976d0c71",
+        "veth",
+        "up",
+      ],
+      "title": "0cb0de1976d0c71 (veth)",
+      "x": 0,
+      "y": 0,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "physnet-vmdata",
+        "OVN Bridge Mapping",
+        "Bridge: br-vmdata",
+      ],
+      "title": "physnet-vmdata (OVN Bridge Mapping)",
+      "x": 1120,
+      "y": 120,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "physnet",
+        "OVN Bridge Mapping",
+        "Bridge: br-ex",
+      ],
+      "title": "physnet (OVN Bridge Mapping)",
+      "x": 1120,
+      "y": 20,
+    },
+    {
+      "fill": "#CC6600",
+      "labels": [
+        "example-p-cudn",
+        "VRF",
+        "ovn-k8s-mp3 Tbl 5775",
+      ],
+      "title": "example-p-cudn (VRF)",
+      "x": 1120,
+      "y": 260,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "machinenet",
+        "CUDN",
+        "Localnet",
+      ],
+      "title": "machinenet (CUDN)",
+      "x": 1340,
+      "y": 120,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "example-p-cudn",
+        "CUDN",
+        "Layer2 10.1.2.0/24",
+      ],
+      "title": "example-p-cudn (CUDN)",
+      "x": 1340,
+      "y": 20,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "vlan-1924",
+        "CUDN",
+        "Localnet VLAN 1924",
+      ],
+      "title": "vlan-1924 (CUDN)",
+      "x": 1340,
+      "y": 220,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "vlan-1926",
+        "CUDN",
+        "Localnet VLAN 1926",
+      ],
+      "title": "vlan-1926 (CUDN)",
+      "x": 1340,
+      "y": 320,
+    },
+    {
+      "fill": "#F0AB00",
+      "labels": [
+        "machinenet",
+        "NAD",
+      ],
+      "title": "machinenet (NAD)",
+      "x": 1560,
+      "y": 122,
+    },
+    {
+      "fill": "#F0AB00",
+      "labels": [
+        "example-p-cudn",
+        "NAD",
+      ],
+      "title": "example-p-cudn (NAD)",
+      "x": 1560,
+      "y": 20,
+    },
+    {
+      "fill": "#F0AB00",
+      "labels": [
+        "vlan-1924",
+        "NAD",
+      ],
+      "title": "vlan-1924 (NAD)",
+      "x": 1560,
+      "y": 224,
+    },
+    {
+      "fill": "#666",
+      "labels": [
+        "genev_sys_6081",
+        "unknown",
+        "ignore",
+      ],
+      "title": "genev_sys_6081 (unknown)",
+      "x": 180,
+      "y": 0,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens192",
+        "ethernet",
+        "up",
+      ],
+      "title": "ens192 (ethernet)",
+      "x": 20,
+      "y": 120,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens161",
+        "ethernet",
+        "down",
+      ],
+      "title": "ens161 (ethernet)",
+      "x": 20,
+      "y": 20,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens224",
+        "ethernet",
+        "up",
+      ],
+      "title": "ens224 (ethernet)",
+      "x": 20,
+      "y": 220,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens256",
+        "ethernet",
+        "down",
+      ],
+      "title": "ens256 (ethernet)",
+      "x": 20,
+      "y": 320,
+    },
+    {
+      "fill": "#666",
+      "labels": [
+        "lo",
+        "loopback",
+        "up",
+      ],
+      "title": "lo (loopback)",
+      "x": 360,
+      "y": 0,
+    },
+    {
+      "fill": "#9933CC",
+      "labels": [
+        "ens224.456",
+        "vlan",
+        "up",
+      ],
+      "title": "ens224.456 (vlan)",
+      "x": 460,
+      "y": 20,
+    },
+    {
+      "fill": "#FF6600",
+      "labels": [
+        "br-vmdata",
+        "ovs-bridge",
+        "up",
+      ],
+      "title": "br-vmdata (ovs-bridge)",
+      "x": 680,
+      "y": 120,
+    },
+    {
+      "fill": "#FF6600",
+      "labels": [
+        "br-ex",
+        "ovs-bridge",
+        "up",
+      ],
+      "title": "br-ex (ovs-bridge)",
+      "x": 680,
+      "y": 20,
+    },
+    {
+      "fill": "#0099CC",
+      "labels": [
+        "ovs-vlan-1920",
+        "ovs-interface",
+        "up",
+      ],
+      "title": "ovs-vlan-1920 (ovs-interface)",
+      "x": 900,
+      "y": 120,
+    },
+    {
+      "fill": "#0099CC",
+      "labels": [
+        "br-ex",
+        "ovs-interface",
+        "up",
+      ],
+      "title": "br-ex (ovs-interface)",
+      "x": 900,
+      "y": 20,
+    },
+  ],
+}
+`;
+
+exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`] = `
+{
+  "edges": [
+    "1060,160 -> 1120,162",
+    "1060,260 -> 1120,264",
+    "1060,60 -> 1120,60",
+    "180,160 -> 460,60",
+    "180,260 -> 240,60",
+    "180,260 -> 460,160",
+    "620,160 -> 680,160",
+    "620,60 -> 680,60",
+    "840,160 -> 900,260",
+    "840,160 -> 900,360",
+    "840,60 -> 900,160",
+  ],
+  "laneHeaders": [
+    "Physical Interfaces",
+    "VLAN Interfaces",
+    "Bridges",
+    "Bridge Mappings",
+    "VRFs",
+    "Networks",
+    "Attachments",
+    "Other Interfaces",
+  ],
+  "nodes": [
+    {
+      "fill": "#666",
+      "labels": [
+        "0cb0de1976d0c71",
+        "veth",
+        "up",
+      ],
+      "title": "0cb0de1976d0c71 (veth)",
+      "x": 0,
+      "y": 0,
+    },
+    {
+      "fill": "#F0AB00",
+      "labels": [
+        "machinenet",
+        "NAD",
+      ],
+      "title": "machinenet (NAD)",
+      "x": 1120,
+      "y": 122,
+    },
+    {
+      "fill": "#F0AB00",
+      "labels": [
+        "example-p-cudn",
+        "NAD",
+      ],
+      "title": "example-p-cudn (NAD)",
+      "x": 1120,
+      "y": 20,
+    },
+    {
+      "fill": "#F0AB00",
+      "labels": [
+        "vlan-1924",
+        "NAD",
+      ],
+      "title": "vlan-1924 (NAD)",
+      "x": 1120,
+      "y": 224,
+    },
+    {
+      "fill": "#666",
+      "labels": [
+        "genev_sys_6081",
+        "unknown",
+        "ignore",
+      ],
+      "title": "genev_sys_6081 (unknown)",
+      "x": 180,
+      "y": 0,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens192",
+        "ethernet",
+        "up",
+      ],
+      "title": "ens192 (ethernet)",
+      "x": 20,
+      "y": 120,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens161",
+        "ethernet",
+        "down",
+      ],
+      "title": "ens161 (ethernet)",
+      "x": 20,
+      "y": 20,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens224",
+        "ethernet",
+        "up",
+      ],
+      "title": "ens224 (ethernet)",
+      "x": 20,
+      "y": 220,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens256",
+        "ethernet",
+        "down",
+      ],
+      "title": "ens256 (ethernet)",
+      "x": 20,
+      "y": 320,
+    },
+    {
+      "fill": "#9933CC",
+      "labels": [
+        "ens224.456",
+        "vlan",
+        "up",
+      ],
+      "title": "ens224.456 (vlan)",
+      "x": 240,
+      "y": 20,
+    },
+    {
+      "fill": "#666",
+      "labels": [
+        "lo",
+        "loopback",
+        "up",
+      ],
+      "title": "lo (loopback)",
+      "x": 360,
+      "y": 0,
+    },
+    {
+      "fill": "#FF6600",
+      "labels": [
+        "br-vmdata",
+        "ovs-bridge",
+        "up",
+      ],
+      "title": "br-vmdata (ovs-bridge)",
+      "x": 460,
+      "y": 120,
+    },
+    {
+      "fill": "#FF6600",
+      "labels": [
+        "br-ex",
+        "ovs-bridge",
+        "up",
+      ],
+      "title": "br-ex (ovs-bridge)",
+      "x": 460,
+      "y": 20,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "physnet-vmdata",
+        "OVN Bridge Mapping",
+        "Bridge: br-vmdata",
+      ],
+      "title": "physnet-vmdata (OVN Bridge Mapping)",
+      "x": 680,
+      "y": 120,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "physnet",
+        "OVN Bridge Mapping",
+        "Bridge: br-ex",
+      ],
+      "title": "physnet (OVN Bridge Mapping)",
+      "x": 680,
+      "y": 20,
+    },
+    {
+      "fill": "#CC6600",
+      "labels": [
+        "example-p-cudn",
+        "VRF",
+        "ovn-k8s-mp3 Tbl 5775",
+      ],
+      "title": "example-p-cudn (VRF)",
+      "x": 680,
+      "y": 260,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "machinenet",
+        "CUDN",
+        "Localnet",
+      ],
+      "title": "machinenet (CUDN)",
+      "x": 900,
+      "y": 120,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "example-p-cudn",
+        "CUDN",
+        "Layer2 10.1.2.0/24",
+      ],
+      "title": "example-p-cudn (CUDN)",
+      "x": 900,
+      "y": 20,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "vlan-1924",
+        "CUDN",
+        "Localnet VLAN 1924",
+      ],
+      "title": "vlan-1924 (CUDN)",
+      "x": 900,
+      "y": 220,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "vlan-1926",
+        "CUDN",
+        "Localnet VLAN 1926",
+      ],
+      "title": "vlan-1926 (CUDN)",
+      "x": 900,
+      "y": 320,
+    },
+  ],
+}
+`;
