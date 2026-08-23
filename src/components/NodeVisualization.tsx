@@ -1,27 +1,26 @@
 import * as React from 'react';
-import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription, Switch, Tabs, Tab, TabTitleText, Flex, FlexItem, Button, FormSelect, FormSelectOption } from '@patternfly/react-core';
+import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, Switch, Tabs, Tab, TabTitleText, Flex, FlexItem, Button, FormSelect, FormSelectOption } from '@patternfly/react-core';
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
-import { NetworkIcon, RouteIcon, InfrastructureIcon, LinuxIcon, ResourcePoolIcon, PficonVcenterIcon, MigrationIcon, TagIcon, ExternalLinkAltIcon, PluggedIcon } from '@patternfly/react-icons';
 
-import { CodeEditor, Language } from '@patternfly/react-code-editor';
-import * as yaml from 'js-yaml';
 
 import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, Interface, OvnBridgeMapping, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
 import {
     extractLldpNeighbors,
-    findRouteAdvertisementForVrf,
     getCudnAssociatedNamespaces,
-    getCudnsSelectedByRouteAdvertisement,
     hasLldpNeighbors,
-    LldpNeighborNode,
-    getRouteAdvertisementsMatchingCudn,
-    getVrfRoutesForInterface,
-    VrfAssociatedRoute,
-    getVrfConnectionInfo,
-    getIpv4Addresses,
-    parseNadConfig
+    LldpNeighborNode
 } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
+import { buildGraphContext, GraphContext } from '../topology/context';
+import { buildDrawerTabs, getDrawerTabsForNode } from '../topology/drawerTabs';
+import { getIcon } from '../topology/icons';
+import {
+    getAttachmentNodeId, getNadNodeId, getNetworkNodeId, getUdnNodeId, resolveNodeId as resolveId
+} from '../topology/ids';
+import {
+    AttachmentNode, DrawerTabId, Graph, NetworkColumnItem, NodeViewModel
+} from '../topology/types';
+import { buildNodeViewModel } from '../topology/viewModel';
 import { computeNodeOrder, sortByRank, LayoutLane } from './nodeVisualizationLayout';
 
 interface NodeVisualizationProps {
@@ -33,755 +32,10 @@ interface NodeVisualizationProps {
 }
 
 const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], udns = [], nads = [], routeAdvertisements = [] }) => {
-    // Graph Types
-    interface AttachmentNode {
-        name: string;
-        type: string;
-        namespaces: string[];
-        cudn?: string;
-        udnId?: string; // 'namespace-name' for UDN-backed attachments
-    }
-
-    type NodeKind = 'interface' | 'ovn-mapping' | 'cudn' | 'udn' | 'attachment' | 'nad' | 'vrf' | 'lldp-neighbor' | 'other';
-
-    interface ResourceRef {
-        apiVersion: string;
-        kind: string;
-        name: string;
-        namespace?: string;
-    }
-
-    interface NodeLink {
-        label: string;
-        href: string;
-    }
-
-    interface NodeViewModel {
-        id: string;
-        kind: NodeKind;
-        iconType: string;
-        label: string;
-        title: string;
-        subtitle: string;
-        graphDisplayLabel?: string; // Abbreviation for graph node display (e.g., "CUDN", "NAD")
-        state?: string;
-        namespaces?: string[];
-        badges?: string[];
-        links?: NodeLink[];
-        resourceRef?: ResourceRef;
-        isSynthetic?: boolean;
-        vrfRoutes?: VrfAssociatedRoute[];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        raw?: any;
-    }
-
-    interface NodeKindDefinition {
-        label: string;
-        buildBadges?: (node: NodeViewModel) => string[];
-        buildLinks?: (node: NodeViewModel) => NodeLink[];
-        renderSummary?: (node: NodeViewModel) => React.ReactNode;
-        renderDetails?: (node: NodeViewModel) => React.ReactNode;
-        tabs?: DrawerTabId[];
-    }
-
-    type DrawerTabId = 'summary' | 'details' | 'links' | 'yaml';
-
-    interface DrawerTabDefinition {
-        id: DrawerTabId;
-        title: string;
-        render: (node: NodeViewModel) => React.ReactNode;
-    }
-
-    const getResourceLinks = (ref: ResourceRef): NodeLink[] => {
-        const resourceId = ref.apiVersion ? `${ref.apiVersion.replace('/', '~')}~${ref.kind}` : ref.kind;
-        const base = ref.namespace ? `/k8s/ns/${ref.namespace}` : '/k8s/cluster';
-        const resourcePath = `${base}/${resourceId}/${ref.name}`;
-        return [
-            { label: 'Resource', href: resourcePath },
-            { label: 'YAML', href: `${resourcePath}/yaml` }
-        ];
-    };
-
-    const getNadNodeId = (nad: NetworkAttachmentDefinition) => {
-        const name = nad.metadata?.name || 'unknown-nad';
-        const namespace = nad.metadata?.namespace || 'default';
-        return `nad-${namespace}-${name}`;
-    };
-
-    const getUdnNodeId = (udn: UserDefinedNetwork) => {
-        const name = udn.metadata?.name || 'unknown-udn';
-        const namespace = udn.metadata?.namespace || 'default';
-        return `udn-${namespace}-${name}`;
-    };
-
-    const getUdnTopologyAndRole = (udn: UserDefinedNetwork): { topology: string; role: string } => {
-        // UserDefinedNetworkSpec: topology, layer2, layer3 are at spec level (not spec.network)
-        const topology = udn.spec?.topology || 'Unknown';
-        const role =
-            topology === 'Layer2' ? (udn.spec?.layer2?.role || 'Unknown')
-                : topology === 'Layer3' ? (udn.spec?.layer3?.role || 'Unknown')
-                    : 'Unknown';
-        return { topology, role };
-    };
-
-    const getAttachmentNodeId = (node: AttachmentNode) =>
-        node.udnId != null ? `attachment-udn-${node.udnId}` : `attachment-${node.cudn}`;
-
-    type NetworkColumnItem = { kind: 'cudn'; item: ClusterUserDefinedNetwork } | { kind: 'udn'; item: UserDefinedNetwork };
-    const getNetworkNodeId = (n: NetworkColumnItem) =>
-        n.kind === 'cudn' ? `cudn-${n.item.metadata?.name}` : getUdnNodeId(n.item);
     const CUDN_NODE_COLOR = '#CC0099';
     const UDN_NODE_COLOR = '#0084A8';
 
-    const renderBaseSummary = (node: NodeViewModel, extras?: React.ReactNode) => (
-        <DescriptionList isCompact>
-            <DescriptionListGroup>
-                <DescriptionListTerm>Type</DescriptionListTerm>
-                <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
-            </DescriptionListGroup>
-            {node.state && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>State</DescriptionListTerm>
-                    <DescriptionListDescription>{node.state}</DescriptionListDescription>
-                </DescriptionListGroup>
-            )}
-            {extras}
-        </DescriptionList>
-    );
 
-    const getMacAddress = (raw: unknown): string | undefined => {
-        if (!raw || typeof raw !== 'object') {
-            return undefined;
-        }
-        const record = raw as Record<string, unknown>;
-        const macAddress = record.mac_address ?? record['mac-address'];
-        return typeof macAddress === 'string' ? macAddress : undefined;
-    };
-
-    const getAttachmentNamespaces = (node: NodeViewModel): string[] => (
-        Array.from(
-            new Set(
-                (node.namespaces || [])
-                    .map((ns) => ns?.trim())
-                    .filter((ns): ns is string => Boolean(ns))
-            )
-        )
-    );
-
-    const getAttachmentNadRefs = (node: NodeViewModel): Array<{ namespace: string; name: string }> => {
-        const nadName = node.label?.trim();
-        if (!nadName) {
-            return [];
-        }
-        const namespaces = new Set(getAttachmentNamespaces(node));
-        const refs = nads
-            .filter((nad) => {
-                const namespace = nad.metadata?.namespace || '';
-                return namespaces.has(namespace) && nad.metadata?.name === nadName;
-            })
-            .map((nad) => ({
-                namespace: nad.metadata?.namespace || '',
-                name: nad.metadata?.name || ''
-            }))
-            .filter((ref) => ref.namespace && ref.name);
-        return Array.from(new Map(refs.map((ref) => [`${ref.namespace}/${ref.name}`, ref])).values());
-    };
-
-    const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
-        interface: {
-            label: 'Interface',
-            renderSummary: (node) => renderBaseSummary(
-                node,
-                node.raw?.type === 'vlan' && node.raw?.vlan ? (
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>Localnet VLAN {node.raw.vlan.id}</DescriptionListTerm>
-                        <DescriptionListDescription>
-                            Base: {node.raw.vlan['base-iface']} <br />
-                            ID: {node.raw.vlan.id}
-                        </DescriptionListDescription>
-                    </DescriptionListGroup>
-                ) : undefined
-            ),
-            renderDetails: (node) => {
-                const isBridgeNode = node.raw?.type === 'linux-bridge' || node.raw?.type === 'ovs-bridge';
-                const macAddress = getMacAddress(node.raw);
-                const rawPorts = node.raw?.bridge?.port || node.raw?.bridge?.ports || node.raw?.ports || [];
-                const bridgePorts = Array.isArray(rawPorts)
-                    ? rawPorts
-                        .map((port: unknown) => {
-                            if (typeof port === 'string') return port;
-                            if (port && typeof port === 'object' && 'name' in (port as Record<string, unknown>)) {
-                                const name = (port as Record<string, unknown>).name;
-                                return typeof name === 'string' ? name : '';
-                            }
-                            return '';
-                        })
-                        .filter(Boolean)
-                    : [];
-
-                return (
-                    <DescriptionList isCompact>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>Type</DescriptionListTerm>
-                            <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                        {node.state && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>State</DescriptionListTerm>
-                                <DescriptionListDescription>{node.state}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {macAddress && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>MAC Address</DescriptionListTerm>
-                                <DescriptionListDescription>{macAddress}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {node.raw?.mtu && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>MTU</DescriptionListTerm>
-                                <DescriptionListDescription>{node.raw.mtu}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {getIpv4Addresses(node.raw).length > 0 && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>IPv4</DescriptionListTerm>
-                                <DescriptionListDescription>{getIpv4Addresses(node.raw).join(', ')}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {isBridgeNode && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Ports</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    {bridgePorts.length > 0 ? (
-                                        <ul className="pf-v6-c-list">
-                                            {bridgePorts.map((portName) => (
-                                                <li key={portName}>{portName}</li>
-                                            ))}
-                                        </ul>
-                                    ) : (
-                                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No bridge ports reported in NNS.</span>
-                                    )}
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                    </DescriptionList>
-                );
-            }
-        },
-        'ovn-mapping': {
-            label: 'OVN Mapping',
-            renderDetails: (node) => {
-                // Find all CUDNs that reference this bridge mapping
-                const localnetName = node.raw?.localnet;
-                const referencingCudns = cudns.filter((cudn: ClusterUserDefinedNetwork) => {
-                    const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName || cudn.spec?.network?.localnet?.physicalNetworkName;
-                    return physicalNetworkName === localnetName;
-                });
-
-                return (
-                    <DescriptionList isCompact>
-                        {node.raw?.bridge && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Bridge</DescriptionListTerm>
-                                <DescriptionListDescription>{node.raw.bridge}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {referencingCudns.length > 0 && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Referenced by CUDNs</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    <ul className="pf-v6-c-list">
-                                        {referencingCudns.map((cudn: ClusterUserDefinedNetwork) => {
-                                            const cudnName = cudn.metadata?.name || 'Unknown';
-                                            // Build resource link for CUDN (cluster-scoped resource)
-                                            const resourceRef: ResourceRef = {
-                                                apiVersion: cudn.apiVersion || 'k8s.ovn.org/v1',
-                                                kind: cudn.kind || 'ClusterUserDefinedNetwork',
-                                                name: cudnName,
-                                                namespace: undefined // CUDN is cluster-scoped
-                                            };
-                                            const resourceLinks = getResourceLinks(resourceRef);
-                                            const resourceLink = resourceLinks.find(link => link.label === 'Resource') || resourceLinks[0];
-
-                                            return (
-                                                <li key={cudnName}>
-                                                    <a
-                                                        href={`${window.location.origin}${resourceLink?.href || '#'}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                    >
-                                                        {cudnName}
-                                                    </a>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {referencingCudns.length === 0 && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Referenced by CUDNs</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No CUDNs reference this bridge mapping</span>
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                    </DescriptionList>
-                );
-            }
-        },
-        cudn: {
-            label: 'CUDN',
-            renderSummary: (node) => renderBaseSummary(
-                node,
-                <DescriptionListGroup>
-                    <DescriptionListTerm>CUDN</DescriptionListTerm>
-                    <DescriptionListDescription>{node.label}</DescriptionListDescription>
-                </DescriptionListGroup>
-            ),
-            renderDetails: (node) => {
-                const topology = node.raw?.spec?.network?.topology;
-                const hasRole = topology === 'Layer2' || topology === 'Layer3' || topology === 'Localnet';
-                const role =
-                    topology === 'Layer2' ? node.raw?.spec?.network?.layer2?.role
-                        : topology === 'Layer3' ? node.raw?.spec?.network?.layer3?.role
-                            : topology === 'Localnet' ? (node.raw?.spec?.network?.localnet?.role || node.raw?.spec?.network?.localNet?.role || 'Secondary')
-                            : undefined;
-                const matchingRAs =
-                    (topology === 'Layer2' || topology === 'Layer3')
-                        ? getRouteAdvertisementsMatchingCudn(routeAdvertisements, node.raw as ClusterUserDefinedNetwork)
-                        : [];
-                const associatedNamespaces = getCudnAssociatedNamespaces(node.raw as ClusterUserDefinedNetwork);
-
-                return (
-                    <DescriptionList isCompact>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>Topology</DescriptionListTerm>
-                            <DescriptionListDescription>{topology || 'Unknown'}</DescriptionListDescription>
-                        </DescriptionListGroup>
-
-                        {hasRole && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Role</DescriptionListTerm>
-                                <DescriptionListDescription>{role || 'Unknown'}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-
-                        {(topology === 'Layer2' || topology === 'Layer3') && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Subnets</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    {(topology === 'Layer2' ? node.raw?.spec?.network?.layer2?.subnets : node.raw?.spec?.network?.layer3?.subnets)?.join(', ') || '-'}
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-
-                        {(node.raw?.spec?.network?.localNet?.vlan?.access?.id || node.raw?.spec?.network?.localnet?.vlan?.access?.id) && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>VLAN ID</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    {node.raw?.spec?.network?.localNet?.vlan?.access?.id || node.raw?.spec?.network?.localnet?.vlan?.access?.id}
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-
-                        {node.raw?.spec?.network?.localNet?.physicalNetworkName && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Physical Network</DescriptionListTerm>
-                                <DescriptionListDescription>{node.raw.spec.network.localNet.physicalNetworkName}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {node.raw?.spec?.network?.localnet?.physicalNetworkName && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Physical Network</DescriptionListTerm>
-                                <DescriptionListDescription>{node.raw.spec.network.localnet.physicalNetworkName}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-
-                        {associatedNamespaces.length > 0 && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Namespaces</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    <ul className="pf-v6-c-list">
-                                        {associatedNamespaces.map((ns: string) => (
-                                            <li key={ns}>
-                                                <a
-                                                    href={`/k8s/ns/${ns}/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/${node.raw.metadata.name}`}
-                                                    className="pf-v6-c-button pf-m-link pf-m-inline"
-                                                >
-                                                    {ns}
-                                                </a>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-
-                        {matchingRAs.length > 0 && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Route Advertisements</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    <ul className="pf-v6-c-list">
-                                        {matchingRAs.map((ra: RouteAdvertisements) => {
-                                            const raName = ra.metadata?.name || 'Unknown';
-                                            const resourceRef: ResourceRef = {
-                                                apiVersion: ra.apiVersion || 'k8s.ovn.org/v1',
-                                                kind: ra.kind || 'RouteAdvertisements',
-                                                name: raName,
-                                                namespace: undefined // Cluster scoped
-                                            };
-                                            const resourceLinks = getResourceLinks(resourceRef);
-                                            const resourceLink = resourceLinks.find(link => link.label === 'Resource') || resourceLinks[0];
-
-                                            return (
-                                                <li key={raName}>
-                                                    <a
-                                                        href={`${window.location.origin}${resourceLink?.href || '#'}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                    >
-                                                        {raName}
-                                                    </a>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                    </DescriptionList>
-                );
-            }
-        },
-        udn: {
-            label: 'UDN',
-            renderDetails: (node) => {
-                const udn = node.raw as UserDefinedNetwork;
-                const namespace = udn?.metadata?.namespace || '';
-                const { topology, role } = getUdnTopologyAndRole(udn);
-                const name = udn?.metadata?.name || '';
-                const nadInNs = name && namespace ? nads.find((nad: NetworkAttachmentDefinition) => nad.metadata?.namespace === namespace && nad.metadata?.name === name) : undefined;
-                return (
-                    <DescriptionList isCompact>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>Topology</DescriptionListTerm>
-                            <DescriptionListDescription>{topology}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>Role</DescriptionListTerm>
-                            <DescriptionListDescription>{role}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>Namespace</DescriptionListTerm>
-                            <DescriptionListDescription>
-                                <a href={`/k8s/ns/${namespace}`} className="pf-v6-c-button pf-m-link pf-m-inline">{namespace}</a>
-                            </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        {(topology === 'Layer2' || topology === 'Layer3') && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Subnets</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    {(topology === 'Layer2' ? udn?.spec?.layer2?.subnets : udn?.spec?.layer3?.subnets)?.join(', ') || '-'}
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {nadInNs && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>NetworkAttachmentDefinition</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    <a
-                                        href={`/k8s/ns/${namespace}/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/${name}`}
-                                        className="pf-v6-c-button pf-m-link pf-m-inline"
-                                    >
-                                        {name}
-                                    </a>
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                    </DescriptionList>
-                );
-            }
-        },
-        attachment: {
-            label: 'Attachment',
-            buildBadges: (node) => (node.isSynthetic ? ['synthetic', 'derived'] : []),
-            buildLinks: (node) => {
-                const namespaceLinks = getAttachmentNamespaces(node).map((namespace) => ({
-                    label: `Namespace: ${namespace}`,
-                    href: `/k8s/ns/${namespace}`
-                }));
-                const nadLinks = getAttachmentNadRefs(node).map((ref) => ({
-                    label: `NAD: ${ref.namespace}/${ref.name}`,
-                    href: `/k8s/ns/${ref.namespace}/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/${ref.name}`
-                }));
-                return [...namespaceLinks, ...nadLinks];
-            },
-            renderDetails: (node) => {
-                const namespaces = getAttachmentNamespaces(node);
-                const nadRefs = getAttachmentNadRefs(node);
-                return (
-                    <DescriptionList isCompact>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>Type</DescriptionListTerm>
-                            <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>Namespaces</DescriptionListTerm>
-                            <DescriptionListDescription>
-                                {namespaces.length > 0 ? (
-                                    <ul className="pf-v6-c-list">
-                                        {namespaces.map((namespace) => (
-                                            <li key={namespace}>
-                                                <a href={`/k8s/ns/${namespace}`} className="pf-v6-c-button pf-m-link pf-m-inline">
-                                                    {namespace}
-                                                </a>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : 'No namespaces discovered.'}
-                            </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>NetworkAttachmentDefinitions</DescriptionListTerm>
-                            <DescriptionListDescription>
-                                {nadRefs.length > 0 ? (
-                                    <ul className="pf-v6-c-list">
-                                        {nadRefs.map((ref) => (
-                                            <li key={`${ref.namespace}/${ref.name}`}>
-                                                <a
-                                                    href={`/k8s/ns/${ref.namespace}/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/${ref.name}`}
-                                                    className="pf-v6-c-button pf-m-link pf-m-inline"
-                                                >
-                                                    {ref.namespace}/{ref.name}
-                                                </a>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : 'No matching NetworkAttachmentDefinition found.'}
-                            </DescriptionListDescription>
-                        </DescriptionListGroup>
-                    </DescriptionList>
-                );
-            }
-        },
-        nad: {
-            label: 'NAD',
-            renderDetails: (node) => {
-                const config = parseNadConfig(node.raw?.spec?.config);
-                const nadType = typeof config?.type === 'string' ? config.type : 'Unknown';
-                const nadName = typeof config?.name === 'string' ? config.name : undefined;
-                return (
-                    <DescriptionList isCompact>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>Type</DescriptionListTerm>
-                            <DescriptionListDescription>{nadType}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                        {nadName && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Network Name</DescriptionListTerm>
-                                <DescriptionListDescription>{nadName}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                    </DescriptionList>
-                );
-            }
-        },
-        'lldp-neighbor': {
-            label: 'LLDP Neighbor',
-            renderSummary: (node) => renderBaseSummary(
-                node,
-                <>
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>Local Interface</DescriptionListTerm>
-                        <DescriptionListDescription>{node.raw?.localInterface || '-'}</DescriptionListDescription>
-                    </DescriptionListGroup>
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>Remote Port ID</DescriptionListTerm>
-                        <DescriptionListDescription>{node.raw?.portId || '-'}</DescriptionListDescription>
-                    </DescriptionListGroup>
-                </>
-            ),
-            renderDetails: (node) => (
-                <DescriptionList isCompact>
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>Local Interface</DescriptionListTerm>
-                        <DescriptionListDescription>{node.raw?.localInterface || '-'}</DescriptionListDescription>
-                    </DescriptionListGroup>
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>System Name</DescriptionListTerm>
-                        <DescriptionListDescription>{node.raw?.systemName || '-'}</DescriptionListDescription>
-                    </DescriptionListGroup>
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>Port ID</DescriptionListTerm>
-                        <DescriptionListDescription>{node.raw?.portId || '-'}</DescriptionListDescription>
-                    </DescriptionListGroup>
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>Chassis ID</DescriptionListTerm>
-                        <DescriptionListDescription>{node.raw?.chassisId || '-'}</DescriptionListDescription>
-                    </DescriptionListGroup>
-                    {node.raw?.systemDescription && (
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>System Description</DescriptionListTerm>
-                            <DescriptionListDescription>{node.raw.systemDescription}</DescriptionListDescription>
-                        </DescriptionListGroup>
-                    )}
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>Capabilities</DescriptionListTerm>
-                        <DescriptionListDescription>
-                            {Array.isArray(node.raw?.capabilities) && node.raw.capabilities.length > 0 ? (
-                                <ul className="pf-v6-c-list">
-                                    {node.raw.capabilities.map((capability: string) => (
-                                        <li key={capability}>{capability}</li>
-                                    ))}
-                                </ul>
-                            ) : (
-                                'No capabilities reported'
-                            )}
-                        </DescriptionListDescription>
-                    </DescriptionListGroup>
-                </DescriptionList>
-            )
-        },
-        vrf: {
-            label: 'VRF',
-            renderSummary: (node) => {
-                const ra = findRouteAdvertisementForVrf(routeAdvertisements, node.raw?.name || '');
-                const matchedCudnNames = getCudnsSelectedByRouteAdvertisement(ra, cudns)
-                    .map((cudn) => cudn.metadata?.name)
-                    .filter(Boolean);
-
-                return renderBaseSummary(
-                    node,
-                    <DescriptionListGroup>
-                        <DescriptionListTerm>Matched CUDNs</DescriptionListTerm>
-                        <DescriptionListDescription>
-                            {matchedCudnNames.length > 0 ? matchedCudnNames.join(', ') : 'N/A'}
-                        </DescriptionListDescription>
-                    </DescriptionListGroup>
-                );
-            },
-            renderDetails: (node) => {
-                const ra = findRouteAdvertisementForVrf(routeAdvertisements, node.raw.name);
-                const matchedCudns = getCudnsSelectedByRouteAdvertisement(ra, cudns);
-                const { brIntPorts } = getVrfConnectionInfo(node.raw as Interface, interfaces);
-                const macAddress = getMacAddress(node.raw);
-
-                return (
-                    <DescriptionList isCompact>
-                        {macAddress && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>MAC Address</DescriptionListTerm>
-                                <DescriptionListDescription>{macAddress}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        {node.raw?.vrf?.['route-table-id'] && (
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Route Table</DescriptionListTerm>
-                                <DescriptionListDescription>{node.raw.vrf['route-table-id']}</DescriptionListDescription>
-                            </DescriptionListGroup>
-                        )}
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>Routes</DescriptionListTerm>
-                            <DescriptionListDescription>
-                                {node.vrfRoutes && node.vrfRoutes.length > 0 ? (
-                                    <ul className="pf-v6-c-list">
-                                        {node.vrfRoutes.map((route, index) => (
-                                            <li key={`${route.destination}-${route.nextHopAddress || ''}-${route.nextHopInterface || ''}-${index}`}>
-                                                {route.destination}
-                                                {route.nextHopAddress ? ` via ${route.nextHopAddress}` : ''}
-                                                {route.nextHopInterface ? ` dev ${route.nextHopInterface}` : ''}
-                                                {route.metric ? ` metric ${route.metric}` : ''}
-                                                {route.protocol ? ` proto ${route.protocol}` : ''}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No associated routes found in NNS.</span>
-                                )}
-                            </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        <DescriptionListGroup>
-                            <DescriptionListTerm>br-int Ports</DescriptionListTerm>
-                            <DescriptionListDescription>
-                                {brIntPorts.length > 0 ? (
-                                    <ul className="pf-v6-c-list">
-                                        {brIntPorts.map((iface) => {
-                                            const addresses = getIpv4Addresses(iface);
-                                            return (
-                                                <li key={iface.name}>
-                                                    {iface.name}
-                                                    {addresses.length > 0 ? ` ${addresses.join(', ')}` : ''}
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                ) : (
-                                    <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No matching br-int ports inferred from NNS.</span>
-                                )}
-                            </DescriptionListDescription>
-                        </DescriptionListGroup>
-                        {ra && (
-                            <>
-                                <DescriptionListGroup>
-                                    <DescriptionListTerm>Route Advertisement</DescriptionListTerm>
-                                    <DescriptionListDescription>
-                                        <ul className="pf-v6-c-list">
-                                            <li>
-                                                <a
-                                                    href={`/k8s/cluster/k8s.ovn.org~v1~RouteAdvertisements/${ra.metadata?.name}`}
-                                                    className="pf-v6-c-button pf-m-link pf-m-inline"
-                                                >
-                                                    {ra.metadata?.name}
-                                                </a>
-                                            </li>
-                                        </ul>
-                                    </DescriptionListDescription>
-                                </DescriptionListGroup>
-                                {matchedCudns.length > 0 && (
-                                    <DescriptionListGroup>
-                                        <DescriptionListTerm>Matched CUDNs</DescriptionListTerm>
-                                        <DescriptionListDescription>
-                                            <ul className="pf-v6-c-list">
-                                                {matchedCudns.map(cudn => (
-                                                    <li key={cudn.metadata?.name}>
-                                                        <a
-                                                            href={`/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/${cudn.metadata?.name}`}
-                                                            className="pf-v6-c-button pf-m-link pf-m-inline"
-                                                        >
-                                                            {cudn.metadata?.name}
-                                                        </a>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </DescriptionListDescription>
-                                    </DescriptionListGroup>
-                                )}
-                            </>
-                        )}
-
-                    </DescriptionList >
-                );
-            }
-        },
-        other: {
-            label: 'Other'
-        }
-    };
-
-    const DEFAULT_DRAWER_TABS: DrawerTabId[] = ['summary', 'details', 'links', 'yaml'];
-
-    interface GraphNode {
-        id: string;
-        upstream: string[];
-        downstream: string[];
-    }
-
-    interface Graph {
-        nodes: { [id: string]: GraphNode };
-    }
 
     const navigateToPath = (path: string) => {
         window.history.pushState(null, '', path);
@@ -819,9 +73,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         return Boolean(target?.checked);
     };
 
-    const interfaces: Interface[] = nns?.status?.currentState?.interfaces || [];
-    const ovn = nns?.status?.currentState?.ovn;
-    const bridgeMappings: OvnBridgeMapping[] = ovn?.['bridge-mappings'] || [];
+    const ctx: GraphContext = React.useMemo(
+        () => buildGraphContext({ nns, cudns, udns, nads, routeAdvertisements }),
+        [nns, cudns, udns, nads, routeAdvertisements]
+    );
+    const { interfaces, bridgeMappings } = ctx;
     const lldpNeighbors = extractLldpNeighbors(interfaces);
     const hasLldpData = hasLldpNeighbors(interfaces);
 
@@ -847,7 +103,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const colSpacing = 220;
 
     // Identify controllers
-    const controllerNames = new Set(interfaces.map((iface: Interface) => iface.controller || iface.master).filter(Boolean));
 
     // Group interfaces
     const ethInterfaces = interfaces.filter((iface: Interface) => iface.type === 'ethernet' && iface.state !== 'ignore');
@@ -855,30 +110,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const vrfInterfaces = interfaces.filter((iface: Interface) => iface.type === 'vrf');
     const vlanInterfaces = interfaces.filter((iface: Interface) => iface.type === 'vlan' || iface.type === 'mac-vlan'); // Includes mac-vlan
 
-    const explicitBridgeNames = new Set(interfaces.filter(i => ['linux-bridge', 'ovs-bridge', 'openvswitch'].includes(i.type)).map(i => i.name));
 
-    const resolveNodeId = (iface: any, type: string) => {
-        if (type === 'ovn-mapping') return `ovn-${iface.localnet}`;
-        if (type === 'cudn') return `cudn-${iface.metadata?.name}`;
-        if (type === 'udn') return getUdnNodeId(iface);
-        if (type === 'attachment') return getAttachmentNodeId(iface);
-        if (type === 'nad') return getNadNodeId(iface);
-        if (type === 'lldp-neighbor') return iface.id;
-        // Special handling for ovs-interface with same name as a bridge
-        if (type === 'ovs-interface' && explicitBridgeNames.has(iface.name)) {
-            return `interface-${iface.name}`;
-        }
-        return iface.name;
-    };
-
+    const resolveNodeId = (iface: any, type: string) => resolveId(iface, type, ctx);
     const isBridge = (iface: Interface) => {
         if (['linux-bridge', 'ovs-bridge', 'openvswitch'].includes(iface.type)) return true;
 
         // ovs-interface is a bridge if it is a controller AND does NOT have a patch
-        if (iface.type === 'ovs-interface' && controllerNames.has(iface.name) && !iface.patch && iface.state !== 'ignore') {
+        if (iface.type === 'ovs-interface' && ctx.controllerNames.has(iface.name) && !iface.patch && iface.state !== 'ignore') {
             // CRITICAL: If there is an explicit bridge with this name, this ovs-interface is NOT the bridge.
             // It is the internal interface of the bridge.
-            if (explicitBridgeNames.has(iface.name)) return false;
+            if (ctx.explicitBridgeNames.has(iface.name)) return false;
             return true;
         }
         return false;
@@ -897,7 +138,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
         // Condition 2: It MIGHT be considered a bridge by heuristic, BUT we want to forcefully include it
         // if it shadows an explicit bridge.
-        if (explicitBridgeNames.has(iface.name)) return true;
+        if (ctx.explicitBridgeNames.has(iface.name)) return true;
 
         return false;
     });
@@ -1227,25 +468,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     }, [calculatedHeight, width]);
 
-    const getIcon = (type: string) => {
-        switch (type) {
-            case 'ethernet': return <ResourcePoolIcon />;
-            case 'bond': return <PficonVcenterIcon />;
-            case 'linux-bridge': return <LinuxIcon />;
-            case 'ovs-bridge': return <InfrastructureIcon />;
-            case 'ovs-interface': return <NetworkIcon />; // Logical
-            case 'ovn-mapping': return <RouteIcon />;
-            case 'vrf': return <InfrastructureIcon />;
-            case 'cudn': return <NetworkIcon />;
-            case 'udn': return <NetworkIcon />;
-            case 'attachment': return <MigrationIcon />;
-            case 'vlan': return <TagIcon />;
-            case 'mac-vlan': return <TagIcon />;
-            case 'nad': return <RouteIcon />;
-            case 'lldp-neighbor': return <PluggedIcon />;
-            default: return <NetworkIcon />;
-        }
-    };
 
     const renderConnector = (startNode: string, endNode: string) => {
         const start = nodePositions[startNode];
@@ -1365,6 +587,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         setZoomLevel(1);
     };
 
+    const drawerTabsById = React.useMemo(() => buildDrawerTabs(ctx), [ctx]);
+
     // Drawer selection state
     const [activeNode, setActiveNode] = React.useState<NodeViewModel | null>(null);
     const [activePopoverTab, setActivePopoverTab] = React.useState<DrawerTabId>('summary');
@@ -1377,7 +601,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         setActiveNode(node);
 
         if (!wasDrawerOpen) {
-            setActivePopoverTab(getDrawerTabsForNode(node)[0]?.id || 'summary');
+            setActivePopoverTab(getDrawerTabsForNode(node, drawerTabsById)[0]?.id || 'summary');
         }
 
         // Highlight Path
@@ -1403,280 +627,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
 
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const buildNodeViewModel = (iface: any, type: string): NodeViewModel => {
-        const nodeId = resolveNodeId(iface, type);
-        const kind: NodeKind = type === 'ovn-mapping'
-            ? 'ovn-mapping'
-            : type === 'vrf'
-                ? 'vrf'
-                : type === 'cudn'
-                    ? 'cudn'
-                    : type === 'udn'
-                        ? 'udn'
-                        : type === 'attachment'
-                        ? 'attachment'
-                        : type === 'nad'
-                            ? 'nad'
-                            : type === 'lldp-neighbor'
-                                ? 'lldp-neighbor'
-                            : type === 'other'
-                                ? 'other'
-                                : 'interface';
 
-        let label = iface.name;
-        let title = iface.name;
-        let subtitle = type;
-        let graphDisplayLabel: string | undefined;
-        let state = iface.state;
-        let namespaces: string[] | undefined;
-        let resourceRef: ResourceRef | undefined;
-        let isSynthetic = false;
-        let vrfRoutes: VrfAssociatedRoute[] | undefined;
 
-        if (type === 'ovn-mapping') {
-            label = iface.localnet;
-            title = iface.localnet;
-            subtitle = 'OVN Bridge Mapping';
-            graphDisplayLabel = 'OVN Bridge Mapping'; // Same as subtitle for bridge mappings
-            state = iface.bridge ? `Bridge: ${iface.bridge}` : undefined;
-        } else if (type === 'vrf') {
-            label = iface.name;
-            title = iface.name;
-            subtitle = 'VRF Interface';
-            graphDisplayLabel = 'VRF';
-            const details: string[] = [];
-            if (iface.vrf?.port) details.push(`${Array.isArray(iface.vrf.port) ? iface.vrf.port.join(', ') : iface.vrf.port}`);
-            if (iface.vrf?.['route-table-id']) details.push(`Tbl ${iface.vrf['route-table-id']}`);
-            state = details.length > 0 ? details.join(' ') : iface.state;
-            vrfRoutes = getVrfRoutesForInterface(iface as Interface, nns);
-        } else if (type === 'cudn') {
-            label = iface.metadata?.name || '';
-            title = iface.metadata?.name || '';
-            const topology = iface.spec?.network?.topology || 'Unknown';
-            subtitle = `${topology} ClusterUserDefinedNetwork`;
-            graphDisplayLabel = 'CUDN'; // Abbreviation for graph display
-            state = topology;
-            if (iface.spec?.network?.topology === 'Localnet') {
-                const vlan = iface.spec?.network?.localnet?.vlan?.access?.id;
-                if (vlan) {
-                    state += ` VLAN ${vlan}`;
-                }
-            } else if (iface.spec?.network?.topology === 'Layer2' || iface.spec?.network?.topology === 'Layer3') {
-                const subnets = iface.spec?.network?.topology === 'Layer2'
-                    ? iface.spec?.network?.layer2?.subnets
-                    : iface.spec?.network?.layer3?.subnets;
-                if (subnets && subnets.length > 0) {
-                    state += ` ${subnets.join(', ')}`;
-                }
-            }
-            if (iface.metadata?.name) {
-                resourceRef = {
-                    apiVersion: iface.apiVersion || '',
-                    kind: iface.kind || 'ClusterUserDefinedNetwork',
-                    name: iface.metadata.name,
-                    namespace: iface.metadata.namespace
-                };
-            }
-        } else if (type === 'udn') {
-            const ns = iface.metadata?.namespace || '';
-            const { topology, role } = getUdnTopologyAndRole(iface as UserDefinedNetwork);
-            label = iface.metadata?.name || '';
-            title = iface.metadata?.name || '';
-            subtitle = `UserDefinedNetwork · ${ns} · ${topology} · ${role}`;
-            graphDisplayLabel = ns ? `UDN · ${ns}` : 'UDN';
-            state = `${topology} · ${role}`;
-            if (iface.metadata?.name) {
-                resourceRef = {
-                    apiVersion: iface.apiVersion || '',
-                    kind: iface.kind || 'UserDefinedNetwork',
-                    name: iface.metadata.name,
-                    namespace: iface.metadata.namespace
-                };
-            }
-        } else if (type === 'attachment') {
-            label = iface.name;
-            title = iface.name;
-            subtitle = 'NetworkAttachmentDefinition';
-            graphDisplayLabel = 'NAD'; // Abbreviation for graph display
-            state = 'Namespaces:';
-            namespaces = iface.namespaces || [];
-            isSynthetic = true;
-        } else if (type === 'nad') {
-            label = iface.metadata?.name || '';
-            title = iface.metadata?.name || '';
-            subtitle = 'NetworkAttachmentDefinition';
-            graphDisplayLabel = 'NAD'; // Abbreviation for graph display
-            const config = parseNadConfig(iface.spec?.config);
-            const nadType = typeof config?.type === 'string' ? config.type : undefined;
-            state = nadType ? `Type: ${nadType}` : undefined;
-            if (iface.metadata?.name) {
-                resourceRef = {
-                    apiVersion: iface.apiVersion || '',
-                    kind: iface.kind || 'NetworkAttachmentDefinition',
-                    name: iface.metadata.name,
-                    namespace: iface.metadata.namespace
-                };
-            }
-        } else if (type === 'lldp-neighbor') {
-            label = iface.label || `LLDP Neighbor ${Number(iface.neighborIndex || 0) + 1}`;
-            title = label;
-            subtitle = 'LLDP Neighbor';
-            graphDisplayLabel = 'LLDP';
-            const details: string[] = [];
-            if (iface.localInterface) {
-                details.push(`Local: ${iface.localInterface}`);
-            }
-            if (iface.portId) {
-                details.push(`Port: ${iface.portId}`);
-            }
-            state = details.join(' · ');
-        }
-
-        const baseNode: NodeViewModel = {
-            id: nodeId,
-            kind,
-            iconType: type,
-            label,
-            title,
-            subtitle,
-            graphDisplayLabel,
-            state,
-            namespaces,
-            resourceRef,
-            isSynthetic,
-            vrfRoutes,
-            raw: iface
-        };
-
-        const definition = nodeKindRegistry[kind];
-        if (resourceRef && !definition.buildLinks) {
-            baseNode.links = getResourceLinks(resourceRef);
-        }
-        if (definition.buildBadges) {
-            baseNode.badges = definition.buildBadges(baseNode);
-        }
-        if (definition.buildLinks) {
-            baseNode.links = definition.buildLinks(baseNode);
-        }
-
-        return baseNode;
-    };
-
-    const drawerTabsById: Record<DrawerTabId, DrawerTabDefinition> = {
-        summary: {
-            id: 'summary',
-            title: 'Summary',
-            render: (node) => (
-                <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
-                    {nodeKindRegistry[node.kind]?.renderSummary?.(node) || renderBaseSummary(node)}
-                </div>
-            )
-        },
-        details: {
-            id: 'details',
-            title: 'Details',
-            render: (node) => (
-                <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
-                    {nodeKindRegistry[node.kind]?.renderDetails?.(node) || (
-                        <DescriptionList isCompact>
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>No details available</DescriptionListTerm>
-                            </DescriptionListGroup>
-                        </DescriptionList>
-                    )}
-                </div>
-            )
-        },
-        links: {
-            id: 'links',
-            title: 'Links',
-            render: (node) => (
-                <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
-                    {node.links && node.links.length > 0 ? (
-                        <DescriptionList isCompact>
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>Available Links</DescriptionListTerm>
-                                <DescriptionListDescription>
-                                    <ul className="pf-v6-c-list">
-                                        {node.links.map((link) => (
-                                            <li key={link.href}>
-                                                <a href={link.href} target="_blank" rel="noopener noreferrer">
-                                                    {link.label}
-                                                </a>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </DescriptionListDescription>
-                            </DescriptionListGroup>
-                        </DescriptionList>
-                    ) : (
-                        <div style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>No links available.</div>
-                    )}
-                </div>
-            )
-        },
-        yaml: {
-            id: 'yaml',
-            title: 'YAML',
-            render: (node) => (
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-                    {node.raw && (
-                        <>
-                            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-t--global--border--color--default)' }}>
-                                <CodeEditor
-                                    isDarkTheme
-                                    isLineNumbersVisible
-                                    isReadOnly
-                                    code={yaml.dump(node.raw)}
-                                    language={Language.yaml}
-                                    height="100%"
-                                    style={{ height: '100%' }}
-                                />
-                            </div>
-                            <div style={{ flex: '0 0 auto', padding: 'var(--pf-t--global--spacer--md)', backgroundColor: 'var(--pf-t--global--background--color--primary--default)' }}>
-                                <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-t--global--spacer--sm)' }} />
-                                <a
-                                    href={(() => {
-                                        if (node.resourceRef) {
-                                            const resourceId = node.resourceRef.apiVersion
-                                                ? `${node.resourceRef.apiVersion.replace('/', '~')}~${node.resourceRef.kind}`
-                                                : node.resourceRef.kind;
-                                            const base = node.resourceRef.namespace
-                                                ? `/k8s/ns/${node.resourceRef.namespace}`
-                                                : '/k8s/cluster';
-                                            return `${window.location.origin}${base}/${resourceId}/${node.resourceRef.name}/yaml`;
-                                        }
-                                        const namespace = node.raw?.metadata?.namespace;
-                                        const resourceId = node.kind === 'other' || node.kind === 'interface' || node.kind === 'ovn-mapping'
-                                            ? 'nodenetworkstates.nmstate.io'
-                                            : 'clusteruserdefinednetworks.k8s.cni.cncf.io';
-                                        const base = namespace ? `/k8s/ns/${namespace}` : '/k8s/cluster';
-                                        return `${window.location.origin}${base}/${resourceId}/${node.raw.metadata?.name}/yaml`;
-                                    })()}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    View Resource in Console
-                                </a>
-                            </div>
-                        </>
-                    )}
-                    {!node.raw && (
-                        <span style={{ fontSize: '0.9em', color: 'var(--pf-t--global--text--color--subtle)', padding: '16px' }}>No YAML content available.</span>
-                    )}
-                </div>
-            )
-        }
-    };
-
-    const getDrawerTabsForNode = (node: NodeViewModel): DrawerTabDefinition[] => {
-        const configuredTabs = nodeKindRegistry[node.kind]?.tabs || DEFAULT_DRAWER_TABS;
-        return configuredTabs.map((tabId) => drawerTabsById[tabId]);
-    };
 
     const activeNodeTabs = React.useMemo(
-        () => (activeNode ? getDrawerTabsForNode(activeNode) : []),
+        () => (activeNode ? getDrawerTabsForNode(activeNode, drawerTabsById) : []),
         [activeNode]
     );
 
@@ -1693,7 +648,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const renderInterfaceNode = (iface: any, x: number, y: number, color: string, typeOverride?: string, heightOverride?: number) => {
         const type = typeOverride || iface.type;
         const Icon = getIcon(type);
-        const viewNode = buildNodeViewModel(iface, type);
+        const viewNode = buildNodeViewModel(iface, type, ctx);
         const displayName = viewNode.label;
         const displayType = viewNode.graphDisplayLabel || viewNode.subtitle; // Use abbreviation for graph, verbose for drawer
         const displayState = viewNode.state;
