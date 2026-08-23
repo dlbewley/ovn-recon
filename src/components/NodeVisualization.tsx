@@ -268,25 +268,36 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     }, [calculatedHeight, width]);
 
 
-    const renderConnector = (startNode: string, endNode: string) => {
-        const start = nodePositions[startNode];
-        const end = nodePositions[endNode];
-
+    /**
+     * Draw one connector, styled by what the relationship MEANS.
+     *
+     * A reference edge is dashed and undirected: a bridge mapping is the name OVN uses
+     * for a bridge, and nothing flows through it. Drawing it identically to a NIC
+     * enslaved to that bridge is what made the graph read as a traffic path it is not.
+     * Membership, layering and peer edges are all real links and stay solid.
+     */
+    const renderConnector = (edge: TopologyEdge) => {
+        const start = nodePositions[edge.source];
+        const end = nodePositions[edge.target];
         if (!start || !end) return null;
 
-        const x1 = start.x + itemWidth;
-        const y1 = start.y + (itemHeight / 2);
-        const x2 = end.x;
-        const y2 = end.y + (itemHeight / 2);
+        const highlighted = highlightedPath.has(edgeKey(edge.source, edge.target));
+        const isReference = edge.kind === 'reference';
 
         return (
             <line
-                key={`${startNode}-${endNode}`}
-                x1={x1} y1={y1} x2={x2} y2={y2}
-                stroke={isHighlightActive ? (highlightedPath.has(edgeKey(startNode, endNode)) ? '#0066CC' : '#ccc') : 'currentColor'}
-                strokeWidth={isHighlightActive ? (highlightedPath.has(edgeKey(startNode, endNode)) ? 4 : 1) : 2}
-                opacity={isHighlightActive ? (highlightedPath.has(edgeKey(startNode, endNode)) ? 1 : 0.1) : 1}
-            />
+                key={`${edge.source}-${edge.target}`}
+                x1={start.x + itemWidth} y1={start.y + (itemHeight / 2)}
+                x2={end.x} y2={end.y + (itemHeight / 2)}
+                stroke={isHighlightActive ? (highlighted ? '#0066CC' : '#ccc') : 'currentColor'}
+                strokeWidth={isHighlightActive ? (highlighted ? 4 : 1) : 2}
+                strokeDasharray={isReference ? '6 4' : undefined}
+                opacity={isHighlightActive
+                    ? (highlighted ? 1 : 0.1)
+                    : (isReference ? 0.65 : 1)}
+            >
+                <title>{edge.rule}</title>
+            </line>
         );
     };
 
@@ -626,7 +637,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 {/* Connectors */}
                                 {topologyEdges.map((edge: TopologyEdge) => (
                                     <React.Fragment key={`edge-${edge.source}-${edge.target}`}>
-                                        {renderConnector(edge.source, edge.target)}
+                                        {renderConnector(edge)}
                                     </React.Fragment>
                                 ))}
 

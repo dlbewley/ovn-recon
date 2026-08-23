@@ -1,6 +1,9 @@
 import { computeNodeOrder, countCrossings, sortByRank, LayoutLane } from './nodeVisualizationLayout';
 import { TopologyEdge } from './nodeVisualizationModel';
 
+/** Ordering only reads source and target, so the tests supply just those. */
+type Connection = Pick<TopologyEdge, 'source' | 'target'>;
+
 /** Two NICs into a bond, up through a bridge to a localnet network and its attachment. */
 const simpleLanes: LayoutLane[] = [
     { id: 'eth', nodeIds: ['eno1', 'eno2'] },
@@ -10,7 +13,7 @@ const simpleLanes: LayoutLane[] = [
     { id: 'networks', nodeIds: ['cudn-a'] }
 ];
 
-const simpleEdges: TopologyEdge[] = [
+const simpleEdges: Connection[] = [
     { source: 'eno1', target: 'bond0' },
     { source: 'eno2', target: 'bond0' },
     { source: 'bond0', target: 'br-ex' },
@@ -24,7 +27,7 @@ describe('countCrossings', () => {
             { id: 'left', nodeIds: ['a', 'b'] },
             { id: 'right', nodeIds: ['x', 'y'] }
         ];
-        const edges: TopologyEdge[] = [
+        const edges: Connection[] = [
             { source: 'a', target: 'y' },
             { source: 'b', target: 'x' }
         ];
@@ -36,7 +39,7 @@ describe('countCrossings', () => {
 
     it('ignores edges within a single lane, which carry no ordering information', () => {
         const lanes: LayoutLane[] = [{ id: 'only', nodeIds: ['a', 'b', 'c'] }];
-        const edges: TopologyEdge[] = [{ source: 'a', target: 'c' }, { source: 'b', target: 'c' }];
+        const edges: Connection[] = [{ source: 'a', target: 'c' }, { source: 'b', target: 'c' }];
 
         expect(countCrossings(lanes, edges, { a: 0, b: 1, c: 2 })).toBe(0);
     });
@@ -57,7 +60,7 @@ describe('computeNodeOrder', () => {
             { id: 'eth', nodeIds: ['eno1', 'eno2', 'eno3'] },
             { id: 'bond', nodeIds: ['bondA', 'bondB', 'bondC'] }
         ];
-        const edges: TopologyEdge[] = [
+        const edges: Connection[] = [
             { source: 'eno1', target: 'bondC' },
             { source: 'eno2', target: 'bondB' },
             { source: 'eno3', target: 'bondA' }
@@ -96,7 +99,7 @@ describe('computeNodeOrder', () => {
             { id: 'l3', nodeIds: ['ovn-physnet'] },
             { id: 'networks', nodeIds: ['cudn-a', 'udn-ns1-x'] }
         ];
-        const edges: TopologyEdge[] = [
+        const edges: Connection[] = [
             // The edge pulls the UDN toward the top; group rank must still win.
             { source: 'ovn-physnet', target: 'udn-ns1-x' }
         ];
@@ -111,7 +114,7 @@ describe('computeNodeOrder', () => {
             { id: 'eth', nodeIds: ['eno1'] },
             { id: 'bond', nodeIds: ['bond0', 'orphan'] }
         ];
-        const edges: TopologyEdge[] = [{ source: 'eno1', target: 'bond0' }];
+        const edges: Connection[] = [{ source: 'eno1', target: 'bond0' }];
 
         const ranks = computeNodeOrder({ lanes, edges });
 
@@ -120,7 +123,7 @@ describe('computeNodeOrder', () => {
     });
 
     it('tolerates edges that reference nodes outside any lane', () => {
-        const edges: TopologyEdge[] = [
+        const edges: Connection[] = [
             ...simpleEdges,
             { source: 'br-ex', target: 'not-rendered' }
         ];
