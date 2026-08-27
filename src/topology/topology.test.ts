@@ -6,7 +6,7 @@ import {
     attachmentNodeId, edgeKey, findDuplicateIds, nadNodeId, networkNodeId,
     parseNodeId, resolveInterfaceRef, resolveNodeId, udnNodeId
 } from './ids';
-import { getProjectPath, getResourceLinks, getResourcePath } from './links';
+import { getNamespaceQueryPath, getProjectPath, getResourceLinks, getResourcePath } from './links';
 import { nodeKindRegistry } from './registry';
 import { buildNodeViewModel } from './viewModel';
 import { descriptorFor, NODE_TYPES } from './descriptors';
@@ -163,6 +163,24 @@ describe('console links', () => {
 
     it('links a namespace to its Project page, since /k8s/ns/<name> alone goes nowhere', () => {
         expect(getProjectPath('demo-mirror')).toBe('/k8s/cluster/projects/demo-mirror');
+    });
+
+    describe('getNamespaceQueryPath', () => {
+        it('serializes a matchLabels selector into the console namespace filter', () => {
+            expect(getNamespaceQueryPath({ matchLabels: { 'network/machine': '' } }))
+                .toBe('/api-resource/cluster/core~v1~Namespace/instances?label=network%2Fmachine%3D');
+            expect(getNamespaceQueryPath({ matchLabels: { tier: 'web', env: 'prod' } }))
+                .toBe('/api-resource/cluster/core~v1~Namespace/instances?label=tier%3Dweb&label=env%3Dprod');
+        });
+
+        it('declines anything it cannot serialize honestly', () => {
+            expect(getNamespaceQueryPath({
+                matchLabels: { tier: 'web' },
+                matchExpressions: [{ key: 'env', operator: 'In', values: ['prod'] }]
+            })).toBeUndefined();
+            expect(getNamespaceQueryPath({})).toBeUndefined();
+            expect(getNamespaceQueryPath(undefined)).toBeUndefined();
+        });
     });
 });
 

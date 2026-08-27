@@ -20,7 +20,7 @@ import {
 } from '../types';
 import { GraphContext } from './context';
 import { baseFacts } from './facts';
-import { getProjectPath } from './links';
+import { getNamespaceQueryPath, getProjectPath } from './links';
 import {
     AttachmentNode, Fact, FactItem, NodeKind, NodeKindDefinition, NodeViewModel, ResourceRef
 } from './types';
@@ -223,7 +223,9 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
             const cudnName = cudn?.metadata?.name || '';
 
             return [
-                ...baseFacts(node, 'declared'),
+                // No State fact: it would just restate Topology, VLAN ID and
+                // Subnets below, and a network definition has no up/down anyway.
+                { label: 'Type', value: node.subtitle, provenance: 'declared' },
                 { label: 'Topology', value: topology || 'Unknown', provenance: 'declared' },
                 ...(role ? [{ label: 'Role', value: role, provenance: 'declared' } as Fact] : []),
                 ...((topology === 'Layer2' || topology === 'Layer3')
@@ -236,13 +238,19 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     ? [{ label: 'Physical Network', value: physicalNetworkName, provenance: 'declared' } as Fact]
                     : []),
                 ...(cudn?.spec?.namespaceSelector
-                    ? [{
-                        label: 'Namespace Selector',
-                        value: formatLabelSelector(cudn.spec.namespaceSelector)
-                            || 'Matches all namespaces (empty selector)',
-                        provenance: 'declared',
-                        hint: 'spec.namespaceSelector: the declared rule that scopes namespaces into this network.'
-                    } as Fact]
+                    ? [(() => {
+                        const text = formatLabelSelector(cudn.spec!.namespaceSelector)
+                            || 'Matches all namespaces (empty selector)';
+                        const queryPath = getNamespaceQueryPath(cudn.spec!.namespaceSelector);
+                        return {
+                            label: 'Namespace Selector',
+                            // Linked to the console's namespace list filtered by this
+                            // selector, when it serializes (pure matchLabels only).
+                            value: queryPath ? [{ text, href: queryPath }] : text,
+                            provenance: 'declared',
+                            hint: 'spec.namespaceSelector: the declared rule that scopes namespaces into this network.'
+                        } as Fact;
+                    })()]
                     : []),
                 {
                     label: 'Namespaces',
@@ -282,7 +290,8 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 : undefined;
 
             return [
-                ...baseFacts(node, 'declared'),
+                // No State fact, for the same reason as the CUDN above.
+                { label: 'Type', value: node.subtitle, provenance: 'declared' },
                 { label: 'Topology', value: topology, provenance: 'declared' },
                 { label: 'Role', value: role, provenance: 'declared' },
                 {

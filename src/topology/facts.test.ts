@@ -71,7 +71,10 @@ describe('facts builders', () => {
             const facts = factsFor('cudn', cudn);
             const selector = byLabel(facts, 'Namespace Selector');
             expect(selector.provenance).toBe('declared');
-            expect(selector.value).toBe('network/machine=');
+            expect(selector.value).toEqual([{
+                text: 'network/machine=',
+                href: '/api-resource/cluster/core~v1~Namespace/instances?label=network%2Fmachine%3D'
+            }]);
             expect(selector.hint).toContain('namespaceSelector');
             // The declared rule reads directly above its outcome.
             expect(facts.findIndex((f) => f.label === 'Namespace Selector'))
