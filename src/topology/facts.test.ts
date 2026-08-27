@@ -230,6 +230,85 @@ describe('facts builders', () => {
         });
     });
 
+    describe('a VRF serves its Primary network (ovn-recon-s3t.28)', () => {
+        it('links the VRF to the same-name Primary CUDN, matched by subnet and name', () => {
+            const facts = factsFor('vrf', vrf);
+            const serves = byLabel(facts, 'Serves Primary Network');
+            expect(serves.provenance).toBe('inferred');
+            expect(serves.hint).toContain('side effect');
+            expect(serves.hint).toContain('subnet and name');
+            expect(serves.value).toEqual([{
+                text: 'example-p-cudn (ClusterUserDefinedNetwork)',
+                ref: { apiVersion: 'k8s.ovn.org/v1', kind: 'ClusterUserDefinedNetwork', name: 'example-p-cudn' }
+            }]);
+        });
+
+        it('shows no State row and no Matched CUDNs row without a RouteAdvertisement', () => {
+            const bare = buildGraphContext({ nns, cudns });
+            const bareVrf = bare.interfaces.find((i) => i.type === 'vrf')!;
+            const node = buildNodeViewModel(bareVrf, descriptorFor('vrf')!, bare);
+            const facts = nodeKindRegistry.vrf.facts!(node, bare);
+
+            expect(facts.some((f) => f.label === 'State')).toBe(false);
+            expect(facts.some((f) => f.label === 'Matched CUDNs')).toBe(false);
+            expect(facts.some((f) => f.label === 'Serves Primary Network')).toBe(true);
+        });
+    });
+
+    describe('findPrimaryNetworkForVrf', () => {
+        const { findPrimaryNetworkForVrf } = jest.requireActual('../components/nodeVisualizationSelectors');
+        const primaryLayer2 = (name: string, subnets: string[]) => ({
+            metadata: { name },
+            spec: { network: { topology: 'Layer2', layer2: { role: 'Primary', subnets } } }
+        });
+
+        it('survives a network name longer than the 15-character interface limit', () => {
+            const long = primaryLayer2('a-very-long-network-name', ['192.0.2.0/24']);
+            const shortVrf = { name: 'a-very-long-net', type: 'vrf' };
+            const match = findPrimaryNetworkForVrf(shortVrf, [long], [], []);
+            expect(match).toMatchObject({ kind: 'cudn', name: 'a-very-long-network-name', signals: ['name'] });
+        });
+
+        it('never matches Localnet or Secondary networks, whatever their name', () => {
+            const localnet = {
+                metadata: { name: 'vrfname' },
+                spec: { network: { topology: 'Localnet', localnet: { physicalNetworkName: 'p', role: 'Secondary' } } }
+            };
+            const secondary = {
+                metadata: { name: 'vrfname' },
+                spec: { network: { topology: 'Layer2', layer2: { role: 'Secondary', subnets: ['10.0.0.0/24'] } } }
+            };
+            expect(findPrimaryNetworkForVrf({ name: 'vrfname', type: 'vrf' }, [localnet, secondary], [], []))
+                .toBeUndefined();
+        });
+
+        it('matches a Primary UDN too', () => {
+            const udn = {
+                metadata: { name: 'blue', namespace: 'ns1' },
+                spec: { topology: 'Layer3', layer3: { role: 'Primary', subnets: ['10.9.0.0/16'] } }
+            };
+            expect(findPrimaryNetworkForVrf({ name: 'blue', type: 'vrf' }, [], [udn], []))
+                .toMatchObject({ kind: 'udn', name: 'blue', namespace: 'ns1', signals: ['name'] });
+        });
+    });
+
+    describe('Type rows link to the API resource reference (ovn-recon-s3t.39)', () => {
+        it('names the CUDN kind alone, without the topology prefix', () => {
+            expect(byLabel(factsFor('cudn', cudn), 'Type').value).toEqual([{
+                text: 'ClusterUserDefinedNetwork',
+                href: '/api-resource/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/'
+            }]);
+        });
+
+        it('links interface-family kinds to NodeNetworkState, their data source', () => {
+            const typeFact = byLabel(factsFor('interface', vlan, 'vlan' as NodeKind), 'Type');
+            expect(typeFact.value).toEqual([{
+                text: 'vlan',
+                href: '/api-resource/cluster/nmstate.io~v1beta1~NodeNetworkState/'
+            }]);
+        });
+    });
+
     describe('the mapping kind has no State fact', () => {
         it('shows its bridge under a Bridge label instead', () => {
             const mapping = ctx.bridgeMappings.find((m) => m.localnet === 'physnet')!;

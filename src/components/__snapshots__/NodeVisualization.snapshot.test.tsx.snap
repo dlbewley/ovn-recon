@@ -604,14 +604,14 @@ exports[`NodeVisualization rendered structure drawer content for ens192 (etherne
 
 exports[`NodeVisualization rendered structure drawer content for example-p-cudn (VRF) 1`] = `
 {
-  "Overview": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigTypeVRF InterfaceStateovn-k8s-mp3 Tbl 5775MAC Address02:00:00:00:00:06Route Table5775Routes0.0.0.0/0 via 192.0.2.1 dev br-ex169.254.0.3/32 via 10.1.2.1 dev ovn-k8s-mp3169.254.0.16/32 via 0.0.0.0 dev ovn-k8s-mp3172.30.0.0/16 via 169.254.0.4 dev br-exbr-int Portsinferredovn-k8s-mp3 10.1.2.2/24Matched CUDNsinferredN/A",
-  "Relationships": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigNo relationships derived for this node.",
+  "Overview": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigTypeVRF InterfaceServes Primary Networkinferredexample-p-cudn (ClusterUserDefinedNetwork)MAC Address02:00:00:00:00:06Route Table5775Routes0.0.0.0/0 via 192.0.2.1 dev br-ex169.254.0.3/32 via 10.1.2.1 dev ovn-k8s-mp3169.254.0.16/32 via 0.0.0.0 dev ovn-k8s-mp3172.30.0.0/16 via 169.254.0.4 dev br-exbr-int Portsinferredovn-k8s-mp3 10.1.2.2/24",
+  "Relationships": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigDownstreamexample-p-cudn · primary-network (subnet, name) (reference)",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for machinenet (CUDN) 1`] = `
 {
-  "Overview": "machinenetLocalnet ClusterUserDefinedNetworkOverviewRelationshipsConfigTypeLocalnet ClusterUserDefinedNetworkTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespace Selectornetwork/machine=Namespacesinferreddemo-mirror",
+  "Overview": "machinenetLocalnet ClusterUserDefinedNetworkOverviewRelationshipsConfigTypeClusterUserDefinedNetworkTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespace Selectornetwork/machine=Namespacesinferreddemo-mirror",
   "Relationships": "machinenetLocalnet ClusterUserDefinedNetworkOverviewRelationshipsConfigUpstreamphysnet · physical-network-name (reference)Downstreammachinenet · attached-namespaces (membership)",
 }
 `;
@@ -635,11 +635,12 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes reveal
   "edges": [
     "1060,160 -> 680,160  solid  controller",
     "1060,60 -> 680,60  solid  controller",
+    "1280,160 -> 1340,160  dashed  physical-network-name",
     "1280,160 -> 1340,260  dashed  physical-network-name",
-    "1280,160 -> 1340,360  dashed  physical-network-name",
-    "1280,60 -> 1340,160  dashed  physical-network-name",
+    "1280,300 -> 1340,360  dashed  primary-network (subnet, name)",
+    "1280,60 -> 1340,60  dashed  physical-network-name",
     "1500,160 -> 1560,162  solid  attached-namespaces",
-    "1500,260 -> 1560,264  solid  attached-namespaces",
+    "1500,360 -> 1560,264  solid  attached-namespaces",
     "1500,60 -> 1560,60  solid  attached-namespaces",
     "180,160 -> 680,60  solid  controller",
     "180,260 -> 460,60  solid  base-iface",
@@ -707,35 +708,24 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes reveal
     {
       "fill": "#CC0099",
       "labels": [
-        "machinenet",
-        "CUDN",
-        "Localnet",
-      ],
-      "title": "machinenet (CUDN)",
-      "x": 1340,
-      "y": 120,
-    },
-    {
-      "fill": "#CC0099",
-      "labels": [
-        "example-p-cudn",
-        "CUDN",
-        "Layer2 10.1.2.0/24",
-      ],
-      "title": "example-p-cudn (CUDN)",
-      "x": 1340,
-      "y": 20,
-    },
-    {
-      "fill": "#CC0099",
-      "labels": [
         "vlan-1924",
         "CUDN",
         "Localnet VLAN 1924",
       ],
       "title": "vlan-1924 (CUDN)",
       "x": 1340,
-      "y": 220,
+      "y": 120,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "machinenet",
+        "CUDN",
+        "Localnet",
+      ],
+      "title": "machinenet (CUDN)",
+      "x": 1340,
+      "y": 20,
     },
     {
       "fill": "#CC0099",
@@ -746,7 +736,28 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes reveal
       ],
       "title": "vlan-1926 (CUDN)",
       "x": 1340,
+      "y": 220,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "example-p-cudn",
+        "CUDN",
+        "Layer2 10.1.2.0/24",
+      ],
+      "title": "example-p-cudn (CUDN)",
+      "x": 1340,
       "y": 320,
+    },
+    {
+      "fill": "#F0AB00",
+      "labels": [
+        "vlan-1924",
+        "NAD",
+      ],
+      "title": "vlan-1924 (NAD)",
+      "x": 1560,
+      "y": 122,
     },
     {
       "fill": "#F0AB00",
@@ -756,7 +767,7 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes reveal
       ],
       "title": "machinenet (NAD)",
       "x": 1560,
-      "y": 122,
+      "y": 20,
     },
     {
       "fill": "#F0AB00",
@@ -765,16 +776,6 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes reveal
         "NAD",
       ],
       "title": "example-p-cudn (NAD)",
-      "x": 1560,
-      "y": 20,
-    },
-    {
-      "fill": "#F0AB00",
-      "labels": [
-        "vlan-1924",
-        "NAD",
-      ],
-      "title": "vlan-1924 (NAD)",
       "x": 1560,
       "y": 224,
     },
@@ -907,16 +908,17 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`]
 {
   "edges": [
     "1060,160 -> 1120,162  solid  attached-namespaces",
-    "1060,260 -> 1120,264  solid  attached-namespaces",
+    "1060,360 -> 1120,264  solid  attached-namespaces",
     "1060,60 -> 1120,60  solid  attached-namespaces",
     "180,160 -> 460,60  solid  controller",
     "180,260 -> 240,60  solid  base-iface",
     "180,260 -> 460,160  solid  controller",
     "620,160 -> 680,160  dashed  bridge-mapping",
     "620,60 -> 680,60  dashed  bridge-mapping",
+    "840,160 -> 900,160  dashed  physical-network-name",
     "840,160 -> 900,260  dashed  physical-network-name",
-    "840,160 -> 900,360  dashed  physical-network-name",
-    "840,60 -> 900,160  dashed  physical-network-name",
+    "840,300 -> 900,360  dashed  primary-network (subnet, name)",
+    "840,60 -> 900,60  dashed  physical-network-name",
   ],
   "laneHeaders": [
     "Physical Interfaces",
@@ -943,12 +945,22 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`]
     {
       "fill": "#F0AB00",
       "labels": [
+        "vlan-1924",
+        "NAD",
+      ],
+      "title": "vlan-1924 (NAD)",
+      "x": 1120,
+      "y": 122,
+    },
+    {
+      "fill": "#F0AB00",
+      "labels": [
         "machinenet",
         "NAD",
       ],
       "title": "machinenet (NAD)",
       "x": 1120,
-      "y": 122,
+      "y": 20,
     },
     {
       "fill": "#F0AB00",
@@ -957,16 +969,6 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`]
         "NAD",
       ],
       "title": "example-p-cudn (NAD)",
-      "x": 1120,
-      "y": 20,
-    },
-    {
-      "fill": "#F0AB00",
-      "labels": [
-        "vlan-1924",
-        "NAD",
-      ],
-      "title": "vlan-1924 (NAD)",
       "x": 1120,
       "y": 224,
     },
@@ -1105,35 +1107,24 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`]
     {
       "fill": "#CC0099",
       "labels": [
-        "machinenet",
-        "CUDN",
-        "Localnet",
-      ],
-      "title": "machinenet (CUDN)",
-      "x": 900,
-      "y": 120,
-    },
-    {
-      "fill": "#CC0099",
-      "labels": [
-        "example-p-cudn",
-        "CUDN",
-        "Layer2 10.1.2.0/24",
-      ],
-      "title": "example-p-cudn (CUDN)",
-      "x": 900,
-      "y": 20,
-    },
-    {
-      "fill": "#CC0099",
-      "labels": [
         "vlan-1924",
         "CUDN",
         "Localnet VLAN 1924",
       ],
       "title": "vlan-1924 (CUDN)",
       "x": 900,
-      "y": 220,
+      "y": 120,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "machinenet",
+        "CUDN",
+        "Localnet",
+      ],
+      "title": "machinenet (CUDN)",
+      "x": 900,
+      "y": 20,
     },
     {
       "fill": "#CC0099",
@@ -1143,6 +1134,17 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`]
         "Localnet VLAN 1926",
       ],
       "title": "vlan-1926 (CUDN)",
+      "x": 900,
+      "y": 220,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
+        "example-p-cudn",
+        "CUDN",
+        "Layer2 10.1.2.0/24",
+      ],
+      "title": "example-p-cudn (CUDN)",
       "x": 900,
       "y": 320,
     },
