@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
+import * as viewModel from '../topology/viewModel';
 import NodeVisualization from './NodeVisualization';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
@@ -273,6 +274,62 @@ describe('NodeVisualization drawer', () => {
             clickNode('example-p-cudn (VRF)');
             expect(drawerTitle()).toBe('example-p-cudn');
             expect(panelText()).toContain('VRF');
+        });
+    });
+
+    /**
+     * The drawer derives its content from the CURRENT watch data (ovn-recon-s3t.4).
+     * It used to store the view model snapshotted at click time, so a resource edit
+     * never reached an open drawer.
+     */
+    describe('live derivation', () => {
+        it('updates an open drawer when the watched resource changes, without reselecting', () => {
+            const nns = fixture<NodeNetworkState>('nns', 'primary-cudn-vrf.json');
+            const cudns = fixture<ClusterUserDefinedNetwork[]>('cudn', 'primary-cudn-vrf.json');
+            const renderWith = (state: NodeNetworkState) => act(() => {
+                root.render(
+                    <NodeVisualization nns={state} cudns={cudns} udns={[]} nads={[]} routeAdvertisements={[]} />
+                );
+            });
+
+            renderWith(nns);
+            clickNode('ens192 (ethernet)');
+            selectTab('Details');
+            expect(panelText()).toContain('1500');
+
+            const updated = JSON.parse(JSON.stringify(nns)) as NodeNetworkState;
+            const iface = updated.status!.currentState!.interfaces!.find((i) => i.name === 'ens192')!;
+            iface.mtu = 9000;
+            renderWith(updated);
+
+            expect(drawerTitle()).toBe('ens192');
+            expect(panelText()).toContain('9000');
+            expect(panelText()).not.toContain('1500');
+        });
+
+        it('builds the full view model only for the selected node, never during graph render', () => {
+            const spy = jest.spyOn(viewModel, 'buildNodeViewModel');
+            renderPrimary();
+            expect(spy).not.toHaveBeenCalled();
+
+            clickNode('ens192 (ethernet)');
+            expect(spy.mock.calls.length).toBeGreaterThan(0);
+            // Every call is for the one selected item.
+            expect(new Set(spy.mock.calls.map((call) => call[0])).size).toBe(1);
+            spy.mockRestore();
+        });
+
+        it('clears the selection when the selected node stops being rendered', () => {
+            renderPrimary();
+            toggle('show-hidden-columns-toggle');
+            clickNode('br-ex (ovs-interface)');
+            expect(drawerTitle()).toBe('br-ex');
+
+            // Hiding the lane removes the node; the drawer must close and the
+            // graph must not stay dimmed against a selection that no longer exists.
+            toggle('show-hidden-columns-toggle');
+            expect(drawerTitle()).toBe('');
+            expect(nodeGroups().filter((g) => g.getAttribute('style')?.includes('0.3')).length).toBe(0);
         });
     });
 

@@ -1,6 +1,5 @@
 import * as React from 'react';
 
-import { VrfAssociatedRoute } from '../components/nodeVisualizationSelectors';
 import type { GraphContext as GraphContextLike } from './context';
 import {
     ClusterUserDefinedNetwork,
@@ -66,7 +65,6 @@ export interface NodeViewModel {
     links?: NodeLink[];
     resourceRef?: ResourceRef;
     isSynthetic?: boolean;
-    vrfRoutes?: VrfAssociatedRoute[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     raw?: any;
 }
