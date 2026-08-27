@@ -3,7 +3,7 @@ import { useParams, Link, useLocation } from 'react-router';
 import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
 import { DocumentTitle, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import NodeVisualization from './NodeVisualization';
-import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
+import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements } from '../types';
 
 interface NodeNetworkStateDetailsProps {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -79,6 +79,21 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
         isList: true,
     });
 
+    // The per-node record of which NNCP configured what (ovn-recon-s3t.34).
+    const [allEnactments] = useK8sWatchResource<NodeNetworkConfigurationEnactment[]>({
+        groupVersionKind: {
+            group: 'nmstate.io',
+            version: 'v1beta1',
+            kind: 'NodeNetworkConfigurationEnactment',
+        },
+        isList: true,
+    });
+    const enactments = React.useMemo(
+        () => (allEnactments || []).filter(
+            (enactment) => enactment.metadata?.labels?.['nmstate.io/node'] === name),
+        [allEnactments, name]
+    );
+
     if (!name) {
         return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
     }
@@ -126,7 +141,7 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
                 <Title headingLevel="h1" className="pf-u-mt-lg">Node Network Topology: {displayName}</Title>
             </PageSection>
             <PageSection isFilled>
-                <NodeVisualization nns={nns} cudns={cudns} udns={udns} nads={nads} routeAdvertisements={routeAdvertisements} />
+                <NodeVisualization nns={nns} cudns={cudns} udns={udns} nads={nads} routeAdvertisements={routeAdvertisements} enactments={enactments} />
             </PageSection>
         </>
     );

@@ -3,7 +3,7 @@ import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, D
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 
 
-import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
+import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements } from '../types';
 import { hasLldpNeighbors } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import { buildGraphContext, GraphContext } from '../topology/context';
@@ -24,9 +24,10 @@ interface NodeVisualizationProps {
     udns?: UserDefinedNetwork[];
     nads?: NetworkAttachmentDefinition[];
     routeAdvertisements?: RouteAdvertisements[];
+    enactments?: NodeNetworkConfigurationEnactment[];
 }
 
-const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], udns = [], nads = [], routeAdvertisements = [] }) => {
+const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [] }) => {
 
 
 
@@ -67,8 +68,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     };
 
     const ctx: GraphContext = React.useMemo(
-        () => buildGraphContext({ nns, cudns, udns, nads, routeAdvertisements }),
-        [nns, cudns, udns, nads, routeAdvertisements]
+        () => buildGraphContext({ nns, cudns, udns, nads, routeAdvertisements, enactments }),
+        [nns, cudns, udns, nads, routeAdvertisements, enactments]
     );
     const { interfaces } = ctx;
     const { lldpNeighbors } = ctx;

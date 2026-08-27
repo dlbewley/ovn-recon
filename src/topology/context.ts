@@ -4,6 +4,7 @@ import {
     ClusterUserDefinedNetwork,
     Interface,
     NetworkAttachmentDefinition,
+    NodeNetworkConfigurationEnactment,
     NodeNetworkState,
     OvnBridgeMapping,
     RouteAdvertisements,
@@ -26,6 +27,12 @@ export interface GraphContext {
     udns: UserDefinedNetwork[];
     nads: NetworkAttachmentDefinition[];
     routeAdvertisements: RouteAdvertisements[];
+    /**
+     * This node's NodeNetworkConfigurationEnactments -- the record of which
+     * NNCP configured what. Empty when the nmstate operator is absent or the
+     * NNS was imported from elsewhere, in which case no origin can be claimed.
+     */
+    enactments: NodeNetworkConfigurationEnactment[];
     /**
      * Names of interfaces that are declared bridges. Needed to resolve the case where
      * an ovs-interface shares its name with the bridge it belongs to; without it the
@@ -78,6 +85,7 @@ export interface GraphContextInput {
     udns?: UserDefinedNetwork[];
     nads?: NetworkAttachmentDefinition[];
     routeAdvertisements?: RouteAdvertisements[];
+    enactments?: NodeNetworkConfigurationEnactment[];
 }
 
 const BRIDGE_TYPES = ['linux-bridge', 'ovs-bridge', 'openvswitch'];
@@ -87,7 +95,8 @@ export const buildGraphContext = ({
     cudns = [],
     udns = [],
     nads = [],
-    routeAdvertisements = []
+    routeAdvertisements = [],
+    enactments = []
 }: GraphContextInput): GraphContext => {
     const interfaces: Interface[] = nns?.status?.currentState?.interfaces ?? [];
 
@@ -99,6 +108,7 @@ export const buildGraphContext = ({
         udns,
         nads,
         routeAdvertisements,
+        enactments,
         explicitBridgeNames: new Set(
             interfaces.filter((i) => BRIDGE_TYPES.includes(i.type)).map((i) => i.name)
         ),

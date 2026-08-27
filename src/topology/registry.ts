@@ -5,9 +5,12 @@ import {
     getCudnsSelectedByRouteAdvertisement,
     getIpv4Addresses,
     getNadUpstreamNodeIds,
+    getPoliciesClaimingBridgeMapping,
+    getPoliciesClaimingInterface,
     getRouteAdvertisementsMatchingCudn,
     getVrfConnectionInfo,
     getVrfRoutesForInterface,
+    NncpClaim,
     parseNadConfig,
     VrfAssociatedRoute
 } from '../components/nodeVisualizationSelectors';
@@ -123,6 +126,50 @@ const getBridgePortNames = (raw: Interface | undefined): string[] => {
         .filter(Boolean);
 };
 
+const nncpRef = (name: string): ResourceRef => ({
+    apiVersion: 'nmstate.io/v1', kind: 'NodeNetworkConfigurationPolicy', name
+});
+
+/**
+ * Which NNCP configured this thing -- from 'what is this' to 'where do I
+ * change it' (ovn-recon-s3t.34). Derived from this node's enactments, whose
+ * desiredState RECORDS what each policy applied, so a claim is observed.
+ *
+ * Zero claims is informative too: with enactments present, an unclaimed
+ * resource was created by the installer or by OVN-Kubernetes -- the finer
+ * user-versus-cluster distinction a reader learning OVN-K needs. With no
+ * enactments at all (no nmstate operator, or an imported NNS) nothing can be
+ * said either way, so no fact is emitted.
+ */
+const configuredByFacts = (claims: NncpClaim[], ctx: GraphContext): Fact[] => {
+    if (ctx.enactments.length === 0) {
+        return [];
+    }
+    if (claims.length === 0) {
+        return [{
+            label: 'Configured By',
+            value: 'No policy — created by the installer or OVN-Kubernetes',
+            provenance: 'inferred',
+            hint: 'No NodeNetworkConfigurationEnactment on this node claims it, so it was not configured through an NNCP.'
+        }];
+    }
+    return [{
+        label: 'Configured By',
+        value: [
+            ...claims.map((claim): FactItem => ({
+                // A policy that is Failing or Progressing is worth seeing, not just its name.
+                text: claim.status === 'Available' ? claim.policyName : `${claim.policyName} — ${claim.status}`,
+                ref: nncpRef(claim.policyName)
+            })),
+            ...(claims.length > 1
+                ? [{ text: '⚠ claimed by more than one policy — configuration overlap' }]
+                : [])
+        ],
+        provenance: 'observed',
+        hint: 'This node\'s enactment for the policy lists it in the applied desiredState.'
+    }];
+};
+
 /**
  * The name-truncation heuristic behind VRF-to-RouteAdvertisements matching.
  * Named in the hint of every fact it produces, per the acceptance on s3t.12.
@@ -135,9 +182,12 @@ const VRF_RA_HINT =
 export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
     interface: {
         label: 'Interface',
-        facts: (node) => {
+        facts: (node, ctx) => {
             const raw = node.raw as Interface | undefined;
-            const facts: Fact[] = [...baseFacts(node)];
+            const facts: Fact[] = [
+                ...baseFacts(node),
+                ...configuredByFacts(getPoliciesClaimingInterface(raw?.name || '', ctx.enactments), ctx)
+            ];
             if (raw?.type === 'vlan' && raw?.vlan) {
                 // A kernel VLAN interface, created via NNCP -- not an OVN Localnet.
                 facts.push({
@@ -186,6 +236,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 ...(node.raw?.bridge
                     ? [{ label: 'Bridge', value: node.raw.bridge, provenance: 'observed' } as Fact]
                     : []),
+                ...configuredByFacts(getPoliciesClaimingBridgeMapping(localnetName || '', ctx.enactments), ctx),
                 {
                     label: 'Referenced by CUDNs',
                     value: referencingCudns.map((cudn): FactItem => ({
@@ -416,6 +467,9 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
 
             return [
                 ...baseFacts(node),
+                // A VRF is an interface too: unclaimed here reads 'OVN-Kubernetes
+                // created this', which is true of every Primary-CUDN VRF.
+                ...configuredByFacts(getPoliciesClaimingInterface(raw?.name || '', ctx.enactments), ctx),
                 ...(macAddress
                     ? [{ label: 'MAC Address', value: macAddress, provenance: 'observed' } as Fact]
                     : []),
