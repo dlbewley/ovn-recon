@@ -91,7 +91,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Simple layout logic
     const width = 1600; // Increased width for new columns
     // const height = 800; // Unused
-    const padding = 20; // Keep headers visible while remaining top-left aligned
+    // Room above the lane headers: they draw at padding - 10, and used to sit
+    // 10px from the viewport edge (ovn-recon-s3t.45).
+    const padding = 40;
     const itemHeight = 80;
     const itemWidth = 160;
     const colSpacing = 220;
@@ -283,9 +285,15 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         padding + otherGridRows * (itemHeight + 20) + 200
     );
 
-    // Initialize viewBox after calculatedHeight is computed
+    /**
+     * True once the user has panned, zoomed, or been centered by drawer
+     * navigation. Until then the viewBox tracks the canvas size, so toggling a
+     * column that GROWS the canvas (NADs, LLDP) does not clip the new content
+     * -- previously only the Reset button recovered from that.
+     */
+    const userAdjustedView = React.useRef<boolean>(false);
     React.useEffect(() => {
-        if (!viewBox && calculatedHeight > 0) {
+        if (!userAdjustedView.current && calculatedHeight > 0) {
             setViewBox({ x: 0, y: 0, width, height: calculatedHeight });
             setZoomLevel(1);
         }
@@ -329,12 +337,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     // Pan/Zoom handlers
     const handleZoom = (delta: number, clientX?: number, clientY?: number) => {
         if (!viewBox || !svgContainerRef.current) return;
+        userAdjustedView.current = true;
 
         const svgRect = svgContainerRef.current.getBoundingClientRect();
         const zoomFactor = delta > 0 ? 1.1 : 0.9;
         const newZoom = Math.max(0.1, Math.min(5, zoomLevel * zoomFactor));
 
-        if (clientX !== undefined && clientY !== undefined) {
+        if (clientX !== undefined && clientY !== undefined && svgRect.width > 0 && svgRect.height > 0) {
             // Zoom towards mouse position
             const mouseX = clientX - svgRect.left;
             const mouseY = clientY - svgRect.top;
@@ -364,13 +373,28 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         setZoomLevel(newZoom);
     };
 
-    const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
-        event.preventDefault();
+    /**
+     * Ctrl/Cmd + wheel zooms; a plain wheel scrolls the page normally.
+     *
+     * This must be a NATIVE listener registered non-passive: React attaches
+     * wheel at the root as passive, so calling preventDefault on the synthetic
+     * event logged an error and did nothing -- and it tried to preventDefault
+     * even for plain scrolling, which was the wrong intent anyway.
+     */
+    const wheelZoomRef = React.useRef<(event: WheelEvent) => void>(() => undefined);
+    wheelZoomRef.current = (event: WheelEvent) => {
         if (event.ctrlKey || event.metaKey) {
-            // Zoom with Ctrl/Cmd + wheel
+            event.preventDefault();
             handleZoom(-event.deltaY, event.clientX, event.clientY);
         }
     };
+    React.useEffect(() => {
+        const svg = svgContainerRef.current;
+        if (!svg) return undefined;
+        const listener = (event: WheelEvent) => wheelZoomRef.current(event);
+        svg.addEventListener('wheel', listener, { passive: false });
+        return () => svg.removeEventListener('wheel', listener);
+    }, []);
 
     const handleMouseDown = (event: React.MouseEvent<SVGSVGElement>) => {
         // Don't pan if clicking on a node (g element)
@@ -387,8 +411,17 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     };
 
+    /**
+     * A pan drag that ends over the background must not read as a background
+     * CLICK -- it used to close the drawer. The flag is set by any pan movement
+     * and consumed by the click handler that follows the mouseup.
+     */
+    const suppressBackgroundClick = React.useRef<boolean>(false);
+
     const handleMouseMove = (event: React.MouseEvent<SVGSVGElement>) => {
         if (isPanning && panStart && viewBox) {
+            userAdjustedView.current = true;
+            suppressBackgroundClick.current = true;
             const deltaX = event.clientX - panStart.x;
             const deltaY = event.clientY - panStart.y;
 
@@ -417,6 +450,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const handleZoomIn = () => handleZoom(1);
     const handleZoomOut = () => handleZoom(-1);
     const handleResetZoom = () => {
+        // Back to the untouched state: the viewBox resumes tracking canvas growth.
+        userAdjustedView.current = false;
         setViewBox({ x: 0, y: 0, width, height: calculatedHeight });
         setZoomLevel(1);
     };
@@ -429,6 +464,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
      */
     const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
     const [activePopoverTab, setActivePopoverTab] = React.useState<DrawerTabId>('overview');
+    // Keyboard focus, drawn as a ring on the node rect. Tab order is the render
+    // order -- lane by lane, top to bottom -- which matches visual reading order.
+    const [focusedNodeId, setFocusedNodeId] = React.useState<string | null>(null);
 
     const selectedPlacedNode = selectedNodeId ? placedNodeById.get(selectedNodeId) : undefined;
     const activeNode: NodeViewModel | null = selectedPlacedNode
@@ -463,6 +501,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const centerViewOn = (id: string) => {
         const position = absolutePositionOf(id);
         if (!position) return;
+        userAdjustedView.current = true;
         const viewWidth = viewBox?.width ?? width;
         const viewHeight = viewBox?.height ?? calculatedHeight;
         setViewBox({
@@ -490,7 +529,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         }
     });
 
-    const handleNodeClick = (event: React.MouseEvent, id: string) => {
+    const handleNodeClick = (event: React.SyntheticEvent, id: string) => {
         event.stopPropagation(); // Prevent clearing highlight when clicking a node
 
         const wasDrawerOpen = selectedNodeId !== null;
@@ -501,6 +540,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     };
 
     const handleBackgroundClick = () => {
+        // The click after a pan drag is the drag ending, not a deselection.
+        if (suppressBackgroundClick.current) {
+            suppressBackgroundClick.current = false;
+            return;
+        }
         handlePopoverClose();
     };
 
@@ -551,12 +595,30 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         const presentation = descriptor.present(item, ctx);
         const displayType = presentation.graphLabel || presentation.subtitle;
         const status = descriptor.status?.(item);
+        const isFocused = focusedNodeId === node.id;
 
         return (
             <g
                 transform={`translate(${node.x}, ${node.y})`}
-                style={{ cursor: 'pointer', opacity: isHighlightActive ? (highlightedPath.has(node.id) ? 1 : 0.3) : 1 }}
+                // A focused node must stay visible through the highlight dimming.
+                style={{
+                    cursor: 'pointer',
+                    outline: 'none',
+                    opacity: isHighlightActive && !isFocused
+                        ? (highlightedPath.has(node.id) ? 1 : 0.3) : 1
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label={`${presentation.label} (${displayType})`}
                 onClick={(e) => handleNodeClick(e, node.id)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleNodeClick(e, node.id);
+                    }
+                }}
+                onFocus={() => setFocusedNodeId(node.id)}
+                onBlur={() => setFocusedNodeId((current) => (current === node.id ? null : current))}
             >
                 <title>{presentation.label} ({displayType})</title>
                 <rect
@@ -564,8 +626,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                     height={node.height}
                     rx={5}
                     fill={descriptor.color}
-                    stroke="var(--pf-t--global--border--color--default)"
-                    strokeWidth={1}
+                    stroke={isFocused ? 'var(--pf-t--global--border--color--clicked, #0066CC)' : 'var(--pf-t--global--border--color--default)'}
+                    strokeWidth={isFocused ? 3 : 1}
                 />
                 <foreignObject x={10} y={10} width={20} height={20}>
                     <div style={{ color: '#fff' }}>{iconFor(descriptor, item)}</div>
@@ -713,7 +775,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     color: 'var(--pf-t--global--text--color--regular)',
                                     cursor: isPanning ? 'grabbing' : 'grab'
                                 }}
-                                onWheel={handleWheel}
                                 onMouseDown={handleMouseDown}
                                 onMouseMove={handleMouseMove}
                                 onMouseUp={handleMouseUp}
