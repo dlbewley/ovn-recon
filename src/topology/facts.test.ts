@@ -67,6 +67,17 @@ describe('facts builders', () => {
             expect(byLabel(facts, 'Matched CUDNs').provenance).toBe('inferred');
         });
 
+        it('CUDN: the namespaceSelector is the declared rule beside the inferred outcome', () => {
+            const facts = factsFor('cudn', cudn);
+            const selector = byLabel(facts, 'Namespace Selector');
+            expect(selector.provenance).toBe('declared');
+            expect(selector.value).toBe('network/machine=');
+            expect(selector.hint).toContain('namespaceSelector');
+            // The declared rule reads directly above its outcome.
+            expect(facts.findIndex((f) => f.label === 'Namespace Selector'))
+                .toBe(facts.findIndex((f) => f.label === 'Namespaces') - 1);
+        });
+
         it('CUDN: namespaces are scraped out of a condition message', () => {
             const fact = byLabel(factsFor('cudn', cudn), 'Namespaces');
             expect(fact.provenance).toBe('inferred');

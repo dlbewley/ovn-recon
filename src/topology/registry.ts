@@ -1,5 +1,6 @@
 import {
     findRouteAdvertisementForVrf,
+    formatLabelSelector,
     getCudnAssociatedNamespaces,
     getCudnsSelectedByRouteAdvertisement,
     getIpv4Addresses,
@@ -235,6 +236,15 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 ...(physicalNetworkName
                     ? [{ label: 'Physical Network', value: physicalNetworkName, provenance: 'declared' } as Fact]
                     : []),
+                ...(cudn?.spec?.namespaceSelector
+                    ? [{
+                        label: 'Namespace Selector',
+                        value: formatLabelSelector(cudn.spec.namespaceSelector)
+                            || 'Matches all namespaces (empty selector)',
+                        provenance: 'declared',
+                        hint: 'spec.namespaceSelector: the declared rule that scopes namespaces into this network.'
+                    } as Fact]
+                    : []),
                 {
                     label: 'Namespaces',
                     value: getCudnAssociatedNamespaces(cudn).map((ns): FactItem => ({
@@ -242,8 +252,8 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                         ref: nadRef(ns, cudnName)
                     })),
                     provenance: 'inferred',
-                    hint: 'Parsed out of the NetworkCreated condition message; '
-                        + 'the API does not list attached namespaces directly.'
+                    hint: 'The namespaces the namespaceSelector scoped in, parsed out of the '
+                        + 'NetworkCreated condition message; the API does not list them directly.'
                 },
                 {
                     label: 'Route Advertisements',

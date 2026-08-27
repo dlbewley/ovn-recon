@@ -56,6 +56,12 @@ export interface NodeNetworkState extends K8sResourceCommon {
     };
 }
 
+/** metav1.LabelSelector, as used by CUDN namespaceSelector and RA network selectors. */
+export interface LabelSelector {
+    matchLabels?: { [key: string]: string };
+    matchExpressions?: { key: string; operator: string; values?: string[] }[];
+}
+
 export interface UserDefinedNetwork extends K8sResourceCommon {
     spec?: {
         topology?: string; // 'Layer2' | 'Layer3' (UserDefinedNetworkSpec has topology at spec level)
@@ -69,6 +75,8 @@ export interface UserDefinedNetwork extends K8sResourceCommon {
 
 export interface ClusterUserDefinedNetwork extends K8sResourceCommon {
     spec?: {
+        /** The declared rule that scopes namespaces into this network. */
+        namespaceSelector?: LabelSelector;
         network?: {
             topology: string;
             // Same shape as `localnet`; both capitalizations appear in the wild.
