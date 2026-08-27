@@ -7,6 +7,13 @@ export const getResourcePath = (ref: ResourceRef): string => {
     return `${base}/${resourceId}/${ref.name}`;
 };
 
+/**
+ * Console path for a namespace itself. On OpenShift the namespace landing page is
+ * the Project view -- a bare /k8s/ns/<name> is not a valid destination.
+ */
+export const getProjectPath = (namespace: string): string =>
+    `/k8s/cluster/projects/${namespace}`;
+
 export const getResourceLinks = (ref: ResourceRef): NodeLink[] => {
     const resourcePath = getResourcePath(ref);
     return [
