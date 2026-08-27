@@ -611,7 +611,7 @@ exports[`NodeVisualization rendered structure drawer content for example-p-cudn 
 
 exports[`NodeVisualization rendered structure drawer content for machinenet (CUDN) 1`] = `
 {
-  "Overview": "machinenetLocalnet ClusterUserDefinedNetworkOverviewRelationshipsConfigTypeLocalnet ClusterUserDefinedNetworkStateLocalnetTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespace Selectornetwork/machine=Namespacesinferreddemo-mirror",
+  "Overview": "machinenetLocalnet ClusterUserDefinedNetworkOverviewRelationshipsConfigTypeLocalnet ClusterUserDefinedNetworkTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespace Selectornetwork/machine=Namespacesinferreddemo-mirror",
   "Relationships": "machinenetLocalnet ClusterUserDefinedNetworkOverviewRelationshipsConfigUpstreamphysnet · physical-network-name (reference)Downstreammachinenet · attached-namespaces (membership)",
 }
 `;

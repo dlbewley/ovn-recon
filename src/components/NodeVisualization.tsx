@@ -442,6 +442,36 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         setIsHighlightActive(true);
     };
 
+    /** A node's absolute canvas position: laned nodes come off the layout, the
+     * catch-all grid nodes carry grid-relative coordinates and need its origin. */
+    const absolutePositionOf = (id: string): { x: number; y: number } | undefined => {
+        if (nodePositions[id]) return nodePositions[id];
+        const placed = placedNodeById.get(id);
+        if (placed?.laneId === 'other') {
+            return { x: padding + placed.x, y: calculatedHeight - 140 + placed.y };
+        }
+        return undefined;
+    };
+
+    /**
+     * Pan the view to center a node, keeping the zoom. Only drawer navigation
+     * does this: a hyperlink changes the node under review invisibly -- often to
+     * one hidden behind the drawer -- while a canvas click is on something the
+     * user can already see, and yanking the view then would be disorienting.
+     */
+    const centerViewOn = (id: string) => {
+        const position = absolutePositionOf(id);
+        if (!position) return;
+        const viewWidth = viewBox?.width ?? width;
+        const viewHeight = viewBox?.height ?? calculatedHeight;
+        setViewBox({
+            x: position.x + itemWidth / 2 - viewWidth / 2,
+            y: position.y + itemHeight / 2 - viewHeight / 2,
+            width: viewWidth,
+            height: viewHeight
+        });
+    };
+
     // Rebuilt each render: the Relationships tab must see the edges of the
     // CURRENT view (lane toggles change them), and closures capture live state.
     // Only edges with both endpoints drawn: the canvas skips the others too, and
@@ -453,7 +483,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             const placed = placedNodeById.get(id);
             return placed ? placed.descriptor.present(placed.item, ctx).label : id;
         },
-        onSelectNode: selectNode
+        onSelectNode: (id) => {
+            selectNode(id);
+            centerViewOn(id);
+        }
     });
 
     const handleNodeClick = (event: React.MouseEvent, id: string) => {
