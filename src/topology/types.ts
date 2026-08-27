@@ -69,6 +69,38 @@ export interface NodeViewModel {
     raw?: any;
 }
 
+/**
+ * How much a displayed value should be trusted, and why (ovn-recon-s3t.12).
+ *
+ * This is a recon tool: much of what it shows is worked out rather than read.
+ * observed  -- read directly from reported state (NNS status, LLDP TLVs).
+ * declared  -- read from a resource's spec or status field that asserts it.
+ * inferred  -- produced by a heuristic; the fact's hint names the rule, so an
+ *              operator debugging a mismatch knows which claims to distrust.
+ */
+export type Provenance = 'observed' | 'declared' | 'inferred';
+
+/** One entry of a list-valued fact. `ref` links to a resource, `href` anywhere else. */
+export interface FactItem {
+    text: string;
+    ref?: ResourceRef;
+    href?: string;
+}
+
+export interface Fact {
+    label: string;
+    value: string | FactItem[];
+    /** Renders the whole value as a link to this resource. */
+    ref?: ResourceRef;
+    provenance: Provenance;
+    /** Why we believe this. Required in practice for anything inferred. */
+    hint?: string;
+    /** Also shown on the Summary tab; everything shows under Details. */
+    summary?: boolean;
+    /** Rendered when a list value is empty; an empty list without one is omitted. */
+    emptyText?: string;
+}
+
 export type DrawerTabId = 'summary' | 'details' | 'links' | 'yaml';
 
 export interface DrawerTabDefinition {
@@ -86,8 +118,11 @@ export interface NodeKindDefinition {
     label: string;
     buildBadges?: (node: NodeViewModel) => string[];
     buildLinks?: (node: NodeViewModel, ctx: GraphContextLike) => NodeLink[];
-    renderSummary?: (node: NodeViewModel, ctx: GraphContextLike) => React.ReactNode;
-    renderDetails?: (node: NodeViewModel, ctx: GraphContextLike) => React.ReactNode;
+    /**
+     * The kind's drawer content as data: a pure, testable list of facts. One
+     * shared renderer (FactList) handles presentation for every kind.
+     */
+    facts?: (node: NodeViewModel, ctx: GraphContextLike) => Fact[];
     /** Currently populated by no kind, so every kind gets DEFAULT_DRAWER_TABS. */
     tabs?: DrawerTabId[];
 }

@@ -71,8 +71,11 @@ export interface ClusterUserDefinedNetwork extends K8sResourceCommon {
     spec?: {
         network?: {
             topology: string;
+            // Same shape as `localnet`; both capitalizations appear in the wild.
             localNet?: {
                 physicalNetworkName: string;
+                role?: 'Primary' | 'Secondary';
+                vlan?: { access: { id: number } };
             };
             localnet?: {
                 physicalNetworkName: string;

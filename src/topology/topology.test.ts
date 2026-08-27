@@ -221,7 +221,7 @@ describe('buildNodeViewModel', () => {
         const bare = buildGraphContext({ nns: fixture<NodeNetworkState>('nns', 'primary-cudn-vrf.json') });
         const vrf = bare.interfaces.find((i) => i.type === 'vrf')!;
 
-        expect(nodeKindRegistry.vrf.renderSummary).toBeDefined();
+        expect(nodeKindRegistry.vrf.facts).toBeDefined();
         expect(buildNodeViewModel(vrf, descriptorFor('vrf')!, bare).state).toContain('ovn-k8s-mp3');
         expect(bare.cudns).toEqual([]);
     });
