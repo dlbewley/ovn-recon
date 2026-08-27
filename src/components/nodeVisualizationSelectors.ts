@@ -74,11 +74,15 @@ export interface PrimaryNetworkMatch {
  * The Primary Layer2/Layer3 network this VRF exists to serve (ovn-recon-s3t.28).
  *
  * A Primary UDN or CUDN creates a per-node VRF as a side effect; Localnet
- * networks can never be Primary and are excluded outright. Two signals, neither
- * individually conclusive: the VRF's br-int port address falling inside the
- * network's subnet (the stronger one -- independent of naming), and the network
- * name equalling the VRF name, possibly after truncation to the kernel's
- * 15-character interface-name limit. Subnet-matched candidates win.
+ * networks can never be Primary and are excluded outright.
+ *
+ * NAME IS REQUIRED, SUBNET ONLY CORROBORATES. OVN-Kubernetes names the VRF
+ * after the network (truncated to the kernel's 15-character interface-name
+ * limit), so the name is the mechanism. Subnets are NOT unique across
+ * UDNs/CUDNs -- networks map to OVS logical switches uplinked to OVN routers
+ * that NAT overlapping ranges apart -- so a subnet-containment match on its own
+ * could pick the wrong network. It serves only to break ties when several long
+ * network names share a truncated prefix.
  */
 export const findPrimaryNetworkForVrf = (
     vrf: Interface,
@@ -133,7 +137,8 @@ export const findPrimaryNetworkForVrf = (
                 ...(nameMatches(candidate.name) ? ['name' as const] : [])
             ]
         }))
-        .filter((match) => match.signals.length > 0);
+        // The name must match; a subnet hit alone is not an association.
+        .filter((match) => match.signals.includes('name'));
 
     return matches.find((match) => match.signals.includes('subnet')) ?? matches[0];
 };

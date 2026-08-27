@@ -282,6 +282,31 @@ describe('facts builders', () => {
                 .toBeUndefined();
         });
 
+        it('never matches on subnet alone: UDN/CUDN subnets are not unique', () => {
+            // Networks map to OVS switches behind OVN routers that NAT
+            // overlapping ranges apart, so subnet containment cannot identify
+            // a network by itself.
+            const otherName = primaryLayer2('some-other-network', ['10.1.2.0/24']);
+            const brIntPort = {
+                name: 'ovn-k8s-mp9', type: 'ovs-interface', controller: 'br-int',
+                ipv4: { address: [{ ip: '10.1.2.2', 'prefix-length': 24 }] }
+            };
+            const vrfIface = { name: 'unrelated-vrf', type: 'vrf', vrf: { port: ['ovn-k8s-mp9'] } };
+            expect(findPrimaryNetworkForVrf(vrfIface, [otherName], [], [brIntPort])).toBeUndefined();
+        });
+
+        it('breaks a truncated-prefix tie with the subnet signal', () => {
+            const contender = primaryLayer2('shared-prefix-xx-one', ['192.0.2.0/24']);
+            const winner = primaryLayer2('shared-prefix-xx-two', ['10.1.2.0/24']);
+            const brIntPort = {
+                name: 'ovn-k8s-mp9', type: 'ovs-interface', controller: 'br-int',
+                ipv4: { address: [{ ip: '10.1.2.2', 'prefix-length': 24 }] }
+            };
+            const vrfIface = { name: 'shared-prefix-x', type: 'vrf', vrf: { port: ['ovn-k8s-mp9'] } };
+            expect(findPrimaryNetworkForVrf(vrfIface, [contender, winner], [], [brIntPort]))
+                .toMatchObject({ name: 'shared-prefix-xx-two', signals: ['subnet', 'name'] });
+        });
+
         it('matches a Primary UDN too', () => {
             const udn = {
                 metadata: { name: 'blue', namespace: 'ns1' },
