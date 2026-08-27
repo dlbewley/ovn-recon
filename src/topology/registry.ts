@@ -146,8 +146,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                         { text: `Base: ${raw.vlan['base-iface']}` },
                         { text: `ID: ${raw.vlan.id}` }
                     ],
-                    provenance: 'observed',
-                    summary: true
+                    provenance: 'observed'
                 });
             }
             const macAddress = getMacAddress(raw);
@@ -183,9 +182,9 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 return physicalNetworkName === localnetName;
             });
             return [
-                { label: 'Type', value: node.subtitle, provenance: 'observed', summary: true },
+                { label: 'Type', value: node.subtitle, provenance: 'observed' },
                 ...(node.raw?.bridge
-                    ? [{ label: 'Bridge', value: node.raw.bridge, provenance: 'observed', summary: true } as Fact]
+                    ? [{ label: 'Bridge', value: node.raw.bridge, provenance: 'observed' } as Fact]
                     : []),
                 {
                     label: 'Referenced by CUDNs',
@@ -308,23 +307,12 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
     attachment: {
         label: 'Attachment',
         buildBadges: (node) => (node.isSynthetic ? ['synthetic', 'derived'] : []),
-        buildLinks: (node, ctx) => {
-            const namespaceLinks = getAttachmentNamespaces(node).map((namespace) => ({
-                label: `Namespace: ${namespace}`,
-                href: getProjectPath(namespace)
-            }));
-            const nadLinks = getAttachmentNadRefs(node, ctx).map((ref) => ({
-                label: `NAD: ${ref.namespace}/${ref.name}`,
-                href: `/k8s/ns/${ref.namespace}/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/${ref.name}`
-            }));
-            return [...namespaceLinks, ...nadLinks];
-        },
         facts: (node, ctx) => {
             const cudnBacked = Boolean((node.raw as AttachmentNode | undefined)?.cudn);
             return [
                 // No State fact: the synthetic node's state field is a rendering
                 // artifact ('Namespaces:'), not a fact about anything.
-                { label: 'Type', value: node.subtitle, provenance: 'observed', summary: true },
+                { label: 'Type', value: node.subtitle, provenance: 'observed' },
                 {
                     label: 'Namespaces',
                     value: getAttachmentNamespaces(node).map((ns): FactItem => ({
@@ -334,7 +322,6 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     hint: cudnBacked
                         ? 'Parsed out of the backing CUDN\'s NetworkCreated condition message.'
                         : 'The namespace of the UDN behind this attachment.',
-                    summary: true,
                     emptyText: 'No namespaces discovered.'
                 },
                 {
@@ -370,8 +357,8 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 : 'Named by the NAD\'s CNI config.';
 
             return [
-                { label: 'Type', value: node.subtitle, provenance: 'declared', summary: true },
-                { label: 'CNI Type', value: nadType, provenance: fromRegex ? 'inferred' : 'declared', hint: fromRegex ? upstreamHint : undefined, summary: true },
+                { label: 'Type', value: node.subtitle, provenance: 'declared' },
+                { label: 'CNI Type', value: nadType, provenance: fromRegex ? 'inferred' : 'declared', hint: fromRegex ? upstreamHint : undefined },
                 ...(nadName
                     ? [{ label: 'Network Name', value: nadName, provenance: 'declared' } as Fact]
                     : []),
@@ -398,9 +385,9 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
         label: 'LLDP Neighbor',
         facts: (node) => [
             ...baseFacts(node),
-            { label: 'Local Interface', value: node.raw?.localInterface || '-', provenance: 'observed', summary: true },
+            { label: 'Local Interface', value: node.raw?.localInterface || '-', provenance: 'observed' },
             { label: 'System Name', value: node.raw?.systemName || '-', provenance: 'observed' },
-            { label: 'Port ID', value: node.raw?.portId || '-', provenance: 'observed', summary: true },
+            { label: 'Port ID', value: node.raw?.portId || '-', provenance: 'observed' },
             { label: 'Chassis ID', value: node.raw?.chassisId || '-', provenance: 'observed' },
             ...(node.raw?.systemDescription
                 ? [{ label: 'System Description', value: node.raw.systemDescription, provenance: 'observed' } as Fact]
@@ -472,8 +459,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                         }))
                         : 'N/A',
                     provenance: 'inferred',
-                    hint: `${VRF_RA_HINT} CUDNs are then selected by that RouteAdvertisements' networkSelector.`,
-                    summary: true
+                    hint: `${VRF_RA_HINT} CUDNs are then selected by that RouteAdvertisements' networkSelector.`
                 }
             ];
         }

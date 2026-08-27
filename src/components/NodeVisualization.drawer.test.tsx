@@ -26,7 +26,7 @@ jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
  * ovn-recon-s3t.12, and tests asserting today's phrasing would be deleted with it.
  */
 
-const TABS = ['Summary', 'Details', 'Links', 'YAML'] as const;
+const TABS = ['Overview', 'Relationships', 'Config'] as const;
 
 const fixture = <T,>(...segments: string[]): T =>
     JSON.parse(fs.readFileSync(path.join(process.cwd(), 'test', 'fixtures', ...segments), 'utf-8')) as T;
@@ -111,7 +111,7 @@ describe('NodeVisualization drawer', () => {
         TABS.forEach((tab) => {
             expect(() => selectTab(tab)).not.toThrow();
             expect(tabButton(tab)).toBeDefined();
-            // An explicit empty state ("No links available.") is content; a blank
+            // An explicit empty state ("No relationships derived...") is content; a blank
             // panel is the failure this guards against.
             expect(panelText().trim().length).toBeGreaterThan(20);
         });
@@ -160,7 +160,7 @@ describe('NodeVisualization drawer', () => {
             renderPrimary();
             toggle('show-hidden-columns-toggle');
             clickNode('br-ex (ovs-interface)');
-            selectTab('Details');
+            selectTab('Overview');
 
             expect(panelText()).toContain('192.0.2.72/24');
             expect(panelText()).toContain('169.254.0.2/17');
@@ -170,7 +170,7 @@ describe('NodeVisualization drawer', () => {
         it('shows the VRF route table, its routes and its br-int port', () => {
             renderPrimary();
             clickNode('example-p-cudn (VRF)');
-            selectTab('Details');
+            selectTab('Overview');
             const text = panelText();
 
             expect(text).toContain('5775');
@@ -182,7 +182,7 @@ describe('NodeVisualization drawer', () => {
         it('shows CUDN topology, role and subnets', () => {
             renderPrimary();
             clickNode('example-p-cudn (CUDN)');
-            selectTab('Details');
+            selectTab('Overview');
             const text = panelText();
 
             expect(text).toContain('Layer2');
@@ -193,7 +193,7 @@ describe('NodeVisualization drawer', () => {
         it('shows which CUDNs reference a bridge mapping', () => {
             renderPrimary();
             clickNode('physnet (OVN Bridge Mapping)');
-            selectTab('Details');
+            selectTab('Overview');
             const text = panelText();
 
             expect(text).toContain('br-ex');
@@ -203,7 +203,7 @@ describe('NodeVisualization drawer', () => {
         it('shows the namespaces behind an attachment', () => {
             renderPrimary();
             clickNode('example-p-cudn (NAD)');
-            selectTab('Details');
+            selectTab('Overview');
 
             expect(panelText()).toContain('demo-vm-primary-udn');
         });
@@ -212,7 +212,7 @@ describe('NodeVisualization drawer', () => {
             renderBonded();
             toggle('show-lldp-neighbors-toggle');
             clickNode('lab-fabric-lf001 (LLDP)');
-            selectTab('Details');
+            selectTab('Overview');
             const text = panelText();
 
             expect(text).toContain('lab-fabric-lf001');
@@ -223,7 +223,7 @@ describe('NodeVisualization drawer', () => {
         it('lists bridge ports on a bridge', () => {
             renderPrimary();
             clickNode('br-vmdata (ovs-bridge)');
-            selectTab('Details');
+            selectTab('Overview');
             const text = panelText();
 
             expect(text).toContain('ens224');
@@ -275,6 +275,35 @@ describe('NodeVisualization drawer', () => {
             expect(drawerTitle()).toBe('example-p-cudn');
             expect(panelText()).toContain('VRF');
         });
+
+        it('navigates to a neighbor from the Relationships tab', () => {
+            renderPrimary();
+            clickNode('ens192 (ethernet)');
+            selectTab('Relationships');
+
+            const panel = container.querySelector('.pf-v6-c-drawer__panel')!;
+            const neighbor = Array.from(panel.querySelectorAll('button'))
+                .find((b) => (b.textContent ?? '').trim() === 'br-ex');
+            expect(neighbor).toBeDefined();
+            act(() => { neighbor!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+            // Selection moved, the tab was kept, and the neighbor's own
+            // relationships now list where we came from.
+            expect(drawerTitle()).toBe('br-ex');
+            expect(panelText()).toContain('Upstream');
+            expect(panelText()).toContain('ens192');
+
+            // The flow path re-highlighted around the new selection.
+            expect(nodeGroups().filter((g) => g.getAttribute('style')?.includes('0.3')).length)
+                .toBeGreaterThan(0);
+        });
+
+        it('shows an explicit empty state when no relationships are derived', () => {
+            renderPrimary();
+            clickNode('lo (loopback)');
+            selectTab('Relationships');
+            expect(panelText()).toContain('No relationships derived');
+        });
     });
 
     /**
@@ -285,7 +314,7 @@ describe('NodeVisualization drawer', () => {
         it('labels the bridge mapping summary with Bridge, not State -- a mapping is never up or down', () => {
             renderPrimary();
             clickNode('physnet (OVN Bridge Mapping)');
-            selectTab('Summary');
+            selectTab('Overview');
             const text = panelText();
 
             expect(text).toContain('Bridge');
@@ -296,7 +325,7 @@ describe('NodeVisualization drawer', () => {
         it('describes a kernel VLAN interface without the OVN term Localnet', () => {
             renderPrimary();
             clickNode('ens224.456 (vlan)');
-            selectTab('Summary');
+            selectTab('Overview');
             const text = panelText();
 
             expect(text).toContain('VLAN');
@@ -307,7 +336,7 @@ describe('NodeVisualization drawer', () => {
         it('links namespaces to the OpenShift Projects URL, never to a bare /k8s/ns path', () => {
             renderPrimary();
             clickNode('machinenet (NAD)');
-            selectTab('Details');
+            selectTab('Overview');
 
             const panel = container.querySelector('.pf-v6-c-drawer__panel')!;
             const hrefs = Array.from(panel.querySelectorAll('a')).map((a) => a.getAttribute('href') ?? '');
@@ -316,12 +345,6 @@ describe('NodeVisualization drawer', () => {
             // A bare namespace path (no resource segment after it) is not a valid
             // console destination on OpenShift.
             expect(hrefs.filter((href) => /^\/k8s\/ns\/[^/]+$/.test(href))).toEqual([]);
-
-            // The Links tab entries use the same form.
-            selectTab('Links');
-            const linkHrefs = Array.from(panel.querySelectorAll('a')).map((a) => a.getAttribute('href') ?? '');
-            expect(linkHrefs.some((href) => href.startsWith('/k8s/cluster/projects/'))).toBe(true);
-            expect(linkHrefs.filter((href) => /^\/k8s\/ns\/[^/]+$/.test(href))).toEqual([]);
         });
     });
 
@@ -342,7 +365,7 @@ describe('NodeVisualization drawer', () => {
 
             renderWith(nns);
             clickNode('ens192 (ethernet)');
-            selectTab('Details');
+            selectTab('Overview');
             expect(panelText()).toContain('1500');
 
             const updated = JSON.parse(JSON.stringify(nns)) as NodeNetworkState;

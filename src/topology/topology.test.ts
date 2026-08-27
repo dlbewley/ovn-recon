@@ -190,7 +190,6 @@ describe('buildNodeViewModel', () => {
         expect(model.subtitle).toBe('Layer2 ClusterUserDefinedNetwork');
         expect(model.state).toContain('10.1.2.0/24');
         expect(model.resourceRef?.kind).toBe('ClusterUserDefinedNetwork');
-        expect(model.links?.map((l) => l.label)).toEqual(['Resource', 'YAML']);
     });
 
     it('maps a bridge mapping to its localnet, not its bridge', () => {
@@ -258,9 +257,4 @@ describe('nodeKindRegistry', () => {
         ]);
     });
 
-    it('leaves the per-kind tab override unused, as the drawer assumes', () => {
-        // Dead configuration noted on ovn-recon-s3t.13. If a kind ever sets it, that
-        // bead's assumption needs revisiting.
-        Object.values(nodeKindRegistry).forEach((def) => expect(def.tabs).toBeUndefined());
-    });
 });

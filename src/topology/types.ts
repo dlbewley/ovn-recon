@@ -62,7 +62,6 @@ export interface NodeViewModel {
     state?: string;
     namespaces?: string[];
     badges?: string[];
-    links?: NodeLink[];
     resourceRef?: ResourceRef;
     isSynthetic?: boolean;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,13 +94,11 @@ export interface Fact {
     provenance: Provenance;
     /** Why we believe this. Required in practice for anything inferred. */
     hint?: string;
-    /** Also shown on the Summary tab; everything shows under Details. */
-    summary?: boolean;
     /** Rendered when a list value is empty; an empty list without one is omitted. */
     emptyText?: string;
 }
 
-export type DrawerTabId = 'summary' | 'details' | 'links' | 'yaml';
+export type DrawerTabId = 'overview' | 'relationships' | 'config';
 
 export interface DrawerTabDefinition {
     id: DrawerTabId;
@@ -117,14 +114,11 @@ export interface DrawerTabDefinition {
 export interface NodeKindDefinition {
     label: string;
     buildBadges?: (node: NodeViewModel) => string[];
-    buildLinks?: (node: NodeViewModel, ctx: GraphContextLike) => NodeLink[];
     /**
      * The kind's drawer content as data: a pure, testable list of facts. One
      * shared renderer (FactList) handles presentation for every kind.
      */
     facts?: (node: NodeViewModel, ctx: GraphContextLike) => Fact[];
-    /** Currently populated by no kind, so every kind gets DEFAULT_DRAWER_TABS. */
-    tabs?: DrawerTabId[];
 }
 
 /** Adjacency used for path highlighting. */

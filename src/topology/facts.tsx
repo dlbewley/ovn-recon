@@ -16,9 +16,9 @@ import { Fact, FactItem, NodeViewModel, Provenance } from './types';
 
 /** Type and State rows, shared by most kinds. */
 export const baseFacts = (node: NodeViewModel, provenance: Provenance = 'observed'): Fact[] => [
-    { label: 'Type', value: node.subtitle, provenance, summary: true },
+    { label: 'Type', value: node.subtitle, provenance },
     ...(node.state
-        ? [{ label: 'State', value: node.state, provenance, summary: true } as Fact]
+        ? [{ label: 'State', value: node.state, provenance } as Fact]
         : [])
 ];
 
