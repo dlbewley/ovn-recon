@@ -6,7 +6,7 @@ import {
     attachmentNodeId, edgeKey, findDuplicateIds, nadNodeId, networkNodeId,
     parseNodeId, resolveInterfaceRef, resolveNodeId, udnNodeId
 } from './ids';
-import { getResourceLinks, getResourcePath } from './links';
+import { getProjectPath, getResourceLinks, getResourcePath } from './links';
 import { nodeKindRegistry } from './registry';
 import { buildNodeViewModel } from './viewModel';
 import { descriptorFor, NODE_TYPES } from './descriptors';
@@ -159,6 +159,10 @@ describe('console links', () => {
     it('offers both the resource and its YAML', () => {
         expect(getResourceLinks({ apiVersion: 'v1', kind: 'Node', name: 'n1' }).map((l) => l.label))
             .toEqual(['Resource', 'YAML']);
+    });
+
+    it('links a namespace to its Project page, since /k8s/ns/<name> alone goes nowhere', () => {
+        expect(getProjectPath('demo-mirror')).toBe('/k8s/cluster/projects/demo-mirror');
     });
 });
 

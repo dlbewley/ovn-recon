@@ -278,6 +278,54 @@ describe('NodeVisualization drawer', () => {
     });
 
     /**
+     * Wording and link corrections reported from the live console
+     * (ovn-recon-s3t.37, ovn-recon-s3t.38).
+     */
+    describe('content corrections', () => {
+        it('labels the bridge mapping summary with Bridge, not State -- a mapping is never up or down', () => {
+            renderPrimary();
+            clickNode('physnet (OVN Bridge Mapping)');
+            selectTab('Summary');
+            const text = panelText();
+
+            expect(text).toContain('Bridge');
+            expect(text).toContain('br-ex');
+            expect(text).not.toContain('State');
+        });
+
+        it('describes a kernel VLAN interface without the OVN term Localnet', () => {
+            renderPrimary();
+            clickNode('ens224.456 (vlan)');
+            selectTab('Summary');
+            const text = panelText();
+
+            expect(text).toContain('VLAN');
+            expect(text).toContain('ens224');
+            expect(text).not.toContain('Localnet');
+        });
+
+        it('links namespaces to the OpenShift Projects URL, never to a bare /k8s/ns path', () => {
+            renderPrimary();
+            clickNode('machinenet (NAD)');
+            selectTab('Details');
+
+            const panel = container.querySelector('.pf-v6-c-drawer__panel')!;
+            const hrefs = Array.from(panel.querySelectorAll('a')).map((a) => a.getAttribute('href') ?? '');
+
+            expect(hrefs.some((href) => href.startsWith('/k8s/cluster/projects/'))).toBe(true);
+            // A bare namespace path (no resource segment after it) is not a valid
+            // console destination on OpenShift.
+            expect(hrefs.filter((href) => /^\/k8s\/ns\/[^/]+$/.test(href))).toEqual([]);
+
+            // The Links tab entries use the same form.
+            selectTab('Links');
+            const linkHrefs = Array.from(panel.querySelectorAll('a')).map((a) => a.getAttribute('href') ?? '');
+            expect(linkHrefs.some((href) => href.startsWith('/k8s/cluster/projects/'))).toBe(true);
+            expect(linkHrefs.filter((href) => /^\/k8s\/ns\/[^/]+$/.test(href))).toEqual([]);
+        });
+    });
+
+    /**
      * The drawer derives its content from the CURRENT watch data (ovn-recon-s3t.4).
      * It used to store the view model snapshotted at click time, so a resource edit
      * never reached an open drawer.

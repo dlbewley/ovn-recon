@@ -632,7 +632,7 @@ exports[`NodeVisualization rendered structure drawer content for physnet (OVN Br
 {
   "Details": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLBridgebr-exReferenced by CUDNsmachinenet",
   "Links": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLNo links available.",
-  "Summary": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLTypeOVN Bridge MappingStateBridge: br-ex",
+  "Summary": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLTypeOVN Bridge MappingBridgebr-ex",
 }
 `;
 

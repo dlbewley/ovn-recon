@@ -21,7 +21,7 @@ import {
     UserDefinedNetwork
 } from '../types';
 import { GraphContext } from './context';
-import { getResourceLinks } from './links';
+import { getProjectPath, getResourceLinks } from './links';
 import { NodeKind, NodeKindDefinition, NodeViewModel, ResourceRef } from './types';
 
 /**
@@ -106,7 +106,8 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
             node,
             node.raw?.type === 'vlan' && node.raw?.vlan ? (
                 <DescriptionListGroup>
-                    <DescriptionListTerm>Localnet VLAN {node.raw.vlan.id}</DescriptionListTerm>
+                    {/* A kernel VLAN interface, created via NNCP -- not an OVN Localnet. */}
+                    <DescriptionListTerm>VLAN</DescriptionListTerm>
                     <DescriptionListDescription>
                         Base: {node.raw.vlan['base-iface']} <br />
                         ID: {node.raw.vlan.id}
@@ -183,6 +184,22 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
     },
     'ovn-mapping': {
         label: 'OVN Mapping',
+        // Not the base summary: that would label the bridge as 'State', and a
+        // mapping is never up or down -- it is a name OVN gives a bridge.
+        renderSummary: (node) => (
+            <DescriptionList isCompact>
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Type</DescriptionListTerm>
+                    <DescriptionListDescription>{node.subtitle}</DescriptionListDescription>
+                </DescriptionListGroup>
+                {node.raw?.bridge && (
+                    <DescriptionListGroup>
+                        <DescriptionListTerm>Bridge</DescriptionListTerm>
+                        <DescriptionListDescription>{node.raw.bridge}</DescriptionListDescription>
+                    </DescriptionListGroup>
+                )}
+            </DescriptionList>
+        ),
         renderDetails: (node, ctx) => {
             // Find all CUDNs that reference this bridge mapping
             const localnetName = node.raw?.localnet;
@@ -389,7 +406,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     <DescriptionListGroup>
                         <DescriptionListTerm>Namespace</DescriptionListTerm>
                         <DescriptionListDescription>
-                            <a href={`/k8s/ns/${namespace}`} className="pf-v6-c-button pf-m-link pf-m-inline">{namespace}</a>
+                            <a href={getProjectPath(namespace)} className="pf-v6-c-button pf-m-link pf-m-inline">{namespace}</a>
                         </DescriptionListDescription>
                     </DescriptionListGroup>
                     {(topology === 'Layer2' || topology === 'Layer3') && (
@@ -423,7 +440,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
         buildLinks: (node, ctx) => {
             const namespaceLinks = getAttachmentNamespaces(node).map((namespace) => ({
                 label: `Namespace: ${namespace}`,
-                href: `/k8s/ns/${namespace}`
+                href: getProjectPath(namespace)
             }));
             const nadLinks = getAttachmentNadRefs(node, ctx).map((ref) => ({
                 label: `NAD: ${ref.namespace}/${ref.name}`,
@@ -447,7 +464,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                                 <ul className="pf-v6-c-list">
                                     {namespaces.map((namespace) => (
                                         <li key={namespace}>
-                                            <a href={`/k8s/ns/${namespace}`} className="pf-v6-c-button pf-m-link pf-m-inline">
+                                            <a href={getProjectPath(namespace)} className="pf-v6-c-button pf-m-link pf-m-inline">
                                                 {namespace}
                                             </a>
                                         </li>
