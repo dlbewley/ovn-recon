@@ -8,7 +8,7 @@ import * as yaml from 'js-yaml';
 
 import { GraphContext } from './context';
 import { nodeKindRegistry, renderBaseSummary } from './registry';
-import { DrawerTabDefinition, DrawerTabId, NodeViewModel } from './types';
+import { DrawerTabDefinition, DrawerTabId, NodeKind, NodeViewModel } from './types';
 
 export const DEFAULT_DRAWER_TABS: DrawerTabId[] = ['summary', 'details', 'links', 'yaml'];
 
@@ -124,8 +124,13 @@ export const buildDrawerTabs = (ctx: GraphContext): Record<DrawerTabId, DrawerTa
     }
 });
 
+export const getDrawerTabsForKind = (
+    kind: NodeKind,
+    tabsById: Record<DrawerTabId, DrawerTabDefinition>
+): DrawerTabDefinition[] =>
+    (nodeKindRegistry[kind]?.tabs || DEFAULT_DRAWER_TABS).map((tabId) => tabsById[tabId]);
+
 export const getDrawerTabsForNode = (
     node: NodeViewModel,
     tabsById: Record<DrawerTabId, DrawerTabDefinition>
-): DrawerTabDefinition[] =>
-    (nodeKindRegistry[node.kind]?.tabs || DEFAULT_DRAWER_TABS).map((tabId) => tabsById[tabId]);
+): DrawerTabDefinition[] => getDrawerTabsForKind(node.kind, tabsById);

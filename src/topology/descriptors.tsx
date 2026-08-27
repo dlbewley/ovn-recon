@@ -5,13 +5,11 @@ import {
 } from '@patternfly/react-icons';
 
 import {
-    getVrfRoutesForInterface,
     findCudnNameForNad,
     findRouteAdvertisementForVrf,
     getCudnsSelectedByRouteAdvertisement,
     getNadUpstreamNodeIdsForEdges,
     parseNadConfig,
-    VrfAssociatedRoute,
     LldpNeighborNode
 } from '../components/nodeVisualizationSelectors';
 import {
@@ -58,7 +56,6 @@ export interface NodePresentation {
     namespaces?: string[];
     resourceRef?: ResourceRef;
     isSynthetic?: boolean;
-    vrfRoutes?: VrfAssociatedRoute[];
 }
 
 /** Collects edges, so a descriptor never constructs the result shape itself. */
@@ -212,7 +209,7 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         color: '#CC6600',
         items: (ctx) => interfacesWithRole(ctx, 'vrf'),
         id: (vrf, ctx) => interfaceNodeId(vrf, ctx),
-        present: (vrf, ctx) => {
+        present: (vrf) => {
             const details: string[] = [];
             if (vrf.vrf?.port) {
                 details.push(Array.isArray(vrf.vrf.port) ? vrf.vrf.port.join(', ') : String(vrf.vrf.port));
@@ -222,8 +219,7 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
                 label: vrf.name,
                 subtitle: 'VRF Interface',
                 graphLabel: 'VRF',
-                state: details.length > 0 ? details.join(' ') : vrf.state,
-                vrfRoutes: getVrfRoutesForInterface(vrf, ctx.nns)
+                state: details.length > 0 ? details.join(' ') : vrf.state
             };
         },
         status: (vrf) => (vrf.state === 'up' ? 'up' : 'down'),

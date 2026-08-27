@@ -165,7 +165,7 @@ describe('console links', () => {
 describe('buildNodeViewModel', () => {
     const iface = (name: string) => ctx.interfaces.find((i) => i.name === name)!;
 
-    it('maps a VRF, resolving its routes off the context', () => {
+    it('maps a VRF without resolving its routes, which belong to the drawer', () => {
         const vrf = ctx.interfaces.find((i) => i.type === 'vrf')!;
         const model = buildNodeViewModel(vrf, descriptorFor('vrf')!, ctx);
 
@@ -173,7 +173,9 @@ describe('buildNodeViewModel', () => {
         expect(model.id).toBe('vrf:example-p-cudn');
         expect(model.graphDisplayLabel).toBe('VRF');
         expect(model.state).toContain('ovn-k8s-mp3');
-        expect(model.vrfRoutes).toHaveLength(4);
+        // Route association walks the whole NNS route table, so it moved out of the
+        // view model and into the VRF drawer renderer (ovn-recon-s3t.4).
+        expect('vrfRoutes' in model).toBe(false);
     });
 
     it('maps a CUDN, folding topology and subnets into the state line', () => {
@@ -216,7 +218,7 @@ describe('buildNodeViewModel', () => {
         const vrf = bare.interfaces.find((i) => i.type === 'vrf')!;
 
         expect(nodeKindRegistry.vrf.renderSummary).toBeDefined();
-        expect(buildNodeViewModel(vrf, descriptorFor('vrf')!, bare).vrfRoutes).toHaveLength(4);
+        expect(buildNodeViewModel(vrf, descriptorFor('vrf')!, bare).state).toContain('ovn-k8s-mp3');
         expect(bare.cudns).toEqual([]);
     });
 });

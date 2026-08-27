@@ -31,7 +31,6 @@ export const buildNodeViewModel = (
         namespaces: presentation.namespaces,
         resourceRef: presentation.resourceRef,
         isSynthetic: presentation.isSynthetic,
-        vrfRoutes: presentation.vrfRoutes,
         raw: item
     };
 

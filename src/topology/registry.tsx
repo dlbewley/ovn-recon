@@ -10,6 +10,7 @@ import {
     getIpv4Addresses,
     getRouteAdvertisementsMatchingCudn,
     getVrfConnectionInfo,
+    getVrfRoutesForInterface,
     parseNadConfig
 } from '../components/nodeVisualizationSelectors';
 import {
@@ -579,6 +580,9 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
             const matchedCudns = getCudnsSelectedByRouteAdvertisement(ra, ctx.cudns);
             const { brIntPorts } = getVrfConnectionInfo(node.raw as Interface, ctx.interfaces);
             const macAddress = getMacAddress(node.raw);
+            // Route association is priced for one node: it walks the whole NNS route
+            // table, so it runs here, for the drawer, never during graph render.
+            const vrfRoutes = getVrfRoutesForInterface(node.raw as Interface, ctx.nns);
 
             return (
                 <DescriptionList isCompact>
@@ -597,9 +601,9 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     <DescriptionListGroup>
                         <DescriptionListTerm>Routes</DescriptionListTerm>
                         <DescriptionListDescription>
-                            {node.vrfRoutes && node.vrfRoutes.length > 0 ? (
+                            {vrfRoutes.length > 0 ? (
                                 <ul className="pf-v6-c-list">
-                                    {node.vrfRoutes.map((route, index) => (
+                                    {vrfRoutes.map((route, index) => (
                                         <li key={`${route.destination}-${route.nextHopAddress || ''}-${route.nextHopInterface || ''}-${index}`}>
                                             {route.destination}
                                             {route.nextHopAddress ? ` via ${route.nextHopAddress}` : ''}

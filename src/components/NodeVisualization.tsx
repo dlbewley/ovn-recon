@@ -3,15 +3,15 @@ import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, D
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 
 
-import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, Interface, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
+import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, RouteAdvertisements } from '../types';
 import { hasLldpNeighbors } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import { buildGraphContext, GraphContext } from '../topology/context';
 import { interfacesWithRole, roleOf } from '../topology/classify';
-import { buildDrawerTabs, getDrawerTabsForNode } from '../topology/drawerTabs';
+import { buildDrawerTabs, getDrawerTabsForKind, getDrawerTabsForNode } from '../topology/drawerTabs';
 import { edgeKey, findDuplicateIds, resolveNodeId as resolveId } from '../topology/ids';
 import {
-    DrawerTabId, Graph, NodeViewModel
+    DrawerTabId, Graph, NodeKind, NodeViewModel
 } from '../topology/types';
 import { buildNodeViewModel } from '../topology/viewModel';
 import { computeNodeOrder, sortByRank } from './nodeVisualizationLayout';
@@ -251,6 +251,29 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     );
     const nodePositions = laneLayout.positions;
 
+    // The catch-all grid, placed here rather than inline in the JSX so selection can
+    // look these nodes up the same way it looks up laned ones.
+    const otherGridNodes: PlacedNode[] = sortedOtherInterfaces.map((iface, index) => ({
+        id: resolveNodeId(iface, iface.type),
+        item: iface,
+        descriptor: otherDescriptor,
+        laneId: 'other',
+        x: (index % 4) * (itemWidth + 20),
+        y: Math.floor(index / 4) * (itemHeight + 20),
+        height: itemHeight,
+        color: otherDescriptor.color
+    }));
+
+    /**
+     * Every node the canvas is currently drawing, by id. This is what the drawer
+     * selection resolves against, so the drawer can only ever describe something
+     * that is on screen, built from the resources of this render.
+     */
+    const placedNodeById = new Map<string, PlacedNode>();
+    laneLayout.lanes.forEach(({ groups }) =>
+        groups.forEach((group) => group.nodes.forEach((node) => placedNodeById.set(node.id, node))));
+    otherGridNodes.forEach((node) => placedNodeById.set(node.id, node));
+
     // The catch-all grid sits below every lane, four across.
     const otherGridRows = Math.ceil(otherInterfaces.length / 4) + 2;
     const calculatedHeight = Math.max(
@@ -399,23 +422,33 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     const drawerTabsById = React.useMemo(() => buildDrawerTabs(ctx), [ctx]);
 
-    // Drawer selection state
-    const [activeNode, setActiveNode] = React.useState<NodeViewModel | null>(null);
+    /**
+     * The drawer stores WHICH node is selected, never what it looked like. The view
+     * model is rebuilt from the current watch data on every render, so an edit to a
+     * watched resource reaches an open drawer without reselecting the node -- the
+     * snapshot it used to hold is the staleness this replaces (ovn-recon-s3t.4).
+     */
+    const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
     const [activePopoverTab, setActivePopoverTab] = React.useState<DrawerTabId>('summary');
 
-    const handleNodeClick = (event: React.MouseEvent, node: NodeViewModel) => {
+    const selectedPlacedNode = selectedNodeId ? placedNodeById.get(selectedNodeId) : undefined;
+    const activeNode: NodeViewModel | null = selectedPlacedNode
+        ? buildNodeViewModel(selectedPlacedNode.item, selectedPlacedNode.descriptor, ctx)
+        : null;
+
+    const handleNodeClick = (event: React.MouseEvent, id: string, kind: NodeKind) => {
         event.stopPropagation(); // Prevent clearing highlight when clicking a node
 
-        const wasDrawerOpen = activeNode !== null;
+        const wasDrawerOpen = selectedNodeId !== null;
 
-        setActiveNode(node);
+        setSelectedNodeId(id);
 
         if (!wasDrawerOpen) {
-            setActivePopoverTab(getDrawerTabsForNode(node, drawerTabsById)[0]?.id || 'summary');
+            setActivePopoverTab(getDrawerTabsForKind(kind, drawerTabsById)[0]?.id || 'summary');
         }
 
         // Highlight Path
-        const path = getFlowPath(node.id);
+        const path = getFlowPath(id);
         setHighlightedPath(path);
         setIsHighlightActive(true);
     };
@@ -430,29 +463,43 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
      * selected and no way to tell why short of clicking the background.
      */
     const handlePopoverClose = () => {
-        setActiveNode(null);
+        setSelectedNodeId(null);
         setIsHighlightActive(false);
         setHighlightedPath(new Set());
     };
 
+    /**
+     * A selected node can stop being rendered out from under the selection: its
+     * resource is deleted, or a toggle hides its lane. Clear the whole selection so
+     * the graph is not left dimmed against a drawer that has already closed.
+     */
+    const selectionVanished = selectedNodeId !== null && !selectedPlacedNode;
+    React.useEffect(() => {
+        if (selectionVanished) {
+            setSelectedNodeId(null);
+            setIsHighlightActive(false);
+            setHighlightedPath(new Set());
+        }
+    }, [selectionVanished]);
 
 
 
 
 
-    const activeNodeTabs = React.useMemo(
-        () => (activeNode ? getDrawerTabsForNode(activeNode, drawerTabsById) : []),
-        [activeNode]
-    );
+
+    // Derived, not memoised: activeNode itself is rebuilt each render.
+    const activeNodeTabs = activeNode ? getDrawerTabsForNode(activeNode, drawerTabsById) : [];
+    const activeNodeKind = activeNode?.kind;
 
     React.useEffect(() => {
-        if (!activeNode || activeNodeTabs.length === 0) {
+        if (!activeNodeKind) {
             return;
         }
-        if (!activeNodeTabs.some((tab) => tab.id === activePopoverTab)) {
-            setActivePopoverTab(activeNodeTabs[0].id);
+        const tabs = getDrawerTabsForKind(activeNodeKind, drawerTabsById);
+        if (tabs.length > 0 && !tabs.some((tab) => tab.id === activePopoverTab)) {
+            setActivePopoverTab(tabs[0].id);
         }
-    }, [activeNode, activeNodeTabs, activePopoverTab]);
+    }, [activeNodeKind, drawerTabsById, activePopoverTab]);
 
      
     /**
@@ -462,17 +509,19 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
      */
     const renderNode = (node: PlacedNode) => {
         const { descriptor, item } = node;
-        const viewNode = buildNodeViewModel(item, descriptor, ctx);
-        const displayType = viewNode.graphDisplayLabel || viewNode.subtitle;
+        // The canvas needs only the descriptor's presentation strings. The full view
+        // model -- badges, links, drawer data -- is built for the selected node alone.
+        const presentation = descriptor.present(item, ctx);
+        const displayType = presentation.graphLabel || presentation.subtitle;
         const status = descriptor.status?.(item);
 
         return (
             <g
                 transform={`translate(${node.x}, ${node.y})`}
-                style={{ cursor: 'pointer', opacity: isHighlightActive ? (highlightedPath.has(viewNode.id) ? 1 : 0.3) : 1 }}
-                onClick={(e) => handleNodeClick(e, viewNode)}
+                style={{ cursor: 'pointer', opacity: isHighlightActive ? (highlightedPath.has(node.id) ? 1 : 0.3) : 1 }}
+                onClick={(e) => handleNodeClick(e, node.id, descriptor.kind)}
             >
-                <title>{viewNode.label} ({displayType})</title>
+                <title>{presentation.label} ({displayType})</title>
                 <rect
                     width={itemWidth}
                     height={node.height}
@@ -484,10 +533,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 <foreignObject x={10} y={10} width={20} height={20}>
                     <div style={{ color: '#fff' }}>{iconFor(descriptor, item)}</div>
                 </foreignObject>
-                <text x={35} y={25} fontSize="12" fontWeight="bold" fill="#fff">{viewNode.label}</text>
+                <text x={35} y={25} fontSize="12" fontWeight="bold" fill="#fff">{presentation.label}</text>
                 <text x={10} y={45} fontSize="10" fill="#eee">{displayType}</text>
-                {!descriptor.detail && viewNode.state && (
-                    <text x={10} y={60} fontSize="10" fill="#eee">{viewNode.state}</text>
+                {!descriptor.detail && presentation.state && (
+                    <text x={10} y={60} fontSize="10" fill="#eee">{presentation.state}</text>
                 )}
                 {descriptor.detail?.(item, { width: itemWidth, height: node.height })}
                 {status && (
@@ -673,18 +722,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 {/* Layer 8: Others */}
                                 <text x={padding} y={calculatedHeight - 150} fontWeight="bold" fill="currentColor">Other Interfaces</text>
                                 <g transform={`translate(${padding}, ${calculatedHeight - 140})`}>
-                                    {sortedOtherInterfaces.map((iface: Interface, index: number) => (
-                                        <React.Fragment key={resolveNodeId(iface, iface.type)}>
-                                            {renderNode({
-                                                id: resolveNodeId(iface, iface.type),
-                                                item: iface,
-                                                descriptor: otherDescriptor,
-                                                laneId: 'other',
-                                                x: (index % 4) * (itemWidth + 20),
-                                                y: Math.floor(index / 4) * (itemHeight + 20),
-                                                height: itemHeight,
-                                                color: otherDescriptor.color
-                                            })}
+                                    {otherGridNodes.map((node) => (
+                                        <React.Fragment key={node.id}>
+                                            {renderNode(node)}
                                         </React.Fragment>
                                     ))}
                                 </g>
