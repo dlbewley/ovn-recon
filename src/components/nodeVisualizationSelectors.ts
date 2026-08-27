@@ -3,6 +3,7 @@ import {
     ClusterUserDefinedNetwork,
     Interface,
     Ipv4AddressEntry,
+    LabelSelector,
     NodeNetworkState,
     NetworkAttachmentDefinition,
     RouteAdvertisements
@@ -39,6 +40,28 @@ export interface LldpNeighborNode {
     capabilities: string[];
     rawTlvs: Record<string, unknown>[];
 }
+
+/**
+ * A label selector in kubectl's set-based notation, e.g.
+ * "network/machine=, tier in (web, api)". An empty selector matches everything,
+ * which the caller should say in words rather than showing an empty string.
+ */
+export const formatLabelSelector = (selector: LabelSelector | undefined): string => {
+    if (!selector) return '';
+    const parts: string[] = [];
+    Object.entries(selector.matchLabels || {}).forEach(([key, value]) => parts.push(`${key}=${value}`));
+    (selector.matchExpressions || []).forEach((expr) => {
+        const values = (expr.values || []).join(', ');
+        switch (expr.operator) {
+            case 'In': parts.push(`${expr.key} in (${values})`); break;
+            case 'NotIn': parts.push(`${expr.key} notin (${values})`); break;
+            case 'Exists': parts.push(expr.key); break;
+            case 'DoesNotExist': parts.push(`!${expr.key}`); break;
+            default: parts.push(`${expr.key} ${expr.operator.toLowerCase()} (${values})`);
+        }
+    });
+    return parts.join(', ');
+};
 
 const matchesLabelSelector = (
     labels: Record<string, string>,

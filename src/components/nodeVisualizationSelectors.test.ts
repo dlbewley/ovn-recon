@@ -5,6 +5,7 @@ import * as yaml from 'js-yaml';
 import { Interface, NodeNetworkState } from '../types';
 import {
     extractLldpNeighbors,
+    formatLabelSelector,
     getIpv4Addresses,
     getVrfConnectionInfo,
     getVrfRoutesForInterface,
@@ -154,5 +155,34 @@ describe('getIpv4Addresses', () => {
         expect(getIpv4Addresses({})).toEqual([]);
         expect(getIpv4Addresses({ ipv4: { address: [] } })).toEqual([]);
         expect(getIpv4Addresses({ ipv4: { address: [{ ip: '10.0.0.1' }] } })).toEqual(['10.0.0.1']);
+    });
+});
+
+describe('formatLabelSelector', () => {
+    it('renders matchLabels in kubectl form, empty values included', () => {
+        expect(formatLabelSelector({ matchLabels: { 'network/machine': '' } }))
+            .toBe('network/machine=');
+        expect(formatLabelSelector({ matchLabels: { tier: 'web', env: 'prod' } }))
+            .toBe('tier=web, env=prod');
+    });
+
+    it('renders each matchExpressions operator', () => {
+        expect(formatLabelSelector({
+            matchExpressions: [
+                { key: 'tier', operator: 'In', values: ['web', 'api'] },
+                { key: 'env', operator: 'NotIn', values: ['dev'] },
+                { key: 'owned', operator: 'Exists' },
+                { key: 'legacy', operator: 'DoesNotExist' }
+            ]
+        })).toBe('tier in (web, api), env notin (dev), owned, !legacy');
+    });
+
+    it('combines labels and expressions, and is empty for an empty selector', () => {
+        expect(formatLabelSelector({
+            matchLabels: { app: 'vm' },
+            matchExpressions: [{ key: 'tier', operator: 'In', values: ['web'] }]
+        })).toBe('app=vm, tier in (web)');
+        expect(formatLabelSelector({})).toBe('');
+        expect(formatLabelSelector(undefined)).toBe('');
     });
 });

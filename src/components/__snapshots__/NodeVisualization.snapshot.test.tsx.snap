@@ -614,7 +614,7 @@ exports[`NodeVisualization rendered structure drawer content for example-p-cudn 
 
 exports[`NodeVisualization rendered structure drawer content for machinenet (CUDN) 1`] = `
 {
-  "Details": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLTypeLocalnet ClusterUserDefinedNetworkStateLocalnetTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespacesinferreddemo-mirror",
+  "Details": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLTypeLocalnet ClusterUserDefinedNetworkStateLocalnetTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespace Selectornetwork/machine=Namespacesinferreddemo-mirror",
   "Links": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLAvailable LinksResourceYAML",
   "Summary": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLTypeLocalnet ClusterUserDefinedNetworkStateLocalnet",
 }
