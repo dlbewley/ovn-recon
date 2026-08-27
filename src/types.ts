@@ -107,6 +107,22 @@ export interface ClusterUserDefinedNetwork extends K8sResourceCommon {
     };
 }
 
+/**
+ * The per-node record of an applied NodeNetworkConfigurationPolicy. Its
+ * status.desiredState names exactly which interfaces and bridge mappings the
+ * policy configured on this node -- an observation, not a name-matching guess.
+ */
+export interface NodeNetworkConfigurationEnactment extends K8sResourceCommon {
+    status?: {
+        desiredState?: {
+            interfaces?: { name: string; type?: string }[];
+            ovn?: { 'bridge-mappings'?: { bridge?: string; localnet?: string; state?: string }[] };
+        };
+        conditions?: { type: string; status: string; reason?: string; message?: string }[];
+        policyGeneration?: number;
+    };
+}
+
 export interface NetworkAttachmentDefinition extends K8sResourceCommon {
     spec?: {
         config: string;

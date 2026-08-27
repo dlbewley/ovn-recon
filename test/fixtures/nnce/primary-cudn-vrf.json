@@ -1,0 +1,56 @@
+[
+    {
+        "apiVersion": "nmstate.io/v1beta1",
+        "kind": "NodeNetworkConfigurationEnactment",
+        "metadata": {
+            "name": "worker-1.br-vmdata",
+            "labels": {
+                "nmstate.io/node": "worker-1",
+                "nmstate.io/policy": "br-vmdata"
+            }
+        },
+        "status": {
+            "policyGeneration": 1,
+            "desiredState": {
+                "interfaces": [
+                    { "name": "br-vmdata", "type": "ovs-bridge" },
+                    { "name": "ovs-vlan-1920", "type": "ovs-interface" }
+                ],
+                "ovn": {
+                    "bridge-mappings": [
+                        { "bridge": "br-vmdata", "localnet": "physnet-vmdata", "state": "present" }
+                    ]
+                }
+            },
+            "conditions": [
+                { "type": "Available", "status": "True", "reason": "SuccessfullyConfigured" },
+                { "type": "Failing", "status": "False" },
+                { "type": "Progressing", "status": "False" }
+            ]
+        }
+    },
+    {
+        "apiVersion": "nmstate.io/v1beta1",
+        "kind": "NodeNetworkConfigurationEnactment",
+        "metadata": {
+            "name": "worker-1.storage-vlan",
+            "labels": {
+                "nmstate.io/node": "worker-1",
+                "nmstate.io/policy": "storage-vlan"
+            }
+        },
+        "status": {
+            "policyGeneration": 1,
+            "desiredState": {
+                "interfaces": [
+                    { "name": "ens224.456", "type": "vlan" }
+                ]
+            },
+            "conditions": [
+                { "type": "Available", "status": "True", "reason": "SuccessfullyConfigured" },
+                { "type": "Failing", "status": "False" },
+                { "type": "Progressing", "status": "False" }
+            ]
+        }
+    }
+]

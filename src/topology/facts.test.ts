@@ -6,7 +6,9 @@ import { descriptorFor } from './descriptors';
 import { nodeKindRegistry } from './registry';
 import { buildNodeViewModel } from './viewModel';
 import { Fact, NodeKind } from './types';
-import { ClusterUserDefinedNetwork, NodeNetworkState, RouteAdvertisements } from '../types';
+import {
+    ClusterUserDefinedNetwork, NodeNetworkConfigurationEnactment, NodeNetworkState, RouteAdvertisements
+} from '../types';
 
 /**
  * Unit tests for the per-kind facts() builders (ovn-recon-s3t.12).
@@ -140,6 +142,91 @@ describe('facts builders', () => {
             expect(fact.provenance).toBe('observed');
             expect((fact.value as { text: string }[]).map((v) => v.text))
                 .toContain('0.0.0.0/0 via 192.0.2.1 dev br-ex');
+        });
+    });
+
+    describe('Configured By: which NNCP made this (ovn-recon-s3t.34)', () => {
+        const enactments = fixture<NodeNetworkConfigurationEnactment[]>('nnce', 'primary-cudn-vrf.json');
+        const nncpCtx = buildGraphContext({ nns, cudns, enactments });
+        const nncpFactsFor = (kind: NodeKind, item: unknown, type = kind): Fact[] => {
+            const node = buildNodeViewModel(item, descriptorFor(type as never)!, nncpCtx);
+            return nodeKindRegistry[kind].facts!(node, nncpCtx);
+        };
+
+        it('a claimed interface links to its policy, observed off the enactment', () => {
+            const iface = nncpCtx.interfaces.find((i) => i.name === 'ens224.456')!;
+            const fact = byLabel(nncpFactsFor('interface', iface, 'vlan' as NodeKind), 'Configured By');
+            expect(fact.provenance).toBe('observed');
+            expect(fact.value).toEqual([{
+                text: 'storage-vlan',
+                ref: { apiVersion: 'nmstate.io/v1', kind: 'NodeNetworkConfigurationPolicy', name: 'storage-vlan' }
+            }]);
+        });
+
+        it('a claimed bridge mapping links to its policy', () => {
+            const mapping = nncpCtx.bridgeMappings.find((m) => m.localnet === 'physnet-vmdata')!;
+            const fact = byLabel(nncpFactsFor('ovn-mapping', mapping), 'Configured By');
+            expect(fact.provenance).toBe('observed');
+            expect((fact.value as { text: string }[]).map((v) => v.text)).toEqual(['br-vmdata']);
+        });
+
+        it('an unclaimed interface reads as installer or OVN-Kubernetes created', () => {
+            const iface = nncpCtx.interfaces.find((i) => i.name === 'ens192')!;
+            const fact = byLabel(nncpFactsFor('interface', iface, 'physical' as NodeKind), 'Configured By');
+            expect(fact.provenance).toBe('inferred');
+            expect(fact.value).toContain('installer or OVN-Kubernetes');
+        });
+
+        it('the OVN-created VRF is likewise unclaimed', () => {
+            const vrfIface = nncpCtx.interfaces.find((i) => i.type === 'vrf')!;
+            const fact = byLabel(nncpFactsFor('vrf', vrfIface), 'Configured By');
+            expect(fact.value).toContain('installer or OVN-Kubernetes');
+        });
+
+        it('a policy that is not Available shows its condition, not just its name', () => {
+            const failing = JSON.parse(JSON.stringify(enactments)) as NodeNetworkConfigurationEnactment[];
+            failing[1].status!.conditions = [
+                { type: 'Available', status: 'False' },
+                { type: 'Failing', status: 'True', reason: 'FailedToConfigure' }
+            ];
+            const failCtx = buildGraphContext({ nns, cudns, enactments: failing });
+            const iface = failCtx.interfaces.find((i) => i.name === 'ens224.456')!;
+            const node = buildNodeViewModel(iface, descriptorFor('vlan')!, failCtx);
+            const fact = byLabel(nodeKindRegistry.interface.facts!(node, failCtx), 'Configured By');
+            expect((fact.value as { text: string }[])[0].text).toBe('storage-vlan — Failing');
+        });
+
+        it('two policies claiming one interface both show, flagged as overlap', () => {
+            const overlapping = [
+                ...enactments,
+                {
+                    apiVersion: 'nmstate.io/v1beta1',
+                    kind: 'NodeNetworkConfigurationEnactment',
+                    metadata: {
+                        name: 'worker-1.storage-vlan-copy',
+                        labels: { 'nmstate.io/node': 'worker-1', 'nmstate.io/policy': 'storage-vlan-copy' }
+                    },
+                    status: {
+                        desiredState: { interfaces: [{ name: 'ens224.456', type: 'vlan' }] },
+                        conditions: [{ type: 'Available', status: 'True' }]
+                    }
+                } as NodeNetworkConfigurationEnactment
+            ];
+            const overlapCtx = buildGraphContext({ nns, cudns, enactments: overlapping });
+            const iface = overlapCtx.interfaces.find((i) => i.name === 'ens224.456')!;
+            const node = buildNodeViewModel(iface, descriptorFor('vlan')!, overlapCtx);
+            const fact = byLabel(nodeKindRegistry.interface.facts!(node, overlapCtx), 'Configured By');
+            const texts = (fact.value as { text: string }[]).map((v) => v.text);
+            expect(texts).toContain('storage-vlan');
+            expect(texts).toContain('storage-vlan-copy');
+            expect(texts.some((t) => t.includes('more than one policy'))).toBe(true);
+        });
+
+        it('with no enactments at all, nothing is claimed either way', () => {
+            // ctx (module scope) has none: imported NNS, or no nmstate operator.
+            const iface = ctx.interfaces.find((i) => i.name === 'ens192')!;
+            const facts = factsFor('interface', iface, 'physical' as NodeKind);
+            expect(facts.some((f) => f.label === 'Configured By')).toBe(false);
         });
     });
 

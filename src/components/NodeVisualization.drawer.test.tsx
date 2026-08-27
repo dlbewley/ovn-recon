@@ -4,7 +4,7 @@ import * as React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
-import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
+import { ClusterUserDefinedNetwork, NodeNetworkConfigurationEnactment, NodeNetworkState } from '../types';
 import * as viewModel from '../topology/viewModel';
 import NodeVisualization from './NodeVisualization';
 
@@ -218,6 +218,31 @@ describe('NodeVisualization drawer', () => {
             expect(text).toContain('lab-fabric-lf001');
             expect(text).toContain('Eth1/22');
             expect(text).toContain('topology/pod-1/node-101');
+        });
+
+        it('shows which NNCP configured a claimed interface, linked to the policy', () => {
+            act(() => {
+                root.render(
+                    <NodeVisualization
+                        nns={fixture<NodeNetworkState>('nns', 'primary-cudn-vrf.json')}
+                        cudns={fixture<ClusterUserDefinedNetwork[]>('cudn', 'primary-cudn-vrf.json')}
+                        udns={[]} nads={[]} routeAdvertisements={[]}
+                        enactments={fixture<NodeNetworkConfigurationEnactment[]>('nnce', 'primary-cudn-vrf.json')}
+                    />
+                );
+            });
+            clickNode('ens224.456 (vlan)');
+
+            expect(panelText()).toContain('Configured By');
+            const panel = container.querySelector('.pf-v6-c-drawer__panel')!;
+            const link = Array.from(panel.querySelectorAll('a'))
+                .find((a) => a.textContent === 'storage-vlan');
+            expect(link?.getAttribute('href'))
+                .toBe('/k8s/cluster/nmstate.io~v1~NodeNetworkConfigurationPolicy/storage-vlan');
+
+            // Unclaimed resources say who DID create them.
+            clickNode('ens192 (ethernet)');
+            expect(panelText()).toContain('installer or OVN-Kubernetes');
         });
 
         it('lists bridge ports on a bridge', () => {

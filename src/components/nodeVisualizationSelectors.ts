@@ -4,6 +4,7 @@ import {
     Interface,
     Ipv4AddressEntry,
     LabelSelector,
+    NodeNetworkConfigurationEnactment,
     NodeNetworkState,
     NetworkAttachmentDefinition,
     RouteAdvertisements
@@ -40,6 +41,56 @@ export interface LldpNeighborNode {
     capabilities: string[];
     rawTlvs: Record<string, unknown>[];
 }
+
+/** One policy's claim on an interface or bridge mapping, from its enactment. */
+export interface NncpClaim {
+    policyName: string;
+    /** The enactment's worst active condition: Failing beats Progressing beats Available. */
+    status: 'Available' | 'Failing' | 'Progressing' | 'Unknown';
+}
+
+const enactmentPolicyName = (enactment: NodeNetworkConfigurationEnactment): string =>
+    enactment.metadata?.labels?.['nmstate.io/policy']
+    // Enactments are named <node>.<policy>; the label is the reliable source and
+    // this is only the fallback for a stripped fixture.
+    || (enactment.metadata?.name || '').split('.').slice(1).join('.');
+
+const enactmentStatus = (enactment: NodeNetworkConfigurationEnactment): NncpClaim['status'] => {
+    const isTrue = (type: string) =>
+        enactment.status?.conditions?.some((c) => c.type === type && c.status === 'True');
+    if (isTrue('Failing')) return 'Failing';
+    if (isTrue('Progressing')) return 'Progressing';
+    if (isTrue('Available')) return 'Available';
+    return 'Unknown';
+};
+
+const toClaim = (enactment: NodeNetworkConfigurationEnactment): NncpClaim => ({
+    policyName: enactmentPolicyName(enactment),
+    status: enactmentStatus(enactment)
+});
+
+/**
+ * The policies whose enactments on this node applied the named interface.
+ * OBSERVED, not guessed: an enactment's desiredState is the record of what its
+ * policy configured. More than one claim is a configuration overlap worth
+ * flagging; zero claims (with enactments present) means the installer or
+ * OVN-Kubernetes created it.
+ */
+export const getPoliciesClaimingInterface = (
+    interfaceName: string,
+    enactments: NodeNetworkConfigurationEnactment[]
+): NncpClaim[] => enactments
+    .filter((enactment) => (enactment.status?.desiredState?.interfaces || [])
+        .some((iface) => iface.name === interfaceName))
+    .map(toClaim);
+
+export const getPoliciesClaimingBridgeMapping = (
+    localnet: string,
+    enactments: NodeNetworkConfigurationEnactment[]
+): NncpClaim[] => enactments
+    .filter((enactment) => (enactment.status?.desiredState?.ovn?.['bridge-mappings'] || [])
+        .some((mapping) => mapping.localnet === localnet))
+    .map(toClaim);
 
 /**
  * A label selector in kubectl's set-based notation, e.g.
