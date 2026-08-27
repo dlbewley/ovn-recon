@@ -590,49 +590,43 @@ exports[`NodeVisualization rendered structure bonded-lldp, with neighbours shown
 
 exports[`NodeVisualization rendered structure drawer content for br-ex (ovs-bridge) 1`] = `
 {
-  "Details": "br-exovs-bridgeSummaryDetailsLinksYAMLTypeovs-bridgeStateupPortsbr-exens192patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-intpatch-br-ex_worker-1-to-br-int",
-  "Links": "br-exovs-bridgeSummaryDetailsLinksYAMLNo links available.",
-  "Summary": "br-exovs-bridgeSummaryDetailsLinksYAMLTypeovs-bridgeStateup",
+  "Overview": "br-exovs-bridgeOverviewRelationshipsConfigTypeovs-bridgeStateupPortsbr-exens192patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-intpatch-br-ex_worker-1-to-br-int",
+  "Relationships": "br-exovs-bridgeOverviewRelationshipsConfigUpstreamens192 · controller (membership)Downstreamphysnet · bridge-mapping (reference)",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for ens192 (ethernet) 1`] = `
 {
-  "Details": "ens192ethernetSummaryDetailsLinksYAMLTypeethernetStateupMAC Address02:00:00:00:00:01MTU1500",
-  "Links": "ens192ethernetSummaryDetailsLinksYAMLNo links available.",
-  "Summary": "ens192ethernetSummaryDetailsLinksYAMLTypeethernetStateup",
+  "Overview": "ens192ethernetOverviewRelationshipsConfigTypeethernetStateupMAC Address02:00:00:00:00:01MTU1500",
+  "Relationships": "ens192ethernetOverviewRelationshipsConfigDownstreambr-ex · controller (membership)",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for example-p-cudn (VRF) 1`] = `
 {
-  "Details": "example-p-cudnVRF InterfaceSummaryDetailsLinksYAMLTypeVRF InterfaceStateovn-k8s-mp3 Tbl 5775MAC Address02:00:00:00:00:06Route Table5775Routes0.0.0.0/0 via 192.0.2.1 dev br-ex169.254.0.3/32 via 10.1.2.1 dev ovn-k8s-mp3169.254.0.16/32 via 0.0.0.0 dev ovn-k8s-mp3172.30.0.0/16 via 169.254.0.4 dev br-exbr-int Portsinferredovn-k8s-mp3 10.1.2.2/24Matched CUDNsinferredN/A",
-  "Links": "example-p-cudnVRF InterfaceSummaryDetailsLinksYAMLNo links available.",
-  "Summary": "example-p-cudnVRF InterfaceSummaryDetailsLinksYAMLTypeVRF InterfaceStateovn-k8s-mp3 Tbl 5775Matched CUDNsinferredN/A",
+  "Overview": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigTypeVRF InterfaceStateovn-k8s-mp3 Tbl 5775MAC Address02:00:00:00:00:06Route Table5775Routes0.0.0.0/0 via 192.0.2.1 dev br-ex169.254.0.3/32 via 10.1.2.1 dev ovn-k8s-mp3169.254.0.16/32 via 0.0.0.0 dev ovn-k8s-mp3172.30.0.0/16 via 169.254.0.4 dev br-exbr-int Portsinferredovn-k8s-mp3 10.1.2.2/24Matched CUDNsinferredN/A",
+  "Relationships": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigNo relationships derived for this node.",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for machinenet (CUDN) 1`] = `
 {
-  "Details": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLTypeLocalnet ClusterUserDefinedNetworkStateLocalnetTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespace Selectornetwork/machine=Namespacesinferreddemo-mirror",
-  "Links": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLAvailable LinksResourceYAML",
-  "Summary": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLTypeLocalnet ClusterUserDefinedNetworkStateLocalnet",
+  "Overview": "machinenetLocalnet ClusterUserDefinedNetworkOverviewRelationshipsConfigTypeLocalnet ClusterUserDefinedNetworkStateLocalnetTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespace Selectornetwork/machine=Namespacesinferreddemo-mirror",
+  "Relationships": "machinenetLocalnet ClusterUserDefinedNetworkOverviewRelationshipsConfigUpstreamphysnet · physical-network-name (reference)Downstreammachinenet · attached-namespaces (membership)",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for machinenet (NAD) 1`] = `
 {
-  "Details": "machinenetNetworkAttachmentDefinitionSummaryDetailsLinksYAMLTypeNetworkAttachmentDefinitionNamespacesinferreddemo-mirrorNetworkAttachmentDefinitionsNo matching NetworkAttachmentDefinition found.",
-  "Links": "machinenetNetworkAttachmentDefinitionSummaryDetailsLinksYAMLAvailable LinksNamespace: demo-mirror",
-  "Summary": "machinenetNetworkAttachmentDefinitionSummaryDetailsLinksYAMLTypeNetworkAttachmentDefinitionNamespacesinferreddemo-mirror",
+  "Overview": "machinenetNetworkAttachmentDefinitionOverviewRelationshipsConfigTypeNetworkAttachmentDefinitionNamespacesinferreddemo-mirrorNetworkAttachmentDefinitionsNo matching NetworkAttachmentDefinition found.",
+  "Relationships": "machinenetNetworkAttachmentDefinitionOverviewRelationshipsConfigUpstreammachinenet · attached-namespaces (membership)",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for physnet (OVN Bridge Mapping) 1`] = `
 {
-  "Details": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLTypeOVN Bridge MappingBridgebr-exReferenced by CUDNsmachinenet",
-  "Links": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLNo links available.",
-  "Summary": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLTypeOVN Bridge MappingBridgebr-ex",
+  "Overview": "physnetOVN Bridge MappingOverviewRelationshipsConfigTypeOVN Bridge MappingBridgebr-exReferenced by CUDNsmachinenet",
+  "Relationships": "physnetOVN Bridge MappingOverviewRelationshipsConfigUpstreambr-ex · bridge-mapping (reference)Downstreammachinenet · physical-network-name (reference)",
 }
 `;
 

@@ -1,6 +1,5 @@
 import { GraphContext } from './context';
 import { AnyNodeTypeDescriptor } from './descriptors';
-import { getResourceLinks } from './links';
 import { nodeKindRegistry } from './registry';
 import { NodeViewModel } from './types';
 
@@ -34,14 +33,9 @@ export const buildNodeViewModel = (
         raw: item
     };
 
-    // Drawer badges and links still come from the per-kind registry, which
-    // ovn-recon-s3t.12 replaces with the Fact model.
+    // Drawer badges still come from the per-kind registry.
     const definition = nodeKindRegistry[descriptor.kind];
-    if (node.resourceRef && !definition.buildLinks) {
-        node.links = getResourceLinks(node.resourceRef);
-    }
     if (definition.buildBadges) node.badges = definition.buildBadges(node);
-    if (definition.buildLinks) node.links = definition.buildLinks(node, ctx);
 
     return node;
 };

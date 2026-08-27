@@ -8,10 +8,10 @@ import { hasLldpNeighbors } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import { buildGraphContext, GraphContext } from '../topology/context';
 import { interfacesWithRole, roleOf } from '../topology/classify';
-import { buildDrawerTabs, getDrawerTabsForKind, getDrawerTabsForNode } from '../topology/drawerTabs';
+import { buildDrawerTabs, getDrawerTabs } from '../topology/drawerTabs';
 import { edgeKey, findDuplicateIds, resolveNodeId as resolveId } from '../topology/ids';
 import {
-    DrawerTabId, Graph, NodeKind, NodeViewModel
+    DrawerTabId, Graph, NodeViewModel
 } from '../topology/types';
 import { buildNodeViewModel } from '../topology/viewModel';
 import { computeNodeOrder, sortByRank } from './nodeVisualizationLayout';
@@ -420,8 +420,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         setZoomLevel(1);
     };
 
-    const drawerTabsById = React.useMemo(() => buildDrawerTabs(ctx), [ctx]);
-
     /**
      * The drawer stores WHICH node is selected, never what it looked like. The view
      * model is rebuilt from the current watch data on every render, so an edit to a
@@ -429,28 +427,43 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
      * snapshot it used to hold is the staleness this replaces (ovn-recon-s3t.4).
      */
     const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
-    const [activePopoverTab, setActivePopoverTab] = React.useState<DrawerTabId>('summary');
+    const [activePopoverTab, setActivePopoverTab] = React.useState<DrawerTabId>('overview');
 
     const selectedPlacedNode = selectedNodeId ? placedNodeById.get(selectedNodeId) : undefined;
     const activeNode: NodeViewModel | null = selectedPlacedNode
         ? buildNodeViewModel(selectedPlacedNode.item, selectedPlacedNode.descriptor, ctx)
         : null;
 
-    const handleNodeClick = (event: React.MouseEvent, id: string, kind: NodeKind) => {
+    /** Select a node and light its flow path -- shared by canvas clicks and the
+     * Relationships tab, so navigating from the drawer behaves like clicking. */
+    const selectNode = (id: string) => {
+        setSelectedNodeId(id);
+        setHighlightedPath(getFlowPath(id));
+        setIsHighlightActive(true);
+    };
+
+    // Rebuilt each render: the Relationships tab must see the edges of the
+    // CURRENT view (lane toggles change them), and closures capture live state.
+    // Only edges with both endpoints drawn: the canvas skips the others too, and
+    // navigating to an undrawn node would just clear the selection.
+    const drawerTabsById = buildDrawerTabs(ctx, {
+        edges: topologyEdges.filter(
+            (edge) => placedNodeById.has(edge.source) && placedNodeById.has(edge.target)),
+        labelFor: (id) => {
+            const placed = placedNodeById.get(id);
+            return placed ? placed.descriptor.present(placed.item, ctx).label : id;
+        },
+        onSelectNode: selectNode
+    });
+
+    const handleNodeClick = (event: React.MouseEvent, id: string) => {
         event.stopPropagation(); // Prevent clearing highlight when clicking a node
 
         const wasDrawerOpen = selectedNodeId !== null;
-
-        setSelectedNodeId(id);
-
+        selectNode(id);
         if (!wasDrawerOpen) {
-            setActivePopoverTab(getDrawerTabsForKind(kind, drawerTabsById)[0]?.id || 'summary');
+            setActivePopoverTab('overview');
         }
-
-        // Highlight Path
-        const path = getFlowPath(id);
-        setHighlightedPath(path);
-        setIsHighlightActive(true);
     };
 
     const handleBackgroundClick = () => {
@@ -487,19 +500,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
 
 
-    // Derived, not memoised: activeNode itself is rebuilt each render.
-    const activeNodeTabs = activeNode ? getDrawerTabsForNode(activeNode, drawerTabsById) : [];
-    const activeNodeKind = activeNode?.kind;
-
-    React.useEffect(() => {
-        if (!activeNodeKind) {
-            return;
-        }
-        const tabs = getDrawerTabsForKind(activeNodeKind, drawerTabsById);
-        if (tabs.length > 0 && !tabs.some((tab) => tab.id === activePopoverTab)) {
-            setActivePopoverTab(tabs[0].id);
-        }
-    }, [activeNodeKind, drawerTabsById, activePopoverTab]);
+    // Every kind shows the same three tabs, so moving between nodes keeps the
+    // active tab -- the per-kind reset (and its flicker) is gone with the knob.
+    const activeNodeTabs = activeNode ? getDrawerTabs(drawerTabsById) : [];
 
      
     /**
@@ -519,7 +522,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             <g
                 transform={`translate(${node.x}, ${node.y})`}
                 style={{ cursor: 'pointer', opacity: isHighlightActive ? (highlightedPath.has(node.id) ? 1 : 0.3) : 1 }}
-                onClick={(e) => handleNodeClick(e, node.id, descriptor.kind)}
+                onClick={(e) => handleNodeClick(e, node.id)}
             >
                 <title>{presentation.label} ({displayType})</title>
                 <rect

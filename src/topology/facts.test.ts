@@ -120,7 +120,7 @@ describe('facts builders', () => {
     describe('observed values stay observed', () => {
         it('interface facts read straight off NNS', () => {
             const facts = factsFor('interface', vlan, 'vlan' as NodeKind);
-            expect(byLabel(facts, 'Type').summary).toBe(true);
+            expect(byLabel(facts, 'Type').provenance).toBe('observed');
             const vlanFact = byLabel(facts, 'VLAN');
             expect(vlanFact.provenance).toBe('observed');
             expect(vlanFact.value).toEqual([{ text: 'Base: ens224' }, { text: 'ID: 456' }]);

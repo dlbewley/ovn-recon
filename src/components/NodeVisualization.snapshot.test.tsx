@@ -76,7 +76,7 @@ describe('NodeVisualization rendered structure', () => {
         const group = nodeGroups().find((g) => g.querySelector('title')?.textContent === title)!;
         act(() => { group.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
         const tabs: Record<string, string> = {};
-        ['Summary', 'Details', 'Links'].forEach((tab) => {
+        ['Overview', 'Relationships'].forEach((tab) => {
             const button = Array.from(container.querySelectorAll('button'))
                 .find((b) => (b.textContent ?? '').trim() === tab)!;
             act(() => { button.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
