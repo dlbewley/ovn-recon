@@ -366,6 +366,76 @@ describe('NodeVisualization drawer', () => {
     });
 
     /**
+     * Keyboard accessibility and canvas interaction (ovn-recon-s3t.17).
+     */
+    describe('keyboard and canvas interaction', () => {
+        const canvasSvg = () => Array.from(container.querySelectorAll('svg'))
+            .find((s) => s.querySelector('rect'))!;
+
+        it('makes every node reachable and activatable by keyboard', () => {
+            renderPrimary();
+            const node = nodeGroups().find((g) => g.getAttribute('aria-label') === 'ens192 (ethernet)')!;
+            expect(node.getAttribute('role')).toBe('button');
+            expect(node.getAttribute('tabindex')).toBe('0');
+
+            act(() => {
+                node.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            });
+            expect(drawerTitle()).toBe('ens192');
+
+            const other = nodeGroups().find((g) => g.getAttribute('aria-label') === 'br-ex (ovs-bridge)')!;
+            act(() => {
+                other.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+            });
+            expect(drawerTitle()).toBe('br-ex');
+        });
+
+        it('keeps a focused node fully visible through highlight dimming', () => {
+            renderPrimary();
+            clickNode('example-p-cudn (VRF)'); // dims unrelated nodes to 0.3
+
+            const dimmedNode = nodeGroups().find((g) =>
+                g.getAttribute('aria-label') === 'lldp' || g.getAttribute('style')?.includes('0.3'))!;
+            // React delegates focus via focusin.
+            act(() => { dimmedNode.dispatchEvent(new FocusEvent('focusin', { bubbles: true })); });
+
+            expect(dimmedNode.getAttribute('style')).not.toContain('0.3');
+            // The focus ring is drawn on the rect.
+            expect(dimmedNode.querySelector('rect')?.getAttribute('stroke-width')).toBe('3');
+        });
+
+        it('does not close the drawer when a pan drag ends over the background', () => {
+            renderPrimary();
+            clickNode('ens192 (ethernet)');
+            expect(drawerTitle()).toBe('ens192');
+
+            const svg = canvasSvg();
+            // One act per event: the pan flag depends on isPanning state set by
+            // the previous event, so each must flush before the next fires.
+            act(() => { svg.dispatchEvent(new MouseEvent('mousedown', { button: 0, shiftKey: true, clientX: 100, clientY: 100, bubbles: true })); });
+            act(() => { svg.dispatchEvent(new MouseEvent('mousemove', { clientX: 160, clientY: 140, bubbles: true })); });
+            act(() => { svg.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); });
+            act(() => { svg.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+            expect(drawerTitle()).toBe('ens192');
+
+            // A plain background click still deselects.
+            act(() => { svg.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+            expect(drawerTitle()).toBe('');
+        });
+
+        it('grows the viewBox with the canvas until the user adjusts the view', () => {
+            renderBonded();
+            const before = canvasSvg().getAttribute('viewBox')!;
+            toggle('show-lldp-neighbors-toggle');
+            const after = canvasSvg().getAttribute('viewBox')!;
+            // The LLDP lane fans neighbors downward, growing the canvas; the
+            // default view must follow rather than clipping the new content.
+            expect(Number(after.split(' ')[3])).toBeGreaterThanOrEqual(Number(before.split(' ')[3]));
+            expect(after.split(' ').slice(0, 2)).toEqual(['0', '0']);
+        });
+    });
+
+    /**
      * Wording and link corrections reported from the live console
      * (ovn-recon-s3t.37, ovn-recon-s3t.38).
      */
