@@ -1,4 +1,5 @@
 import {
+    findPrimaryNetworkForVrf,
     findRouteAdvertisementForVrf,
     formatLabelSelector,
     getCudnAssociatedNamespaces,
@@ -23,7 +24,7 @@ import {
 } from '../types';
 import { GraphContext } from './context';
 import { baseFacts } from './facts';
-import { getNamespaceQueryPath, getProjectPath } from './links';
+import { getApiResourcePath, getNamespaceQueryPath, getProjectPath } from './links';
 import {
     AttachmentNode, Fact, FactItem, NodeKind, NodeKindDefinition, NodeViewModel, ResourceRef
 } from './types';
@@ -126,6 +127,16 @@ const getBridgePortNames = (raw: Interface | undefined): string[] => {
         .filter(Boolean);
 };
 
+/**
+ * Type rows link to the console's API resource reference page for the kind --
+ * the version-proof 'learn more' (ovn-recon-s3t.39). Interface-family kinds
+ * link to NodeNetworkState, the resource their data is read from.
+ */
+const NNS_API = getApiResourcePath('nmstate.io/v1beta1', 'NodeNetworkState');
+const CUDN_API = getApiResourcePath('k8s.ovn.org/v1', 'ClusterUserDefinedNetwork');
+const UDN_API = getApiResourcePath('k8s.ovn.org/v1', 'UserDefinedNetwork');
+const NAD_API = getApiResourcePath('k8s.cni.cncf.io/v1', 'NetworkAttachmentDefinition');
+
 const nncpRef = (name: string): ResourceRef => ({
     apiVersion: 'nmstate.io/v1', kind: 'NodeNetworkConfigurationPolicy', name
 });
@@ -185,7 +196,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
         facts: (node, ctx) => {
             const raw = node.raw as Interface | undefined;
             const facts: Fact[] = [
-                ...baseFacts(node),
+                ...baseFacts(node, 'observed', NNS_API),
                 ...configuredByFacts(getPoliciesClaimingInterface(raw?.name || '', ctx.enactments), ctx)
             ];
             if (raw?.type === 'vlan' && raw?.vlan) {
@@ -232,7 +243,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 return physicalNetworkName === localnetName;
             });
             return [
-                { label: 'Type', value: node.subtitle, provenance: 'observed' },
+                { label: 'Type', value: [{ text: node.subtitle, href: NNS_API }], provenance: 'observed' },
                 ...(node.raw?.bridge
                     ? [{ label: 'Bridge', value: node.raw.bridge, provenance: 'observed' } as Fact]
                     : []),
@@ -276,7 +287,8 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
             return [
                 // No State fact: it would just restate Topology, VLAN ID and
                 // Subnets below, and a network definition has no up/down anyway.
-                { label: 'Type', value: node.subtitle, provenance: 'declared' },
+                // Kind alone, without the topology prefix -- Topology is canonical below.
+                { label: 'Type', value: [{ text: 'ClusterUserDefinedNetwork', href: CUDN_API }], provenance: 'declared' },
                 { label: 'Topology', value: topology || 'Unknown', provenance: 'declared' },
                 ...(role ? [{ label: 'Role', value: role, provenance: 'declared' } as Fact] : []),
                 ...((topology === 'Layer2' || topology === 'Layer3')
@@ -341,8 +353,9 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 : undefined;
 
             return [
-                // No State fact, for the same reason as the CUDN above.
-                { label: 'Type', value: node.subtitle, provenance: 'declared' },
+                // No State fact, for the same reason as the CUDN above. Kind alone:
+                // the namespace, topology and role all have canonical facts below.
+                { label: 'Type', value: [{ text: 'UserDefinedNetwork', href: UDN_API }], provenance: 'declared' },
                 { label: 'Topology', value: topology, provenance: 'declared' },
                 { label: 'Role', value: role, provenance: 'declared' },
                 {
@@ -372,7 +385,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
             return [
                 // No State fact: the synthetic node's state field is a rendering
                 // artifact ('Namespaces:'), not a fact about anything.
-                { label: 'Type', value: node.subtitle, provenance: 'observed' },
+                { label: 'Type', value: [{ text: node.subtitle, href: NAD_API }], provenance: 'observed' },
                 {
                     label: 'Namespaces',
                     value: getAttachmentNamespaces(node).map((ns): FactItem => ({
@@ -417,7 +430,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 : 'Named by the NAD\'s CNI config.';
 
             return [
-                { label: 'Type', value: node.subtitle, provenance: 'declared' },
+                { label: 'Type', value: [{ text: node.subtitle, href: NAD_API }], provenance: 'declared' },
                 { label: 'CNI Type', value: nadType, provenance: fromRegex ? 'inferred' : 'declared', hint: fromRegex ? upstreamHint : undefined },
                 ...(nadName
                     ? [{ label: 'Network Name', value: nadName, provenance: 'declared' } as Fact]
@@ -474,11 +487,36 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
             // table, so it runs here, for the drawer, never during graph render.
             const vrfRoutes = getVrfRoutesForInterface(raw, ctx.nns);
 
+            const primary = findPrimaryNetworkForVrf(raw, ctx.cudns, ctx.udns, ctx.interfaces);
+
             return [
-                ...baseFacts(node),
+                // Type only: the old State line ('ovn-k8s-mp3 Tbl 5775') just
+                // restated the Route Table and br-int Ports facts below.
+                { label: 'Type', value: [{ text: node.subtitle, href: NNS_API }], provenance: 'observed' },
                 // A VRF is an interface too: unclaimed here reads 'OVN-Kubernetes
-                // created this', which is true of every Primary-CUDN VRF.
+                // created this', which is true of every Primary-network VRF.
                 ...configuredByFacts(getPoliciesClaimingInterface(raw?.name || '', ctx.enactments), ctx),
+                ...(primary
+                    ? [{
+                        label: 'Serves Primary Network',
+                        value: [{
+                            text: primary.kind === 'cudn'
+                                ? `${primary.name} (ClusterUserDefinedNetwork)`
+                                : `${primary.namespace}/${primary.name} (UserDefinedNetwork)`,
+                            ref: primary.kind === 'cudn'
+                                ? cudnRef(primary.name)
+                                : {
+                                    apiVersion: 'k8s.ovn.org/v1', kind: 'UserDefinedNetwork',
+                                    name: primary.name, namespace: primary.namespace
+                                }
+                        }],
+                        provenance: 'inferred',
+                        hint: `This VRF was created by OVN-Kubernetes as a side effect of defining that Primary network. `
+                            + `Matched by ${primary.signals.join(' and ')}: a Primary Layer2 or Layer3 network gets a `
+                            + 'per-node VRF named after it (truncated to 15 characters), holding routes in the '
+                            + 'network\'s subnet. Localnet networks cannot be Primary.'
+                    } as Fact]
+                    : []),
                 ...(macAddress
                     ? [{ label: 'MAC Address', value: macAddress, provenance: 'observed' } as Fact]
                     : []),
@@ -502,6 +540,8 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     hint: 'Set intersection: interfaces that are ports of this VRF and also ports of br-int in NNS.',
                     emptyText: 'No matching br-int ports inferred from NNS.'
                 },
+                // The RA block renders only when an advertisement matched: an
+                // always-on 'Matched CUDNs: N/A' row said nothing.
                 ...(ra
                     ? [{
                         label: 'Route Advertisement',
@@ -511,19 +551,19 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                         }],
                         provenance: 'inferred',
                         hint: VRF_RA_HINT
+                    } as Fact,
+                    {
+                        label: 'Matched CUDNs',
+                        value: matchedCudns.length > 0
+                            ? matchedCudns.map((cudn): FactItem => ({
+                                text: cudn.metadata?.name || 'Unknown',
+                                ref: cudnRef(cudn.metadata?.name || '')
+                            }))
+                            : 'N/A',
+                        provenance: 'inferred',
+                        hint: `${VRF_RA_HINT} CUDNs are then selected by that RouteAdvertisements' networkSelector.`
                     } as Fact]
-                    : []),
-                {
-                    label: 'Matched CUDNs',
-                    value: matchedCudns.length > 0
-                        ? matchedCudns.map((cudn): FactItem => ({
-                            text: cudn.metadata?.name || 'Unknown',
-                            ref: cudnRef(cudn.metadata?.name || '')
-                        }))
-                        : 'N/A',
-                    provenance: 'inferred',
-                    hint: `${VRF_RA_HINT} CUDNs are then selected by that RouteAdvertisements' networkSelector.`
-                }
+                    : [])
             ];
         }
     },

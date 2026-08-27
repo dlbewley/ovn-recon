@@ -6,6 +6,7 @@ import {
 
 import {
     findCudnNameForNad,
+    findPrimaryNetworkForVrf,
     findRouteAdvertisementForVrf,
     getCudnsSelectedByRouteAdvertisement,
     getNadUpstreamNodeIdsForEdges,
@@ -228,6 +229,17 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
             getCudnsSelectedByRouteAdvertisement(ra, ctx.cudns).forEach((cudn) => {
                 out.edge(interfaceNodeId(vrf, ctx), cudnNodeId(cudn.metadata?.name), 'reference', 'route-advertisement');
             });
+            // A Primary network and its side-effect VRF are one relationship even
+            // with no RouteAdvertisement present (ovn-recon-s3t.28). The rule names
+            // which signal matched, since this is inferred rather than declared.
+            const primary = findPrimaryNetworkForVrf(vrf, ctx.cudns, ctx.udns, ctx.interfaces);
+            if (primary) {
+                const targetId = primary.kind === 'cudn'
+                    ? cudnNodeId(primary.name)
+                    : udnNodeId({ metadata: { namespace: primary.namespace, name: primary.name } });
+                out.edge(interfaceNodeId(vrf, ctx), targetId, 'reference',
+                    `primary-network (${primary.signals.join(', ')})`);
+            }
         }
     } as NodeTypeDescriptor<Interface>,
 

@@ -85,7 +85,9 @@ describe('what the kinds are for', () => {
         const byKind = (kind: EdgeKind) =>
             Array.from(new Set(edges.filter((e) => e.kind === kind).map((e) => e.rule))).sort();
 
-        expect(byKind('reference')).toEqual(['bridge-mapping', 'physical-network-name']);
+        expect(byKind('reference')).toEqual([
+            'bridge-mapping', 'physical-network-name', 'primary-network (subnet, name)'
+        ]);
         expect(byKind('membership')).toEqual(['attached-namespaces', 'controller']);
         expect(byKind('layering')).toEqual(['base-iface']);
     });

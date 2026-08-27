@@ -7,7 +7,8 @@ import {
     NodeNetworkConfigurationEnactment,
     NodeNetworkState,
     NetworkAttachmentDefinition,
-    RouteAdvertisements
+    RouteAdvertisements,
+    UserDefinedNetwork
 } from '../types';
 
 interface MatchExpression {
@@ -41,6 +42,101 @@ export interface LldpNeighborNode {
     capabilities: string[];
     rawTlvs: Record<string, unknown>[];
 }
+
+/** True when the IPv4 address (with or without /len) lies inside the CIDR. */
+export const ipv4InCidr = (address: string, cidr: string): boolean => {
+    const toBits = (ip: string): number | null => {
+        const octets = ip.split('.').map(Number);
+        if (octets.length !== 4 || octets.some((o) => Number.isNaN(o) || o < 0 || o > 255)) return null;
+        return ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+    };
+    const [network, lenText] = cidr.split('/');
+    const len = Number(lenText);
+    const ipBits = toBits(address.split('/')[0]);
+    const netBits = toBits(network);
+    if (ipBits === null || netBits === null || Number.isNaN(len) || len < 0 || len > 32) return false;
+    const mask = len === 0 ? 0 : (~0 << (32 - len)) >>> 0;
+    return (ipBits & mask) === (netBits & mask);
+};
+
+/** Kernel IFNAMSIZ minus the NUL: the longest name a VRF interface can carry. */
+const VRF_NAME_LIMIT = 15;
+
+export interface PrimaryNetworkMatch {
+    kind: 'cudn' | 'udn';
+    name: string;
+    namespace?: string;
+    /** Which signals matched, for the edge rule and the fact hint. */
+    signals: ('subnet' | 'name')[];
+}
+
+/**
+ * The Primary Layer2/Layer3 network this VRF exists to serve (ovn-recon-s3t.28).
+ *
+ * A Primary UDN or CUDN creates a per-node VRF as a side effect; Localnet
+ * networks can never be Primary and are excluded outright. Two signals, neither
+ * individually conclusive: the VRF's br-int port address falling inside the
+ * network's subnet (the stronger one -- independent of naming), and the network
+ * name equalling the VRF name, possibly after truncation to the kernel's
+ * 15-character interface-name limit. Subnet-matched candidates win.
+ */
+export const findPrimaryNetworkForVrf = (
+    vrf: Interface,
+    cudns: ClusterUserDefinedNetwork[],
+    udns: UserDefinedNetwork[],
+    interfaces: Interface[]
+): PrimaryNetworkMatch | undefined => {
+    const portAddresses = getVrfConnectionInfo(vrf, interfaces)
+        .brIntPorts.flatMap((port) => getIpv4Addresses(port));
+
+    const nameMatches = (name: string): boolean =>
+        name === vrf.name || name.substring(0, VRF_NAME_LIMIT) === vrf.name;
+
+    interface Candidate {
+        kind: 'cudn' | 'udn';
+        name: string;
+        namespace?: string;
+        subnets: string[];
+    }
+    const candidates: Candidate[] = [
+        ...cudns.flatMap((cudn): Candidate[] => {
+            const network = cudn.spec?.network;
+            const layer = network?.topology === 'Layer2' ? network.layer2
+                : network?.topology === 'Layer3' ? network.layer3
+                    : undefined;
+            if (layer?.role !== 'Primary') return [];
+            return [{ kind: 'cudn', name: cudn.metadata?.name || '', subnets: layer.subnets || [] }];
+        }),
+        ...udns.flatMap((udn): Candidate[] => {
+            const layer = udn.spec?.topology === 'Layer2' ? udn.spec.layer2
+                : udn.spec?.topology === 'Layer3' ? udn.spec.layer3
+                    : undefined;
+            if (layer?.role !== 'Primary') return [];
+            return [{
+                kind: 'udn',
+                name: udn.metadata?.name || '',
+                namespace: udn.metadata?.namespace,
+                subnets: layer.subnets || []
+            }];
+        })
+    ];
+
+    const matches = candidates
+        .map((candidate): PrimaryNetworkMatch => ({
+            kind: candidate.kind,
+            name: candidate.name,
+            namespace: candidate.namespace,
+            signals: [
+                ...(candidate.subnets.some((subnet) =>
+                    portAddresses.some((address) => ipv4InCidr(address, subnet)))
+                    ? ['subnet' as const] : []),
+                ...(nameMatches(candidate.name) ? ['name' as const] : [])
+            ]
+        }))
+        .filter((match) => match.signals.length > 0);
+
+    return matches.find((match) => match.signals.includes('subnet')) ?? matches[0];
+};
 
 /** One policy's claim on an interface or bridge mapping, from its enactment. */
 export interface NncpClaim {

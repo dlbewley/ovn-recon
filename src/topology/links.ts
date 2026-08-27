@@ -34,6 +34,17 @@ export const getNamespaceQueryPath = (selector: LabelSelector | undefined): stri
     return `/api-resource/cluster/core~v1~Namespace/instances?${params}`;
 };
 
+/**
+ * Console path for a KIND's API resource reference page, e.g.
+ * /api-resource/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/ -- the
+ * version-proof 'learn more' target for drawer Type rows (ovn-recon-s3t.39),
+ * preferred over external doc URLs that rot and need version detection.
+ */
+export const getApiResourcePath = (apiVersion: string, kind: string): string => {
+    const groupVersion = apiVersion.includes('/') ? apiVersion.replace('/', '~') : `core~${apiVersion}`;
+    return `/api-resource/cluster/${groupVersion}~${kind}/`;
+};
+
 export const getResourceLinks = (ref: ResourceRef): NodeLink[] => {
     const resourcePath = getResourcePath(ref);
     return [

@@ -14,9 +14,20 @@ import { Fact, FactItem, NodeViewModel, Provenance } from './types';
  * and this renders them all, so presentation decisions are made exactly once.
  */
 
-/** Type and State rows, shared by most kinds. */
-export const baseFacts = (node: NodeViewModel, provenance: Provenance = 'observed'): Fact[] => [
-    { label: 'Type', value: node.subtitle, provenance },
+/**
+ * Type and State rows, shared by most kinds. When the kind maps to an API
+ * resource, `typeHref` links the Type value to its api-resource reference page.
+ */
+export const baseFacts = (
+    node: NodeViewModel,
+    provenance: Provenance = 'observed',
+    typeHref?: string
+): Fact[] => [
+    {
+        label: 'Type',
+        value: typeHref ? [{ text: node.subtitle, href: typeHref }] : node.subtitle,
+        provenance
+    },
     ...(node.state
         ? [{ label: 'State', value: node.state, provenance } as Fact]
         : [])
