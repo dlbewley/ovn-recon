@@ -1,5 +1,16 @@
 # Node Visualization Summary
 
+> [!WARNING]
+> **This document predates the v1.0.2 visualization rework and is stale.**
+> The implementation it describes — seven hand-built columns, per-type render
+> branches, an unused `nads` prop — no longer exists. The current architecture
+> is a descriptor table (`src/topology/descriptors.tsx`) feeding a lane layout
+> (`src/topology/lanes.ts`), typed relationship edges
+> (`src/components/nodeVisualizationModel.ts`), and a drawer built from facts
+> with provenance (`src/topology/registry.ts`). Trust the code and its module
+> comments over this page. A rewrite is tracked as ovn-recon-s3t.22 and lands
+> with the container-layout rework (ovn-recon-s3t.21).
+
 This document outlines the items represented in the `NodeVisualization` component, including their data sources and the relationships between them.
 
 ## Data Sources
