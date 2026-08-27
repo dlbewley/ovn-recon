@@ -606,31 +606,31 @@ exports[`NodeVisualization rendered structure drawer content for ens192 (etherne
 
 exports[`NodeVisualization rendered structure drawer content for example-p-cudn (VRF) 1`] = `
 {
-  "Details": "example-p-cudnVRF InterfaceSummaryDetailsLinksYAMLMAC Address02:00:00:00:00:06Route Table5775Routes0.0.0.0/0 via 192.0.2.1 dev br-ex169.254.0.3/32 via 10.1.2.1 dev ovn-k8s-mp3169.254.0.16/32 via 0.0.0.0 dev ovn-k8s-mp3172.30.0.0/16 via 169.254.0.4 dev br-exbr-int Portsovn-k8s-mp3 10.1.2.2/24",
+  "Details": "example-p-cudnVRF InterfaceSummaryDetailsLinksYAMLTypeVRF InterfaceStateovn-k8s-mp3 Tbl 5775MAC Address02:00:00:00:00:06Route Table5775Routes0.0.0.0/0 via 192.0.2.1 dev br-ex169.254.0.3/32 via 10.1.2.1 dev ovn-k8s-mp3169.254.0.16/32 via 0.0.0.0 dev ovn-k8s-mp3172.30.0.0/16 via 169.254.0.4 dev br-exbr-int Portsinferredovn-k8s-mp3 10.1.2.2/24Matched CUDNsinferredN/A",
   "Links": "example-p-cudnVRF InterfaceSummaryDetailsLinksYAMLNo links available.",
-  "Summary": "example-p-cudnVRF InterfaceSummaryDetailsLinksYAMLTypeVRF InterfaceStateovn-k8s-mp3 Tbl 5775Matched CUDNsN/A",
+  "Summary": "example-p-cudnVRF InterfaceSummaryDetailsLinksYAMLTypeVRF InterfaceStateovn-k8s-mp3 Tbl 5775Matched CUDNsinferredN/A",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for machinenet (CUDN) 1`] = `
 {
-  "Details": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespacesdemo-mirror",
+  "Details": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLTypeLocalnet ClusterUserDefinedNetworkStateLocalnetTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespacesinferreddemo-mirror",
   "Links": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLAvailable LinksResourceYAML",
-  "Summary": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLTypeLocalnet ClusterUserDefinedNetworkStateLocalnetCUDNmachinenet",
+  "Summary": "machinenetLocalnet ClusterUserDefinedNetworkSummaryDetailsLinksYAMLTypeLocalnet ClusterUserDefinedNetworkStateLocalnet",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for machinenet (NAD) 1`] = `
 {
-  "Details": "machinenetNetworkAttachmentDefinitionSummaryDetailsLinksYAMLTypeNetworkAttachmentDefinitionNamespacesdemo-mirrorNetworkAttachmentDefinitionsNo matching NetworkAttachmentDefinition found.",
+  "Details": "machinenetNetworkAttachmentDefinitionSummaryDetailsLinksYAMLTypeNetworkAttachmentDefinitionNamespacesinferreddemo-mirrorNetworkAttachmentDefinitionsNo matching NetworkAttachmentDefinition found.",
   "Links": "machinenetNetworkAttachmentDefinitionSummaryDetailsLinksYAMLAvailable LinksNamespace: demo-mirror",
-  "Summary": "machinenetNetworkAttachmentDefinitionSummaryDetailsLinksYAMLTypeNetworkAttachmentDefinitionStateNamespaces:",
+  "Summary": "machinenetNetworkAttachmentDefinitionSummaryDetailsLinksYAMLTypeNetworkAttachmentDefinitionNamespacesinferreddemo-mirror",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for physnet (OVN Bridge Mapping) 1`] = `
 {
-  "Details": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLBridgebr-exReferenced by CUDNsmachinenet",
+  "Details": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLTypeOVN Bridge MappingBridgebr-exReferenced by CUDNsmachinenet",
   "Links": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLNo links available.",
   "Summary": "physnetOVN Bridge MappingSummaryDetailsLinksYAMLTypeOVN Bridge MappingBridgebr-ex",
 }

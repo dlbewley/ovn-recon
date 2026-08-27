@@ -7,7 +7,8 @@ import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import * as yaml from 'js-yaml';
 
 import { GraphContext } from './context';
-import { nodeKindRegistry, renderBaseSummary } from './registry';
+import { baseFacts, FactList } from './facts';
+import { nodeKindRegistry } from './registry';
 import { DrawerTabDefinition, DrawerTabId, NodeKind, NodeViewModel } from './types';
 
 export const DEFAULT_DRAWER_TABS: DrawerTabId[] = ['summary', 'details', 'links', 'yaml'];
@@ -21,26 +22,32 @@ export const buildDrawerTabs = (ctx: GraphContext): Record<DrawerTabId, DrawerTa
         summary: {
             id: 'summary',
             title: 'Summary',
-            render: (node) => (
-                <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
-                    {nodeKindRegistry[node.kind]?.renderSummary?.(node, ctx) || renderBaseSummary(node)}
-                </div>
-            )
+            render: (node) => {
+                const facts = nodeKindRegistry[node.kind]?.facts?.(node, ctx);
+                return (
+                    <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
+                        <FactList facts={facts ? facts.filter((fact) => fact.summary) : baseFacts(node)} />
+                    </div>
+                );
+            }
         },
         details: {
             id: 'details',
             title: 'Details',
-            render: (node) => (
-                <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
-                    {nodeKindRegistry[node.kind]?.renderDetails?.(node, ctx) || (
-                        <DescriptionList isCompact>
-                            <DescriptionListGroup>
-                                <DescriptionListTerm>No details available</DescriptionListTerm>
-                            </DescriptionListGroup>
-                        </DescriptionList>
-                    )}
-                </div>
-            )
+            render: (node) => {
+                const facts = nodeKindRegistry[node.kind]?.facts?.(node, ctx);
+                return (
+                    <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
+                        {facts ? <FactList facts={facts} /> : (
+                            <DescriptionList isCompact>
+                                <DescriptionListGroup>
+                                    <DescriptionListTerm>No details available</DescriptionListTerm>
+                                </DescriptionListGroup>
+                            </DescriptionList>
+                        )}
+                    </div>
+                );
+            }
         },
         links: {
             id: 'links',
