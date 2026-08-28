@@ -59,13 +59,21 @@ describe('NodeVisualization rendered structure', () => {
 
         // Endpoints AND appearance: a reference edge is dashed, and that distinction is
         // the whole point of ovn-recon-s3t.25, so the baseline has to be able to see it.
-        const edges = Array.from(container.querySelectorAll('line'))
-            .map((l) => [
-                `${l.getAttribute('x1')},${l.getAttribute('y1')} -> ${l.getAttribute('x2')},${l.getAttribute('y2')}`,
-                l.getAttribute('stroke-dasharray') ? 'dashed' : 'solid',
-                l.querySelector('title')?.textContent ?? ''
-            ].join('  '))
-            .sort();
+        const edges = [
+            ...Array.from(container.querySelectorAll('line'))
+                .map((l) => [
+                    `${l.getAttribute('x1')},${l.getAttribute('y1')} -> ${l.getAttribute('x2')},${l.getAttribute('y2')}`,
+                    l.getAttribute('stroke-dasharray') ? 'dashed' : 'solid',
+                    l.querySelector('title')?.textContent ?? ''
+                ].join('  ')),
+            // Same-lane edges draw as arcs; the path carries the whole geometry.
+            ...Array.from(container.querySelectorAll('path[d^="M "]'))
+                .map((p) => [
+                    `arc ${p.getAttribute('d')}`,
+                    p.getAttribute('stroke-dasharray') ? 'dashed' : 'solid',
+                    p.querySelector('title')?.textContent ?? ''
+                ].join('  '))
+        ].sort();
 
         const laneHeaders = Array.from(container.querySelectorAll('svg > text')).map((t) => t.textContent);
 

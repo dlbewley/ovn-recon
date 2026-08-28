@@ -250,7 +250,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
         ctx, laneView,
         { padding, itemHeight, itemGap: 20, colSpacing },
         rankById,
-        (laneId, x) => (laneId === 'lldp' ? placeLldpNeighbors(x) : null)
+        (laneId, x) => (laneId === 'lldp' ? placeLldpNeighbors(x) : null),
+        topologyEdges
     );
     const nodePositions = laneLayout.positions;
 
@@ -322,18 +323,44 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
         const highlighted = highlightedPath.has(edgeKey(edge.source, edge.target));
         const isReference = edge.kind === 'reference';
+        const stroke = isHighlightActive ? (highlighted ? '#0066CC' : '#ccc') : 'currentColor';
+        const strokeWidth = isHighlightActive ? (highlighted ? 4 : 1) : 2;
+        const dashArray = isReference ? '6 4' : undefined;
+        const opacity = isHighlightActive
+            ? (highlighted ? 1 : 0.1)
+            : (isReference ? 0.65 : 1);
+
+        // Two nodes in ONE lane -- br-ex and br-int, cabled by their patch pair --
+        // connect by an arc bulging into the gutter beside the lane, since a
+        // straight line would run vertically through the lane (ovn-recon-s3t.48).
+        if (start.x === end.x) {
+            const x = start.x + itemWidth;
+            const y1 = start.y + itemHeight / 2;
+            const y2 = end.y + itemHeight / 2;
+            return (
+                <path
+                    key={`${edge.source}-${edge.target}`}
+                    d={`M ${x} ${y1} Q ${x + 45} ${(y1 + y2) / 2} ${x} ${y2}`}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={dashArray}
+                    opacity={opacity}
+                >
+                    <title>{edge.rule}</title>
+                </path>
+            );
+        }
 
         return (
             <line
                 key={`${edge.source}-${edge.target}`}
                 x1={start.x + itemWidth} y1={start.y + (itemHeight / 2)}
                 x2={end.x} y2={end.y + (itemHeight / 2)}
-                stroke={isHighlightActive ? (highlighted ? '#0066CC' : '#ccc') : 'currentColor'}
-                strokeWidth={isHighlightActive ? (highlighted ? 4 : 1) : 2}
-                strokeDasharray={isReference ? '6 4' : undefined}
-                opacity={isHighlightActive
-                    ? (highlighted ? 1 : 0.1)
-                    : (isReference ? 0.65 : 1)}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                strokeDasharray={dashArray}
+                opacity={opacity}
             >
                 <title>{edge.rule}</title>
             </line>
