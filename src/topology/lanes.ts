@@ -70,9 +70,6 @@ export const LANES: Lane[] = [
         // ovn-recon-x23, which ovn-recon-s3t.26 supersedes by drawing ports on bridges.
         visible: (_ctx, view) => view.showHiddenColumns
     },
-    // The seam where OVN's domain begins: the integration bridge, and later the
-    // Geneve/VTEP work (ovn-recon-s3t.20) and the logical-view anchor.
-    { id: 'ovn', title: 'OVN', visible: whenPopulated },
     // Two descriptors share this lane, each with its own sub-header.
     { id: 'l3', visible: whenPopulated },
     { id: 'networks', title: 'Networks', visible: whenPopulated },
@@ -157,9 +154,24 @@ export const layoutLanes = (
     /** Rank within lane, from the ordering pass. */
     rankById: Record<string, number>,
     /** Placement for lanes that place themselves. */
-    customPositions: (laneId: string, x: number) => PlacedNode[] | null
+    customPositions: (laneId: string, x: number) => PlacedNode[] | null,
+    /**
+     * Edges, for ANCHOR ALIGNMENT (ovn-recon-s3t.47). The ordering pass minimises
+     * crossings, but stacking every lane from the top left a sparse lane's nodes
+     * floating far from their neighbours -- a VLAN drawn high above its base
+     * interface, a lone node parked on an unrelated edge's sight-line. Each node
+     * now sinks to the average centre of its already-placed neighbours in earlier
+     * lanes, pushed down only as far as order and overlap require.
+     */
+    edges: { source: string; target: string }[] = []
 ): LaneLayout => {
     const { padding, itemHeight, itemGap, colSpacing } = metrics;
+
+    const neighborsById = new Map<string, string[]>();
+    edges.forEach(({ source, target }) => {
+        neighborsById.set(source, [...(neighborsById.get(source) ?? []), target]);
+        neighborsById.set(target, [...(neighborsById.get(target) ?? []), source]);
+    });
 
     const populated = LANES.map((lane) => ({ lane, contents: laneContents(lane, ctx, view) }));
     const visible = populated.filter(({ lane, contents }) =>
@@ -180,12 +192,23 @@ export const layoutLanes = (
             return { lane, x, groups: [{ title: undefined, nodes }] };
         }
 
-        let y = padding;
+        // The centre of a node's already-placed neighbours -- lanes place left to
+        // right, so "already placed" means earlier lanes. Undefined without one.
+        const anchorCenterOf = (id: string): number | undefined => {
+            const centers = (neighborsById.get(id) ?? [])
+                .map((neighborId) => positions[neighborId])
+                .filter((position): position is { x: number; y: number } => Boolean(position))
+                .map((position) => position.y + itemHeight / 2);
+            if (centers.length === 0) return undefined;
+            return centers.reduce((sum, center) => sum + center, 0) / centers.length;
+        };
+
+        let minY = padding;
         let previousHadItems = false;
 
         const groups = contents.map(({ descriptor, items }) => {
             if (descriptor.gapBefore && previousHadItems && items.length > 0) {
-                y += descriptor.gapBefore;
+                minY += descriptor.gapBefore;
             }
             const ordered = items.slice().sort((p, q) => {
                 const pid = descriptor.id(p, ctx);
@@ -198,12 +221,18 @@ export const layoutLanes = (
             const nodes: PlacedNode[] = ordered.map((item) => {
                 const id = descriptor.id(item, ctx);
                 const height = descriptor.height ? descriptor.height(item, itemHeight) : itemHeight;
+                // Sink to the anchor when there is one; never above the stack
+                // cursor, so order and non-overlap survive alignment.
+                const anchorCenter = anchorCenterOf(id);
+                const y = anchorCenter === undefined
+                    ? minY
+                    : Math.max(minY, anchorCenter - height / 2);
                 const node: PlacedNode = {
                     id, item, descriptor, laneId: lane.id, x, y, height, color: descriptor.color
                 };
                 positions[id] = { x, y };
-                y += height + itemGap;
-                maxY = Math.max(maxY, y);
+                minY = y + height + itemGap;
+                maxY = Math.max(maxY, minY);
                 return node;
             });
 

@@ -250,7 +250,11 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
     {
         type: 'integration-bridge',
         kind: 'integration-bridge',
-        lane: 'ovn',
+        // In the Bridges lane, as its own group: it IS a bridge, and a lane of
+        // its own parked it on unrelated edges' sight-lines (ovn-recon-s3t.48).
+        lane: 'bridge',
+        groupTitle: 'Integration',
+        gapBefore: 40,
         icon: <InfrastructureIcon />,
         color: '#009596',
         // Synthesized: nmstate reports no br-int interface, only ports declaring

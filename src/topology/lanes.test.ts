@@ -29,12 +29,12 @@ describe('lane visibility', () => {
     it('hides empty lanes and the logical lane by default', () => {
         // The node has no bonds, so that lane is absent; the logical lane is populated
         // but hidden regardless. See ovn-recon-x23.
-        expect(laneIds()).toEqual(['eth', 'vlan', 'bridge', 'ovn', 'l3', 'networks', 'attachments']);
+        expect(laneIds()).toEqual(['eth', 'vlan', 'bridge', 'l3', 'networks', 'attachments']);
     });
 
     it('shows every lane, empty or not, when nothing is hidden', () => {
         expect(laneIds({ showHiddenColumns: true })).toEqual([
-            'eth', 'bond', 'vlan', 'bridge', 'logical', 'ovn', 'l3', 'networks', 'attachments'
+            'eth', 'bond', 'vlan', 'bridge', 'logical', 'l3', 'networks', 'attachments'
         ]);
     });
 
@@ -54,13 +54,47 @@ describe('lane visibility', () => {
 describe('lane placement', () => {
     it('spaces visible lanes evenly, with no gap for an absent lane', () => {
         const xs = layout().lanes.map(({ x }) => x);
-        expect(xs).toEqual([20, 240, 460, 680, 900, 1120, 1340]);
+        expect(xs).toEqual([20, 240, 460, 680, 900, 1120]);
     });
 
     it('stacks nodes within a lane from the top', () => {
         const eth = layout().lanes.find(({ lane }) => lane.id === 'eth')!;
         const ys = eth.groups[0].nodes.map((n) => n.y);
         expect(ys).toEqual([20, 120, 220, 320]);
+    });
+
+    describe('anchor alignment (ovn-recon-s3t.47)', () => {
+        // ens224 is third in the physical lane (y = 220 with these metrics).
+        const aligned = () => layoutLanes(ctx, VIEW, METRICS, {}, () => null, [
+            { source: 'iface:ens224.456', target: 'iface:ens224' }
+        ]);
+
+        it('sinks a node level with its neighbour in an earlier lane', () => {
+            const ethYs = Object.fromEntries(
+                aligned().lanes.find(({ lane }) => lane.id === 'eth')!
+                    .groups[0].nodes.map((n) => [n.id, n.y]));
+            const vlan = aligned().lanes.find(({ lane }) => lane.id === 'vlan')!
+                .groups[0].nodes.find((n) => n.id === 'iface:ens224.456')!;
+            expect(vlan.y).toBe(ethYs['iface:ens224']);
+            expect(vlan.y).toBeGreaterThan(20); // it really sank, off the lane top
+        });
+
+        it('never lifts a node above the stack cursor, so order survives', () => {
+            // An anchor pointing at the lane top cannot pull the second node over
+            // the first: alignment only ever pushes down.
+            const result = layoutLanes(ctx, VIEW, METRICS, {}, () => null, [
+                { source: 'iface:ens224', target: 'iface:ens161' } // anchor at y=20
+            ]);
+            const eth = result.lanes.find(({ lane }) => lane.id === 'eth')!.groups[0].nodes;
+            for (let i = 1; i < eth.length; i += 1) {
+                expect(eth[i].y).toBeGreaterThanOrEqual(eth[i - 1].y + eth[i - 1].height);
+            }
+        });
+
+        it('leaves unanchored lanes stacking from the top', () => {
+            const eth = aligned().lanes.find(({ lane }) => lane.id === 'eth')!;
+            expect(eth.groups[0].nodes[0].y).toBe(20);
+        });
     });
 
     it('writes one position per node, shared with the connectors', () => {
