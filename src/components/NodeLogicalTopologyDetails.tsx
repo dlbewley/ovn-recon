@@ -31,19 +31,11 @@ import {
     AlertGroup,
 } from '@patternfly/react-core';
 
-import { LogicalTopologyEdge, LogicalTopologyNode, LogicalTopologySnapshot } from '../types';
+import { LogicalTopologySnapshot } from '../types';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
-import { getLogicalTopologyFixture } from './logicalTopologyFixtures';
-import {
-    filterLogicalEdges,
-    filterLogicalNodes,
-    freshnessFromAge,
-    layoutLogicalNodes,
-    logicalNodeKinds,
-    parseSnapshotAgeMs,
-    Point,
-    SnapshotFreshnessState,
-} from './logicalTopologyModel';
+import { buildLadderModel, LadderConstruct, LadderModel } from './logicalLadderModel';
+import LogicalLadderView, { networkDisplayName, roleLabel } from './LogicalLadderView';
+import { freshnessFromAge, parseSnapshotAgeMs, SnapshotFreshnessState } from './snapshotFreshness';
 
 const REFRESH_INTERVAL_MS = 30000;
 const COLLECTOR_SNAPSHOT_PROXY_PREFIXES = [
@@ -105,13 +97,6 @@ const resolveNodeName = (routeName?: string): string => {
     }
 };
 
-const getNodeColor = (kind: string): string => {
-    if (kind === 'logical_router') return '#0066CC';
-    if (kind === 'logical_switch') return '#2B9A66';
-    if (kind === 'logical_switch_port') return '#8A5A00';
-    return '#6A6E73';
-};
-
 const formatUtcTimestamp = (value: string): string => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return 'unknown';
@@ -139,6 +124,118 @@ const freshnessTitle = (state: SnapshotFreshnessState): string => {
     return 'Snapshot is fresh';
 };
 
+interface ConstructDrawerProps {
+    construct: LadderConstruct;
+    model: LadderModel;
+}
+
+const ConstructDrawerBody: React.FC<ConstructDrawerProps> = ({ construct, model }) => {
+    const connections = model.edges
+        .filter((edge) => edge.source === construct.uuid || edge.target === construct.uuid)
+        .map((edge) => {
+            const otherUuid = edge.source === construct.uuid ? edge.target : edge.source;
+            const other = model.constructByUuid.get(otherUuid);
+            const addresses = [...edge.networks, ...(edge.peerNetworks ?? [])].join(' ');
+            return {
+                id: edge.id,
+                label: other ? `${roleLabel(other.role)} (${other.name})` : otherUuid,
+                addresses,
+            };
+        });
+
+    return (
+        <DescriptionList isCompact>
+            <DescriptionListGroup>
+                <DescriptionListTerm>Role</DescriptionListTerm>
+                <DescriptionListDescription>{roleLabel(construct.role)}</DescriptionListDescription>
+            </DescriptionListGroup>
+            <DescriptionListGroup>
+                <DescriptionListTerm>Network</DescriptionListTerm>
+                <DescriptionListDescription>
+                    {networkDisplayName(construct.network)}
+                    {construct.topology ? ` (${construct.topology})` : ''}
+                </DescriptionListDescription>
+            </DescriptionListGroup>
+            {construct.node && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Node</DescriptionListTerm>
+                    <DescriptionListDescription>{construct.node}</DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            <DescriptionListGroup>
+                <DescriptionListTerm>OVN name</DescriptionListTerm>
+                <DescriptionListDescription><code>{construct.name}</code></DescriptionListDescription>
+            </DescriptionListGroup>
+            <DescriptionListGroup>
+                <DescriptionListTerm>UUID</DescriptionListTerm>
+                <DescriptionListDescription><code>{construct.uuid}</code></DescriptionListDescription>
+            </DescriptionListGroup>
+            {construct.subnet && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Subnet</DescriptionListTerm>
+                    <DescriptionListDescription>{construct.subnet}</DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {construct.podPortCount > 0 && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Workload ports</DescriptionListTerm>
+                    <DescriptionListDescription>{construct.podPortCount}</DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {construct.managementPort && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Management port</DescriptionListTerm>
+                    <DescriptionListDescription><code>{construct.managementPort}</code></DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {construct.remotePeers.length > 0 && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Tunnels to</DescriptionListTerm>
+                    <DescriptionListDescription>{construct.remotePeers.join(', ')}</DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {construct.localnetPorts.length > 0 && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Localnet ports</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        {construct.localnetPorts.map((port) => <div key={port}><code>{port}</code></div>)}
+                    </DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {construct.natCount > 0 && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>NAT rules</DescriptionListTerm>
+                    <DescriptionListDescription>{construct.natCount}</DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {construct.staticRouteCount > 0 && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Static routes</DescriptionListTerm>
+                    <DescriptionListDescription>{construct.staticRouteCount}</DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {connections.length > 0 && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Connections</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        {connections.map((connection) => (
+                            <div key={connection.id}>
+                                {connection.label}
+                                {connection.addresses ? <> — <code>{connection.addresses}</code></> : null}
+                            </div>
+                        ))}
+                    </DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+        </DescriptionList>
+    );
+};
+
+interface Point {
+    x: number;
+    y: number;
+}
+
 const NodeLogicalTopologyDetails: React.FC = () => {
     const { name: routeName } = useParams<{ name?: string }>();
     const name = React.useMemo(() => resolveNodeName(routeName), [routeName]);
@@ -147,17 +244,16 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     const [snapshot, setSnapshot] = React.useState<LogicalTopologySnapshot | null>(null);
     const [isLoading, setIsLoading] = React.useState<boolean>(false);
     const [snapshotError, setSnapshotError] = React.useState<string>('');
-    const [sourceLabel, setSourceLabel] = React.useState<'collector' | 'fixture' | ''>('');
     const [lastLoadedAt, setLastLoadedAt] = React.useState<number>(Date.now());
     const [search, setSearch] = React.useState<string>('');
-    const [kindFilter, setKindFilter] = React.useState<string>('all');
-    const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
+    const [networkFilter, setNetworkFilter] = React.useState<string>('all');
+    const [selectedUuid, setSelectedUuid] = React.useState<string | null>(null);
     const [zoom, setZoom] = React.useState<number>(1);
     const [pan, setPan] = React.useState<Point>({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = React.useState<boolean>(false);
     const [lastPointer, setLastPointer] = React.useState<Point | null>(null);
 
-    const loadSnapshot = React.useCallback(async (allowFixtureFallback: boolean) => {
+    const loadSnapshot = React.useCallback(async () => {
         if (!enabled || !name) return;
 
         setIsLoading(true);
@@ -166,29 +262,10 @@ const NodeLogicalTopologyDetails: React.FC = () => {
         try {
             const payload = await fetchCollectorSnapshot(name);
             setSnapshot(payload);
-            setSourceLabel('collector');
             setLastLoadedAt(Date.now());
         } catch (error) {
-            if (!allowFixtureFallback) {
-                setSnapshotError(error instanceof Error ? error.message : 'Failed to load logical topology');
-                setSourceLabel('');
-                setSnapshot(null);
-                setIsLoading(false);
-                return;
-            }
-
-            const fixture = getLogicalTopologyFixture(name);
-            if (fixture) {
-                setSnapshot(fixture);
-                setSourceLabel('fixture');
-                const details = error instanceof Error ? ` ${error.message}` : '';
-                setSnapshotError(`Collector unavailable for ${name}; showing fixture data.${details}`);
-                setLastLoadedAt(Date.now());
-            } else {
-                setSnapshot(null);
-                setSourceLabel('');
-                setSnapshotError(error instanceof Error ? error.message : 'Failed to load logical topology');
-            }
+            setSnapshot(null);
+            setSnapshotError(error instanceof Error ? error.message : 'Failed to load logical topology');
         } finally {
             setIsLoading(false);
         }
@@ -197,9 +274,9 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     React.useEffect(() => {
         if (!enabled || !name) return;
 
-        loadSnapshot(true);
+        loadSnapshot();
         const timer = window.setInterval(() => {
-            loadSnapshot(true);
+            loadSnapshot();
         }, REFRESH_INTERVAL_MS);
 
         return () => {
@@ -217,31 +294,18 @@ const NodeLogicalTopologyDetails: React.FC = () => {
         [snapshotAgeMs],
     );
 
-    const filteredNodes = React.useMemo(
-        () => filterLogicalNodes(snapshot, search, kindFilter),
-        [snapshot, search, kindFilter],
+    const model = React.useMemo(() => {
+        if (!snapshot?.database) return null;
+        return buildLadderModel(snapshot.database);
+    }, [snapshot]);
+
+    const needsCollectorUpgrade = snapshot != null && snapshot.database == null;
+    const hasNoGraphData = model != null && model.constructs.length === 0;
+
+    const selectedConstruct = React.useMemo(
+        () => (model && selectedUuid ? model.constructByUuid.get(selectedUuid) ?? null : null),
+        [model, selectedUuid],
     );
-
-    const visibleNodeIds = React.useMemo(() => new Set(filteredNodes.map((node) => node.id)), [filteredNodes]);
-
-    const filteredEdges = React.useMemo(
-        () => filterLogicalEdges(snapshot, visibleNodeIds),
-        [snapshot, visibleNodeIds],
-    );
-
-    const positions = React.useMemo(() => layoutLogicalNodes(filteredNodes), [filteredNodes]);
-
-    const selectedNode = React.useMemo(
-        () => filteredNodes.find((node) => node.id === selectedNodeId) || null,
-        [filteredNodes, selectedNodeId],
-    );
-
-    const kinds = React.useMemo(() => logicalNodeKinds(snapshot), [snapshot]);
-    const snapshotDefaultWarning = React.useMemo(
-        () => snapshot?.warnings?.find((warning) => warning.code === 'SNAPSHOT_DEFAULT'),
-        [snapshot],
-    );
-    const hasNoGraphData = snapshot != null && filteredNodes.length === 0;
 
     const zoomIn = () => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))));
     const zoomOut = () => setZoom((value) => Math.max(0.4, Number((value - 0.1).toFixed(2))));
@@ -312,38 +376,24 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                 <Title headingLevel="h1" className="pf-u-mt-lg">Logical OVN Topology: {name}</Title>
             </PageSection>
             <PageSection isFilled>
-                <Drawer isExpanded={selectedNode != null}>
+                <Drawer isExpanded={selectedConstruct != null}>
                     <DrawerContent
                         panelContent={(
-                            <DrawerPanelContent minSize="300px">
-                                {selectedNode && (
+                            <DrawerPanelContent minSize="320px">
+                                {selectedConstruct && model && (
                                     <>
                                         <DrawerHead>
-                                            <Title headingLevel="h2">{selectedNode.label}</Title>
+                                            <Title headingLevel="h2">
+                                                {roleLabel(selectedConstruct.role)}
+                                                {selectedConstruct.node ? ` · ${selectedConstruct.node}` : ''}
+                                            </Title>
                                             <DrawerActions>
-                                                <DrawerCloseButton onClick={() => setSelectedNodeId(null)} />
+                                                <DrawerCloseButton onClick={() => setSelectedUuid(null)} />
                                             </DrawerActions>
                                         </DrawerHead>
                                         <Card>
                                             <CardBody>
-                                                <DescriptionList isCompact>
-                                                    <DescriptionListGroup>
-                                                        <DescriptionListTerm>ID</DescriptionListTerm>
-                                                        <DescriptionListDescription>{selectedNode.id}</DescriptionListDescription>
-                                                    </DescriptionListGroup>
-                                                    <DescriptionListGroup>
-                                                        <DescriptionListTerm>Kind</DescriptionListTerm>
-                                                        <DescriptionListDescription>{selectedNode.kind}</DescriptionListDescription>
-                                                    </DescriptionListGroup>
-                                                    {selectedNode.data && (
-                                                        <DescriptionListGroup>
-                                                            <DescriptionListTerm>Data</DescriptionListTerm>
-                                                            <DescriptionListDescription>
-                                                                <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(selectedNode.data, null, 2)}</pre>
-                                                            </DescriptionListDescription>
-                                                        </DescriptionListGroup>
-                                                    )}
-                                                </DescriptionList>
+                                                <ConstructDrawerBody construct={selectedConstruct} model={model} />
                                             </CardBody>
                                         </Card>
                                     </>
@@ -352,7 +402,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                         )}
                     >
                         <Card>
-                            <CardTitle>Logical Topology Graph</CardTitle>
+                            <CardTitle>Logical Topology</CardTitle>
                             <CardBody>
                                 <AlertGroup isToast={false}>
                                     {isLoading && (
@@ -361,7 +411,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                     {snapshotError && (
                                         <Alert variant="warning" isInline title={snapshotError} />
                                     )}
-                                    {snapshot && (
+                                    {snapshot && !needsCollectorUpgrade && (
                                         <Alert
                                             variant={freshnessVariant(freshnessState)}
                                             isInline
@@ -386,26 +436,24 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             title={`${warning.code}: ${warning.message}`}
                                         />
                                     ))}
-                                    {sourceLabel && (
+                                    {needsCollectorUpgrade && (
                                         <Alert
-                                            variant={sourceLabel === 'collector' ? 'success' : 'info'}
+                                            variant="danger"
                                             isInline
-                                            title={`Data source: ${sourceLabel}`}
-                                        />
+                                            title={`Snapshot schema "${snapshot?.metadata?.schemaVersion}" is not supported`}
+                                        >
+                                            This view requires snapshot contract v2. Upgrade the ovn-collector
+                                            image so snapshots include the logical database payload.
+                                        </Alert>
                                     )}
                                     {hasNoGraphData && (
                                         <Alert
                                             variant="info"
                                             isInline
-                                            title={
-                                                snapshotDefaultWarning
-                                                    ? `No node-specific topology snapshot found for ${name || 'this node'}.`
-                                                    : `No logical topology nodes returned for ${name || 'this node'}.`
-                                            }
+                                            title={`No logical topology returned for ${name || 'this node'}.`}
                                         >
-                                            {snapshotDefaultWarning
-                                                ? 'Collector is serving fallback data. Add a node snapshot file or enable live probe collection for this node.'
-                                                : 'The collector request succeeded, but the payload did not include any graph nodes.'}
+                                            The collector request succeeded, but the snapshot database holds no
+                                            switches or routers for this node.
                                         </Alert>
                                     )}
                                 </AlertGroup>
@@ -413,22 +461,26 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                 <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }}>
                                     <FlexItem>
                                         <TextInput
-                                            aria-label="Search nodes"
+                                            aria-label="Search constructs"
                                             type="search"
-                                            placeholder="Search by label, id, or kind"
+                                            placeholder="Search by name, role, node, or subnet"
                                             value={search}
                                             onChange={(_event, value) => setSearch(value)}
                                         />
                                     </FlexItem>
                                     <FlexItem>
                                         <FormSelect
-                                            aria-label="Filter by kind"
-                                            value={kindFilter}
-                                            onChange={(_event, value) => setKindFilter(value)}
+                                            aria-label="Filter by network"
+                                            value={networkFilter}
+                                            onChange={(_event, value) => setNetworkFilter(value)}
                                         >
-                                            <FormSelectOption value="all" label="All kinds" />
-                                            {kinds.map((kind) => (
-                                                <FormSelectOption key={kind} value={kind} label={kind} />
+                                            <FormSelectOption value="all" label="All networks" />
+                                            {model?.networks.map((network) => (
+                                                <FormSelectOption
+                                                    key={network}
+                                                    value={network}
+                                                    label={networkDisplayName(network)}
+                                                />
                                             ))}
                                         </FormSelect>
                                     </FlexItem>
@@ -436,7 +488,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                     <FlexItem><Button variant="secondary" onClick={zoomIn}>+</Button></FlexItem>
                                     <FlexItem><Button variant="link" onClick={resetView}>Reset view</Button></FlexItem>
                                     <FlexItem>
-                                        <Button variant="tertiary" onClick={() => loadSnapshot(false)} isDisabled={isLoading}>
+                                        <Button variant="tertiary" onClick={() => loadSnapshot()} isDisabled={isLoading}>
                                             Refresh now
                                         </Button>
                                     </FlexItem>
@@ -444,61 +496,24 @@ const NodeLogicalTopologyDetails: React.FC = () => {
 
                                 <div
                                     className="pf-u-mt-md"
-                                    style={{ height: '640px', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: isDragging ? 'grabbing' : 'grab' }}
+                                    style={{ height: '680px', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: isDragging ? 'grabbing' : 'grab' }}
                                     onWheel={handleWheel}
                                     onMouseDown={handleMouseDown}
                                     onMouseMove={handleMouseMove}
                                     onMouseUp={handleMouseUp}
                                     onMouseLeave={handleMouseUp}
                                 >
-                                    <svg width="100%" height="100%">
-                                        <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
-                                            {filteredEdges.map((edge: LogicalTopologyEdge) => {
-                                                const source = positions[edge.source];
-                                                const target = positions[edge.target];
-                                                if (!source || !target) return null;
-                                                return (
-                                                    <line
-                                                        key={edge.id}
-                                                        x1={source.x}
-                                                        y1={source.y}
-                                                        x2={target.x}
-                                                        y2={target.y}
-                                                        stroke="var(--pf-t--global--border--color--default)"
-                                                        strokeWidth={2}
-                                                    />
-                                                );
-                                            })}
-                                            {filteredNodes.map((node: LogicalTopologyNode) => {
-                                                const point = positions[node.id];
-                                                if (!point) return null;
-                                                const isSelected = selectedNodeId === node.id;
-                                                return (
-                                                    <g
-                                                        key={node.id}
-                                                        transform={`translate(${point.x}, ${point.y})`}
-                                                        onClick={() => setSelectedNodeId(node.id)}
-                                                        style={{ cursor: 'pointer' }}
-                                                    >
-                                                        <circle
-                                                            r={26}
-                                                            fill={getNodeColor(node.kind)}
-                                                            stroke={isSelected ? '#151515' : '#fff'}
-                                                            strokeWidth={isSelected ? 3 : 2}
-                                                        />
-                                                        <text
-                                                            y={45}
-                                                            textAnchor="middle"
-                                                            fill="var(--pf-t--global--text--color--regular)"
-                                                            fontSize="12"
-                                                        >
-                                                            {node.label}
-                                                        </text>
-                                                    </g>
-                                                );
-                                            })}
-                                        </g>
-                                    </svg>
+                                    {model && (
+                                        <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
+                                            <LogicalLadderView
+                                                model={model}
+                                                selectedUuid={selectedUuid}
+                                                onSelect={setSelectedUuid}
+                                                networkFilter={networkFilter}
+                                                search={search}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </CardBody>
                         </Card>
