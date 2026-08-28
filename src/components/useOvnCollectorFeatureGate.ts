@@ -28,7 +28,10 @@ export const useOvnCollectorFeatureGate = (): UseOvnCollectorFeatureGateResult =
     const [instances, loaded, loadError] = useK8sWatchResource<OvnRecon[]>({
         groupVersionKind: {
             group: 'recon.bewley.net',
-            version: 'v1alpha1',
+            // v1beta1 is the served/storage version; v1alpha1 is marked
+            // +kubebuilder:unservedversion, and the console cannot model an
+            // unserved version ("Model does not exist").
+            version: 'v1beta1',
             kind: 'OvnRecon',
         },
         isList: true,
