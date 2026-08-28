@@ -27,10 +27,13 @@ const makeConstruct = (
     network,
     node,
     podPortCount: 0,
+    podPorts: [],
     localnetPorts: [],
     remotePeers: [],
     natCount: 0,
     staticRouteCount: 0,
+    natRules: [],
+    staticRouteRules: [],
 });
 
 const syntheticModel = (constructs: LadderConstruct[]): LadderModel => ({

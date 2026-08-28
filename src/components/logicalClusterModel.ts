@@ -1,4 +1,4 @@
-import { LogicalTopologySnapshot } from '../types';
+import { LogicalTopologySnapshot, NATRow, StaticRouteRow } from '../types';
 import { DEFAULT_NETWORK } from './logicalClassification';
 import { buildLadderModel, LadderConstruct, LadderEdge, LadderModel } from './logicalLadderModel';
 
@@ -33,6 +33,26 @@ export interface ClusterLadderConstruct extends LadderConstruct {
 }
 
 const constructKey = (construct: LadderConstruct): string => `${construct.kind}:${construct.name}`;
+
+// Per-zone instances of a distributed router carry near-identical rule sets
+// under different UUIDs; identity across zones is the rule's semantic content.
+const natRuleKey = (nat: NATRow): string =>
+    [nat.type, nat.externalIp ?? '', nat.logicalIp ?? '', nat.logicalPort ?? ''].join('|');
+
+const staticRouteKey = (route: StaticRouteRow): string =>
+    [route.ipPrefix, route.nexthop ?? '', route.policy ?? '', route.outputPort ?? ''].join('|');
+
+const mergeBy = <T>(existing: T[], incoming: T[], keyOf: (item: T) => string): T[] => {
+    const seen = new Set(existing.map(keyOf));
+    const merged = [...existing];
+    for (const item of incoming) {
+        const key = keyOf(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(item);
+    }
+    return merged;
+};
 
 const edgeKey = (kind: string, source: string, target: string): string => {
     const [first, second] = [source, target].sort();
@@ -74,10 +94,13 @@ export const mergeZones = (snapshots: LogicalTopologySnapshot[]): ClusterLadderM
 
             existing.zones.push(zone);
             existing.podPortCount += construct.podPortCount;
+            existing.podPorts = mergeBy(existing.podPorts, construct.podPorts, (port) => port.name);
             existing.remotePeers = [...new Set([...existing.remotePeers, ...construct.remotePeers])].sort();
             existing.localnetPorts = [...new Set([...existing.localnetPorts, ...construct.localnetPorts])].sort();
-            existing.natCount = Math.max(existing.natCount, construct.natCount);
-            existing.staticRouteCount = Math.max(existing.staticRouteCount, construct.staticRouteCount);
+            existing.natRules = mergeBy(existing.natRules, construct.natRules, natRuleKey);
+            existing.staticRouteRules = mergeBy(existing.staticRouteRules, construct.staticRouteRules, staticRouteKey);
+            existing.natCount = existing.natRules.length;
+            existing.staticRouteCount = existing.staticRouteRules.length;
             existing.subnet = existing.subnet ?? construct.subnet;
             existing.managementPort = existing.managementPort ?? construct.managementPort;
             existing.node = existing.node ?? construct.node;

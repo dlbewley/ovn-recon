@@ -249,6 +249,39 @@ export const classifySwitchPort = (row: LogicalSwitchPortRow): ClassifiedPort =>
     return { uuid: row.uuid, name: row.name, role: 'other-port' };
 };
 
+export interface NetworkResourceRef {
+    apiVersion: 'k8s.ovn.org/v1';
+    kind: 'ClusterUserDefinedNetwork' | 'UserDefinedNetwork';
+    name: string;
+    namespace?: string;
+}
+
+/**
+ * Resolve a network identity to the CR that created it. CUDN identities are
+ * prefixed 'cluster_udn_<name>'; namespaced UDN identities are
+ * '<namespace>.<name>'. The default network has no owning CR.
+ */
+export const networkResourceRef = (network: string): NetworkResourceRef | undefined => {
+    if (network === DEFAULT_NETWORK) return undefined;
+    if (network.startsWith('cluster_udn_')) {
+        return {
+            apiVersion: 'k8s.ovn.org/v1',
+            kind: 'ClusterUserDefinedNetwork',
+            name: network.slice('cluster_udn_'.length),
+        };
+    }
+    const separator = network.indexOf('.');
+    if (separator > 0) {
+        return {
+            apiVersion: 'k8s.ovn.org/v1',
+            kind: 'UserDefinedNetwork',
+            namespace: network.slice(0, separator),
+            name: network.slice(separator + 1),
+        };
+    }
+    return undefined;
+};
+
 export const classifyDatabase = (database: LogicalDatabase): ClassifiedDatabase => {
     const constructs: ClassifiedConstruct[] = [
         ...database.logicalRouters.map(classifyRouter),

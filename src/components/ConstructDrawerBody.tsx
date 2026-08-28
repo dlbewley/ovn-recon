@@ -5,10 +5,17 @@ import {
     DescriptionListGroup,
     DescriptionListTerm,
     DescriptionListDescription,
+    TextInput,
 } from '@patternfly/react-core';
 
+import { NATRow, StaticRouteRow } from '../types';
+import { networkResourceRef } from './logicalClassification';
 import { LadderConstruct, LadderModel } from './logicalLadderModel';
 import { networkDisplayName, roleLabel } from './LogicalLadderView';
+import { getResourcePath } from '../topology/links';
+
+const MAX_LISTED_RULES = 10;
+const MAX_LISTED_PORTS = 15;
 
 export interface ConstructDrawerBodyProps {
     construct: LadderConstruct & { zones?: string[] };
@@ -17,7 +24,79 @@ export interface ConstructDrawerBodyProps {
     nodeHref?: (node: string) => string;
 }
 
+const natRuleText = (nat: NATRow): string => {
+    const target = nat.logicalPort ? `${nat.logicalIp} (${nat.logicalPort})` : nat.logicalIp ?? '';
+    return `${nat.type} ${nat.externalIp ?? ''} ⇄ ${target}`;
+};
+
+const staticRouteText = (route: StaticRouteRow): string => {
+    const parts = [`${route.ipPrefix} → ${route.nexthop ?? ''}`];
+    if (route.policy) parts.push(`policy ${route.policy}`);
+    if (route.outputPort) parts.push(`via ${route.outputPort}`);
+    return parts.join(', ');
+};
+
+const RuleList: React.FC<{ items: string[] }> = ({ items }) => {
+    const shown = items.slice(0, MAX_LISTED_RULES);
+    return (
+        <>
+            {shown.map((item, index) => <div key={`${index}:${item}`}><code>{item}</code></div>)}
+            {items.length > shown.length && (
+                <div>… and {items.length - shown.length} more</div>
+            )}
+        </>
+    );
+};
+
+const WorkloadPortList: React.FC<{ construct: LadderConstruct }> = ({ construct }) => {
+    const [filter, setFilter] = React.useState('');
+    const query = filter.trim().toLowerCase();
+    const matches = query === ''
+        ? construct.podPorts
+        : construct.podPorts.filter((port) => port.name.toLowerCase().includes(query));
+    const shown = matches.slice(0, MAX_LISTED_PORTS);
+
+    return (
+        <>
+            {construct.podPorts.length > MAX_LISTED_PORTS && (
+                <TextInput
+                    aria-label="Filter workload ports"
+                    type="search"
+                    placeholder={`Filter ${construct.podPorts.length} ports`}
+                    value={filter}
+                    onChange={(_event, value) => setFilter(value)}
+                    className="pf-u-mb-sm"
+                />
+            )}
+            {shown.map((port) => (
+                <div key={port.name}>
+                    {port.namespace && port.pod ? (
+                        <Link
+                            to={getResourcePath({
+                                apiVersion: 'v1',
+                                kind: 'Pod',
+                                namespace: port.namespace,
+                                name: port.pod,
+                            })}
+                        >
+                            {port.namespace}/{port.pod}
+                        </Link>
+                    ) : (
+                        <code>{port.name}</code>
+                    )}
+                </div>
+            ))}
+            {matches.length > shown.length && (
+                <div>… and {matches.length - shown.length} more match</div>
+            )}
+            {matches.length === 0 && <div>No ports match.</div>}
+        </>
+    );
+};
+
 const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({ construct, model, nodeHref }) => {
+    const networkRef = networkResourceRef(construct.network);
+
     const connections = model.edges
         .filter((edge) => edge.source === construct.uuid || edge.target === construct.uuid)
         .map((edge) => {
@@ -40,7 +119,11 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({ construct, mo
             <DescriptionListGroup>
                 <DescriptionListTerm>Network</DescriptionListTerm>
                 <DescriptionListDescription>
-                    {networkDisplayName(construct.network)}
+                    {networkRef ? (
+                        <Link to={getResourcePath(networkRef)}>{networkDisplayName(construct.network)}</Link>
+                    ) : (
+                        networkDisplayName(construct.network)
+                    )}
                     {construct.topology ? ` (${construct.topology})` : ''}
                 </DescriptionListDescription>
             </DescriptionListGroup>
@@ -76,12 +159,6 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({ construct, mo
                     <DescriptionListDescription>{construct.subnet}</DescriptionListDescription>
                 </DescriptionListGroup>
             )}
-            {construct.podPortCount > 0 && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>Workload ports</DescriptionListTerm>
-                    <DescriptionListDescription>{construct.podPortCount}</DescriptionListDescription>
-                </DescriptionListGroup>
-            )}
             {construct.managementPort && (
                 <DescriptionListGroup>
                     <DescriptionListTerm>Management port</DescriptionListTerm>
@@ -102,16 +179,28 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({ construct, mo
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
-            {construct.natCount > 0 && (
+            {construct.podPortCount > 0 && (
                 <DescriptionListGroup>
-                    <DescriptionListTerm>NAT rules</DescriptionListTerm>
-                    <DescriptionListDescription>{construct.natCount}</DescriptionListDescription>
+                    <DescriptionListTerm>Workload ports ({construct.podPortCount})</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        <WorkloadPortList construct={construct} />
+                    </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
-            {construct.staticRouteCount > 0 && (
+            {construct.natRules.length > 0 && (
                 <DescriptionListGroup>
-                    <DescriptionListTerm>Static routes</DescriptionListTerm>
-                    <DescriptionListDescription>{construct.staticRouteCount}</DescriptionListDescription>
+                    <DescriptionListTerm>NAT rules ({construct.natRules.length})</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        <RuleList items={construct.natRules.map(natRuleText)} />
+                    </DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {construct.staticRouteRules.length > 0 && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Static routes ({construct.staticRouteRules.length})</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        <RuleList items={construct.staticRouteRules.map(staticRouteText)} />
+                    </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
             {connections.length > 0 && (

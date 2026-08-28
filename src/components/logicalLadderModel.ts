@@ -1,6 +1,7 @@
-import { LogicalDatabase } from '../types';
+import { LogicalDatabase, NATRow, StaticRouteRow } from '../types';
 import {
     ClassifiedConstruct,
+    ClassifiedPort,
     classifyDatabase,
     classifySwitchPort,
 } from './logicalClassification';
@@ -19,6 +20,8 @@ export interface LadderConstruct extends ClassifiedConstruct {
     subnet?: string;
     /** Workload (pod) ports attached to this switch. */
     podPortCount: number;
+    /** The workload ports themselves, for the drawer's searchable list. */
+    podPorts: ClassifiedPort[];
     /** Name of the k8s management port, when present. */
     managementPort?: string;
     /** Localnet port names: the seam to a physical bridge mapping. */
@@ -28,6 +31,9 @@ export interface LadderConstruct extends ClassifiedConstruct {
     /** NAT and static route rule counts on a router. */
     natCount: number;
     staticRouteCount: number;
+    /** The rules themselves, resolved from the router's uuid references. */
+    natRules: NATRow[];
+    staticRouteRules: StaticRouteRow[];
 }
 
 export type LadderEdgeKind = 'router-link' | 'router-peer';
@@ -75,20 +81,32 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
         const ladderConstruct: LadderConstruct = {
             ...construct,
             podPortCount: 0,
+            podPorts: [],
             localnetPorts: [],
             remotePeers: [],
             natCount: 0,
             staticRouteCount: 0,
+            natRules: [],
+            staticRouteRules: [],
         };
         constructs.push(ladderConstruct);
         constructByUuid.set(construct.uuid, ladderConstruct);
     }
 
+    const natByUuid = new Map(database.nats.map((nat) => [nat.uuid, nat]));
+    const routeByUuid = new Map(database.staticRoutes.map((route) => [route.uuid, route]));
+
     for (const router of database.logicalRouters) {
         const construct = constructByUuid.get(router.uuid);
         if (!construct) continue;
-        construct.natCount = router.nat?.length ?? 0;
-        construct.staticRouteCount = router.staticRoutes?.length ?? 0;
+        construct.natRules = (router.nat ?? [])
+            .map((uuid) => natByUuid.get(uuid))
+            .filter((nat): nat is NATRow => nat != null);
+        construct.staticRouteRules = (router.staticRoutes ?? [])
+            .map((uuid) => routeByUuid.get(uuid))
+            .filter((route): route is StaticRouteRow => route != null);
+        construct.natCount = construct.natRules.length;
+        construct.staticRouteCount = construct.staticRouteRules.length;
     }
 
     const edges: LadderEdge[] = [];
@@ -113,6 +131,7 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
             switch (port.role) {
                 case 'pod-port':
                     construct.podPortCount += 1;
+                    construct.podPorts.push(port);
                     break;
                 case 'management-port':
                     construct.managementPort = port.name;
@@ -145,6 +164,7 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
 
         construct.remotePeers.sort();
         construct.localnetPorts.sort();
+        construct.podPorts.sort((a, b) => a.name.localeCompare(b.name));
     }
 
     // Router-to-router adjacency travels as peered router ports (e.g. a UDN
