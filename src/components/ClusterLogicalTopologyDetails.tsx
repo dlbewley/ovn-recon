@@ -209,6 +209,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                                     construct={selectedConstruct}
                                                     model={model}
                                                     nodeHref={(node) => `/ovn-recon/ovn/${encodeURIComponent(node)}`}
+                                                    physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
                                                 />
                                             </CardBody>
                                         </Card>

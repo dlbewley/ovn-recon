@@ -22,7 +22,18 @@ export interface ConstructDrawerBodyProps {
     model: LadderModel;
     /** When set, node-bound constructs link to that node's logical view. */
     nodeHref?: (node: string) => string;
+    /**
+     * When set, seam constructs (external and localnet switches — the points
+     * where the logical network meets br-ex / bridge mappings) link across to
+     * the node's physical view.
+     */
+    physicalHref?: (node: string) => string;
+    /** Node to use for seam links on constructs without a node of their own
+     * (e.g. a Localnet switch viewed from a node's zone). */
+    fallbackNode?: string;
 }
+
+const SEAM_ROLES = new Set(['external-switch', 'localnet-switch']);
 
 const natRuleText = (nat: NATRow): string => {
     const target = nat.logicalPort ? `${nat.logicalIp} (${nat.logicalPort})` : nat.logicalIp ?? '';
@@ -94,8 +105,15 @@ const WorkloadPortList: React.FC<{ construct: LadderConstruct }> = ({ construct 
     );
 };
 
-const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({ construct, model, nodeHref }) => {
+const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({
+    construct,
+    model,
+    nodeHref,
+    physicalHref,
+    fallbackNode,
+}) => {
     const networkRef = networkResourceRef(construct.network);
+    const seamNode = SEAM_ROLES.has(construct.role) ? construct.node ?? fallbackNode : undefined;
 
     const connections = model.edges
         .filter((edge) => edge.source === construct.uuid || edge.target === construct.uuid)
@@ -134,6 +152,18 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({ construct, mo
                         {nodeHref
                             ? <Link to={nodeHref(construct.node)}>{construct.node}</Link>
                             : construct.node}
+                    </DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {physicalHref && seamNode && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Physical topology</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        <Link to={physicalHref(seamNode)}>
+                            {construct.role === 'localnet-switch'
+                                ? `Bridge mapping on ${seamNode}`
+                                : `br-ex on ${seamNode}`}
+                        </Link>
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}

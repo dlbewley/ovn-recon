@@ -77,6 +77,39 @@ describe('ConstructDrawerBody', () => {
         expect(podLink?.getAttribute('href')).toMatch(/^\/k8s\/ns\/[^/]+\/v1~Pod\/.+$/);
     });
 
+    it('links seam constructs across to the physical view', () => {
+        const construct = byName('ext_cnv-1');
+        act(() => {
+            root.render(
+                <ConstructDrawerBody
+                    construct={construct!}
+                    model={model}
+                    physicalHref={(node) => `/ovn-recon/node-network-state/${node}`}
+                />,
+            );
+        });
+        const seamLink = [...container.querySelectorAll('a')].find((anchor) =>
+            anchor.getAttribute('href')?.includes('/ovn-recon/node-network-state/'),
+        );
+        expect(seamLink?.getAttribute('href')).toBe('/ovn-recon/node-network-state/cnv-1');
+        expect(seamLink?.textContent).toContain('br-ex on cnv-1');
+    });
+
+    it('uses the page node for seam links on localnet switches', () => {
+        const construct = byName('cluster_udn_machinenet_ovn_localnet_switch');
+        act(() => {
+            root.render(
+                <ConstructDrawerBody
+                    construct={construct!}
+                    model={model}
+                    fallbackNode="cnv-1"
+                    physicalHref={(node) => `/ovn-recon/node-network-state/${node}`}
+                />,
+            );
+        });
+        expect(container.textContent).toContain('Bridge mapping on cnv-1');
+    });
+
     it('filters the pod list by query', () => {
         render('cnv-1');
         const input = container.querySelector<HTMLInputElement>('input[aria-label="Filter workload ports"]');

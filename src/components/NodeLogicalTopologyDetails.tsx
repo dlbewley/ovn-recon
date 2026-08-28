@@ -252,7 +252,12 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                         </DrawerHead>
                                         <Card>
                                             <CardBody>
-                                                <ConstructDrawerBody construct={selectedConstruct} model={model} />
+                                                <ConstructDrawerBody
+                                                    construct={selectedConstruct}
+                                                    model={model}
+                                                    fallbackNode={name}
+                                                    physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
+                                                />
                                             </CardBody>
                                         </Card>
                                     </>
