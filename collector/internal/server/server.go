@@ -36,11 +36,20 @@ type NodeLister interface {
 	ListNodes(ctx context.Context) ([]string, error)
 }
 
+// SnapshotCache stores zone snapshots between requests.
+type SnapshotCache interface {
+	Get(nodeName string) (snapshot.LogicalTopologySnapshot, bool)
+	Put(nodeName string, payload snapshot.LogicalTopologySnapshot) error
+}
+
 // Server wraps HTTP handlers for the OVN collector.
 type Server struct {
 	store         snapshot.Store
 	liveCollector LiveCollector
 	nodeLister    NodeLister
+	cache         SnapshotCache
+	cacheTTL      time.Duration
+	now           func() time.Time
 	logger        *slog.Logger
 }
 
@@ -48,6 +57,7 @@ type Server struct {
 func New(store snapshot.Store) *Server {
 	return &Server{
 		store:  store,
+		now:    time.Now,
 		logger: slog.Default(),
 	}
 }
@@ -62,6 +72,14 @@ func NewWithLiveCollector(store snapshot.Store, collector LiveCollector) *Server
 // WithNodeLister enables the aggregate endpoint with the given node source.
 func (s *Server) WithNodeLister(lister NodeLister) *Server {
 	s.nodeLister = lister
+	return s
+}
+
+// WithCache serves cached zone snapshots while they are within ttl of their
+// own generatedAt, recollecting on expiry. The runtime TTL floor applies.
+func (s *Server) WithCache(cache SnapshotCache, ttl time.Duration) *Server {
+	s.cache = cache
+	s.cacheTTL = snapshot.ClampCacheTTL(ttl)
 	return s
 }
 
@@ -106,16 +124,44 @@ func (s *Server) handleSnapshotByNode(w http.ResponseWriter, r *http.Request) {
 	s.writeSnapshot(w, payload, nodeName)
 }
 
-// collectZone resolves one node's zone snapshot: live probe first when
-// enabled, file store as the fallback (annotated with LIVE_PROBE_FAILED).
+// collectZone resolves one node's zone snapshot: fresh cache first, then
+// live probe (cached on success), then stale cache, then file store — each
+// fallback annotated so degraded provenance stays visible.
 func (s *Server) collectZone(ctx context.Context, nodeName string) (snapshot.LogicalTopologySnapshot, error) {
 	logger := s.logger.With("node", nodeName)
+
+	if s.cache != nil {
+		if cached, ok := s.cache.Get(nodeName); ok && snapshot.IsFresh(cached, s.cacheTTL, s.now()) {
+			logger.Debug("serving fresh cached snapshot", "generatedAt", cached.Metadata.GeneratedAt)
+			return cached, nil
+		}
+	}
 
 	if s.liveCollector != nil {
 		logger.Info("logical topology snapshot requested")
 		payload, probeErr := s.liveCollector.Collect(ctx, nodeName)
 		if probeErr == nil {
+			if s.cache != nil {
+				if err := s.cache.Put(nodeName, payload); err != nil {
+					logger.Warn("failed to write snapshot cache entry", "error", err)
+				}
+			}
 			return payload, nil
+		}
+
+		// A stale cache entry is still real observed data — prefer it over
+		// the synthetic fixture fallback.
+		if s.cache != nil {
+			if cached, ok := s.cache.Get(nodeName); ok {
+				logger.Warn("live OVN probe failed; serving stale cached snapshot", "error", probeErr, "generatedAt", cached.Metadata.GeneratedAt)
+				cached = appendFallbackWarning(cached, nodeName, probeErr)
+				cached = appendWarning(cached, "SNAPSHOT_STALE", fmt.Sprintf(
+					"Serving cached snapshot generated at %s; refresh failed", cached.Metadata.GeneratedAt.UTC().Format(time.RFC3339)))
+				if cached.Metadata.SourceHealth == "" || cached.Metadata.SourceHealth == "healthy" {
+					cached.Metadata.SourceHealth = "degraded"
+				}
+				return cached, nil
+			}
 		}
 
 		logger.Warn("live OVN probe failed; falling back to file snapshot", "error", probeErr)
@@ -209,17 +255,16 @@ func (s *Server) handleSnapshotsAggregate(w http.ResponseWriter, r *http.Request
 }
 
 func appendFallbackWarning(payload snapshot.LogicalTopologySnapshot, nodeName string, probeErr error) snapshot.LogicalTopologySnapshot {
-	message := fmt.Sprintf("Live probe collection failed for node %s: %v", nodeName, probeErr)
-	warning := snapshot.Warning{
-		Code:    "LIVE_PROBE_FAILED",
-		Message: message,
-	}
+	return appendWarning(payload, "LIVE_PROBE_FAILED", fmt.Sprintf("Live probe collection failed for node %s: %v", nodeName, probeErr))
+}
+
+func appendWarning(payload snapshot.LogicalTopologySnapshot, code, message string) snapshot.LogicalTopologySnapshot {
 	for _, existing := range payload.Warnings {
-		if existing.Code == warning.Code && existing.Message == warning.Message {
+		if existing.Code == code && existing.Message == message {
 			return payload
 		}
 	}
-	payload.Warnings = append(payload.Warnings, warning)
+	payload.Warnings = append(payload.Warnings, snapshot.Warning{Code: code, Message: message})
 	return payload
 }
 

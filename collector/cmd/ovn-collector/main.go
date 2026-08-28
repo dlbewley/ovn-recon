@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dlbewley/ovn-recon/collector/internal/probe"
 	"github.com/dlbewley/ovn-recon/collector/internal/server"
@@ -23,6 +25,8 @@ func main() {
 	targetNamespaces := parseCSV(envOrDefault("COLLECTOR_TARGET_NAMESPACES", "openshift-ovn-kubernetes,openshift-frr-k8s"))
 	logLevel := parseLogLevel(envOrDefault("COLLECTOR_LOG_LEVEL", "info"))
 	includeProbeOutput := parseBool(envOrDefault("COLLECTOR_INCLUDE_PROBE_OUTPUT", "false"))
+	cacheDir := strings.TrimSpace(envOrDefault("COLLECTOR_CACHE_DIR", ""))
+	cacheTTL := parseCacheTTLSeconds(envOrDefault("COLLECTOR_CACHE_TTL_SECONDS", "120"))
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 	slog.SetDefault(logger)
@@ -42,6 +46,22 @@ func main() {
 		lister := fallbackNodeLister{primary: runnerFactory, fallback: store, logger: logger}
 		srv = server.NewWithLiveCollector(store, liveCollector).WithNodeLister(lister)
 		logger.Info("live OVN probing enabled", "targetNamespaces", targetNamespaces)
+
+		// The cache only makes sense in front of live probing; in
+		// store-only mode fixtures are already instant and authoritative.
+		if cacheDir != "" {
+			cache, cacheErr := snapshot.NewDiskCache(cacheDir)
+			if cacheErr != nil {
+				logger.Warn("snapshot cache disabled", "dir", cacheDir, "error", cacheErr)
+			} else {
+				effectiveTTL := snapshot.ClampCacheTTL(cacheTTL)
+				if effectiveTTL != cacheTTL {
+					logger.Warn("snapshot cache TTL raised to runtime floor", "requested", cacheTTL.String(), "effective", effectiveTTL.String())
+				}
+				srv = srv.WithCache(cache, effectiveTTL)
+				logger.Info("snapshot cache enabled", "dir", cacheDir, "ttl", effectiveTTL.String())
+			}
+		}
 	}
 	addr := ":" + port
 
@@ -149,6 +169,14 @@ func parseLogLevel(raw string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func parseCacheTTLSeconds(raw string) time.Duration {
+	seconds, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || seconds <= 0 {
+		return 120 * time.Second
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func parseBool(raw string) bool {

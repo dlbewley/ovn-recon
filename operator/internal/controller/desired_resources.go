@@ -177,6 +177,34 @@ func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deploym
 	image := collectorImageFor(ovnRecon)
 	replicas := int32(1)
 
+	env := []corev1.EnvVar{
+		{
+			Name:  "COLLECTOR_TARGET_NAMESPACES",
+			Value: strings.Join(collectorProbeNamespacesFor(ovnRecon), ","),
+		},
+		{
+			Name:  "COLLECTOR_LOG_LEVEL",
+			Value: collectorLogLevelFor(ovnRecon),
+		},
+		{
+			Name:  "COLLECTOR_INCLUDE_PROBE_OUTPUT",
+			Value: strconv.FormatBool(collectorIncludeProbeOutputFor(ovnRecon)),
+		},
+	}
+	var volumes []corev1.Volume
+	var volumeMounts []corev1.VolumeMount
+	if collectorCacheEnabledFor(ovnRecon) {
+		env = append(env,
+			corev1.EnvVar{Name: "COLLECTOR_CACHE_DIR", Value: collectorCacheDir},
+			corev1.EnvVar{Name: "COLLECTOR_CACHE_TTL_SECONDS", Value: strconv.FormatInt(int64(collectorCacheTTLSecondsFor(ovnRecon)), 10)},
+		)
+		volumes = append(volumes, collectorCacheVolumeFor(ovnRecon))
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "snapshot-cache",
+			MountPath: collectorCacheDir,
+		})
+	}
+
 	return &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "apps/v1",
@@ -218,20 +246,8 @@ func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deploym
 						Name:            "ovn-collector",
 						Image:           image,
 						ImagePullPolicy: pullPolicy,
-						Env: []corev1.EnvVar{
-							{
-								Name:  "COLLECTOR_TARGET_NAMESPACES",
-								Value: strings.Join(collectorProbeNamespacesFor(ovnRecon), ","),
-							},
-							{
-								Name:  "COLLECTOR_LOG_LEVEL",
-								Value: collectorLogLevelFor(ovnRecon),
-							},
-							{
-								Name:  "COLLECTOR_INCLUDE_PROBE_OUTPUT",
-								Value: strconv.FormatBool(collectorIncludeProbeOutputFor(ovnRecon)),
-							},
-						},
+						Env:             env,
+						VolumeMounts:    volumeMounts,
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: 8090,
 							Name:          "http",
@@ -280,6 +296,7 @@ func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deploym
 							FailureThreshold:    3,
 						},
 					}},
+					Volumes: volumes,
 				},
 			},
 		},
@@ -403,6 +420,57 @@ func collectorLogLevelFor(ovnRecon *reconv1beta1.OvnRecon) string {
 
 func collectorIncludeProbeOutputFor(ovnRecon *reconv1beta1.OvnRecon) bool {
 	return ovnRecon.Spec.Collector.Logging.IncludeProbeOutput
+}
+
+// collectorCacheDir is where the collector expects its snapshot cache
+// volume; the collector receives it via COLLECTOR_CACHE_DIR.
+const collectorCacheDir = "/var/cache/ovn-recon"
+
+const minCollectorCacheTTLSeconds = int32(30)
+const defaultCollectorCacheTTLSeconds = int32(120)
+
+func collectorCacheEnabledFor(ovnRecon *reconv1beta1.OvnRecon) bool {
+	enabled := ovnRecon.Spec.Collector.Cache.Enabled
+	if enabled == nil {
+		return true
+	}
+	return *enabled
+}
+
+// collectorCacheTTLSecondsFor applies the same floor the CRD validates, as a
+// guard for objects created before the validation existed.
+func collectorCacheTTLSecondsFor(ovnRecon *reconv1beta1.OvnRecon) int32 {
+	ttl := ovnRecon.Spec.Collector.Cache.TTLSeconds
+	if ttl == 0 {
+		return defaultCollectorCacheTTLSeconds
+	}
+	if ttl < minCollectorCacheTTLSeconds {
+		return minCollectorCacheTTLSeconds
+	}
+	return ttl
+}
+
+// collectorCacheVolumeFor renders the cache volume: a PVC when configured
+// with a claim name, otherwise EmptyDir (also the documented fallback for
+// PVC mode without a claimName).
+func collectorCacheVolumeFor(ovnRecon *reconv1beta1.OvnRecon) corev1.Volume {
+	storage := ovnRecon.Spec.Collector.Cache.Storage
+	if strings.EqualFold(storage.Mode, "PVC") && strings.TrimSpace(storage.ClaimName) != "" {
+		return corev1.Volume{
+			Name: "snapshot-cache",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: storage.ClaimName,
+				},
+			},
+		}
+	}
+	return corev1.Volume{
+		Name: "snapshot-cache",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	}
 }
 
 func consolePluginErrorLogLevelFor(ovnRecon *reconv1beta1.OvnRecon) string {

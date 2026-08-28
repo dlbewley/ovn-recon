@@ -438,3 +438,93 @@ func TestCollectorImageIgnoresRelatedImageWhenPluginTagPinned(t *testing.T) {
 		t.Fatalf("plugin tag should still drive the collector, got %s", got)
 	}
 }
+
+func TestCollectorCacheDefaultsToEmptyDirWithFloorTTL(t *testing.T) {
+	cr := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec:       reconv1beta1.OvnReconSpec{TargetNamespace: "ovn-recon"},
+	}
+
+	dep := DesiredCollectorDeployment(cr)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	if got, ok := envValue(container.Env, "COLLECTOR_CACHE_DIR"); !ok || got != "/var/cache/ovn-recon" {
+		t.Fatalf("expected cache dir env, got %q (present=%v)", got, ok)
+	}
+	if got, ok := envValue(container.Env, "COLLECTOR_CACHE_TTL_SECONDS"); !ok || got != "120" {
+		t.Fatalf("expected default cache TTL 120, got %q (present=%v)", got, ok)
+	}
+	if len(container.VolumeMounts) != 1 || container.VolumeMounts[0].MountPath != "/var/cache/ovn-recon" {
+		t.Fatalf("expected cache volume mount, got %#v", container.VolumeMounts)
+	}
+	if len(dep.Spec.Template.Spec.Volumes) != 1 || dep.Spec.Template.Spec.Volumes[0].EmptyDir == nil {
+		t.Fatalf("expected EmptyDir cache volume, got %#v", dep.Spec.Template.Spec.Volumes)
+	}
+}
+
+func TestCollectorCacheDisabled(t *testing.T) {
+	disabled := false
+	cr := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1beta1.OvnReconSpec{
+			TargetNamespace: "ovn-recon",
+			Collector: reconv1beta1.CollectorSpec{
+				Cache: reconv1beta1.CollectorCacheSpec{Enabled: &disabled},
+			},
+		},
+	}
+
+	dep := DesiredCollectorDeployment(cr)
+	container := dep.Spec.Template.Spec.Containers[0]
+	if _, ok := envValue(container.Env, "COLLECTOR_CACHE_DIR"); ok {
+		t.Fatal("expected no cache dir env when cache disabled")
+	}
+	if len(container.VolumeMounts) != 0 || len(dep.Spec.Template.Spec.Volumes) != 0 {
+		t.Fatalf("expected no cache volume when disabled, got %#v / %#v", container.VolumeMounts, dep.Spec.Template.Spec.Volumes)
+	}
+}
+
+func TestCollectorCacheTTLClampedToFloor(t *testing.T) {
+	cr := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1beta1.OvnReconSpec{
+			TargetNamespace: "ovn-recon",
+			Collector: reconv1beta1.CollectorSpec{
+				Cache: reconv1beta1.CollectorCacheSpec{TTLSeconds: 5},
+			},
+		},
+	}
+
+	dep := DesiredCollectorDeployment(cr)
+	if got, ok := envValue(dep.Spec.Template.Spec.Containers[0].Env, "COLLECTOR_CACHE_TTL_SECONDS"); !ok || got != "30" {
+		t.Fatalf("expected TTL clamped to 30, got %q (present=%v)", got, ok)
+	}
+}
+
+func TestCollectorCachePVCStorage(t *testing.T) {
+	cr := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1beta1.OvnReconSpec{
+			TargetNamespace: "ovn-recon",
+			Collector: reconv1beta1.CollectorSpec{
+				Cache: reconv1beta1.CollectorCacheSpec{
+					Storage: reconv1beta1.CollectorCacheStorageSpec{Mode: "PVC", ClaimName: "snapshot-cache"},
+				},
+			},
+		},
+	}
+
+	dep := DesiredCollectorDeployment(cr)
+	volumes := dep.Spec.Template.Spec.Volumes
+	if len(volumes) != 1 || volumes[0].PersistentVolumeClaim == nil || volumes[0].PersistentVolumeClaim.ClaimName != "snapshot-cache" {
+		t.Fatalf("expected PVC cache volume, got %#v", volumes)
+	}
+
+	// PVC mode without a claim name falls back to EmptyDir rather than
+	// rendering an unmountable volume.
+	cr.Spec.Collector.Cache.Storage.ClaimName = ""
+	dep = DesiredCollectorDeployment(cr)
+	if dep.Spec.Template.Spec.Volumes[0].EmptyDir == nil {
+		t.Fatalf("expected EmptyDir fallback, got %#v", dep.Spec.Template.Spec.Volumes)
+	}
+}
