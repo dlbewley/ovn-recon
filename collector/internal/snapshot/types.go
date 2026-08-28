@@ -122,6 +122,23 @@ type LogicalDatabase struct {
 	StaticRoutes       []StaticRouteRow       `json:"staticRoutes"`
 }
 
+// ClusterMetadata describes an aggregate collection across zones.
+type ClusterMetadata struct {
+	SchemaVersion string    `json:"schemaVersion"`
+	GeneratedAt   time.Time `json:"generatedAt"`
+	SourceHealth  string    `json:"sourceHealth"`
+}
+
+// ClusterLogicalTopology is the aggregate payload: every reachable node's
+// zone snapshot in one response. The collector does not merge zones — dedup
+// rules are semantic (name-based identity of transit switches and
+// per-network routers) and live in the frontend classification layer.
+type ClusterLogicalTopology struct {
+	Metadata  ClusterMetadata           `json:"metadata"`
+	Snapshots []LogicalTopologySnapshot `json:"snapshots"`
+	Warnings  []Warning                 `json:"warnings"`
+}
+
 // LogicalTopologySnapshot is the canonical payload for the logical OVN view.
 //
 // Database is the v2 payload (metadata.schemaVersion == SchemaVersionV2).

@@ -268,6 +268,17 @@ export interface LogicalTopologySnapshot {
     warnings: LogicalTopologyWarning[];
 }
 
+/** Aggregate payload from GET /api/v1/snapshots: one zone snapshot per node. */
+export interface ClusterLogicalTopology {
+    metadata: {
+        schemaVersion: string;
+        generatedAt: string;
+        sourceHealth: string;
+    };
+    snapshots: LogicalTopologySnapshot[];
+    warnings: LogicalTopologyWarning[];
+}
+
 export interface OvnRecon extends K8sResourceCommon {
     spec?: {
         collector?: {

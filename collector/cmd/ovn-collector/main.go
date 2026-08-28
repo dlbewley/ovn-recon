@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -31,12 +32,15 @@ func main() {
 	})
 
 	store := snapshot.NewFileStore(snapshotDir, "default.json")
-	srv := server.New(store)
-	liveCollector, err := buildLiveCollector(targetNamespaces, logger, includeProbeOutput)
+	srv := server.New(store).WithNodeLister(store)
+	liveCollector, runnerFactory, err := buildLiveCollector(targetNamespaces, logger, includeProbeOutput)
 	if err != nil {
 		logger.Warn("live OVN probing disabled; serving file snapshots only", "error", err)
 	} else {
-		srv = server.NewWithLiveCollector(store, liveCollector)
+		// Aggregate node discovery prefers live pod placement, with the
+		// fixture store's file list as the offline fallback.
+		lister := fallbackNodeLister{primary: runnerFactory, fallback: store, logger: logger}
+		srv = server.NewWithLiveCollector(store, liveCollector).WithNodeLister(lister)
 		logger.Info("live OVN probing enabled", "targetNamespaces", targetNamespaces)
 	}
 	addr := ":" + port
@@ -54,23 +58,42 @@ func main() {
 	}
 }
 
-func buildLiveCollector(targetNamespaces []string, logger *slog.Logger, includeProbeOutput bool) (*probe.SnapshotCollector, error) {
+func buildLiveCollector(targetNamespaces []string, logger *slog.Logger, includeProbeOutput bool) (*probe.SnapshotCollector, *probe.KubernetesExecRunnerFactory, error) {
 	if len(targetNamespaces) == 0 {
-		return nil, fmt.Errorf("at least one target namespace is required")
+		return nil, nil, fmt.Errorf("at least one target namespace is required")
 	}
 
 	restConfig, err := loadRestConfig()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	clientset, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
-		return nil, fmt.Errorf("create kubernetes client: %w", err)
+		return nil, nil, fmt.Errorf("create kubernetes client: %w", err)
 	}
 
 	runnerFactory := probe.NewKubernetesExecRunnerFactory(clientset, restConfig, targetNamespaces, logger.With("component", "runner"))
-	return probe.NewSnapshotCollector(runnerFactory, logger.With("component", "collector"), includeProbeOutput), nil
+	return probe.NewSnapshotCollector(runnerFactory, logger.With("component", "collector"), includeProbeOutput), runnerFactory, nil
+}
+
+// fallbackNodeLister prefers live pod placement for node discovery and falls
+// back to the snapshot file store when the cluster cannot be listed.
+type fallbackNodeLister struct {
+	primary  server.NodeLister
+	fallback server.NodeLister
+	logger   *slog.Logger
+}
+
+func (l fallbackNodeLister) ListNodes(ctx context.Context) ([]string, error) {
+	nodes, err := l.primary.ListNodes(ctx)
+	if err == nil && len(nodes) > 0 {
+		return nodes, nil
+	}
+	if err != nil {
+		l.logger.Warn("live node discovery failed; falling back to snapshot files", "error", err)
+	}
+	return l.fallback.ListNodes(ctx)
 }
 
 // loadRestConfig prefers in-cluster config and falls back to kubeconfig so
