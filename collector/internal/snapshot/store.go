@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 var ErrNotFound = errors.New("snapshot not found")
@@ -59,6 +60,26 @@ func (s *FileStore) GetByNode(_ context.Context, nodeName string) (LogicalTopolo
 		payload.Metadata.NodeName = nodeName
 	}
 	return payload, nil
+}
+
+// ListNodes returns the node names with a snapshot file on disk, excluding
+// the fallback file. Used as the aggregate endpoint's node source when live
+// probing is unavailable.
+func (s *FileStore) ListNodes(_ context.Context) ([]string, error) {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return nil, fmt.Errorf("list snapshot dir: %w", err)
+	}
+
+	nodes := []string{}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" || entry.Name() == s.fallbackFile {
+			continue
+		}
+		nodes = append(nodes, entry.Name()[:len(entry.Name())-len(".json")])
+	}
+	sort.Strings(nodes)
+	return nodes, nil
 }
 
 func loadSnapshot(path string) (LogicalTopologySnapshot, error) {

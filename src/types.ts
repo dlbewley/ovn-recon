@@ -155,6 +155,7 @@ export interface LogicalTopologyWarning {
     message: string;
 }
 
+/** @deprecated v1 graph payload; v2 consumers read LogicalDatabase instead. */
 export interface LogicalTopologyNode {
     id: string;
     kind: string;
@@ -162,6 +163,7 @@ export interface LogicalTopologyNode {
     data?: Record<string, unknown>;
 }
 
+/** @deprecated v1 graph payload; v2 consumers read LogicalDatabase instead. */
 export interface LogicalTopologyEdge {
     id: string;
     source: string;
@@ -170,17 +172,110 @@ export interface LogicalTopologyEdge {
     data?: Record<string, unknown>;
 }
 
+/** @deprecated v1 graph payload; v2 consumers read LogicalDatabase instead. */
 export interface LogicalTopologyGroup {
     id: string;
     label: string;
     nodeIds: string[];
 }
 
+// v2 snapshot contract (metadata.schemaVersion === LOGICAL_TOPOLOGY_SCHEMA_V2):
+// a table-oriented transcription of the OVN NB tables. Mirrors
+// collector/internal/snapshot/types.go and
+// collector/api/logical-topology-snapshot.schema.json.
+export const LOGICAL_TOPOLOGY_SCHEMA_V2 = '2';
+
+export interface LogicalRouterRow {
+    uuid: string;
+    name: string;
+    ports: string[];
+    nat?: string[];
+    staticRoutes?: string[];
+    options?: Record<string, string>;
+    externalIds?: Record<string, string>;
+}
+
+export interface LogicalRouterPortRow {
+    uuid: string;
+    name: string;
+    mac?: string;
+    networks?: string[];
+    peer?: string;
+    gatewayChassis?: string[];
+    options?: Record<string, string>;
+    externalIds?: Record<string, string>;
+}
+
+export interface LogicalSwitchRow {
+    uuid: string;
+    name: string;
+    ports: string[];
+    otherConfig?: Record<string, string>;
+    externalIds?: Record<string, string>;
+}
+
+export interface LogicalSwitchPortRow {
+    uuid: string;
+    name: string;
+    type?: string;
+    addresses?: string[];
+    options?: Record<string, string>;
+    externalIds?: Record<string, string>;
+}
+
+export type NATType = 'snat' | 'dnat' | 'dnat_and_snat';
+
+export interface NATRow {
+    uuid: string;
+    type: NATType;
+    externalIp?: string;
+    logicalIp?: string;
+    logicalPort?: string;
+    externalMac?: string;
+    options?: Record<string, string>;
+    externalIds?: Record<string, string>;
+}
+
+export interface StaticRouteRow {
+    uuid: string;
+    ipPrefix: string;
+    nexthop?: string;
+    policy?: string;
+    outputPort?: string;
+    options?: Record<string, string>;
+    externalIds?: Record<string, string>;
+}
+
+export interface LogicalDatabase {
+    logicalRouters: LogicalRouterRow[];
+    logicalRouterPorts: LogicalRouterPortRow[];
+    logicalSwitches: LogicalSwitchRow[];
+    logicalSwitchPorts: LogicalSwitchPortRow[];
+    nats: NATRow[];
+    staticRoutes: StaticRouteRow[];
+}
+
 export interface LogicalTopologySnapshot {
     metadata: LogicalTopologyMetadata;
+    /** v2 payload; absent on v1 snapshots from a not-yet-upgraded collector. */
+    database?: LogicalDatabase;
+    /** @deprecated v1 graph payload. */
     nodes: LogicalTopologyNode[];
+    /** @deprecated v1 graph payload. */
     edges: LogicalTopologyEdge[];
+    /** @deprecated v1 graph payload. */
     groups: LogicalTopologyGroup[];
+    warnings: LogicalTopologyWarning[];
+}
+
+/** Aggregate payload from GET /api/v1/snapshots: one zone snapshot per node. */
+export interface ClusterLogicalTopology {
+    metadata: {
+        schemaVersion: string;
+        generatedAt: string;
+        sourceHealth: string;
+    };
+    snapshots: LogicalTopologySnapshot[];
     warnings: LogicalTopologyWarning[];
 }
 

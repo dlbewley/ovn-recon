@@ -2,21 +2,138 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dlbewley/ovn-recon/collector/api/logical-topology-snapshot.schema.json",
   "title": "LogicalTopologySnapshot",
+  "description": "v2 (metadata.schemaVersion == \"2\"): table-oriented transcription of OVN NB tables in `database`. The `nodes`/`edges`/`groups` graph fields are the deprecated v1 payload, retained only during the transition to the ladder renderer (ovn-recon-kck.7).",
   "type": "object",
-  "required": ["metadata", "nodes", "edges", "groups", "warnings"],
+  "required": ["metadata", "database", "warnings"],
   "properties": {
     "metadata": {
       "type": "object",
       "required": ["schemaVersion", "generatedAt", "sourceHealth", "nodeName"],
       "properties": {
-        "schemaVersion": {"type": "string"},
+        "schemaVersion": {"type": "string", "enum": ["2"]},
         "generatedAt": {"type": "string", "format": "date-time"},
         "sourceHealth": {"type": "string"},
         "nodeName": {"type": "string"}
       },
       "additionalProperties": false
     },
+    "database": {
+      "type": "object",
+      "required": [
+        "logicalRouters",
+        "logicalRouterPorts",
+        "logicalSwitches",
+        "logicalSwitchPorts",
+        "nats",
+        "staticRoutes"
+      ],
+      "properties": {
+        "logicalRouters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uuid", "name", "ports"],
+            "properties": {
+              "uuid": {"type": "string"},
+              "name": {"type": "string"},
+              "ports": {"type": "array", "items": {"type": "string"}},
+              "nat": {"type": "array", "items": {"type": "string"}},
+              "staticRoutes": {"type": "array", "items": {"type": "string"}},
+              "options": {"$ref": "#/$defs/stringMap"},
+              "externalIds": {"$ref": "#/$defs/stringMap"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "logicalRouterPorts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uuid", "name"],
+            "properties": {
+              "uuid": {"type": "string"},
+              "name": {"type": "string"},
+              "mac": {"type": "string"},
+              "networks": {"type": "array", "items": {"type": "string"}},
+              "peer": {"type": "string"},
+              "gatewayChassis": {"type": "array", "items": {"type": "string"}},
+              "options": {"$ref": "#/$defs/stringMap"},
+              "externalIds": {"$ref": "#/$defs/stringMap"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "logicalSwitches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uuid", "name", "ports"],
+            "properties": {
+              "uuid": {"type": "string"},
+              "name": {"type": "string"},
+              "ports": {"type": "array", "items": {"type": "string"}},
+              "otherConfig": {"$ref": "#/$defs/stringMap"},
+              "externalIds": {"$ref": "#/$defs/stringMap"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "logicalSwitchPorts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uuid", "name"],
+            "properties": {
+              "uuid": {"type": "string"},
+              "name": {"type": "string"},
+              "type": {"type": "string"},
+              "addresses": {"type": "array", "items": {"type": "string"}},
+              "options": {"$ref": "#/$defs/stringMap"},
+              "externalIds": {"$ref": "#/$defs/stringMap"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "nats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uuid", "type"],
+            "properties": {
+              "uuid": {"type": "string"},
+              "type": {"type": "string", "enum": ["snat", "dnat", "dnat_and_snat"]},
+              "externalIp": {"type": "string"},
+              "logicalIp": {"type": "string"},
+              "logicalPort": {"type": "string"},
+              "externalMac": {"type": "string"},
+              "options": {"$ref": "#/$defs/stringMap"},
+              "externalIds": {"$ref": "#/$defs/stringMap"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "staticRoutes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uuid", "ipPrefix"],
+            "properties": {
+              "uuid": {"type": "string"},
+              "ipPrefix": {"type": "string"},
+              "nexthop": {"type": "string"},
+              "policy": {"type": "string"},
+              "outputPort": {"type": "string"},
+              "options": {"$ref": "#/$defs/stringMap"},
+              "externalIds": {"$ref": "#/$defs/stringMap"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "nodes": {
+      "deprecated": true,
       "type": "array",
       "items": {
         "type": "object",
@@ -31,6 +148,7 @@
       }
     },
     "edges": {
+      "deprecated": true,
       "type": "array",
       "items": {
         "type": "object",
@@ -46,6 +164,7 @@
       }
     },
     "groups": {
+      "deprecated": true,
       "type": "array",
       "items": {
         "type": "object",
@@ -74,5 +193,11 @@
       }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    }
+  }
 }

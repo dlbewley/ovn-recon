@@ -60,6 +60,48 @@ func (f *KubernetesExecRunnerFactory) RunnerForNode(nodeName string) (Runner, er
 	}, nil
 }
 
+// ListNodes discovers probeable nodes: the nodes hosting running pods in the
+// first target namespace that has any. Namespace order encodes preference,
+// matching exec target resolution, so the OVN namespace is the authority for
+// which nodes have a zone to probe.
+func (f *KubernetesExecRunnerFactory) ListNodes(ctx context.Context) ([]string, error) {
+	if f.clientset == nil {
+		return nil, fmt.Errorf("kubernetes client is not configured")
+	}
+
+	for _, namespace := range f.targetNamespaces {
+		namespace = strings.TrimSpace(namespace)
+		if namespace == "" {
+			continue
+		}
+
+		podList, err := f.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			FieldSelector: "status.phase=Running",
+		})
+		if err != nil {
+			f.logger.Warn("failed to list pods for node discovery; trying next namespace", "namespace", namespace, "error", err)
+			continue
+		}
+
+		seen := map[string]bool{}
+		nodes := []string{}
+		for _, pod := range podList.Items {
+			node := pod.Spec.NodeName
+			if node == "" || seen[node] {
+				continue
+			}
+			seen[node] = true
+			nodes = append(nodes, node)
+		}
+		if len(nodes) > 0 {
+			slices.Sort(nodes)
+			return nodes, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no running pods found in namespaces %q", strings.Join(f.targetNamespaces, ","))
+}
+
 // KubernetesExecRunner executes OVN commands inside a selected pod/container.
 type KubernetesExecRunner struct {
 	clientset        kubernetes.Interface

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { DocumentTitle } from '@openshift-console/dynamic-plugin-sdk';
-import { useParams, Link } from 'react-router';
+import { Link } from 'react-router';
 import {
     PageSection,
     Title,
@@ -27,52 +27,17 @@ import {
     AlertGroup,
 } from '@patternfly/react-core';
 
-import { LogicalTopologySnapshot } from '../types';
+import { ClusterLogicalTopology } from '../types';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
-import { fetchCollectorSnapshot } from './collectorApi';
-import { buildLadderModel } from './logicalLadderModel';
+import { fetchClusterTopology } from './collectorApi';
+import { mergeZones } from './logicalClusterModel';
 import ConstructDrawerBody from './ConstructDrawerBody';
 import LogicalLadderView, { networkDisplayName, roleLabel } from './LogicalLadderView';
 import { freshnessFromAge, parseSnapshotAgeMs, SnapshotFreshnessState } from './snapshotFreshness';
 
-const REFRESH_INTERVAL_MS = 30000;
-
-const resolveNodeName = (routeName?: string): string => {
-    const fromRoute = routeName?.trim();
-    if (fromRoute) {
-        return fromRoute;
-    }
-
-    if (typeof window === 'undefined') {
-        return '';
-    }
-
-    const path = window.location.pathname || '';
-    const match = path.match(/\/ovn-recon\/ovn\/([^/?#]+)/);
-    if (!match || !match[1]) {
-        return '';
-    }
-
-    try {
-        return decodeURIComponent(match[1]);
-    } catch {
-        return match[1];
-    }
-};
-
-const formatUtcTimestamp = (value: string): string => {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return 'unknown';
-    return date.toLocaleString();
-};
-
-const formatAge = (ageMs: number): string => {
-    if (ageMs < 1000) return 'just now';
-    const minutes = Math.floor(ageMs / 60000);
-    const seconds = Math.floor((ageMs % 60000) / 1000);
-    if (minutes <= 0) return `${seconds}s ago`;
-    return `${minutes}m ${seconds}s ago`;
-};
+// Aggregate collection probes every zone, so refresh less eagerly than the
+// per-node view.
+const REFRESH_INTERVAL_MS = 60000;
 
 const freshnessVariant = (state: SnapshotFreshnessState): 'success' | 'warning' | 'danger' => {
     if (state === 'critical') return 'danger';
@@ -80,91 +45,82 @@ const freshnessVariant = (state: SnapshotFreshnessState): 'success' | 'warning' 
     return 'success';
 };
 
-const freshnessTitle = (state: SnapshotFreshnessState): string => {
-    if (state === 'critical') return 'Snapshot is stale';
-    if (state === 'warning') return 'Snapshot age exceeds warning threshold';
-    if (state === 'unknown') return 'Snapshot freshness unknown';
-    return 'Snapshot is fresh';
-};
-
 interface Point {
     x: number;
     y: number;
 }
 
-const NodeLogicalTopologyDetails: React.FC = () => {
-    const { name: routeName } = useParams<{ name?: string }>();
-    const name = React.useMemo(() => resolveNodeName(routeName), [routeName]);
+const ClusterLogicalTopologyDetails: React.FC = () => {
     const { enabled, loaded: gateLoaded, loadError: gateError } = useOvnCollectorFeatureGate();
 
-    const [snapshot, setSnapshot] = React.useState<LogicalTopologySnapshot | null>(null);
+    const [topology, setTopology] = React.useState<ClusterLogicalTopology | null>(null);
     const [isLoading, setIsLoading] = React.useState<boolean>(false);
-    const [snapshotError, setSnapshotError] = React.useState<string>('');
-    const [lastLoadedAt, setLastLoadedAt] = React.useState<number>(Date.now());
+    const [fetchError, setFetchError] = React.useState<string>('');
     const [search, setSearch] = React.useState<string>('');
     const [networkFilter, setNetworkFilter] = React.useState<string>('all');
     const [selectedUuid, setSelectedUuid] = React.useState<string | null>(null);
+    const [expandedGroups, setExpandedGroups] = React.useState<ReadonlySet<string>>(new Set());
     const [zoom, setZoom] = React.useState<number>(1);
     const [pan, setPan] = React.useState<Point>({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = React.useState<boolean>(false);
     const [lastPointer, setLastPointer] = React.useState<Point | null>(null);
 
-    const loadSnapshot = React.useCallback(async () => {
-        if (!enabled || !name) return;
-
+    const loadTopology = React.useCallback(async () => {
+        if (!enabled) return;
         setIsLoading(true);
-        setSnapshotError('');
-
+        setFetchError('');
         try {
-            const payload = await fetchCollectorSnapshot(name);
-            setSnapshot(payload);
-            setLastLoadedAt(Date.now());
+            const payload = await fetchClusterTopology();
+            setTopology(payload);
         } catch (error) {
-            setSnapshot(null);
-            setSnapshotError(error instanceof Error ? error.message : 'Failed to load logical topology');
+            setTopology(null);
+            setFetchError(error instanceof Error ? error.message : 'Failed to load cluster topology');
         } finally {
             setIsLoading(false);
         }
-    }, [enabled, name]);
+    }, [enabled]);
 
     React.useEffect(() => {
-        if (!enabled || !name) return;
-
-        loadSnapshot();
+        if (!enabled) return;
+        loadTopology();
         const timer = window.setInterval(() => {
-            loadSnapshot();
+            loadTopology();
         }, REFRESH_INTERVAL_MS);
-
         return () => {
             window.clearInterval(timer);
         };
-    }, [enabled, name, loadSnapshot]);
+    }, [enabled, loadTopology]);
 
-    const snapshotAgeMs = React.useMemo(() => {
-        if (!snapshot?.metadata?.generatedAt) return null;
-        return parseSnapshotAgeMs(snapshot.metadata.generatedAt);
-    }, [snapshot, lastLoadedAt]);
-
-    const freshnessState = React.useMemo(
-        () => freshnessFromAge(snapshotAgeMs),
-        [snapshotAgeMs],
+    const model = React.useMemo(
+        () => (topology ? mergeZones(topology.snapshots) : null),
+        [topology],
     );
 
-    const model = React.useMemo(() => {
-        if (!snapshot?.database) return null;
-        return buildLadderModel(snapshot.database);
-    }, [snapshot]);
-
-    const needsCollectorUpgrade = snapshot != null && snapshot.database == null;
-    const hasNoGraphData = model != null && model.constructs.length === 0;
+    const ageMs = React.useMemo(
+        () => (topology ? parseSnapshotAgeMs(topology.metadata.generatedAt) : null),
+        [topology],
+    );
+    const freshness = freshnessFromAge(ageMs);
 
     const selectedConstruct = React.useMemo(
         () => (model && selectedUuid ? model.constructByUuid.get(selectedUuid) ?? null : null),
         [model, selectedUuid],
     );
 
+    const toggleAggregate = React.useCallback((aggregateIdValue: string) => {
+        setExpandedGroups((current) => {
+            const next = new Set(current);
+            if (next.has(aggregateIdValue)) {
+                next.delete(aggregateIdValue);
+            } else {
+                next.add(aggregateIdValue);
+            }
+            return next;
+        });
+    }, []);
+
     const zoomIn = () => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))));
-    const zoomOut = () => setZoom((value) => Math.max(0.4, Number((value - 0.1).toFixed(2))));
+    const zoomOut = () => setZoom((value) => Math.max(0.3, Number((value - 0.1).toFixed(2))));
     const resetView = () => {
         setZoom(1);
         setPan({ x: 0, y: 0 });
@@ -221,18 +177,15 @@ const NodeLogicalTopologyDetails: React.FC = () => {
 
     return (
         <>
-            <DocumentTitle>{`OVN Recon - Logical OVN (${name})`}</DocumentTitle>
+            <DocumentTitle>OVN Recon - Cluster Logical Topology</DocumentTitle>
             <PageSection>
                 <Breadcrumb>
                     <BreadcrumbItem>
                         <Link to="/ovn-recon/node-network-state">OVN Recon</Link>
                     </BreadcrumbItem>
-                    <BreadcrumbItem>
-                        <Link to="/ovn-recon/ovn">Cluster logical topology</Link>
-                    </BreadcrumbItem>
-                    <BreadcrumbItem isActive>Logical OVN: {name}</BreadcrumbItem>
+                    <BreadcrumbItem isActive>Cluster logical topology</BreadcrumbItem>
                 </Breadcrumb>
-                <Title headingLevel="h1" className="pf-u-mt-lg">Logical OVN Topology: {name}</Title>
+                <Title headingLevel="h1" className="pf-u-mt-lg">Cluster Logical OVN Topology</Title>
             </PageSection>
             <PageSection isFilled>
                 <Drawer isExpanded={selectedConstruct != null}>
@@ -255,7 +208,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                                 <ConstructDrawerBody
                                                     construct={selectedConstruct}
                                                     model={model}
-                                                    fallbackNode={name}
+                                                    nodeHref={(node) => `/ovn-recon/ovn/${encodeURIComponent(node)}`}
                                                     physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
                                                 />
                                             </CardBody>
@@ -266,60 +219,42 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                         )}
                     >
                         <Card>
-                            <CardTitle>Logical Topology</CardTitle>
+                            <CardTitle>Cluster Topology</CardTitle>
                             <CardBody>
                                 <AlertGroup isToast={false}>
                                     {isLoading && (
-                                        <Alert variant="info" isInline title="Refreshing logical topology snapshot..." />
+                                        <Alert variant="info" isInline title="Collecting zone snapshots across the cluster..." />
                                     )}
-                                    {snapshotError && (
-                                        <Alert variant="warning" isInline title={snapshotError} />
-                                    )}
-                                    {snapshot && !needsCollectorUpgrade && (
-                                        <Alert
-                                            variant={freshnessVariant(freshnessState)}
-                                            isInline
-                                            title={freshnessTitle(freshnessState)}
-                                        >
-                                            <div>Generated: {formatUtcTimestamp(snapshot.metadata.generatedAt)}</div>
-                                            {snapshotAgeMs != null && <div>Age: {formatAge(snapshotAgeMs)}</div>}
+                                    {fetchError && (
+                                        <Alert variant="warning" isInline title={fetchError}>
+                                            The aggregate endpoint requires an ovn-collector image with
+                                            snapshot contract v2.
                                         </Alert>
                                     )}
-                                    {snapshot?.metadata?.sourceHealth && snapshot.metadata.sourceHealth !== 'healthy' && (
+                                    {topology && model && (
+                                        <Alert
+                                            variant={freshnessVariant(freshness)}
+                                            isInline
+                                            title={`Assembled from ${model.zoneCount} zones`}
+                                        >
+                                            <div>Generated: {new Date(topology.metadata.generatedAt).toLocaleString()}</div>
+                                        </Alert>
+                                    )}
+                                    {topology?.metadata.sourceHealth && topology.metadata.sourceHealth !== 'healthy' && (
                                         <Alert
                                             variant="warning"
                                             isInline
-                                            title={`Collector source health: ${snapshot.metadata.sourceHealth}`}
+                                            title={`Aggregate source health: ${topology.metadata.sourceHealth}`}
                                         />
                                     )}
-                                    {snapshot?.warnings?.map((warning) => (
+                                    {topology?.warnings?.map((warning) => (
                                         <Alert
-                                            key={warning.code}
+                                            key={`${warning.code}:${warning.message}`}
                                             variant="warning"
                                             isInline
                                             title={`${warning.code}: ${warning.message}`}
                                         />
                                     ))}
-                                    {needsCollectorUpgrade && (
-                                        <Alert
-                                            variant="danger"
-                                            isInline
-                                            title={`Snapshot schema "${snapshot?.metadata?.schemaVersion}" is not supported`}
-                                        >
-                                            This view requires snapshot contract v2. Upgrade the ovn-collector
-                                            image so snapshots include the logical database payload.
-                                        </Alert>
-                                    )}
-                                    {hasNoGraphData && (
-                                        <Alert
-                                            variant="info"
-                                            isInline
-                                            title={`No logical topology returned for ${name || 'this node'}.`}
-                                        >
-                                            The collector request succeeded, but the snapshot database holds no
-                                            switches or routers for this node.
-                                        </Alert>
-                                    )}
                                 </AlertGroup>
 
                                 <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }}>
@@ -352,7 +287,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                     <FlexItem><Button variant="secondary" onClick={zoomIn}>+</Button></FlexItem>
                                     <FlexItem><Button variant="link" onClick={resetView}>Reset view</Button></FlexItem>
                                     <FlexItem>
-                                        <Button variant="tertiary" onClick={() => loadSnapshot()} isDisabled={isLoading}>
+                                        <Button variant="tertiary" onClick={() => loadTopology()} isDisabled={isLoading}>
                                             Refresh now
                                         </Button>
                                     </FlexItem>
@@ -375,6 +310,9 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                                 onSelect={setSelectedUuid}
                                                 networkFilter={networkFilter}
                                                 search={search}
+                                                expandedGroupIds={expandedGroups}
+                                                onAggregateToggle={toggleAggregate}
+                                                onNetworkSelect={setNetworkFilter}
                                             />
                                         </div>
                                     )}
@@ -388,4 +326,4 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     );
 };
 
-export default NodeLogicalTopologyDetails;
+export default ClusterLogicalTopologyDetails;

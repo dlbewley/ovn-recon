@@ -1,9 +1,17 @@
 {
   "metadata": {
-    "schemaVersion": "v1alpha1",
+    "schemaVersion": "2",
     "generatedAt": "2026-01-01T00:00:00Z",
     "sourceHealth": "degraded",
     "nodeName": ""
+  },
+  "database": {
+    "logicalRouters": [],
+    "logicalRouterPorts": [],
+    "logicalSwitches": [],
+    "logicalSwitchPorts": [],
+    "nats": [],
+    "staticRoutes": []
   },
   "nodes": [],
   "edges": [],

@@ -3,6 +3,7 @@ import { useParams, Link, useLocation } from 'react-router';
 import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
 import { DocumentTitle, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import NodeVisualization from './NodeVisualization';
+import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements } from '../types';
 
 interface NodeNetworkStateDetailsProps {
@@ -13,6 +14,7 @@ interface NodeNetworkStateDetailsProps {
 const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) => {
     const params = useParams<{ name: string }>();
     const location = useLocation();
+    const { enabled: ovnCollectorEnabled } = useOvnCollectorFeatureGate();
 
     // Fallback to props.match.params.name if useParams is empty (common in Console plugins)
     // Also fallback to manual URL parsing if router fails
@@ -139,6 +141,13 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
                     <BreadcrumbItem isActive>{displayName}</BreadcrumbItem>
                 </Breadcrumb>
                 <Title headingLevel="h1" className="pf-u-mt-lg">Node Network Topology: {displayName}</Title>
+                {ovnCollectorEnabled && (
+                    <p className="pf-u-mt-sm">
+                        <Link to={`/ovn-recon/ovn/${encodeURIComponent(displayName)}`}>
+                            View logical OVN topology for this node
+                        </Link>
+                    </p>
+                )}
             </PageSection>
             <PageSection isFilled>
                 <NodeVisualization nns={nns} cudns={cudns} udns={udns} nads={nads} routeAdvertisements={routeAdvertisements} enactments={enactments} />
