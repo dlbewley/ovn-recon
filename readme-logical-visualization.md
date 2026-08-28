@@ -134,8 +134,13 @@ ports where each pod port links to its Pod.
 ## Freshness and fallback
 
 Snapshots carry `generatedAt`; the banner turns warning at 2 minutes and
-critical at 10. If live probing fails, the collector serves fixture snapshots
-and flags them (`LIVE_PROBE_FAILED` / `SNAPSHOT_DEFAULT`); a zone that fails
-during cluster aggregation appears as a `ZONE_COLLECTION_FAILED` warning
-rather than failing the whole view. A snapshot without the v2 `database`
-payload renders a collector-upgrade callout instead of a graph.
+critical at 10. The collector caches zone snapshots on disk
+(`spec.collector.cache`: TTL ≥ 30s, default 120s, EmptyDir or PVC backed),
+serving cached zones while fresh and recollecting on expiry — this is what
+keeps the cluster view's all-zones request fast. If live probing fails, a
+stale cache entry is served with `LIVE_PROBE_FAILED` + `SNAPSHOT_STALE`
+warnings; with no cache entry the collector serves fixture snapshots flagged
+`SNAPSHOT_DEFAULT`. A zone that fails during cluster aggregation appears as a
+`ZONE_COLLECTION_FAILED` warning rather than failing the whole view. A
+snapshot without the v2 `database` payload renders a collector-upgrade
+callout instead of a graph.

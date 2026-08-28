@@ -137,6 +137,40 @@ type CollectorSpec struct {
 
 	// Logging controls for the collector service.
 	Logging CollectorLoggingSpec `json:"logging,omitempty"`
+
+	// Cache controls collector-side snapshot caching.
+	Cache CollectorCacheSpec `json:"cache,omitempty"`
+}
+
+// CollectorCacheSpec configures disk-backed caching of zone snapshots.
+// Cached snapshots are served while younger than the TTL and recollected on
+// expiry; on live-probe failure a stale cache entry is served (flagged
+// SNAPSHOT_STALE) in preference to fixture data.
+type CollectorCacheSpec struct {
+	// Enabled toggles the snapshot cache. Defaults to true.
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// TTLSeconds is how long a cached zone snapshot stays fresh.
+	// +kubebuilder:validation:Minimum=30
+	// +kubebuilder:default=120
+	TTLSeconds int32 `json:"ttlSeconds,omitempty"`
+
+	// Storage selects the volume backing the cache directory.
+	Storage CollectorCacheStorageSpec `json:"storage,omitempty"`
+}
+
+type CollectorCacheStorageSpec struct {
+	// Mode selects EmptyDir (ephemeral, restart-stable per pod lifetime) or
+	// PVC (persistent across pod rescheduling; requires claimName).
+	// +kubebuilder:validation:Enum=EmptyDir;PVC
+	// +kubebuilder:default=EmptyDir
+	Mode string `json:"mode,omitempty"`
+
+	// ClaimName names an existing PersistentVolumeClaim to mount when mode
+	// is PVC. Ignored for EmptyDir. If empty in PVC mode, the collector
+	// falls back to EmptyDir.
+	ClaimName string `json:"claimName,omitempty"`
 }
 
 type CollectorLoggingSpec struct {

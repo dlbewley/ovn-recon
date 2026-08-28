@@ -42,6 +42,42 @@ spec:
               collector:
                 description: Collector configuration.
                 properties:
+                  cache:
+                    description: Cache controls collector-side snapshot caching.
+                    properties:
+                      enabled:
+                        default: true
+                        description: Enabled toggles the snapshot cache. Defaults
+                          to true.
+                        type: boolean
+                      storage:
+                        description: Storage selects the volume backing the cache
+                          directory.
+                        properties:
+                          claimName:
+                            description: |-
+                              ClaimName names an existing PersistentVolumeClaim to mount when mode
+                              is PVC. Ignored for EmptyDir. If empty in PVC mode, the collector
+                              falls back to EmptyDir.
+                            type: string
+                          mode:
+                            default: EmptyDir
+                            description: |-
+                              Mode selects EmptyDir (ephemeral, restart-stable per pod lifetime) or
+                              PVC (persistent across pod rescheduling; requires claimName).
+                            enum:
+                            - EmptyDir
+                            - PVC
+                            type: string
+                        type: object
+                      ttlSeconds:
+                        default: 120
+                        description: TTLSeconds is how long a cached zone snapshot
+                          stays fresh.
+                        format: int32
+                        minimum: 30
+                        type: integer
+                    type: object
                   enabled:
                     description: Enabled toggles logical topology features backed
                       by the collector service.
@@ -298,6 +334,42 @@ spec:
               collector:
                 description: Collector configuration.
                 properties:
+                  cache:
+                    description: Cache controls collector-side snapshot caching.
+                    properties:
+                      enabled:
+                        default: true
+                        description: Enabled toggles the snapshot cache. Defaults
+                          to true.
+                        type: boolean
+                      storage:
+                        description: Storage selects the volume backing the cache
+                          directory.
+                        properties:
+                          claimName:
+                            description: |-
+                              ClaimName names an existing PersistentVolumeClaim to mount when mode
+                              is PVC. Ignored for EmptyDir. If empty in PVC mode, the collector
+                              falls back to EmptyDir.
+                            type: string
+                          mode:
+                            default: EmptyDir
+                            description: |-
+                              Mode selects EmptyDir (ephemeral, restart-stable per pod lifetime) or
+                              PVC (persistent across pod rescheduling; requires claimName).
+                            enum:
+                            - EmptyDir
+                            - PVC
+                            type: string
+                        type: object
+                      ttlSeconds:
+                        default: 120
+                        description: TTLSeconds is how long a cached zone snapshot
+                          stays fresh.
+                        format: int32
+                        minimum: 30
+                        type: integer
+                    type: object
                   enabled:
                     description: Enabled toggles logical topology features backed
                       by the collector service.
