@@ -32,8 +32,9 @@ import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { fetchCollectorSnapshot } from './collectorApi';
 import { buildLadderModel } from './logicalLadderModel';
 import ConstructDrawerBody from './ConstructDrawerBody';
-import LogicalLadderView, { networkDisplayName, roleLabel } from './LogicalLadderView';
-import { freshnessFromAge, parseSnapshotAgeMs, SnapshotFreshnessState } from './snapshotFreshness';
+import LogicalLadderView, { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
+import SnapshotStatusLine from './SnapshotStatusLine';
+import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
 
 const REFRESH_INTERVAL_MS = 30000;
 
@@ -58,33 +59,6 @@ const resolveNodeName = (routeName?: string): string => {
     } catch {
         return match[1];
     }
-};
-
-const formatUtcTimestamp = (value: string): string => {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return 'unknown';
-    return date.toLocaleString();
-};
-
-const formatAge = (ageMs: number): string => {
-    if (ageMs < 1000) return 'just now';
-    const minutes = Math.floor(ageMs / 60000);
-    const seconds = Math.floor((ageMs % 60000) / 1000);
-    if (minutes <= 0) return `${seconds}s ago`;
-    return `${minutes}m ${seconds}s ago`;
-};
-
-const freshnessVariant = (state: SnapshotFreshnessState): 'success' | 'warning' | 'danger' => {
-    if (state === 'critical') return 'danger';
-    if (state === 'warning') return 'warning';
-    return 'success';
-};
-
-const freshnessTitle = (state: SnapshotFreshnessState): string => {
-    if (state === 'critical') return 'Snapshot is stale';
-    if (state === 'warning') return 'Snapshot age exceeds warning threshold';
-    if (state === 'unknown') return 'Snapshot freshness unknown';
-    return 'Snapshot is fresh';
 };
 
 interface Point {
@@ -243,6 +217,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                     <>
                                         <DrawerHead>
                                             <Title headingLevel="h2">
+                                                {roleIcon(selectedConstruct.role)}{' '}
                                                 {roleLabel(selectedConstruct.role)}
                                                 {selectedConstruct.node ? ` · ${selectedConstruct.node}` : ''}
                                             </Title>
@@ -269,37 +244,23 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                             <CardTitle>Logical Topology</CardTitle>
                             <CardBody>
                                 <AlertGroup isToast={false}>
-                                    {isLoading && (
-                                        <Alert variant="info" isInline title="Refreshing logical topology snapshot..." />
-                                    )}
                                     {snapshotError && (
                                         <Alert variant="warning" isInline title={snapshotError} />
                                     )}
-                                    {snapshot && !needsCollectorUpgrade && (
+                                    {snapshot && snapshot.warnings.length > 0 && (
                                         <Alert
-                                            variant={freshnessVariant(freshnessState)}
+                                            variant="warning"
                                             isInline
-                                            title={freshnessTitle(freshnessState)}
+                                            isExpandable
+                                            title={`${snapshot.warnings.length} collector warning${snapshot.warnings.length === 1 ? '' : 's'}`}
                                         >
-                                            <div>Generated: {formatUtcTimestamp(snapshot.metadata.generatedAt)}</div>
-                                            {snapshotAgeMs != null && <div>Age: {formatAge(snapshotAgeMs)}</div>}
+                                            {snapshot.warnings.map((warning) => (
+                                                <div key={`${warning.code}:${warning.message}`}>
+                                                    {warning.code}: {warning.message}
+                                                </div>
+                                            ))}
                                         </Alert>
                                     )}
-                                    {snapshot?.metadata?.sourceHealth && snapshot.metadata.sourceHealth !== 'healthy' && (
-                                        <Alert
-                                            variant="warning"
-                                            isInline
-                                            title={`Collector source health: ${snapshot.metadata.sourceHealth}`}
-                                        />
-                                    )}
-                                    {snapshot?.warnings?.map((warning) => (
-                                        <Alert
-                                            key={warning.code}
-                                            variant="warning"
-                                            isInline
-                                            title={`${warning.code}: ${warning.message}`}
-                                        />
-                                    ))}
                                     {needsCollectorUpgrade && (
                                         <Alert
                                             variant="danger"
@@ -322,7 +283,17 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                     )}
                                 </AlertGroup>
 
-                                <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }}>
+                                <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }} alignItems={{ default: 'alignItemsCenter' }}>
+                                    {snapshot && !needsCollectorUpgrade && (
+                                        <FlexItem>
+                                            <SnapshotStatusLine
+                                                freshness={freshnessState}
+                                                ageMs={snapshotAgeMs}
+                                                sourceHealth={snapshot.metadata.sourceHealth}
+                                                isLoading={isLoading}
+                                            />
+                                        </FlexItem>
+                                    )}
                                     <FlexItem>
                                         <TextInput
                                             aria-label="Search constructs"
@@ -360,7 +331,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
 
                                 <div
                                     className="pf-u-mt-md"
-                                    style={{ height: '680px', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: isDragging ? 'grabbing' : 'grab' }}
+                                    style={{ height: 'max(560px, calc(100vh - 340px))', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: isDragging ? 'grabbing' : 'grab' }}
                                     onWheel={handleWheel}
                                     onMouseDown={handleMouseDown}
                                     onMouseMove={handleMouseMove}
