@@ -57,6 +57,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
     const [isLoading, setIsLoading] = React.useState<boolean>(false);
     const [fetchError, setFetchError] = React.useState<string>('');
     const [search, setSearch] = React.useState<string>('');
+    const [hostFilter, setHostFilter] = React.useState<string>('all');
     const [networkFilter, setNetworkFilter] = React.useState<string>('all');
     const [selectedUuid, setSelectedUuid] = React.useState<string | null>(null);
     const [expandedGroups, setExpandedGroups] = React.useState<ReadonlySet<string>>(new Set());
@@ -91,10 +92,32 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
         };
     }, [enabled, loadTopology]);
 
-    const model = React.useMemo(
-        () => (topology ? mergeZones(topology.snapshots) : null),
+    const hosts = React.useMemo(
+        () =>
+            [...new Set((topology?.snapshots ?? []).map((snapshot) => snapshot.metadata.nodeName))]
+                .filter(Boolean)
+                .sort(),
         [topology],
     );
+
+    // A host selection narrows the merge to that node's zone: node-bound
+    // constructs collapse to that node's single instances, and shared
+    // constructs render as that zone sees them — the single-node perspective.
+    const model = React.useMemo(() => {
+        if (!topology) return null;
+        const snapshots = hostFilter === 'all'
+            ? topology.snapshots
+            : topology.snapshots.filter((snapshot) => snapshot.metadata.nodeName === hostFilter);
+        return mergeZones(snapshots);
+    }, [topology, hostFilter]);
+
+    const selectHost = React.useCallback((host: string) => {
+        setHostFilter(host);
+        // The previous selection and expansion state reference constructs
+        // that may not exist in the narrowed model.
+        setSelectedUuid(null);
+        setExpandedGroups(new Set());
+    }, []);
 
     const ageMs = React.useMemo(
         () => (topology ? parseSnapshotAgeMs(topology.metadata.generatedAt) : null),
@@ -266,6 +289,18 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                             value={search}
                                             onChange={(_event, value) => setSearch(value)}
                                         />
+                                    </FlexItem>
+                                    <FlexItem>
+                                        <FormSelect
+                                            aria-label="Filter by host"
+                                            value={hostFilter}
+                                            onChange={(_event, value) => selectHost(value)}
+                                        >
+                                            <FormSelectOption value="all" label="All hosts" />
+                                            {hosts.map((host) => (
+                                                <FormSelectOption key={host} value={host} label={host} />
+                                            ))}
+                                        </FormSelect>
                                     </FlexItem>
                                     <FlexItem>
                                         <FormSelect
