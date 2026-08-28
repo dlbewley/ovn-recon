@@ -1,13 +1,66 @@
 {
   "metadata": {
-    "schemaVersion": "v1alpha1",
+    "schemaVersion": "2",
     "generatedAt": "2026-01-01T00:15:00Z",
     "sourceHealth": "degraded",
     "nodeName": "worker-parse-edge"
   },
+  "database": {
+    "logicalRouters": [
+      {
+        "uuid": "lr-edge",
+        "name": "edge-router",
+        "ports": [
+          "lrp-edge"
+        ]
+      }
+    ],
+    "logicalRouterPorts": [
+      {
+        "uuid": "lrp-edge",
+        "name": "rtos-edge-net",
+        "mac": "0a:58:0a:f5:00:01",
+        "networks": [
+          "10.245.0.1/24"
+        ]
+      }
+    ],
+    "logicalSwitches": [
+      {
+        "uuid": "ls-edge",
+        "name": "edge-net",
+        "ports": [
+          "lsp-edge-router"
+        ]
+      }
+    ],
+    "logicalSwitchPorts": [
+      {
+        "uuid": "lsp-edge-router",
+        "name": "stor-edge-net",
+        "type": "router",
+        "addresses": [
+          "router"
+        ],
+        "options": {
+          "router-port": "rtos-edge-net"
+        }
+      }
+    ],
+    "nats": [],
+    "staticRoutes": []
+  },
   "nodes": [
-    {"id": "lr-edge", "kind": "logical_router", "label": "edge-router"},
-    {"id": "ls-edge", "kind": "logical_switch", "label": "edge-net"}
+    {
+      "id": "lr-edge",
+      "kind": "logical_router",
+      "label": "edge-router"
+    },
+    {
+      "id": "ls-edge",
+      "kind": "logical_switch",
+      "label": "edge-net"
+    }
   ],
   "edges": [
     {
