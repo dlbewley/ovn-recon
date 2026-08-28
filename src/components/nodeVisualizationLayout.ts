@@ -288,3 +288,66 @@ export const sortByRank = <T,>(items: T[], getId: (item: T) => string, rankById:
         if (rankDelta !== 0) return rankDelta;
         return aId.localeCompare(bId);
     });
+
+/** A node's box, as an obstacle for edge routing. */
+export interface EdgeObstacle {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+/**
+ * Where a lane-crossing edge must bow to avoid running through a node
+ * (ovn-recon-s3t.49).
+ *
+ * Anchor alignment (s3t.47) deliberately puts a child level with its parent --
+ * and the parent's lane-skipping edges then pass straight through the child's
+ * lane at that exact height, reading as a chain that does not exist. When the
+ * straight segment would cross a node box in an intermediate lane, the edge
+ * renders as a quadratic arc instead, bowing to whichever side needs the
+ * smaller deviation. A clear segment returns null and stays a straight line.
+ */
+export const computeEdgeBow = (
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    obstacles: EdgeObstacle[],
+    margin = 10
+): { controlX: number; controlY: number } | null => {
+    const run = to.x - from.x;
+    // Backwards or degenerate edges (the hidden-lane bridge-port case) stay straight.
+    if (run <= 1) return null;
+
+    const yAt = (x: number): number => from.y + (to.y - from.y) * ((x - from.x) / run);
+
+    // For each intersected box: how far the line must move, per direction, and
+    // where along the edge the obstruction sits (for the quadratic's geometry --
+    // a control offset c displaces the curve by 2t(1-t)c at parameter t).
+    let needUp = 0;
+    let needDown = 0;
+    obstacles.forEach((box) => {
+        const left = Math.max(box.x, from.x);
+        const right = Math.min(box.x + box.width, to.x);
+        if (right <= left) return;
+
+        const yLeft = yAt(left);
+        const yRight = yAt(right);
+        const top = box.y - margin;
+        const bottom = box.y + box.height + margin;
+        if (Math.max(yLeft, yRight) <= top || Math.min(yLeft, yRight) >= bottom) return;
+
+        const t = ((left + right) / 2 - from.x) / run;
+        const lineY = yAt((left + right) / 2);
+        const displacementScale = Math.max(2 * t * (1 - t), 0.2);
+        needUp = Math.max(needUp, (lineY - top) / displacementScale);
+        needDown = Math.max(needDown, (bottom - lineY) / displacementScale);
+    });
+
+    if (needUp === 0 && needDown === 0) return null;
+
+    const controlOffset = needUp <= needDown ? -needUp : needDown;
+    return {
+        controlX: Math.round((from.x + to.x) / 2),
+        controlY: Math.round((from.y + to.y) / 2 + controlOffset)
+    };
+};
