@@ -152,3 +152,39 @@ describe('sortByRank', () => {
         expect(sorted.map((item) => item.id)).toEqual(['node-a', 'node-b']);
     });
 });
+
+describe('computeEdgeBow (ovn-recon-s3t.49)', () => {
+    const { computeEdgeBow } = jest.requireActual('./nodeVisualizationLayout');
+    const box = (x: number, y: number) => ({ x, y, width: 160, height: 80 });
+
+    it('leaves a clear segment straight', () => {
+        expect(computeEdgeBow({ x: 200, y: 60 }, { x: 480, y: 60 }, [box(240, 200)])).toBeNull();
+        expect(computeEdgeBow({ x: 200, y: 60 }, { x: 480, y: 60 }, [])).toBeNull();
+    });
+
+    it('bows around a node sitting exactly on the sight-line', () => {
+        // The cnv-2 case: parent-aligned VLAN at the same y as the parent's
+        // lane-skipping edge to its bridge.
+        const bow = computeEdgeBow({ x: 200, y: 320 }, { x: 480, y: 320 }, [box(240, 280)]);
+        expect(bow).not.toBeNull();
+        // The curve's control point pushes clear of the box plus margin.
+        expect(Math.abs(bow!.controlY - 320)).toBeGreaterThan(50);
+        expect(bow!.controlX).toBe(340);
+    });
+
+    it('bows toward the side needing the smaller deviation', () => {
+        // Line crosses the box near its top edge: up is the short way out.
+        const nearTop = computeEdgeBow({ x: 200, y: 290 }, { x: 480, y: 290 }, [box(240, 280)]);
+        expect(nearTop!.controlY).toBeLessThan(290);
+        // Near the bottom edge: down is shorter.
+        const nearBottom = computeEdgeBow({ x: 200, y: 350 }, { x: 480, y: 350 }, [box(240, 280)]);
+        expect(nearBottom!.controlY).toBeGreaterThan(350);
+    });
+
+    it('ignores obstacles outside the horizontal span, and backwards edges', () => {
+        expect(computeEdgeBow({ x: 200, y: 60 }, { x: 480, y: 60 }, [box(500, 40)])).toBeNull();
+        expect(computeEdgeBow({ x: 200, y: 60 }, { x: 480, y: 60 }, [box(0, 40)])).toBeNull();
+        // The hidden-lane bridge-port edge runs right to left; it stays straight.
+        expect(computeEdgeBow({ x: 480, y: 60 }, { x: 200, y: 60 }, [box(240, 40)])).toBeNull();
+    });
+});

@@ -14,7 +14,7 @@ import {
     DrawerTabId, Graph, NodeViewModel
 } from '../topology/types';
 import { buildNodeViewModel } from '../topology/viewModel';
-import { computeNodeOrder, sortByRank } from './nodeVisualizationLayout';
+import { computeEdgeBow, computeNodeOrder, sortByRank } from './nodeVisualizationLayout';
 import { laneOrderingInput, layoutLanes, LaneViewState, PlacedNode } from '../topology/lanes';
 import { descriptorFor, iconFor, NodeTypeId, NODE_TYPES } from '../topology/descriptors';
 
@@ -352,11 +352,37 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             );
         }
 
+        const from = { x: start.x + itemWidth, y: start.y + itemHeight / 2 };
+        const to = { x: end.x, y: end.y + itemHeight / 2 };
+
+        // A lane-skipping edge must not run THROUGH a node in a lane it crosses:
+        // aligned children sit exactly on their parent's sight-line, and a straight
+        // segment behind one reads as a chain that does not exist (s3t.49).
+        const obstacles = Array.from(placedNodeById.values())
+            .filter((node) => node.id !== edge.source && node.id !== edge.target)
+            .map((node) => ({ x: node.x, y: node.y, width: itemWidth, height: node.height }));
+        const bow = computeEdgeBow(from, to, obstacles);
+        if (bow) {
+            return (
+                <path
+                    key={`${edge.source}-${edge.target}`}
+                    d={`M ${from.x} ${from.y} Q ${bow.controlX} ${bow.controlY} ${to.x} ${to.y}`}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={dashArray}
+                    opacity={opacity}
+                >
+                    <title>{edge.rule}</title>
+                </path>
+            );
+        }
+
         return (
             <line
                 key={`${edge.source}-${edge.target}`}
-                x1={start.x + itemWidth} y1={start.y + (itemHeight / 2)}
-                x2={end.x} y2={end.y + (itemHeight / 2)}
+                x1={from.x} y1={from.y}
+                x2={to.x} y2={to.y}
                 stroke={stroke}
                 strokeWidth={strokeWidth}
                 strokeDasharray={dashArray}
