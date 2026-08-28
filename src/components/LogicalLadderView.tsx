@@ -25,6 +25,12 @@ export interface LogicalLadderViewProps {
     networkFilter?: string;
     /** Dim constructs not matching this query. Empty string disables. */
     search?: string;
+    /** Aggregate chips currently expanded into individual constructs. */
+    expandedGroupIds?: ReadonlySet<string>;
+    /** Invoked when an aggregate chip is clicked (expand/collapse). */
+    onAggregateToggle?: (aggregateId: string) => void;
+    /** Invoked when a band header is clicked (filter to that network). */
+    onNetworkSelect?: (network: string) => void;
 }
 
 /** Band palette; index 0 is the default network's neutral slot. */
@@ -196,9 +202,15 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
     onSelect,
     networkFilter = 'all',
     search = '',
+    expandedGroupIds,
+    onAggregateToggle,
+    onNetworkSelect,
 }) => {
     const model = React.useMemo(() => filterModel(fullModel, networkFilter), [fullModel, networkFilter]);
-    const layout: LadderLayout = React.useMemo(() => layoutLadder(model), [model]);
+    const layout: LadderLayout = React.useMemo(
+        () => layoutLadder(model, { expandedGroupIds }),
+        [model, expandedGroupIds],
+    );
 
     const query = search.trim().toLowerCase();
     const colorByNetwork = React.useMemo(() => {
@@ -244,6 +256,12 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                                 fontSize="13"
                                 fontWeight={700}
                                 fill={color}
+                                style={onNetworkSelect ? { cursor: 'pointer' } : undefined}
+                                onClick={(event) => {
+                                    if (!onNetworkSelect) return;
+                                    event.stopPropagation();
+                                    onNetworkSelect(band.network);
+                                }}
                             >
                                 {networkDisplayName(band.network)}
                             </text>
@@ -323,6 +341,12 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                         key={aggregate.id}
                         transform={`translate(${aggregate.x - CONSTRUCT_WIDTH / 2}, ${aggregate.y - CONSTRUCT_HEIGHT / 2})`}
                         data-testid={aggregate.id}
+                        style={onAggregateToggle ? { cursor: 'pointer' } : undefined}
+                        onClick={(event) => {
+                            if (!onAggregateToggle) return;
+                            event.stopPropagation();
+                            onAggregateToggle(aggregate.id);
+                        }}
                     >
                         <rect
                             width={CONSTRUCT_WIDTH}

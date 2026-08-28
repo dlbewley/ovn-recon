@@ -22,7 +22,8 @@
         "exposedModules": {
             "NodeNetworkStateList": "./components/NodeNetworkStateList",
             "NodeNetworkStateDetails": "./components/NodeNetworkStateDetails",
-            "NodeLogicalTopologyDetails": "./components/NodeLogicalTopologyDetails"
+            "NodeLogicalTopologyDetails": "./components/NodeLogicalTopologyDetails",
+            "ClusterLogicalTopologyDetails": "./components/ClusterLogicalTopologyDetails"
         },
         "dependencies": {
             "@console/pluginAPI": ">=4.22.0-0"

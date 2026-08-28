@@ -36,6 +36,16 @@
         }
     },
     {
+        "type": "console.page/route",
+        "properties": {
+            "exact": true,
+            "path": "/ovn-recon/ovn",
+            "component": {
+                "$codeRef": "ClusterLogicalTopologyDetails"
+            }
+        }
+    },
+    {
         "type": "console.navigation/href",
         "properties": {
             "id": "node-network-state-nav",
@@ -43,6 +53,17 @@
             "section": "networking",
             "name": "OVN Recon",
             "href": "/ovn-recon/node-network-state"
+        }
+    },
+    {
+        "type": "console.navigation/href",
+        "properties": {
+            "id": "ovn-logical-topology-nav",
+            "perspective": "admin",
+            "section": "networking",
+            "name": "OVN Logical Topology",
+            "href": "/ovn-recon/ovn",
+            "insertAfter": "node-network-state-nav"
         }
     }
 ]

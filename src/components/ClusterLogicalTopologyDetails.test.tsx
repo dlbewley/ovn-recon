@@ -1,0 +1,75 @@
+import * as React from 'react';
+import { createRoot, Root } from 'react-dom/client';
+import { act } from 'react';
+
+import { ClusterLogicalTopology, LogicalTopologySnapshot } from '../types';
+import ClusterLogicalTopologyDetails from './ClusterLogicalTopologyDetails';
+
+import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
+import cnv2 from '../../collector/fixtures/snapshots/cnv-2.json';
+import ctrl1 from '../../collector/fixtures/snapshots/ctrl-1.json';
+
+jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
+    DocumentTitle: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    useK8sWatchResource: () => [[], true, undefined],
+}));
+
+jest.mock('./useOvnCollectorFeatureGate', () => ({
+    useOvnCollectorFeatureGate: () => ({ enabled: true, loaded: true, loadError: undefined }),
+}));
+
+jest.mock('react-router', () => ({
+    Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={String(to)}>{children}</a>,
+    useParams: () => ({}),
+}));
+
+const aggregate: ClusterLogicalTopology = {
+    metadata: {
+        schemaVersion: '2',
+        generatedAt: new Date().toISOString(),
+        sourceHealth: 'healthy',
+    },
+    snapshots: [cnv1, cnv2, ctrl1] as unknown as LogicalTopologySnapshot[],
+    warnings: [],
+};
+
+describe('ClusterLogicalTopologyDetails', () => {
+    let container: HTMLDivElement;
+    let root: Root;
+
+    beforeEach(() => {
+        container = document.createElement('div');
+        document.body.appendChild(container);
+        root = createRoot(container);
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: async () => aggregate,
+        }) as unknown as typeof fetch;
+    });
+
+    afterEach(() => {
+        act(() => root.unmount());
+        container.remove();
+        jest.restoreAllMocks();
+    });
+
+    it('renders the merged cluster ladder from the aggregate payload', async () => {
+        await act(async () => {
+            root.render(<ClusterLogicalTopologyDetails />);
+        });
+        // Flush the fetch promise chain.
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        const text = container.textContent ?? '';
+        expect(text).toContain('Cluster Logical OVN Topology');
+        expect(text).toContain('Assembled from 3 zones');
+        expect(text).toContain('Default cluster network');
+        // Merged zone-replicated construct renders once.
+        expect(container.querySelectorAll('[data-testid="construct-transit_switch"]')).toHaveLength(1);
+        // Node-bound constructs stay distinct.
+        expect(container.querySelector('[data-testid="construct-GR_cnv-1"]')).not.toBeNull();
+        expect(container.querySelector('[data-testid="construct-GR_ctrl-1"]')).not.toBeNull();
+    });
+});

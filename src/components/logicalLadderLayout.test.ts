@@ -110,6 +110,18 @@ describe('aggregation threshold', () => {
         expect(layout.positions['join']).toBeDefined();
     });
 
+    it('expands a collapsed group on demand', () => {
+        const collapsed = layoutLadder(syntheticModel(gatewayFleet));
+        expect(collapsed.aggregates).toHaveLength(1);
+        const expanded = layoutLadder(syntheticModel(gatewayFleet), {
+            expandedGroupIds: new Set([collapsed.aggregates[0].id]),
+        });
+        expect(expanded.aggregates).toHaveLength(0);
+        for (const member of collapsed.aggregates[0].memberUuids) {
+            expect(expanded.positions[member]).toBeDefined();
+        }
+    });
+
     it('keeps individual placement under a raised threshold', () => {
         const layout = layoutLadder(syntheticModel(gatewayFleet), { aggregateThreshold: 10 });
         expect(layout.aggregates).toHaveLength(0);
