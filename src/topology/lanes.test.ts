@@ -29,12 +29,12 @@ describe('lane visibility', () => {
     it('hides empty lanes and the logical lane by default', () => {
         // The node has no bonds, so that lane is absent; the logical lane is populated
         // but hidden regardless. See ovn-recon-x23.
-        expect(laneIds()).toEqual(['eth', 'vlan', 'bridge', 'l3', 'networks', 'attachments']);
+        expect(laneIds()).toEqual(['eth', 'vlan', 'bridge', 'ovn', 'l3', 'networks', 'attachments']);
     });
 
     it('shows every lane, empty or not, when nothing is hidden', () => {
         expect(laneIds({ showHiddenColumns: true })).toEqual([
-            'eth', 'bond', 'vlan', 'bridge', 'logical', 'l3', 'networks', 'attachments'
+            'eth', 'bond', 'vlan', 'bridge', 'logical', 'ovn', 'l3', 'networks', 'attachments'
         ]);
     });
 
@@ -54,7 +54,7 @@ describe('lane visibility', () => {
 describe('lane placement', () => {
     it('spaces visible lanes evenly, with no gap for an absent lane', () => {
         const xs = layout().lanes.map(({ x }) => x);
-        expect(xs).toEqual([20, 240, 460, 680, 900, 1120]);
+        expect(xs).toEqual([20, 240, 460, 680, 900, 1120, 1340]);
     });
 
     it('stacks nodes within a lane from the top', () => {

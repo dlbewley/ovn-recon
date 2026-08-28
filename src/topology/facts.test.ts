@@ -334,6 +334,41 @@ describe('facts builders', () => {
         });
     });
 
+    describe('the synthesized integration bridge (ovn-recon-s3t.46)', () => {
+        it('is derived from the ports declaring it as controller', () => {
+            expect(ctx.integrationBridge?.name).toBe('br-int');
+            expect(ctx.integrationBridge?.ports.map((p) => p.name).sort()).toEqual([
+                'br-int', 'ovn-k8s-mp0', 'ovn-k8s-mp3',
+                'patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1',
+                'patch-br-int-to-br-ex_worker-1'
+            ]);
+        });
+
+        it('shows management ports with addresses and their network association', () => {
+            const facts = factsFor('integration-bridge', ctx.integrationBridge!);
+            const management = byLabel(facts, 'Management Ports');
+            expect(management.provenance).toBe('observed');
+            expect((management.value as { text: string }[]).map((v) => v.text)).toEqual([
+                'ovn-k8s-mp0 10.131.0.2/23 — default network',
+                'ovn-k8s-mp3 10.1.2.2/24 — VRF example-p-cudn'
+            ]);
+        });
+
+        it('pairs each patch port with its provider bridge', () => {
+            const facts = factsFor('integration-bridge', ctx.integrationBridge!);
+            const patches = byLabel(facts, 'Patch Ports');
+            const texts = (patches.value as { text: string }[]).map((v) => v.text);
+            expect(texts).toHaveLength(2);
+            texts.forEach((text) => expect(text).toMatch(/^br-ex: patch-br-int-to-.+ ↔ patch-br-ex.+/));
+        });
+
+        it('shows the internal port as an attribute, per the s3t.26 rule', () => {
+            const facts = factsFor('integration-bridge', ctx.integrationBridge!);
+            expect(byLabel(facts, 'Internal Port').value).toBe('br-int (no address)');
+            expect(byLabel(facts, 'Type').hint).toContain('derived from their controller fields');
+        });
+    });
+
     describe('the mapping kind has no State fact', () => {
         it('shows its bridge under a Bridge label instead', () => {
             const mapping = ctx.bridgeMappings.find((m) => m.localnet === 'physnet')!;

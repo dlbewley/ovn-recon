@@ -60,7 +60,7 @@ describe('classify: roles that are present but not drawn', () => {
     it('treats a patch port as a patch port, by property or by name', () => {
         expect(roleIn([{ name: 'patch-a-to-b', type: 'ovs-interface', state: 'ignore' }], 'patch-a-to-b'))
             .toBe('patch');
-        expect(roleIn([{ name: 'somename', type: 'ovs-interface', state: 'up', patch: true }], 'somename'))
+        expect(roleIn([{ name: 'somename', type: 'ovs-interface', state: 'up', patch: { peer: 'patch-peer-port' } }], 'somename'))
             .toBe('patch');
     });
 

@@ -143,6 +143,21 @@ describe('NodeVisualization drawer', () => {
             expectEveryTabRenders('br-ex (ovs-interface)');
         });
 
+        it('integration-bridge, synthesized from its ports', () => {
+            renderPrimary();
+            clickNode('br-int (OVN Integration)');
+            expect(drawerTitle()).toBe('br-int');
+            expectEveryTabRenders('br-int (OVN Integration)');
+
+            selectTab('Overview');
+            expect(panelText()).toContain('ovn-k8s-mp3 10.1.2.2/24 — VRF example-p-cudn');
+
+            // The uplink for VRFs and the patch to br-ex are its relationships.
+            selectTab('Relationships');
+            expect(panelText()).toContain('br-ex');
+            expect(panelText()).toContain('example-p-cudn');
+        });
+
         it('lldp-neighbor', () => {
             renderBonded();
             toggle('show-lldp-neighbors-toggle');
