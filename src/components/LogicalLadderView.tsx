@@ -69,10 +69,17 @@ const ROLE_LABELS: Record<ConstructRole, string> = {
 
 export const roleLabel = (role: ConstructRole): string => ROLE_LABELS[role];
 
-/** Human name for a network identity: CUDNs drop their OVN name prefix. */
+/**
+ * Human name for a network identity: CUDNs drop their OVN name prefix;
+ * namespaced UDNs ('<ns>_<name>') render as ns/name.
+ */
 export const networkDisplayName = (network: string): string => {
     if (network === DEFAULT_NETWORK) return 'Default cluster network';
     if (network.startsWith('cluster_udn_')) return network.slice('cluster_udn_'.length);
+    const separator = network.indexOf('_');
+    if (separator > 0) {
+        return `${network.slice(0, separator)}/${network.slice(separator + 1)}`;
+    }
     return network;
 };
 

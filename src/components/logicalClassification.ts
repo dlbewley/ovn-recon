@@ -191,6 +191,8 @@ export const classifySwitch = (row: LogicalSwitchRow): ClassifiedConstruct => {
             role = 'localnet-switch';
         } else if (row.name === `${mangled}_join`) {
             role = 'join-switch';
+        } else if (row.name === `${mangled}_transit_switch`) {
+            role = 'transit-switch';
         } else {
             const externalNode = stripPrefix(row.name, `ext_${mangled}_`);
             if (externalNode) {
@@ -259,7 +261,9 @@ export interface NetworkResourceRef {
 /**
  * Resolve a network identity to the CR that created it. CUDN identities are
  * prefixed 'cluster_udn_<name>'; namespaced UDN identities are
- * '<namespace>.<name>'. The default network has no owning CR.
+ * '<namespace>_<name>' (underscore separator — safe because Kubernetes names
+ * cannot contain underscores; dashes stay intact in the identity and only
+ * become dots in OVN object names). The default network has no owning CR.
  */
 export const networkResourceRef = (network: string): NetworkResourceRef | undefined => {
     if (network === DEFAULT_NETWORK) return undefined;
@@ -270,7 +274,7 @@ export const networkResourceRef = (network: string): NetworkResourceRef | undefi
             name: network.slice('cluster_udn_'.length),
         };
     }
-    const separator = network.indexOf('.');
+    const separator = network.indexOf('_');
     if (separator > 0) {
         return {
             apiVersion: 'k8s.ovn.org/v1',

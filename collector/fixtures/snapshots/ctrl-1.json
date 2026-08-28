@@ -1,7 +1,7 @@
 {
   "metadata": {
     "schemaVersion": "2",
-    "generatedAt": "2026-08-28T20:52:56.4225Z",
+    "generatedAt": "2026-08-28T21:45:57.318294Z",
     "sourceHealth": "healthy",
     "nodeName": "ctrl-1"
   },
@@ -44,6 +44,33 @@
         },
         "externalIds": {
           "k8s-cluster-router": "yes"
+        }
+      },
+      {
+        "uuid": "8549f461-909d-46f2-aabe-98ce0cb32578",
+        "name": "demo.mirror_example.l3.udn_ovn_cluster_router",
+        "ports": [
+          "83207620-c24d-4fb7-b153-f9c21a3b9c20",
+          "c92c639f-2bf1-46cc-98b5-63657091c409"
+        ],
+        "staticRoutes": [
+          "2d38a678-a4cd-4b28-8f23-ff29d8c7957e",
+          "49106b21-0719-48c2-bfa6-92a19854e33b",
+          "8498a3b1-1f61-431b-9112-14fa46cd14f6",
+          "981dc7d2-8b15-42e0-ba94-877124bc3a4c",
+          "a72b8434-340f-4a93-ac56-9471043aa834",
+          "d748143d-74c0-433c-bf97-7d7dc354e38f",
+          "db7f9b5e-5d5b-4617-afbb-394d535f9448",
+          "ea8dfb23-2b17-419a-a5f2-d9d2c191921e",
+          "fcb11e30-6562-406d-936b-2a33183e3dbb"
+        ],
+        "options": {
+          "always_learn_from_arp_request": "false"
+        },
+        "externalIds": {
+          "k8s-cluster-router": "yes",
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn",
+          "k8s.ovn.org/topology": "layer3"
         }
       },
       {
@@ -174,19 +201,17 @@
     ],
     "logicalRouterPorts": [
       {
-        "uuid": "51b07cb2-2d58-4e24-9b0c-0d2c4109c084",
-        "name": "trtor-GR_cluster_udn_example.p.cudn_ctrl-1",
-        "mac": "0a:58:64:58:00:04",
+        "uuid": "83207620-c24d-4fb7-b153-f9c21a3b9c20",
+        "name": "rtos-demo.mirror_example.l3.udn_ctrl-1",
+        "mac": "0a:58:0a:03:04:01",
         "networks": [
-          "100.88.0.4/31"
+          "10.3.4.1/24"
         ],
-        "peer": "rtotr-GR_cluster_udn_example.p.cudn_ctrl-1",
+        "gatewayChassis": [
+          "cdb51091-7cc7-4ff7-b252-c0a1bf809ff8"
+        ],
         "options": {
-          "requested-tnl-key": "12"
-        },
-        "externalIds": {
-          "k8s.ovn.org/network": "cluster_udn_example-p-cudn",
-          "k8s.ovn.org/topology": "layer2"
+          "gateway_mtu": "1400"
         }
       },
       {
@@ -203,6 +228,22 @@
         "externalIds": {
           "k8s.ovn.org/network": "cluster_udn_example-p-cudn",
           "k8s.ovn.org/node": "store-3",
+          "k8s.ovn.org/topology": "layer2"
+        }
+      },
+      {
+        "uuid": "51b07cb2-2d58-4e24-9b0c-0d2c4109c084",
+        "name": "trtor-GR_cluster_udn_example.p.cudn_ctrl-1",
+        "mac": "0a:58:64:58:00:04",
+        "networks": [
+          "100.88.0.4/31"
+        ],
+        "peer": "rtotr-GR_cluster_udn_example.p.cudn_ctrl-1",
+        "options": {
+          "requested-tnl-key": "12"
+        },
+        "externalIds": {
+          "k8s.ovn.org/network": "cluster_udn_example-p-cudn",
           "k8s.ovn.org/topology": "layer2"
         }
       },
@@ -441,6 +482,17 @@
           "gateway_mtu": "1400",
           "requested-tnl-key": "1"
         }
+      },
+      {
+        "uuid": "c92c639f-2bf1-46cc-98b5-63657091c409",
+        "name": "demo.mirror_example.l3.udn_rtots-ctrl-1",
+        "mac": "0a:58:64:58:00:02",
+        "networks": [
+          "100.88.0.2/16"
+        ],
+        "options": {
+          "mcast_flood": "true"
+        }
       }
     ],
     "logicalSwitches": [
@@ -497,6 +549,22 @@
         }
       },
       {
+        "uuid": "87467e6c-5564-4724-82ab-5785d7c8a079",
+        "name": "demo.mirror_example.l3.udn_ctrl-1",
+        "ports": [
+          "d93beb87-cb48-4467-b96e-faab3751c260"
+        ],
+        "otherConfig": {
+          "exclude_ips": "10.3.4.2",
+          "subnet": "10.3.4.0/24"
+        },
+        "externalIds": {
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn",
+          "k8s.ovn.org/role": "secondary",
+          "k8s.ovn.org/topology": "layer3"
+        }
+      },
+      {
         "uuid": "f86bf8a5-bae1-4370-be57-944fdbc46351",
         "name": "cluster_udn_vlan.1924_ovn_localnet_switch",
         "ports": [
@@ -527,6 +595,46 @@
           "k8s.ovn.org/network": "cluster_udn_example-p-cudn",
           "k8s.ovn.org/role": "primary",
           "k8s.ovn.org/topology": "layer2"
+        }
+      },
+      {
+        "uuid": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+        "name": "demo.mirror_example.l3.udn_transit_switch",
+        "ports": [
+          "00b2c3ee-441b-4039-8d88-3b380b6db8b7",
+          "197da494-0285-433b-9414-c3710ce5746a",
+          "206bdbf6-0c0d-43e6-a333-9228a94e160c",
+          "69bdcdff-9fda-4668-aade-9409a018ca38",
+          "8084557e-961f-4896-b19a-fd4a3a389a58",
+          "898b950f-7e53-4fc8-b06a-4ec47eb8e833",
+          "dfbd7937-2369-4308-9650-85dd2b1ac9e3",
+          "e3e28fb2-e8ec-4cdf-a66e-49a85260f05c",
+          "e41908cc-2d06-42e7-85a7-7edf210e0073",
+          "f2d5d01c-3a58-4442-b119-bc684ecc1a02"
+        ],
+        "otherConfig": {
+          "interconn-ts": "demo.mirror_example.l3.udn_transit_switch",
+          "mcast_flood_unregistered": "true",
+          "mcast_querier": "false",
+          "mcast_snoop": "true",
+          "requested-tnl-key": "16711687"
+        },
+        "externalIds": {
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn",
+          "k8s.ovn.org/role": "secondary",
+          "k8s.ovn.org/topology": "layer3"
+        }
+      },
+      {
+        "uuid": "7950aa6f-e3e8-4a1a-a907-9db4e693cbd5",
+        "name": "cluster_udn_machinenet_ovn_localnet_switch",
+        "ports": [
+          "190dcf42-8e12-4c4b-93d7-60cd2d490a30"
+        ],
+        "externalIds": {
+          "k8s.ovn.org/network": "cluster_udn_machinenet",
+          "k8s.ovn.org/role": "secondary",
+          "k8s.ovn.org/topology": "localnet"
         }
       },
       {
@@ -565,18 +673,6 @@
           "mcast_querier": "true",
           "mcast_snoop": "true",
           "subnet": "10.128.0.0/23"
-        }
-      },
-      {
-        "uuid": "7950aa6f-e3e8-4a1a-a907-9db4e693cbd5",
-        "name": "cluster_udn_machinenet_ovn_localnet_switch",
-        "ports": [
-          "190dcf42-8e12-4c4b-93d7-60cd2d490a30"
-        ],
-        "externalIds": {
-          "k8s.ovn.org/network": "cluster_udn_machinenet",
-          "k8s.ovn.org/role": "secondary",
-          "k8s.ovn.org/topology": "localnet"
         }
       }
     ],
@@ -717,6 +813,17 @@
         }
       },
       {
+        "uuid": "d93beb87-cb48-4467-b96e-faab3751c260",
+        "name": "stor-demo.mirror_example.l3.udn_ctrl-1",
+        "type": "router",
+        "addresses": [
+          "router"
+        ],
+        "options": {
+          "router-port": "rtos-demo.mirror_example.l3.udn_ctrl-1"
+        }
+      },
+      {
         "uuid": "9719d088-e9f3-4449-a5d5-77729ef27a88",
         "name": "openshift-kube-apiserver_kube-apiserver-guard-ctrl-1",
         "addresses": [
@@ -799,21 +906,6 @@
         }
       },
       {
-        "uuid": "e296c78a-a05e-4729-8f2a-38d4d35d2258",
-        "name": "openshift-dns_dns-default-x47wk",
-        "addresses": [
-          "0a:58:0a:80:01:a3 10.128.1.163"
-        ],
-        "options": {
-          "iface-id-ver": "81ab606c-1b41-4857-9278-14fc24b5b3e5",
-          "requested-chassis": "1e193d2a-ad56-4753-bf9a-5e50939905d9"
-        },
-        "externalIds": {
-          "namespace": "openshift-dns",
-          "pod": "true"
-        }
-      },
-      {
         "uuid": "2c380fca-877c-40db-aaf4-57723dd571ed",
         "name": "openshift-multus_network-metrics-daemon-m77v4",
         "addresses": [
@@ -825,6 +917,21 @@
         },
         "externalIds": {
           "namespace": "openshift-multus",
+          "pod": "true"
+        }
+      },
+      {
+        "uuid": "e296c78a-a05e-4729-8f2a-38d4d35d2258",
+        "name": "openshift-dns_dns-default-x47wk",
+        "addresses": [
+          "0a:58:0a:80:01:a3 10.128.1.163"
+        ],
+        "options": {
+          "iface-id-ver": "81ab606c-1b41-4857-9278-14fc24b5b3e5",
+          "requested-chassis": "1e193d2a-ad56-4753-bf9a-5e50939905d9"
+        },
+        "externalIds": {
+          "namespace": "openshift-dns",
           "pod": "true"
         }
       },
@@ -886,6 +993,21 @@
         }
       },
       {
+        "uuid": "e41908cc-2d06-42e7-85a7-7edf210e0073",
+        "name": "demo.mirror_example.l3.udn_tstor-store-3",
+        "type": "remote",
+        "addresses": [
+          "0a:58:64:58:00:09 100.88.0.9/16"
+        ],
+        "options": {
+          "requested-chassis": "5eba3edb-7328-4e36-9732-f4b6ead58f14",
+          "requested-tnl-key": "9"
+        },
+        "externalIds": {
+          "node": "store-3"
+        }
+      },
+      {
         "uuid": "0139fe6d-94dc-4e76-8916-1f65f527649a",
         "name": "tstor-cnv-2",
         "type": "remote",
@@ -898,6 +1020,36 @@
         },
         "externalIds": {
           "node": "cnv-2"
+        }
+      },
+      {
+        "uuid": "00b2c3ee-441b-4039-8d88-3b380b6db8b7",
+        "name": "demo.mirror_example.l3.udn_tstor-ctrl-2",
+        "type": "remote",
+        "addresses": [
+          "0a:58:64:58:00:03 100.88.0.3/16"
+        ],
+        "options": {
+          "requested-chassis": "f0be1189-7efa-4e7c-bcc0-71590ea39bf6",
+          "requested-tnl-key": "3"
+        },
+        "externalIds": {
+          "node": "ctrl-2"
+        }
+      },
+      {
+        "uuid": "29e6e12e-e32c-4c0f-9f54-ce4f4c4a8e95",
+        "name": "openshift-workload-availability_node-healthcheck-controller-manager-6d85c8bcf4-f2xj4",
+        "addresses": [
+          "0a:58:0a:80:00:aa 10.128.0.170"
+        ],
+        "options": {
+          "iface-id-ver": "4fde2a51-d9be-4683-9b69-a225bad73cdc",
+          "requested-chassis": "1e193d2a-ad56-4753-bf9a-5e50939905d9"
+        },
+        "externalIds": {
+          "namespace": "openshift-workload-availability",
+          "pod": "true"
         }
       },
       {
@@ -931,21 +1083,6 @@
         }
       },
       {
-        "uuid": "29e6e12e-e32c-4c0f-9f54-ce4f4c4a8e95",
-        "name": "openshift-workload-availability_node-healthcheck-controller-manager-6d85c8bcf4-f2xj4",
-        "addresses": [
-          "0a:58:0a:80:00:aa 10.128.0.170"
-        ],
-        "options": {
-          "iface-id-ver": "4fde2a51-d9be-4683-9b69-a225bad73cdc",
-          "requested-chassis": "1e193d2a-ad56-4753-bf9a-5e50939905d9"
-        },
-        "externalIds": {
-          "namespace": "openshift-workload-availability",
-          "pod": "true"
-        }
-      },
-      {
         "uuid": "7d8d6eaf-cc75-49da-b5af-bf006dcfcc6d",
         "name": "openshift-marketplace_redhat-operators-5gb89",
         "addresses": [
@@ -958,6 +1095,21 @@
         "externalIds": {
           "namespace": "openshift-marketplace",
           "pod": "true"
+        }
+      },
+      {
+        "uuid": "898b950f-7e53-4fc8-b06a-4ec47eb8e833",
+        "name": "demo.mirror_example.l3.udn_tstor-store-2",
+        "type": "remote",
+        "addresses": [
+          "0a:58:64:58:00:08 100.88.0.8/16"
+        ],
+        "options": {
+          "requested-chassis": "a8478d06-f1a7-478c-9c27-797ccb3f3bed",
+          "requested-tnl-key": "8"
+        },
+        "externalIds": {
+          "node": "store-2"
         }
       },
       {
@@ -991,6 +1143,21 @@
         }
       },
       {
+        "uuid": "e3e28fb2-e8ec-4cdf-a66e-49a85260f05c",
+        "name": "demo.mirror_example.l3.udn_tstor-cnv-4",
+        "type": "remote",
+        "addresses": [
+          "0a:58:64:58:00:07 100.88.0.7/16"
+        ],
+        "options": {
+          "requested-chassis": "2a9ebcd3-1fa6-4524-8c26-b11b0f448df8",
+          "requested-tnl-key": "7"
+        },
+        "externalIds": {
+          "node": "cnv-4"
+        }
+      },
+      {
         "uuid": "576b0693-b4a6-4a16-92a6-279b8475ea31",
         "name": "openshift-kube-scheduler_openshift-kube-scheduler-guard-ctrl-1",
         "addresses": [
@@ -1018,6 +1185,21 @@
         "externalIds": {
           "namespace": "openshift-controller-manager",
           "pod": "true"
+        }
+      },
+      {
+        "uuid": "197da494-0285-433b-9414-c3710ce5746a",
+        "name": "demo.mirror_example.l3.udn_tstor-ctrl-3",
+        "type": "remote",
+        "addresses": [
+          "0a:58:64:58:00:04 100.88.0.4/16"
+        ],
+        "options": {
+          "requested-chassis": "5a410d1d-cf3a-4746-a062-41ce39c6f569",
+          "requested-tnl-key": "4"
+        },
+        "externalIds": {
+          "node": "ctrl-3"
         }
       },
       {
@@ -1053,18 +1235,18 @@
         }
       },
       {
-        "uuid": "040c1cb6-3181-4fc2-8000-93da4207703c",
-        "name": "tstor-store-3",
+        "uuid": "206bdbf6-0c0d-43e6-a333-9228a94e160c",
+        "name": "demo.mirror_example.l3.udn_tstor-cnv-1",
         "type": "remote",
         "addresses": [
-          "0a:58:64:58:00:09 100.88.0.9/16"
+          "0a:58:64:58:00:05 100.88.0.5/16"
         ],
         "options": {
-          "requested-chassis": "5eba3edb-7328-4e36-9732-f4b6ead58f14",
-          "requested-tnl-key": "9"
+          "requested-chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004",
+          "requested-tnl-key": "5"
         },
         "externalIds": {
-          "node": "store-3"
+          "node": "cnv-1"
         }
       },
       {
@@ -1092,6 +1274,36 @@
         "options": {
           "requested-tnl-key": "2",
           "router-port": "rtots-ctrl-1"
+        },
+        "externalIds": {
+          "node": "ctrl-1"
+        }
+      },
+      {
+        "uuid": "040c1cb6-3181-4fc2-8000-93da4207703c",
+        "name": "tstor-store-3",
+        "type": "remote",
+        "addresses": [
+          "0a:58:64:58:00:09 100.88.0.9/16"
+        ],
+        "options": {
+          "requested-chassis": "5eba3edb-7328-4e36-9732-f4b6ead58f14",
+          "requested-tnl-key": "9"
+        },
+        "externalIds": {
+          "node": "store-3"
+        }
+      },
+      {
+        "uuid": "dfbd7937-2369-4308-9650-85dd2b1ac9e3",
+        "name": "demo.mirror_example.l3.udn_tstor-ctrl-1",
+        "type": "router",
+        "addresses": [
+          "router"
+        ],
+        "options": {
+          "requested-tnl-key": "2",
+          "router-port": "demo.mirror_example.l3.udn_rtots-ctrl-1"
         },
         "externalIds": {
           "node": "ctrl-1"
@@ -1173,6 +1385,21 @@
         }
       },
       {
+        "uuid": "f2d5d01c-3a58-4442-b119-bc684ecc1a02",
+        "name": "demo.mirror_example.l3.udn_tstor-cnv-2",
+        "type": "remote",
+        "addresses": [
+          "0a:58:64:58:00:06 100.88.0.6/16"
+        ],
+        "options": {
+          "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5",
+          "requested-tnl-key": "6"
+        },
+        "externalIds": {
+          "node": "cnv-2"
+        }
+      },
+      {
         "uuid": "dd92283d-2c7a-4274-adf0-35c0a1a65636",
         "name": "tstor-cnv-3",
         "type": "remote",
@@ -1203,6 +1430,21 @@
         }
       },
       {
+        "uuid": "8084557e-961f-4896-b19a-fd4a3a389a58",
+        "name": "demo.mirror_example.l3.udn_tstor-store-1",
+        "type": "remote",
+        "addresses": [
+          "0a:58:64:58:00:0a 100.88.0.10/16"
+        ],
+        "options": {
+          "requested-chassis": "a9a56a6e-6d88-4357-aa62-831263653f5e",
+          "requested-tnl-key": "10"
+        },
+        "externalIds": {
+          "node": "store-1"
+        }
+      },
+      {
         "uuid": "6b9fd45f-6c0f-478f-bd24-faf5d4dfe7fe",
         "name": "br-ex_cluster_udn_example.p.cudn_ctrl-1",
         "type": "localnet",
@@ -1215,6 +1457,21 @@
         "externalIds": {
           "k8s.ovn.org/network": "cluster_udn_example-p-cudn",
           "k8s.ovn.org/topology": "layer2"
+        }
+      },
+      {
+        "uuid": "69bdcdff-9fda-4668-aade-9409a018ca38",
+        "name": "demo.mirror_example.l3.udn_tstor-cnv-3",
+        "type": "remote",
+        "addresses": [
+          "0a:58:64:58:00:0b 100.88.0.11/16"
+        ],
+        "options": {
+          "requested-chassis": "a1027a6f-76e5-4870-af42-9c437d5bbe10",
+          "requested-tnl-key": "11"
+        },
+        "externalIds": {
+          "node": "cnv-3"
         }
       }
     ],
@@ -1487,12 +1744,12 @@
         }
       },
       {
-        "uuid": "d4a8fb62-a7a4-4814-b5f8-485c1ea31917",
-        "ipPrefix": "100.64.0.4/32",
-        "nexthop": "100.88.0.4",
+        "uuid": "49106b21-0719-48c2-bfa6-92a19854e33b",
+        "ipPrefix": "10.3.2.0/24",
+        "nexthop": "100.88.0.5",
         "externalIds": {
-          "ic-node": "ctrl-3",
-          "k8s.ovn.org/network": "default"
+          "ic-node": "cnv-1",
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn"
         }
       },
       {
@@ -1502,6 +1759,24 @@
         "externalIds": {
           "ic-node": "cnv-3",
           "k8s.ovn.org/network": "default"
+        }
+      },
+      {
+        "uuid": "d4a8fb62-a7a4-4814-b5f8-485c1ea31917",
+        "ipPrefix": "100.64.0.4/32",
+        "nexthop": "100.88.0.4",
+        "externalIds": {
+          "ic-node": "ctrl-3",
+          "k8s.ovn.org/network": "default"
+        }
+      },
+      {
+        "uuid": "ea8dfb23-2b17-419a-a5f2-d9d2c191921e",
+        "ipPrefix": "10.3.7.0/24",
+        "nexthop": "100.88.0.3",
+        "externalIds": {
+          "ic-node": "ctrl-2",
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn"
         }
       },
       {
@@ -1556,15 +1831,6 @@
         "nexthop": "100.64.0.1"
       },
       {
-        "uuid": "af35cf4c-1657-4533-b9a5-b09c1f3ee8b0",
-        "ipPrefix": "100.64.0.6/32",
-        "nexthop": "100.88.0.6",
-        "externalIds": {
-          "ic-node": "cnv-2",
-          "k8s.ovn.org/network": "default"
-        }
-      },
-      {
         "uuid": "f7cfc24c-3425-44ae-9da7-4a8d44bed403",
         "ipPrefix": "10.130.0.0/23",
         "nexthop": "100.88.0.4",
@@ -1592,6 +1858,15 @@
           "k8s.ovn.org/network": "cluster_udn_example-p-cudn",
           "k8s.ovn.org/topology": "layer2",
           "k8s.ovn.org/udn-enabled-default-service": "openshift-dns/dns-default"
+        }
+      },
+      {
+        "uuid": "af35cf4c-1657-4533-b9a5-b09c1f3ee8b0",
+        "ipPrefix": "100.64.0.6/32",
+        "nexthop": "100.88.0.6",
+        "externalIds": {
+          "ic-node": "cnv-2",
+          "k8s.ovn.org/network": "default"
         }
       },
       {
@@ -1652,6 +1927,33 @@
         }
       },
       {
+        "uuid": "fcb11e30-6562-406d-936b-2a33183e3dbb",
+        "ipPrefix": "10.3.8.0/24",
+        "nexthop": "100.88.0.6",
+        "externalIds": {
+          "ic-node": "cnv-2",
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn"
+        }
+      },
+      {
+        "uuid": "8498a3b1-1f61-431b-9112-14fa46cd14f6",
+        "ipPrefix": "10.3.9.0/24",
+        "nexthop": "100.88.0.10",
+        "externalIds": {
+          "ic-node": "store-1",
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn"
+        }
+      },
+      {
+        "uuid": "981dc7d2-8b15-42e0-ba94-877124bc3a4c",
+        "ipPrefix": "10.3.5.0/24",
+        "nexthop": "100.88.0.4",
+        "externalIds": {
+          "ic-node": "ctrl-3",
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn"
+        }
+      },
+      {
         "uuid": "23e66e92-32c1-4f79-801b-325a4d267d4b",
         "ipPrefix": "10.128.0.0/23",
         "nexthop": "100.64.0.2",
@@ -1667,6 +1969,15 @@
         }
       },
       {
+        "uuid": "6b1b3233-5896-47b8-8247-2e23102b2120",
+        "ipPrefix": "10.128.2.0/23",
+        "nexthop": "100.88.0.6",
+        "externalIds": {
+          "ic-node": "cnv-2",
+          "k8s.ovn.org/network": "default"
+        }
+      },
+      {
         "uuid": "14f7e353-39a0-488f-b75a-131fac6a4146",
         "ipPrefix": "100.65.0.9",
         "nexthop": "100.88.0.19",
@@ -1674,15 +1985,6 @@
           "k8s.ovn.org/network": "cluster_udn_example-p-cudn",
           "k8s.ovn.org/node": "store-3",
           "k8s.ovn.org/topology": "layer2"
-        }
-      },
-      {
-        "uuid": "6b1b3233-5896-47b8-8247-2e23102b2120",
-        "ipPrefix": "10.128.2.0/23",
-        "nexthop": "100.88.0.6",
-        "externalIds": {
-          "ic-node": "cnv-2",
-          "k8s.ovn.org/network": "default"
         }
       },
       {
@@ -1708,6 +2010,15 @@
         "uuid": "f74bfc54-1065-4e17-bb7d-ac3dbe313d5f",
         "ipPrefix": "100.64.0.2",
         "nexthop": "100.64.0.2"
+      },
+      {
+        "uuid": "a72b8434-340f-4a93-ac56-9471043aa834",
+        "ipPrefix": "10.3.6.0/24",
+        "nexthop": "100.88.0.11",
+        "externalIds": {
+          "ic-node": "cnv-3",
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn"
+        }
       },
       {
         "uuid": "ca68eff4-315e-48e6-bca4-260c077de56b",
@@ -1754,6 +2065,15 @@
         }
       },
       {
+        "uuid": "2d38a678-a4cd-4b28-8f23-ff29d8c7957e",
+        "ipPrefix": "10.3.0.0/24",
+        "nexthop": "100.88.0.8",
+        "externalIds": {
+          "ic-node": "store-2",
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn"
+        }
+      },
+      {
         "uuid": "d899acb9-d499-4425-8de4-8e6fed344f13",
         "ipPrefix": "10.131.0.0/23",
         "nexthop": "100.88.0.5",
@@ -1763,12 +2083,13 @@
         }
       },
       {
-        "uuid": "7e10a07a-93cf-4b0c-948a-d2437be69a55",
-        "ipPrefix": "100.64.0.8/32",
-        "nexthop": "100.88.0.8",
+        "uuid": "cf306a1a-47c4-4393-8707-92b97f1f622e",
+        "ipPrefix": "100.65.0.10",
+        "nexthop": "100.88.0.21",
         "externalIds": {
-          "ic-node": "store-2",
-          "k8s.ovn.org/network": "default"
+          "k8s.ovn.org/network": "cluster_udn_example-p-cudn",
+          "k8s.ovn.org/node": "store-1",
+          "k8s.ovn.org/topology": "layer2"
         }
       },
       {
@@ -1781,13 +2102,12 @@
         }
       },
       {
-        "uuid": "cf306a1a-47c4-4393-8707-92b97f1f622e",
-        "ipPrefix": "100.65.0.10",
-        "nexthop": "100.88.0.21",
+        "uuid": "7e10a07a-93cf-4b0c-948a-d2437be69a55",
+        "ipPrefix": "100.64.0.8/32",
+        "nexthop": "100.88.0.8",
         "externalIds": {
-          "k8s.ovn.org/network": "cluster_udn_example-p-cudn",
-          "k8s.ovn.org/node": "store-1",
-          "k8s.ovn.org/topology": "layer2"
+          "ic-node": "store-2",
+          "k8s.ovn.org/network": "default"
         }
       },
       {
@@ -1820,6 +2140,24 @@
         }
       },
       {
+        "uuid": "d748143d-74c0-433c-bf97-7d7dc354e38f",
+        "ipPrefix": "10.3.1.0/24",
+        "nexthop": "100.88.0.9",
+        "externalIds": {
+          "ic-node": "store-3",
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn"
+        }
+      },
+      {
+        "uuid": "db7f9b5e-5d5b-4617-afbb-394d535f9448",
+        "ipPrefix": "10.3.3.0/24",
+        "nexthop": "100.88.0.7",
+        "externalIds": {
+          "ic-node": "cnv-4",
+          "k8s.ovn.org/network": "demo-mirror_example-l3-udn"
+        }
+      },
+      {
         "uuid": "da33e67e-5c89-4c12-af19-6b0af68313ba",
         "ipPrefix": "10.128.4.0/23",
         "nexthop": "100.88.0.10",
@@ -1840,6 +2178,19 @@
     ]
   },
   "nodes": [
+    {
+      "id": "00b2c3ee-441b-4039-8d88-3b380b6db8b7",
+      "kind": "logical_switch_port",
+      "label": "demo.mirror_example.l3.udn_tstor-ctrl-2",
+      "data": {
+        "options": {
+          "requested-chassis": "f0be1189-7efa-4e7c-bcc0-71590ea39bf6",
+          "requested-tnl-key": "3"
+        },
+        "type": "remote",
+        "uuid": "00b2c3ee-441b-4039-8d88-3b380b6db8b7"
+      }
+    },
     {
       "id": "0139fe6d-94dc-4e76-8916-1f65f527649a",
       "kind": "logical_switch_port",
@@ -1947,6 +2298,19 @@
       }
     },
     {
+      "id": "197da494-0285-433b-9414-c3710ce5746a",
+      "kind": "logical_switch_port",
+      "label": "demo.mirror_example.l3.udn_tstor-ctrl-3",
+      "data": {
+        "options": {
+          "requested-chassis": "5a410d1d-cf3a-4746-a062-41ce39c6f569",
+          "requested-tnl-key": "4"
+        },
+        "type": "remote",
+        "uuid": "197da494-0285-433b-9414-c3710ce5746a"
+      }
+    },
+    {
       "id": "1f40c1f1-a8e1-4a33-8f49-55e88bfa5683",
       "kind": "logical_switch_port",
       "label": "stotr-cluster_udn_example.p.cudn_ovn_layer2_switch",
@@ -1956,6 +2320,19 @@
         },
         "type": "router",
         "uuid": "1f40c1f1-a8e1-4a33-8f49-55e88bfa5683"
+      }
+    },
+    {
+      "id": "206bdbf6-0c0d-43e6-a333-9228a94e160c",
+      "kind": "logical_switch_port",
+      "label": "demo.mirror_example.l3.udn_tstor-cnv-1",
+      "data": {
+        "options": {
+          "requested-chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004",
+          "requested-tnl-key": "5"
+        },
+        "type": "remote",
+        "uuid": "206bdbf6-0c0d-43e6-a333-9228a94e160c"
       }
     },
     {
@@ -2120,6 +2497,19 @@
       }
     },
     {
+      "id": "69bdcdff-9fda-4668-aade-9409a018ca38",
+      "kind": "logical_switch_port",
+      "label": "demo.mirror_example.l3.udn_tstor-cnv-3",
+      "data": {
+        "options": {
+          "requested-chassis": "a1027a6f-76e5-4870-af42-9c437d5bbe10",
+          "requested-tnl-key": "11"
+        },
+        "type": "remote",
+        "uuid": "69bdcdff-9fda-4668-aade-9409a018ca38"
+      }
+    },
+    {
       "id": "6b9fd45f-6c0f-478f-bd24-faf5d4dfe7fe",
       "kind": "logical_switch_port",
       "label": "br-ex_cluster_udn_example.p.cudn_ctrl-1",
@@ -2161,6 +2551,19 @@
       }
     },
     {
+      "id": "8084557e-961f-4896-b19a-fd4a3a389a58",
+      "kind": "logical_switch_port",
+      "label": "demo.mirror_example.l3.udn_tstor-store-1",
+      "data": {
+        "options": {
+          "requested-chassis": "a9a56a6e-6d88-4357-aa62-831263653f5e",
+          "requested-tnl-key": "10"
+        },
+        "type": "remote",
+        "uuid": "8084557e-961f-4896-b19a-fd4a3a389a58"
+      }
+    },
+    {
       "id": "84b5f364-1b53-4a5f-8339-2b0cbbd33af6",
       "kind": "logical_switch_port",
       "label": "openshift-workload-availability_self-node-remediation-ds-w4wtq",
@@ -2174,11 +2577,48 @@
       }
     },
     {
+      "id": "8549f461-909d-46f2-aabe-98ce0cb32578",
+      "kind": "logical_router",
+      "label": "demo.mirror_example.l3.udn_ovn_cluster_router",
+      "data": {
+        "uuid": "8549f461-909d-46f2-aabe-98ce0cb32578"
+      }
+    },
+    {
       "id": "85a8424a-548d-401d-bf53-25d97c073e1f",
       "kind": "logical_router",
       "label": "cluster_udn_example.p.cudn_transit_router",
       "data": {
         "uuid": "85a8424a-548d-401d-bf53-25d97c073e1f"
+      }
+    },
+    {
+      "id": "87467e6c-5564-4724-82ab-5785d7c8a079",
+      "kind": "logical_switch",
+      "label": "demo.mirror_example.l3.udn_ctrl-1",
+      "data": {
+        "uuid": "87467e6c-5564-4724-82ab-5785d7c8a079"
+      }
+    },
+    {
+      "id": "898b950f-7e53-4fc8-b06a-4ec47eb8e833",
+      "kind": "logical_switch_port",
+      "label": "demo.mirror_example.l3.udn_tstor-store-2",
+      "data": {
+        "options": {
+          "requested-chassis": "a8478d06-f1a7-478c-9c27-797ccb3f3bed",
+          "requested-tnl-key": "8"
+        },
+        "type": "remote",
+        "uuid": "898b950f-7e53-4fc8-b06a-4ec47eb8e833"
+      }
+    },
+    {
+      "id": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "kind": "logical_switch",
+      "label": "demo.mirror_example.l3.udn_transit_switch",
+      "data": {
+        "uuid": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a"
       }
     },
     {
@@ -2319,6 +2759,18 @@
       }
     },
     {
+      "id": "d93beb87-cb48-4467-b96e-faab3751c260",
+      "kind": "logical_switch_port",
+      "label": "stor-demo.mirror_example.l3.udn_ctrl-1",
+      "data": {
+        "options": {
+          "router-port": "rtos-demo.mirror_example.l3.udn_ctrl-1"
+        },
+        "type": "router",
+        "uuid": "d93beb87-cb48-4467-b96e-faab3751c260"
+      }
+    },
+    {
       "id": "dd92283d-2c7a-4274-adf0-35c0a1a65636",
       "kind": "logical_switch_port",
       "label": "tstor-cnv-3",
@@ -2329,6 +2781,19 @@
         },
         "type": "remote",
         "uuid": "dd92283d-2c7a-4274-adf0-35c0a1a65636"
+      }
+    },
+    {
+      "id": "dfbd7937-2369-4308-9650-85dd2b1ac9e3",
+      "kind": "logical_switch_port",
+      "label": "demo.mirror_example.l3.udn_tstor-ctrl-1",
+      "data": {
+        "options": {
+          "requested-tnl-key": "2",
+          "router-port": "demo.mirror_example.l3.udn_rtots-ctrl-1"
+        },
+        "type": "router",
+        "uuid": "dfbd7937-2369-4308-9650-85dd2b1ac9e3"
       }
     },
     {
@@ -2380,6 +2845,32 @@
         },
         "type": "localnet",
         "uuid": "e35e42ea-eebe-417f-924b-ae4c6ac295e0"
+      }
+    },
+    {
+      "id": "e3e28fb2-e8ec-4cdf-a66e-49a85260f05c",
+      "kind": "logical_switch_port",
+      "label": "demo.mirror_example.l3.udn_tstor-cnv-4",
+      "data": {
+        "options": {
+          "requested-chassis": "2a9ebcd3-1fa6-4524-8c26-b11b0f448df8",
+          "requested-tnl-key": "7"
+        },
+        "type": "remote",
+        "uuid": "e3e28fb2-e8ec-4cdf-a66e-49a85260f05c"
+      }
+    },
+    {
+      "id": "e41908cc-2d06-42e7-85a7-7edf210e0073",
+      "kind": "logical_switch_port",
+      "label": "demo.mirror_example.l3.udn_tstor-store-3",
+      "data": {
+        "options": {
+          "requested-chassis": "5eba3edb-7328-4e36-9732-f4b6ead58f14",
+          "requested-tnl-key": "9"
+        },
+        "type": "remote",
+        "uuid": "e41908cc-2d06-42e7-85a7-7edf210e0073"
       }
     },
     {
@@ -2464,6 +2955,19 @@
       }
     },
     {
+      "id": "f2d5d01c-3a58-4442-b119-bc684ecc1a02",
+      "kind": "logical_switch_port",
+      "label": "demo.mirror_example.l3.udn_tstor-cnv-2",
+      "data": {
+        "options": {
+          "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5",
+          "requested-tnl-key": "6"
+        },
+        "type": "remote",
+        "uuid": "f2d5d01c-3a58-4442-b119-bc684ecc1a02"
+      }
+    },
+    {
       "id": "f3a23018-75b3-46fa-acf5-ca543bad7355",
       "kind": "logical_switch_port",
       "label": "openshift-network-diagnostics_network-check-target-jckw6",
@@ -2516,6 +3020,18 @@
       "id": "router_to_switch:7e26b249-5773-42f6-a04f-557120dca612:08e3d909-f0bf-4390-b682-dce7f5b2e373",
       "source": "7e26b249-5773-42f6-a04f-557120dca612",
       "target": "08e3d909-f0bf-4390-b682-dce7f5b2e373",
+      "kind": "router_to_switch"
+    },
+    {
+      "id": "router_to_switch:8549f461-909d-46f2-aabe-98ce0cb32578:87467e6c-5564-4724-82ab-5785d7c8a079",
+      "source": "8549f461-909d-46f2-aabe-98ce0cb32578",
+      "target": "87467e6c-5564-4724-82ab-5785d7c8a079",
+      "kind": "router_to_switch"
+    },
+    {
+      "id": "router_to_switch:8549f461-909d-46f2-aabe-98ce0cb32578:947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "source": "8549f461-909d-46f2-aabe-98ce0cb32578",
+      "target": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
       "kind": "router_to_switch"
     },
     {
@@ -2744,6 +3260,72 @@
       "id": "switch_to_port:7950aa6f-e3e8-4a1a-a907-9db4e693cbd5:190dcf42-8e12-4c4b-93d7-60cd2d490a30",
       "source": "7950aa6f-e3e8-4a1a-a907-9db4e693cbd5",
       "target": "190dcf42-8e12-4c4b-93d7-60cd2d490a30",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:87467e6c-5564-4724-82ab-5785d7c8a079:d93beb87-cb48-4467-b96e-faab3751c260",
+      "source": "87467e6c-5564-4724-82ab-5785d7c8a079",
+      "target": "d93beb87-cb48-4467-b96e-faab3751c260",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:947afe2e-ba35-4c6f-a08e-e132ffc2e48a:00b2c3ee-441b-4039-8d88-3b380b6db8b7",
+      "source": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "target": "00b2c3ee-441b-4039-8d88-3b380b6db8b7",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:947afe2e-ba35-4c6f-a08e-e132ffc2e48a:197da494-0285-433b-9414-c3710ce5746a",
+      "source": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "target": "197da494-0285-433b-9414-c3710ce5746a",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:947afe2e-ba35-4c6f-a08e-e132ffc2e48a:206bdbf6-0c0d-43e6-a333-9228a94e160c",
+      "source": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "target": "206bdbf6-0c0d-43e6-a333-9228a94e160c",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:947afe2e-ba35-4c6f-a08e-e132ffc2e48a:69bdcdff-9fda-4668-aade-9409a018ca38",
+      "source": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "target": "69bdcdff-9fda-4668-aade-9409a018ca38",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:947afe2e-ba35-4c6f-a08e-e132ffc2e48a:8084557e-961f-4896-b19a-fd4a3a389a58",
+      "source": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "target": "8084557e-961f-4896-b19a-fd4a3a389a58",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:947afe2e-ba35-4c6f-a08e-e132ffc2e48a:898b950f-7e53-4fc8-b06a-4ec47eb8e833",
+      "source": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "target": "898b950f-7e53-4fc8-b06a-4ec47eb8e833",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:947afe2e-ba35-4c6f-a08e-e132ffc2e48a:dfbd7937-2369-4308-9650-85dd2b1ac9e3",
+      "source": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "target": "dfbd7937-2369-4308-9650-85dd2b1ac9e3",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:947afe2e-ba35-4c6f-a08e-e132ffc2e48a:e3e28fb2-e8ec-4cdf-a66e-49a85260f05c",
+      "source": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "target": "e3e28fb2-e8ec-4cdf-a66e-49a85260f05c",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:947afe2e-ba35-4c6f-a08e-e132ffc2e48a:e41908cc-2d06-42e7-85a7-7edf210e0073",
+      "source": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "target": "e41908cc-2d06-42e7-85a7-7edf210e0073",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:947afe2e-ba35-4c6f-a08e-e132ffc2e48a:f2d5d01c-3a58-4442-b119-bc684ecc1a02",
+      "source": "947afe2e-ba35-4c6f-a08e-e132ffc2e48a",
+      "target": "f2d5d01c-3a58-4442-b119-bc684ecc1a02",
       "kind": "switch_to_port"
     },
     {

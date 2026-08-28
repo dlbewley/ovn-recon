@@ -4,6 +4,7 @@ import {
     classifySwitchPort,
     DEFAULT_NETWORK,
     mangleNetworkName,
+    networkResourceRef,
 } from './logicalClassification';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
@@ -91,6 +92,45 @@ describe('classifyDatabase against the captured corpus', () => {
         });
     });
 
+    it('classifies the Layer3 namespaced UDN ladder on cnv-1', () => {
+        const classified = classifyDatabase(zones['cnv-1']);
+        const byName = new Map(classified.constructs.map((construct) => [construct.name, construct]));
+        const L3_UDN = 'demo-mirror_example-l3-udn';
+
+        expect(byName.get('demo.mirror_example.l3.udn_ovn_cluster_router')).toMatchObject({
+            role: 'cluster-router',
+            tier: 'cluster-routing',
+            network: L3_UDN,
+            topology: 'layer3',
+        });
+        expect(byName.get('demo.mirror_example.l3.udn_cnv-1')).toMatchObject({
+            role: 'node-switch',
+            tier: 'workload-switch',
+            network: L3_UDN,
+            node: 'cnv-1',
+        });
+        expect(byName.get('demo.mirror_example.l3.udn_transit_switch')).toMatchObject({
+            role: 'transit-switch',
+            tier: 'waist',
+            network: L3_UDN,
+        });
+    });
+
+    it('resolves network identities to their owning CRs', () => {
+        expect(networkResourceRef('default')).toBeUndefined();
+        expect(networkResourceRef('cluster_udn_example-p-cudn')).toEqual({
+            apiVersion: 'k8s.ovn.org/v1',
+            kind: 'ClusterUserDefinedNetwork',
+            name: 'example-p-cudn',
+        });
+        expect(networkResourceRef('demo-mirror_example-l3-udn')).toEqual({
+            apiVersion: 'k8s.ovn.org/v1',
+            kind: 'UserDefinedNetwork',
+            namespace: 'demo-mirror',
+            name: 'example-l3-udn',
+        });
+    });
+
     it('classifies Localnet CUDN switches as single-rung ladders', () => {
         const classified = classifyDatabase(zones['cnv-1']);
         const localnets = classified.constructs.filter((construct) => construct.role === 'localnet-switch');
@@ -116,9 +156,9 @@ describe('classifySwitchPort', () => {
             roleCounts.set(port.role, (roleCounts.get(port.role) ?? 0) + 1);
         }
 
-        expect(roleCounts.get('router-link-port')).toBe(7);
+        expect(roleCounts.get('router-link-port')).toBe(9);
         expect(roleCounts.get('localnet-port')).toBe(4);
-        expect(roleCounts.get('remote-port')).toBe(9);
+        expect(roleCounts.get('remote-port')).toBe(18);
         expect(roleCounts.get('pod-port')).toBeGreaterThan(10);
         expect(roleCounts.get('management-port')).toBeGreaterThanOrEqual(2);
         expect(roleCounts.get('other-port') ?? 0).toBe(0);
