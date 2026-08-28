@@ -13,6 +13,7 @@ import (
 	"github.com/dlbewley/ovn-recon/collector/internal/snapshot"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 func main() {
@@ -58,9 +59,9 @@ func buildLiveCollector(targetNamespaces []string, logger *slog.Logger, includeP
 		return nil, fmt.Errorf("at least one target namespace is required")
 	}
 
-	restConfig, err := rest.InClusterConfig()
+	restConfig, err := loadRestConfig()
 	if err != nil {
-		return nil, fmt.Errorf("load in-cluster config: %w", err)
+		return nil, err
 	}
 
 	clientset, err := kubernetes.NewForConfig(restConfig)
@@ -70,6 +71,22 @@ func buildLiveCollector(targetNamespaces []string, logger *slog.Logger, includeP
 
 	runnerFactory := probe.NewKubernetesExecRunnerFactory(clientset, restConfig, targetNamespaces, logger.With("component", "runner"))
 	return probe.NewSnapshotCollector(runnerFactory, logger.With("component", "collector"), includeProbeOutput), nil
+}
+
+// loadRestConfig prefers in-cluster config and falls back to kubeconfig so
+// the collector can live-probe when run locally during development.
+func loadRestConfig() (*rest.Config, error) {
+	inClusterConfig, inClusterErr := rest.InClusterConfig()
+	if inClusterErr == nil {
+		return inClusterConfig, nil
+	}
+
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	kubeConfig, kubeconfigErr := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, nil).ClientConfig()
+	if kubeconfigErr != nil {
+		return nil, fmt.Errorf("load in-cluster config: %v; load kubeconfig: %w", inClusterErr, kubeconfigErr)
+	}
+	return kubeConfig, nil
 }
 
 func envOrDefault(key, fallback string) string {

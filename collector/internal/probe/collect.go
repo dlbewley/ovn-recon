@@ -17,6 +17,8 @@ var (
 	logicalRouterPortCommand = []string{"ovn-nbctl", "--format=json", "list", "Logical_Router_Port"}
 	logicalSwitchCommand     = []string{"ovn-nbctl", "--format=json", "list", "Logical_Switch"}
 	logicalSwitchPortCommand = []string{"ovn-nbctl", "--format=json", "list", "Logical_Switch_Port"}
+	natCommand               = []string{"ovn-nbctl", "--format=json", "list", "NAT"}
+	staticRouteCommand       = []string{"ovn-nbctl", "--format=json", "list", "Logical_Router_Static_Route"}
 )
 
 var (
@@ -65,12 +67,12 @@ func CollectSnapshot(ctx context.Context, runner Runner, nodeName string, now ti
 
 // CollectSnapshotWithOptions builds a logical topology snapshot with explicit logging options.
 func CollectSnapshotWithOptions(ctx context.Context, runner Runner, nodeName string, now time.Time, opts CollectOptions) (snapshot.LogicalTopologySnapshot, error) {
-	routers, routerPorts, switches, switchPorts, warnings, err := collectResources(ctx, runner, opts)
-	if err != nil {
-		return snapshot.LogicalTopologySnapshot{}, err
-	}
+	database, warnings := collectDatabase(ctx, runner, opts)
 
-	nodes, edges := buildGraph(routers, routerPorts, switches, switchPorts)
+	// Deprecated v1 graph payload, retained until the placeholder renderer is
+	// replaced (ovn-recon-kck.7).
+	nodes, edges := buildGraph(database.LogicalRouters, database.LogicalRouterPorts, database.LogicalSwitches, database.LogicalSwitchPorts)
+
 	sourceHealth := "healthy"
 	if len(warnings) > 0 {
 		sourceHealth = "degraded"
@@ -78,11 +80,12 @@ func CollectSnapshotWithOptions(ctx context.Context, runner Runner, nodeName str
 
 	return snapshot.LogicalTopologySnapshot{
 		Metadata: snapshot.Metadata{
-			SchemaVersion: "v1alpha1",
+			SchemaVersion: snapshot.SchemaVersionV2,
 			GeneratedAt:   now.UTC(),
 			SourceHealth:  sourceHealth,
 			NodeName:      nodeName,
 		},
+		Database: database,
 		Nodes:    nodes,
 		Edges:    edges,
 		Groups:   []snapshot.Group{},
@@ -90,134 +93,101 @@ func CollectSnapshotWithOptions(ctx context.Context, runner Runner, nodeName str
 	}, nil
 }
 
-func collectResources(ctx context.Context, runner Runner, opts CollectOptions) ([]LogicalRouter, []LogicalRouterPort, []LogicalSwitch, []LogicalSwitchPort, []snapshot.Warning, error) {
+type warningSink struct {
+	warnings []snapshot.Warning
+	added    map[string]bool
+}
+
+func (s *warningSink) append(code, message string) {
+	if s.added == nil {
+		s.added = map[string]bool{}
+	}
+	if s.added[code+message] {
+		return
+	}
+	s.warnings = append(s.warnings, snapshot.Warning{Code: code, Message: message})
+	s.added[code+message] = true
+}
+
+// collectTable runs one probe command and parses its table, reporting
+// failures as warnings so one bad table degrades rather than aborts.
+func collectTable[T any](
+	ctx context.Context,
+	runner Runner,
+	opts CollectOptions,
+	resource string,
+	command []string,
+	parse func(string) ([]T, bool, error),
+	sink *warningSink,
+) []T {
 	logger := opts.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
-	warnings := []snapshot.Warning{}
-	addedWarnings := map[string]bool{}
 
-	appendWarning := func(code, message string) {
-		if addedWarnings[code+message] {
-			return
-		}
-		warnings = append(warnings, snapshot.Warning{Code: code, Message: message})
-		addedWarnings[code+message] = true
-	}
-
-	routers := []LogicalRouter{}
-	logger.Debug("running OVN probe command", "resource", "Logical_Router", "command", strings.Join(logicalRouterCommand, " "))
-	rawRouters, err := runner.Run(ctx, logicalRouterCommand)
+	logger.Debug("running OVN probe command", "resource", resource, "command", strings.Join(command, " "))
+	raw, err := runner.Run(ctx, command)
 	if err != nil {
-		logger.Warn("OVN probe command failed", "resource", "Logical_Router", "error", err)
-		appendWarning("COMMAND_FAILED", fmt.Sprintf("Logical_Router command failed: %v", err))
-	} else {
-		logProbeOutput(logger, opts.IncludeProbeOutput, logicalRouterCommand, rawRouters)
-		parsedRouters, normalized, parseErr := ParseLogicalRouters(rawRouters)
-		if parseErr != nil {
-			logger.Warn("OVN probe parser failed", "resource", "Logical_Router", "error", parseErr)
-			logProbeParseContext(logger, opts.IncludeProbeOutput, rawRouters)
-			appendWarning("PARSER_FAILED", fmt.Sprintf("Logical_Router parse failed: %v", parseErr))
-		} else {
-			routers = parsedRouters
-			if normalized {
-				logger.Debug("OVN probe parser normalized input", "resource", "Logical_Router")
-				appendWarning("PARSER_NORMALIZED", "Input required normalization due to inconsistent OVN command output")
-			}
-		}
+		logger.Warn("OVN probe command failed", "resource", resource, "error", err)
+		sink.append("COMMAND_FAILED", fmt.Sprintf("%s command failed: %v", resource, err))
+		return []T{}
 	}
 
-	routerPorts := []LogicalRouterPort{}
-	logger.Debug("running OVN probe command", "resource", "Logical_Router_Port", "command", strings.Join(logicalRouterPortCommand, " "))
-	rawRouterPorts, err := runner.Run(ctx, logicalRouterPortCommand)
-	if err != nil {
-		logger.Warn("OVN probe command failed", "resource", "Logical_Router_Port", "error", err)
-		appendWarning("COMMAND_FAILED", fmt.Sprintf("Logical_Router_Port command failed: %v", err))
-	} else {
-		logProbeOutput(logger, opts.IncludeProbeOutput, logicalRouterPortCommand, rawRouterPorts)
-		parsedRouterPorts, normalized, parseErr := ParseLogicalRouterPorts(rawRouterPorts)
-		if parseErr != nil {
-			logger.Warn("OVN probe parser failed", "resource", "Logical_Router_Port", "error", parseErr)
-			logProbeParseContext(logger, opts.IncludeProbeOutput, rawRouterPorts)
-			appendWarning("PARSER_FAILED", fmt.Sprintf("Logical_Router_Port parse failed: %v", parseErr))
-		} else {
-			routerPorts = parsedRouterPorts
-			if normalized {
-				logger.Debug("OVN probe parser normalized input", "resource", "Logical_Router_Port")
-				appendWarning("PARSER_NORMALIZED", "Input required normalization due to inconsistent OVN command output")
-			}
-		}
+	logProbeOutput(logger, opts.IncludeProbeOutput, command, raw)
+	rows, normalized, parseErr := parse(raw)
+	if parseErr != nil {
+		logger.Warn("OVN probe parser failed", "resource", resource, "error", parseErr)
+		logProbeParseContext(logger, opts.IncludeProbeOutput, raw)
+		sink.append("PARSER_FAILED", fmt.Sprintf("%s parse failed: %v", resource, parseErr))
+		return []T{}
+	}
+	if normalized {
+		logger.Debug("OVN probe parser normalized input", "resource", resource)
+		sink.append("PARSER_NORMALIZED", "Input required normalization due to inconsistent OVN command output")
+	}
+	return rows
+}
+
+func collectDatabase(ctx context.Context, runner Runner, opts CollectOptions) (*snapshot.LogicalDatabase, []snapshot.Warning) {
+	sink := &warningSink{}
+
+	database := &snapshot.LogicalDatabase{
+		LogicalRouters:     collectTable(ctx, runner, opts, "Logical_Router", logicalRouterCommand, ParseLogicalRouters, sink),
+		LogicalRouterPorts: collectTable(ctx, runner, opts, "Logical_Router_Port", logicalRouterPortCommand, ParseLogicalRouterPorts, sink),
+		LogicalSwitches:    collectTable(ctx, runner, opts, "Logical_Switch", logicalSwitchCommand, ParseLogicalSwitches, sink),
+		LogicalSwitchPorts: collectTable(ctx, runner, opts, "Logical_Switch_Port", logicalSwitchPortCommand, ParseLogicalSwitchPorts, sink),
+		NATs:               collectTable(ctx, runner, opts, "NAT", natCommand, ParseNATs, sink),
+		StaticRoutes:       collectTable(ctx, runner, opts, "Logical_Router_Static_Route", staticRouteCommand, ParseStaticRoutes, sink),
 	}
 
-	switches := []LogicalSwitch{}
-	logger.Debug("running OVN probe command", "resource", "Logical_Switch", "command", strings.Join(logicalSwitchCommand, " "))
-	rawSwitches, err := runner.Run(ctx, logicalSwitchCommand)
-	if err != nil {
-		logger.Warn("OVN probe command failed", "resource", "Logical_Switch", "error", err)
-		appendWarning("COMMAND_FAILED", fmt.Sprintf("Logical_Switch command failed: %v", err))
-	} else {
-		logProbeOutput(logger, opts.IncludeProbeOutput, logicalSwitchCommand, rawSwitches)
-		parsedSwitches, normalized, parseErr := ParseLogicalSwitches(rawSwitches)
-		if parseErr != nil {
-			logger.Warn("OVN probe parser failed", "resource", "Logical_Switch", "error", parseErr)
-			logProbeParseContext(logger, opts.IncludeProbeOutput, rawSwitches)
-			appendWarning("PARSER_FAILED", fmt.Sprintf("Logical_Switch parse failed: %v", parseErr))
-		} else {
-			switches = parsedSwitches
-			if normalized {
-				logger.Debug("OVN probe parser normalized input", "resource", "Logical_Switch")
-				appendWarning("PARSER_NORMALIZED", "Input required normalization due to inconsistent OVN command output")
-			}
-		}
+	warnings := sink.warnings
+	if warnings == nil {
+		warnings = []snapshot.Warning{}
 	}
-
-	switchPorts := []LogicalSwitchPort{}
-	logger.Debug("running OVN probe command", "resource", "Logical_Switch_Port", "command", strings.Join(logicalSwitchPortCommand, " "))
-	rawSwitchPorts, err := runner.Run(ctx, logicalSwitchPortCommand)
-	if err != nil {
-		logger.Warn("OVN probe command failed", "resource", "Logical_Switch_Port", "error", err)
-		appendWarning("COMMAND_FAILED", fmt.Sprintf("Logical_Switch_Port command failed: %v", err))
-	} else {
-		logProbeOutput(logger, opts.IncludeProbeOutput, logicalSwitchPortCommand, rawSwitchPorts)
-		parsedSwitchPorts, normalized, parseErr := ParseLogicalSwitchPorts(rawSwitchPorts)
-		if parseErr != nil {
-			logger.Warn("OVN probe parser failed", "resource", "Logical_Switch_Port", "error", parseErr)
-			logProbeParseContext(logger, opts.IncludeProbeOutput, rawSwitchPorts)
-			appendWarning("PARSER_FAILED", fmt.Sprintf("Logical_Switch_Port parse failed: %v", parseErr))
-		} else {
-			switchPorts = parsedSwitchPorts
-			if normalized {
-				logger.Debug("OVN probe parser normalized input", "resource", "Logical_Switch_Port")
-				appendWarning("PARSER_NORMALIZED", "Input required normalization due to inconsistent OVN command output")
-			}
-		}
-	}
-
-	return routers, routerPorts, switches, switchPorts, warnings, nil
+	return database, warnings
 }
 
 func buildGraph(
-	routers []LogicalRouter,
-	routerPorts []LogicalRouterPort,
-	switches []LogicalSwitch,
-	switchPorts []LogicalSwitchPort,
+	routers []snapshot.LogicalRouterRow,
+	routerPorts []snapshot.LogicalRouterPortRow,
+	switches []snapshot.LogicalSwitchRow,
+	switchPorts []snapshot.LogicalSwitchPortRow,
 ) ([]snapshot.Node, []snapshot.Edge) {
 	nodes := map[string]snapshot.Node{}
 	edges := map[string]snapshot.Edge{}
 
-	routerPortByUUID := map[string]LogicalRouterPort{}
+	routerPortByUUID := map[string]snapshot.LogicalRouterPortRow{}
 	for _, port := range routerPorts {
 		routerPortByUUID[port.UUID] = port
 	}
 
 	routerIDByRouterPortName := map[string]string{}
 	for _, router := range routers {
-		routerNodeID := routerNodeID(router)
+		routerNodeID := firstNonEmpty(router.UUID, router.Name)
 		nodes[routerNodeID] = snapshot.Node{
 			ID:    routerNodeID,
 			Kind:  "logical_router",
-			Label: labelOrID(router.Name, routerNodeID),
+			Label: firstNonEmpty(router.Name, routerNodeID),
 			Data: map[string]interface{}{
 				"uuid": router.UUID,
 			},
@@ -231,11 +201,11 @@ func buildGraph(
 
 	switchIDByPortUUID := map[string]string{}
 	for _, logicalSwitch := range switches {
-		switchNodeID := switchNodeID(logicalSwitch)
+		switchNodeID := firstNonEmpty(logicalSwitch.UUID, logicalSwitch.Name)
 		nodes[switchNodeID] = snapshot.Node{
 			ID:    switchNodeID,
 			Kind:  "logical_switch",
-			Label: labelOrID(logicalSwitch.Name, switchNodeID),
+			Label: firstNonEmpty(logicalSwitch.Name, switchNodeID),
 			Data: map[string]interface{}{
 				"uuid": logicalSwitch.UUID,
 			},
@@ -246,11 +216,11 @@ func buildGraph(
 	}
 
 	for _, port := range switchPorts {
-		portNodeID := switchPortNodeID(port)
+		portNodeID := firstNonEmpty(port.UUID, port.Name)
 		nodes[portNodeID] = snapshot.Node{
 			ID:    portNodeID,
 			Kind:  "logical_switch_port",
-			Label: labelOrID(port.Name, portNodeID),
+			Label: firstNonEmpty(port.Name, portNodeID),
 			Data: map[string]interface{}{
 				"uuid":    port.UUID,
 				"type":    port.Type,
@@ -303,32 +273,13 @@ func buildGraph(
 	return orderedNodes, orderedEdges
 }
 
-func routerNodeID(router LogicalRouter) string {
-	if strings.TrimSpace(router.UUID) != "" {
-		return router.UUID
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
 	}
-	return strings.TrimSpace(router.Name)
-}
-
-func switchNodeID(logicalSwitch LogicalSwitch) string {
-	if strings.TrimSpace(logicalSwitch.UUID) != "" {
-		return logicalSwitch.UUID
-	}
-	return strings.TrimSpace(logicalSwitch.Name)
-}
-
-func switchPortNodeID(port LogicalSwitchPort) string {
-	if strings.TrimSpace(port.UUID) != "" {
-		return port.UUID
-	}
-	return strings.TrimSpace(port.Name)
-}
-
-func labelOrID(label, id string) string {
-	if strings.TrimSpace(label) != "" {
-		return label
-	}
-	return id
+	return ""
 }
 
 func edgeKey(kind, source, target string) string {

@@ -4,35 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/dlbewley/ovn-recon/collector/internal/snapshot"
 )
-
-// LogicalRouter models the minimum fields needed for logical topology assembly.
-type LogicalRouter struct {
-	UUID      string
-	Name      string
-	PortUUIDs []string
-}
-
-// LogicalRouterPort models the minimum fields needed for logical topology assembly.
-type LogicalRouterPort struct {
-	UUID string
-	Name string
-}
-
-// LogicalSwitch models the minimum fields needed for logical topology assembly.
-type LogicalSwitch struct {
-	UUID      string
-	Name      string
-	PortUUIDs []string
-}
-
-// LogicalSwitchPort models the minimum fields needed for logical topology assembly.
-type LogicalSwitchPort struct {
-	UUID    string
-	Name    string
-	Type    string
-	Options map[string]string
-}
 
 type tablePayload struct {
 	Headings []string `json:"headings"`
@@ -134,76 +108,149 @@ func decodeOVSValue(value any) any {
 	}
 }
 
-func ParseLogicalRouters(raw string) ([]LogicalRouter, bool, error) {
+func ParseLogicalRouters(raw string) ([]snapshot.LogicalRouterRow, bool, error) {
 	rows, normalized, err := parseTableRows(raw)
 	if err != nil {
 		return nil, false, err
 	}
 
-	routers := make([]LogicalRouter, 0, len(rows))
+	routers := make([]snapshot.LogicalRouterRow, 0, len(rows))
 	for _, row := range rows {
-		routers = append(routers, LogicalRouter{
-			UUID:      stringField(row, "_uuid"),
-			Name:      stringField(row, "name"),
-			PortUUIDs: stringSliceField(row, "ports"),
+		routers = append(routers, snapshot.LogicalRouterRow{
+			UUID:             stringField(row, "_uuid"),
+			Name:             stringField(row, "name"),
+			PortUUIDs:        stringSliceField(row, "ports"),
+			NATUUIDs:         stringSliceField(row, "nat"),
+			StaticRouteUUIDs: stringSliceField(row, "static_routes"),
+			Options:          stringMapField(row, "options"),
+			ExternalIDs:      stringMapField(row, "external_ids"),
 		})
 	}
 	return routers, normalized, nil
 }
 
-func ParseLogicalRouterPorts(raw string) ([]LogicalRouterPort, bool, error) {
+func ParseLogicalRouterPorts(raw string) ([]snapshot.LogicalRouterPortRow, bool, error) {
 	rows, normalized, err := parseTableRows(raw)
 	if err != nil {
 		return nil, false, err
 	}
 
-	ports := make([]LogicalRouterPort, 0, len(rows))
+	ports := make([]snapshot.LogicalRouterPortRow, 0, len(rows))
 	for _, row := range rows {
-		ports = append(ports, LogicalRouterPort{
-			UUID: stringField(row, "_uuid"),
-			Name: stringField(row, "name"),
+		ports = append(ports, snapshot.LogicalRouterPortRow{
+			UUID:                stringField(row, "_uuid"),
+			Name:                stringField(row, "name"),
+			MAC:                 stringField(row, "mac"),
+			Networks:            stringSliceField(row, "networks"),
+			Peer:                optionalStringField(row, "peer"),
+			GatewayChassisUUIDs: stringSliceField(row, "gateway_chassis"),
+			Options:             stringMapField(row, "options"),
+			ExternalIDs:         stringMapField(row, "external_ids"),
 		})
 	}
 	return ports, normalized, nil
 }
 
-func ParseLogicalSwitches(raw string) ([]LogicalSwitch, bool, error) {
+func ParseLogicalSwitches(raw string) ([]snapshot.LogicalSwitchRow, bool, error) {
 	rows, normalized, err := parseTableRows(raw)
 	if err != nil {
 		return nil, false, err
 	}
 
-	switches := make([]LogicalSwitch, 0, len(rows))
+	switches := make([]snapshot.LogicalSwitchRow, 0, len(rows))
 	for _, row := range rows {
-		switches = append(switches, LogicalSwitch{
-			UUID:      stringField(row, "_uuid"),
-			Name:      stringField(row, "name"),
-			PortUUIDs: stringSliceField(row, "ports"),
+		switches = append(switches, snapshot.LogicalSwitchRow{
+			UUID:        stringField(row, "_uuid"),
+			Name:        stringField(row, "name"),
+			PortUUIDs:   stringSliceField(row, "ports"),
+			OtherConfig: stringMapField(row, "other_config"),
+			ExternalIDs: stringMapField(row, "external_ids"),
 		})
 	}
 	return switches, normalized, nil
 }
 
-func ParseLogicalSwitchPorts(raw string) ([]LogicalSwitchPort, bool, error) {
+func ParseLogicalSwitchPorts(raw string) ([]snapshot.LogicalSwitchPortRow, bool, error) {
 	rows, normalized, err := parseTableRows(raw)
 	if err != nil {
 		return nil, false, err
 	}
 
-	ports := make([]LogicalSwitchPort, 0, len(rows))
+	ports := make([]snapshot.LogicalSwitchPortRow, 0, len(rows))
 	for _, row := range rows {
-		ports = append(ports, LogicalSwitchPort{
-			UUID:    stringField(row, "_uuid"),
-			Name:    stringField(row, "name"),
-			Type:    stringField(row, "type"),
-			Options: stringMapField(row, "options"),
+		ports = append(ports, snapshot.LogicalSwitchPortRow{
+			UUID:        stringField(row, "_uuid"),
+			Name:        stringField(row, "name"),
+			Type:        stringField(row, "type"),
+			Addresses:   stringSliceField(row, "addresses"),
+			Options:     stringMapField(row, "options"),
+			ExternalIDs: stringMapField(row, "external_ids"),
 		})
 	}
 	return ports, normalized, nil
 }
 
+func ParseNATs(raw string) ([]snapshot.NATRow, bool, error) {
+	rows, normalized, err := parseTableRows(raw)
+	if err != nil {
+		return nil, false, err
+	}
+
+	nats := make([]snapshot.NATRow, 0, len(rows))
+	for _, row := range rows {
+		nats = append(nats, snapshot.NATRow{
+			UUID:        stringField(row, "_uuid"),
+			Type:        stringField(row, "type"),
+			ExternalIP:  stringField(row, "external_ip"),
+			LogicalIP:   stringField(row, "logical_ip"),
+			LogicalPort: optionalStringField(row, "logical_port"),
+			ExternalMAC: optionalStringField(row, "external_mac"),
+			Options:     stringMapField(row, "options"),
+			ExternalIDs: stringMapField(row, "external_ids"),
+		})
+	}
+	return nats, normalized, nil
+}
+
+func ParseStaticRoutes(raw string) ([]snapshot.StaticRouteRow, bool, error) {
+	rows, normalized, err := parseTableRows(raw)
+	if err != nil {
+		return nil, false, err
+	}
+
+	routes := make([]snapshot.StaticRouteRow, 0, len(rows))
+	for _, row := range rows {
+		routes = append(routes, snapshot.StaticRouteRow{
+			UUID:        stringField(row, "_uuid"),
+			IPPrefix:    stringField(row, "ip_prefix"),
+			Nexthop:     stringField(row, "nexthop"),
+			Policy:      optionalStringField(row, "policy"),
+			OutputPort:  optionalStringField(row, "output_port"),
+			Options:     stringMapField(row, "options"),
+			ExternalIDs: stringMapField(row, "external_ids"),
+		})
+	}
+	return routes, normalized, nil
+}
+
 func stringField(row map[string]any, key string) string {
 	return asString(row[key])
+}
+
+// optionalStringField reads an OVSDB optional scalar, which arrives as a
+// bare value when present and as an empty (or single-element) set when not.
+func optionalStringField(row map[string]any, key string) string {
+	raw, ok := row[key]
+	if !ok {
+		return ""
+	}
+	if items, isSlice := raw.([]any); isSlice {
+		if len(items) == 0 {
+			return ""
+		}
+		return asString(items[0])
+	}
+	return asString(raw)
 }
 
 func stringSliceField(row map[string]any, key string) []string {
