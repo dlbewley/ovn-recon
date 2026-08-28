@@ -25,7 +25,8 @@ export interface Interface {
     master?: string;
     vlan?: { 'base-iface': string; id?: number; protocol?: string };
     'mac-vlan'?: { 'base-iface': string };
-    patch?: boolean;
+    /** OVS patch port: nmstate reports the reciprocal peer port. */
+    patch?: { peer?: string };
     /** Present on bridge interfaces. Not to be confused with OvnBridgeMapping.bridge, which is a name. */
     bridge?: { port?: BridgePort[]; ports?: BridgePort[] };
     localnet?: string;

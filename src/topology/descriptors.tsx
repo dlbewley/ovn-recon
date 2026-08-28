@@ -17,6 +17,7 @@ import {
     ClusterUserDefinedNetwork, Interface, NetworkAttachmentDefinition, OvnBridgeMapping,
     UserDefinedNetwork
 } from '../types';
+import { getVrfConnectionInfo } from '../components/nodeVisualizationSelectors';
 import { InterfaceRole, interfacesWithRole } from './classify';
 import { EdgeKind } from '../components/nodeVisualizationModel';
 import { GraphContext } from './context';
@@ -25,7 +26,9 @@ import {
     interfaceNodeId, nadNodeId, udnNodeId
 } from './ids';
 import { getUdnTopologyAndRole } from './registry';
-import { AttachmentNode, NetworkColumnItem, NodeKind, ResourceRef } from './types';
+import {
+    AttachmentNode, IntegrationBridgeNode, NetworkColumnItem, NodeKind, ResourceRef
+} from './types';
 
 /**
  * One descriptor per kind of node the graph draws.
@@ -44,7 +47,7 @@ import { AttachmentNode, NetworkColumnItem, NodeKind, ResourceRef } from './type
  */
 
 export type NodeTypeId =
-    | 'physical' | 'bond' | 'vlan' | 'bridge' | 'bridge-port' | 'vrf'
+    | 'physical' | 'bond' | 'vlan' | 'bridge' | 'bridge-port' | 'vrf' | 'integration-bridge'
     | 'ovn-mapping' | 'cudn' | 'udn' | 'attachment' | 'nad' | 'lldp-neighbor' | 'other';
 
 /** What the node shows on the canvas and in the drawer header. */
@@ -242,6 +245,47 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
             }
         }
     } as NodeTypeDescriptor<Interface>,
+
+
+    {
+        type: 'integration-bridge',
+        kind: 'integration-bridge',
+        lane: 'ovn',
+        icon: <InfrastructureIcon />,
+        color: '#009596',
+        // Synthesized: nmstate reports no br-int interface, only ports declaring
+        // it as their controller (ovn-recon-s3t.46).
+        items: (ctx) => (ctx.integrationBridge ? [ctx.integrationBridge] : []),
+        id: (bridge) => `intbr:${bridge.name}`,
+        present: (bridge) => ({
+            label: bridge.name,
+            subtitle: 'OVS Integration Bridge',
+            graphLabel: 'OVN Integration',
+            state: `${bridge.ports.length} ports`,
+            isSynthetic: true
+        }),
+        edges: (bridge, ctx, out) => {
+            const id = `intbr:${bridge.name}`;
+            // One peer edge per provider bridge: the reciprocal patch.peer pair is
+            // a virtual cable, and several pairs to one bridge are still one link.
+            const providers = new Set<string>();
+            bridge.ports.forEach((port) => {
+                const peer = ctx.interfaces.find((iface) => iface.name === port.patch?.peer);
+                const provider = peer?.controller || peer?.master;
+                if (!provider || providers.has(provider)) return;
+                providers.add(provider);
+                out.named('patch-peer', 'peer', id, provider, 'from');
+            });
+            // The uplink: a VRF's management port (ovn-k8s-mpX) is a port ON br-int.
+            interfacesWithRole(ctx, 'vrf').forEach((vrf) => {
+                const { brIntPorts } = getVrfConnectionInfo(vrf, ctx.interfaces);
+                if (brIntPorts.length > 0) {
+                    out.edge(id, interfaceNodeId(vrf, ctx), 'membership',
+                        `management-port (${brIntPorts.map((p) => p.name).join(', ')})`);
+                }
+            });
+        }
+    } as NodeTypeDescriptor<IntegrationBridgeNode>,
 
     {
         type: 'cudn',

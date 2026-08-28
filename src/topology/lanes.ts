@@ -70,6 +70,9 @@ export const LANES: Lane[] = [
         // ovn-recon-x23, which ovn-recon-s3t.26 supersedes by drawing ports on bridges.
         visible: (_ctx, view) => view.showHiddenColumns
     },
+    // The seam where OVN's domain begins: the integration bridge, and later the
+    // Geneve/VTEP work (ovn-recon-s3t.20) and the logical-view anchor.
+    { id: 'ovn', title: 'OVN', visible: whenPopulated },
     // Two descriptors share this lane, each with its own sub-header.
     { id: 'l3', visible: whenPopulated },
     { id: 'networks', title: 'Networks', visible: whenPopulated },

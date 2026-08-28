@@ -1,5 +1,5 @@
 import { extractLldpNeighbors, getCudnAssociatedNamespaces, LldpNeighborNode } from '../components/nodeVisualizationSelectors';
-import { AttachmentNode } from './types';
+import { AttachmentNode, IntegrationBridgeNode } from './types';
 import {
     ClusterUserDefinedNetwork,
     Interface,
@@ -43,6 +43,11 @@ export interface GraphContext {
     controllerNames: Set<string>;
     /** LLDP neighbours parsed out of the interfaces. */
     lldpNeighbors: LldpNeighborNode[];
+    /**
+     * The OVS integration bridge, when its ports reveal it. nmstate reports no
+     * br-int interface -- the bridge exists only as its ports' controller value.
+     */
+    integrationBridge?: IntegrationBridgeNode;
     /**
      * Synthetic nodes for the namespaces attached to each network. Derived rather than
      * reported: CUDN namespaces are scraped from a status condition message, and each
@@ -90,6 +95,15 @@ export interface GraphContextInput {
 
 const BRIDGE_TYPES = ['linux-bridge', 'ovs-bridge', 'openvswitch'];
 
+/** OVN-Kubernetes's integration bridge has one fixed name. */
+const INTEGRATION_BRIDGE_NAME = 'br-int';
+
+const buildIntegrationBridge = (interfaces: Interface[]): IntegrationBridgeNode | undefined => {
+    const ports = interfaces.filter(
+        (iface) => (iface.controller || iface.master) === INTEGRATION_BRIDGE_NAME);
+    return ports.length > 0 ? { name: INTEGRATION_BRIDGE_NAME, ports } : undefined;
+};
+
 export const buildGraphContext = ({
     nns,
     cudns = [],
@@ -118,6 +132,7 @@ export const buildGraphContext = ({
                 .filter((name): name is string => Boolean(name))
         ),
         lldpNeighbors: extractLldpNeighbors(interfaces),
+        integrationBridge: buildIntegrationBridge(interfaces),
         attachmentNodes: buildAttachmentNodes(cudns, udns)
     };
 };

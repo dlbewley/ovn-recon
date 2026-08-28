@@ -89,7 +89,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const svgContainerRef = React.useRef<SVGSVGElement | null>(null);
 
     // Simple layout logic
-    const width = 1600; // Increased width for new columns
+    const baseWidth = 1600;
     // const height = 800; // Unused
     // Room above the lane headers: they draw at padding - 10, and used to sit
     // 10px from the viewport edge (ovn-recon-s3t.45).
@@ -276,6 +276,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     laneLayout.lanes.forEach(({ groups }) =>
         groups.forEach((group) => group.nodes.forEach((node) => placedNodeById.set(node.id, node))));
     otherGridNodes.forEach((node) => placedNodeById.set(node.id, node));
+
+    // The default view must hold every visible lane: with the OVN lane added,
+    // a fixed 1600 clipped the right-hand lanes (ovn-recon-s3t.46).
+    const width = Math.max(
+        baseWidth,
+        Math.max(0, ...laneLayout.lanes.map((lane) => lane.x)) + itemWidth + padding
+    );
 
     // The catch-all grid sits below every lane, four across.
     const otherGridRows = Math.ceil(otherInterfaces.length / 4) + 2;

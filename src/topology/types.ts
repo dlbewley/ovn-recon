@@ -16,7 +16,18 @@ import {
  */
 export type NodeKind =
     | 'interface' | 'ovn-mapping' | 'cudn' | 'udn'
-    | 'attachment' | 'nad' | 'vrf' | 'lldp-neighbor' | 'other';
+    | 'attachment' | 'nad' | 'vrf' | 'lldp-neighbor' | 'integration-bridge' | 'other';
+
+/**
+ * The OVS integration bridge, synthesized from its ports: nmstate holds no
+ * interface entry for br-int itself -- only ports declaring it as controller,
+ * all state: ignore (ovn-recon-s3t.46).
+ */
+export interface IntegrationBridgeNode {
+    name: string;
+    /** Every interface declaring this bridge as its controller. */
+    ports: import('../types').Interface[];
+}
 
 /** A synthetic node standing for the namespaces attached to a CUDN or UDN. */
 export interface AttachmentNode {

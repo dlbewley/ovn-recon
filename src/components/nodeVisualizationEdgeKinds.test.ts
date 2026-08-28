@@ -69,6 +69,15 @@ describe('every edge says what it means', () => {
         expect(kindOfRule(edges, 'lldp')).toBe('peer');
     });
 
+    it('classifies the br-int patch cable as a peer, like LLDP', () => {
+        // The reciprocal patch.peer pair is two ends of a virtual cable between
+        // br-ex and the synthesized integration bridge (ovn-recon-s3t.46).
+        const edges = edgesFor('primary-cudn-vrf');
+        expect(kindOfRule(edges, 'patch-peer')).toBe('peer');
+        expect(edges.find((e) => e.rule === 'patch-peer'))
+            .toMatchObject({ source: 'iface:br-ex', target: 'intbr:br-int' });
+    });
+
     it('classifies attached namespaces as membership', () => {
         const ctx = buildGraphContext({
             nns: fixture<NodeNetworkState>('nns', 'basic-host.json'),
@@ -88,7 +97,9 @@ describe('what the kinds are for', () => {
         expect(byKind('reference')).toEqual([
             'bridge-mapping', 'physical-network-name', 'primary-network (subnet, name)'
         ]);
-        expect(byKind('membership')).toEqual(['attached-namespaces', 'controller']);
+        expect(byKind('membership')).toEqual([
+            'attached-namespaces', 'controller', 'management-port (ovn-k8s-mp3)'
+        ]);
         expect(byKind('layering')).toEqual(['base-iface']);
     });
 

@@ -26,7 +26,8 @@ import { GraphContext } from './context';
 import { baseFacts } from './facts';
 import { getApiResourcePath, getNamespaceQueryPath, getProjectPath } from './links';
 import {
-    AttachmentNode, Fact, FactItem, NodeKind, NodeKindDefinition, NodeViewModel, ResourceRef
+    AttachmentNode, Fact, FactItem, IntegrationBridgeNode, NodeKind, NodeKindDefinition,
+    NodeViewModel, ResourceRef
 } from './types';
 
 /**
@@ -562,6 +563,77 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                             : 'N/A',
                         provenance: 'inferred',
                         hint: `${VRF_RA_HINT} CUDNs are then selected by that RouteAdvertisements' networkSelector.`
+                    } as Fact]
+                    : [])
+            ];
+        }
+    },
+    'integration-bridge': {
+        label: 'Integration Bridge',
+        buildBadges: (node) => (node.isSynthetic ? ['synthetic', 'derived'] : []),
+        facts: (node, ctx) => {
+            const bridge = node.raw as IntegrationBridgeNode;
+            const ports = bridge?.ports || [];
+            const managementPorts = ports.filter((port) => port.name.startsWith('ovn-k8s-mp'));
+            const patchPorts = ports.filter((port) => port.patch?.peer);
+            const internalPort = ports.find((port) => port.name === bridge.name);
+
+            // Which VRF, if any, each management port is enslaved into.
+            const vrfByPort = new Map<string, string>();
+            ctx.interfaces
+                .filter((iface) => iface.type === 'vrf')
+                .forEach((vrf) => {
+                    const members = Array.isArray(vrf.vrf?.port)
+                        ? vrf.vrf.port
+                        : typeof vrf.vrf?.port === 'string' ? [vrf.vrf.port] : [];
+                    members.forEach((member) => vrfByPort.set(member, vrf.name));
+                });
+
+            return [
+                {
+                    label: 'Type',
+                    value: [{ text: node.subtitle, href: NNS_API }],
+                    provenance: 'observed',
+                    hint: 'OVN-Kubernetes attaches every pod and logical port here. nmstate reports '
+                        + 'only its ports (state: ignore), so this node is derived from their controller fields.'
+                },
+                // With enactments present this correctly reads 'created by the
+                // installer or OVN-Kubernetes' -- no NNCP ever claims br-int.
+                ...configuredByFacts(getPoliciesClaimingInterface(bridge?.name || '', ctx.enactments), ctx),
+                {
+                    label: 'Management Ports',
+                    value: managementPorts.map((port): FactItem => {
+                        const addresses = getIpv4Addresses(port).join(', ');
+                        const vrfName = vrfByPort.get(port.name);
+                        const association = vrfName
+                            ? ` — VRF ${vrfName}`
+                            : (port.name === 'ovn-k8s-mp0' ? ' — default network' : '');
+                        return { text: `${port.name}${addresses ? ` ${addresses}` : ''}${association}` };
+                    }),
+                    provenance: 'observed',
+                    hint: 'One per network: ovn-k8s-mp0 serves the default cluster network, and each '
+                        + 'Primary UDN/CUDN adds its own, enslaved into that network\'s VRF.',
+                    emptyText: 'No management ports reported in NNS.'
+                },
+                {
+                    label: 'Patch Ports',
+                    value: patchPorts.map((port): FactItem => {
+                        const peer = ctx.interfaces.find((iface) => iface.name === port.patch?.peer);
+                        const provider = peer?.controller || peer?.master || 'unknown';
+                        return { text: `${provider}: ${port.name} ↔ ${port.patch?.peer}` };
+                    }),
+                    provenance: 'observed',
+                    hint: 'Reciprocal patch.peer pairs cable br-int to each provider bridge.',
+                    emptyText: 'No patch ports reported in NNS.'
+                },
+                ...(internalPort
+                    ? [{
+                        label: 'Internal Port',
+                        value: `${internalPort.name}${getIpv4Addresses(internalPort).length > 0
+                            ? ` ${getIpv4Addresses(internalPort).join(', ')}` : ' (no address)'}`,
+                        provenance: 'observed',
+                        hint: 'The bridge\'s own OVS internal port, shown as an attribute rather '
+                            + 'than a node (the rule from ovn-recon-s3t.26).'
                     } as Fact]
                     : [])
             ];
