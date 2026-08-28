@@ -25,7 +25,7 @@ Blog post: [OVN Recon: Making OpenShift Networking Connections](https://guifreel
 
 - **Physical topology view**: Per-node graph of host interfaces, bridges, OVN bridge mappings, VRFs, CUDNs/UDNs, attachments, and NAD relationships.
 - **LLDP-aware interface context**: Optional LLDP neighbors column in the node visualization, shown via toggle when LLDP is enabled and neighbor data is present.
-- **Logical topology view (WIP)**: Node-scoped logical OVN graph (`/ovn-recon/ovn/:name`) backed by the optional collector service.
+- **Logical topology views**: Cluster-scoped (`/ovn-recon/ovn`) and node-scoped (`/ovn-recon/ovn/:name`) ladder views of the logical OVN constructs — switches, routers, NAT, and routes per network — backed by the optional collector service. See [readme-logical-visualization.md](readme-logical-visualization.md).
 - **Operator-managed lifecycle**: Recommended installation via OVN Recon Operator with automatic console plugin enablement and collector wiring.
 
 ## Kubernetes Resource Dependencies
