@@ -64,9 +64,14 @@ describe('LogicalLadderView', () => {
         expect(text).toMatch(/⇄ \d+ nodes/);
     });
 
-    it('labels edges with router port addresses', () => {
+    it('labels edges with their function and router port addresses', () => {
         render();
-        expect(container.textContent).toContain('100.64.0.1/16');
+        const text = container.textContent ?? '';
+        expect(text).toContain('join · 100.64.0.1/16');
+        expect(text).toContain('tunnel · 100.88.0.5/16');
+        expect(text).toContain('gateway · 10.131.0.1/23');
+        // Interconnect legs annotate each address's function.
+        expect(text).toContain('interconnect · router 100.65.0.5/16 p2p 100.88.0.11/31 ⇄ p2p 100.88.0.10/31');
     });
 
     it('reports selection on construct click', () => {

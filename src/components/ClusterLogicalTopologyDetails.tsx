@@ -227,6 +227,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                                 <ConstructDrawerBody
                                                     construct={selectedConstruct}
                                                     model={model}
+                                                    totalNodes={model.zoneCount}
                                                     nodeHref={(node) => `/ovn-recon/ovn/${encodeURIComponent(node)}`}
                                                     physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
                                                 />

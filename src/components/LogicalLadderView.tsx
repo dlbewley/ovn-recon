@@ -139,11 +139,33 @@ const filterModel = (model: LadderModel, networkFilter: string): LadderModel => 
     };
 };
 
-const edgeLabel = (edge: LadderEdge): string => {
-    const left = edge.networks.join(' ');
-    const right = edge.peerNetworks?.join(' ') ?? '';
-    if (left && right) return `${left} ⇄ ${right}`;
-    return left || right;
+export const EDGE_ROLE_LABELS: Record<LadderEdge['role'], string> = {
+    join: 'join',
+    external: 'external',
+    gateway: 'gateway',
+    tunnel: 'tunnel',
+    interconnect: 'interconnect',
+    link: '',
+};
+
+// An interconnect leg mixes two address kinds: the router's address on the
+// network's join subnet, and the /31 (or /127) point-to-point pair carrying
+// the tunnel. Annotate each so the mix reads as function, not just numbers.
+const annotateInterconnectAddresses = (addresses: string[]): string =>
+    addresses
+        .map((address) => (/\/(31|127)$/.test(address) ? `p2p ${address}` : `router ${address}`))
+        .join(' ');
+
+export const edgeLabel = (edge: LadderEdge): string => {
+    const annotate = edge.role === 'interconnect'
+        ? annotateInterconnectAddresses
+        : (addresses: string[]) => addresses.join(' ');
+    const left = annotate(edge.networks);
+    const right = annotate(edge.peerNetworks ?? []);
+    const addresses = left && right ? `${left} ⇄ ${right}` : left || right;
+    const role = EDGE_ROLE_LABELS[edge.role];
+    if (!addresses) return role;
+    return role ? `${role} · ${addresses}` : addresses;
 };
 
 interface ConstructCardProps {

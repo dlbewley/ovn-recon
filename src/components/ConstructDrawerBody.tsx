@@ -11,7 +11,7 @@ import {
 import { NATRow, StaticRouteRow } from '../types';
 import { networkResourceRef } from './logicalClassification';
 import { LadderConstruct, LadderModel } from './logicalLadderModel';
-import { networkDisplayName, roleLabel } from './LogicalLadderView';
+import { edgeLabel, networkDisplayName, roleLabel } from './LogicalLadderView';
 import { getResourcePath } from '../topology/links';
 
 const MAX_LISTED_RULES = 10;
@@ -31,6 +31,11 @@ export interface ConstructDrawerBodyProps {
     /** Node to use for seam links on constructs without a node of their own
      * (e.g. a Localnet switch viewed from a node's zone). */
     fallbackNode?: string;
+    /**
+     * Cluster view: how many node databases were merged. Lets the drawer say
+     * "All nodes" for cluster-wide constructs instead of enumerating them.
+     */
+    totalNodes?: number;
 }
 
 const SEAM_ROLES = new Set(['external-switch', 'localnet-switch']);
@@ -111,6 +116,7 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({
     nodeHref,
     physicalHref,
     fallbackNode,
+    totalNodes,
 }) => {
     const networkRef = networkResourceRef(construct.network);
     const seamNode = SEAM_ROLES.has(construct.role) ? construct.node ?? fallbackNode : undefined;
@@ -120,11 +126,10 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({
         .map((edge) => {
             const otherUuid = edge.source === construct.uuid ? edge.target : edge.source;
             const other = model.constructByUuid.get(otherUuid);
-            const addresses = [...edge.networks, ...(edge.peerNetworks ?? [])].join(' ');
             return {
                 id: edge.id,
                 label: other ? `${roleLabel(other.role)} (${other.name})` : otherUuid,
-                addresses,
+                addresses: edgeLabel(edge),
             };
         });
 
@@ -167,11 +172,13 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
-            {construct.zones && construct.zones.length > 0 && (
+            {construct.zones && construct.zones.length > 0 && (totalNodes ?? 0) > 1 && (
                 <DescriptionListGroup>
-                    <DescriptionListTerm>Present in zones</DescriptionListTerm>
+                    <DescriptionListTerm>Present on nodes</DescriptionListTerm>
                     <DescriptionListDescription>
-                        {[...construct.zones].sort().join(', ')}
+                        {construct.zones.length === totalNodes
+                            ? `All nodes (${totalNodes})`
+                            : [...construct.zones].sort().join(', ')}
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}

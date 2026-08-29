@@ -81,7 +81,7 @@ describe('ClusterLogicalTopologyDetails', () => {
         });
 
         const text = container.textContent ?? '';
-        expect(text).toContain('Assembled from 1 zones');
+        expect(text).toContain('Assembled from 1 node');
         // Only cnv-1's node-bound constructs remain...
         expect(container.querySelector('[data-testid="construct-GR_cnv-1"]')).not.toBeNull();
         expect(container.querySelector('[data-testid="construct-ext_cnv-1"]')).not.toBeNull();
@@ -106,7 +106,7 @@ describe('ClusterLogicalTopologyDetails', () => {
 
         const text = container.textContent ?? '';
         expect(text).toContain('Cluster Logical OVN Topology');
-        expect(text).toContain('Assembled from 3 zones');
+        expect(text).toContain('Assembled from 3 nodes');
         expect(text).toContain('Default cluster network');
         // Merged zone-replicated construct renders once.
         expect(container.querySelectorAll('[data-testid="construct-transit_switch"]')).toHaveLength(1);
