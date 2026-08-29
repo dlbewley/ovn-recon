@@ -95,6 +95,32 @@ describe('ClusterLogicalTopologyDetails', () => {
         expect(gatewayCards).toHaveLength(2); // default + Layer2 CUDN
     });
 
+    it('keeps the last-good topology rendered when a refresh fails', async () => {
+        await act(async () => {
+            root.render(<ClusterLogicalTopologyDetails />);
+        });
+        await act(async () => {
+            await Promise.resolve();
+        });
+        expect(container.querySelector('[data-testid="construct-transit_switch"]')).not.toBeNull();
+
+        // Next poll fails; the graph must survive with a warning beside it.
+        (global.fetch as jest.Mock).mockRejectedValue(new Error('connection refused'));
+        const refresh = [...container.querySelectorAll('button')].find(
+            (button) => button.textContent === 'Refresh now',
+        );
+        expect(refresh).toBeDefined();
+        await act(async () => {
+            refresh!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            await Promise.resolve();
+        });
+
+        expect(container.querySelector('[data-testid="construct-transit_switch"]')).not.toBeNull();
+        const text = container.textContent ?? '';
+        expect(text).toContain('Collector request failed');
+        expect(text).toContain('Showing the last loaded topology');
+    });
+
     it('renders the merged cluster ladder from the aggregate payload', async () => {
         await act(async () => {
             root.render(<ClusterLogicalTopologyDetails />);

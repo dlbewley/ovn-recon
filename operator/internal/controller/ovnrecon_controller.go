@@ -261,6 +261,7 @@ func (r *OvnReconReconciler) shouldEmitNormalEvent(ovnRecon *reconv1beta1.OvnRec
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods/exec,verbs=create
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;create;update;patch;delete
@@ -564,8 +565,21 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 		},
 	}
 
+	// The cache PVC's access modes decide the rollout strategy; a missing
+	// claim reads as non-RWX (Recreate) so a later bind can't deadlock.
+	var cachePVC *corev1.PersistentVolumeClaim
+	if collectorCacheUsesPVC(ovnRecon) {
+		pvc := &corev1.PersistentVolumeClaim{}
+		key := client.ObjectKey{Namespace: namespace, Name: ovnRecon.Spec.Collector.Cache.Storage.ClaimName}
+		if err := r.Get(ctx, key, pvc); err == nil {
+			cachePVC = pvc
+		} else if !errors.IsNotFound(err) {
+			return err
+		}
+	}
+
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		desired := DesiredCollectorDeployment(ovnRecon)
+		desired := DesiredCollectorDeployment(ovnRecon, cachePVC)
 		ensureManagedLabels(deployment, desired.Labels)
 		if err := setManagedOwner(ovnRecon, deployment, r.Scheme); err != nil {
 			return err

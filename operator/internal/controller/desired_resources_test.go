@@ -1,6 +1,7 @@
 package controller
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"testing"
@@ -173,7 +174,7 @@ func TestCollectorDesiredResourcesNamesAndPorts(t *testing.T) {
 		},
 	}
 
-	dep := DesiredCollectorDeployment(cr)
+	dep := DesiredCollectorDeployment(cr, nil)
 	if dep.Name != "ovn-recon-collector" {
 		t.Fatalf("unexpected collector deployment name: %s", dep.Name)
 	}
@@ -238,7 +239,7 @@ func TestCollectorLoggingEnvOverrides(t *testing.T) {
 		},
 	}
 
-	dep := DesiredCollectorDeployment(cr)
+	dep := DesiredCollectorDeployment(cr, nil)
 	env := dep.Spec.Template.Spec.Containers[0].Env
 
 	if got, ok := envValue(env, "COLLECTOR_LOG_LEVEL"); !ok || got != "trace" {
@@ -445,7 +446,7 @@ func TestCollectorCacheDefaultsToEmptyDirWithFloorTTL(t *testing.T) {
 		Spec:       reconv1beta1.OvnReconSpec{TargetNamespace: "ovn-recon"},
 	}
 
-	dep := DesiredCollectorDeployment(cr)
+	dep := DesiredCollectorDeployment(cr, nil)
 	container := dep.Spec.Template.Spec.Containers[0]
 
 	if got, ok := envValue(container.Env, "COLLECTOR_CACHE_DIR"); !ok || got != "/var/cache/ovn-recon" {
@@ -474,7 +475,7 @@ func TestCollectorCacheDisabled(t *testing.T) {
 		},
 	}
 
-	dep := DesiredCollectorDeployment(cr)
+	dep := DesiredCollectorDeployment(cr, nil)
 	container := dep.Spec.Template.Spec.Containers[0]
 	if _, ok := envValue(container.Env, "COLLECTOR_CACHE_DIR"); ok {
 		t.Fatal("expected no cache dir env when cache disabled")
@@ -495,7 +496,7 @@ func TestCollectorCacheTTLClampedToFloor(t *testing.T) {
 		},
 	}
 
-	dep := DesiredCollectorDeployment(cr)
+	dep := DesiredCollectorDeployment(cr, nil)
 	if got, ok := envValue(dep.Spec.Template.Spec.Containers[0].Env, "COLLECTOR_CACHE_TTL_SECONDS"); !ok || got != "30" {
 		t.Fatalf("expected TTL clamped to 30, got %q (present=%v)", got, ok)
 	}
@@ -514,7 +515,7 @@ func TestCollectorCachePVCStorage(t *testing.T) {
 		},
 	}
 
-	dep := DesiredCollectorDeployment(cr)
+	dep := DesiredCollectorDeployment(cr, nil)
 	volumes := dep.Spec.Template.Spec.Volumes
 	if len(volumes) != 1 || volumes[0].PersistentVolumeClaim == nil || volumes[0].PersistentVolumeClaim.ClaimName != "snapshot-cache" {
 		t.Fatalf("expected PVC cache volume, got %#v", volumes)
@@ -523,8 +524,53 @@ func TestCollectorCachePVCStorage(t *testing.T) {
 	// PVC mode without a claim name falls back to EmptyDir rather than
 	// rendering an unmountable volume.
 	cr.Spec.Collector.Cache.Storage.ClaimName = ""
-	dep = DesiredCollectorDeployment(cr)
+	dep = DesiredCollectorDeployment(cr, nil)
 	if dep.Spec.Template.Spec.Volumes[0].EmptyDir == nil {
 		t.Fatalf("expected EmptyDir fallback, got %#v", dep.Spec.Template.Spec.Volumes)
+	}
+}
+
+func TestCollectorRolloutStrategyFollowsCacheVolume(t *testing.T) {
+	emptyDirCR := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec:       reconv1beta1.OvnReconSpec{TargetNamespace: "ovn-recon"},
+	}
+	if dep := DesiredCollectorDeployment(emptyDirCR, nil); dep.Spec.Strategy.Type == appsv1.RecreateDeploymentStrategyType {
+		t.Fatal("EmptyDir cache must keep the default RollingUpdate strategy")
+	}
+
+	pvcCR := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1beta1.OvnReconSpec{
+			TargetNamespace: "ovn-recon",
+			Collector: reconv1beta1.CollectorSpec{
+				Cache: reconv1beta1.CollectorCacheSpec{
+					Storage: reconv1beta1.CollectorCacheStorageSpec{Mode: "PVC", ClaimName: "collector-cache"},
+				},
+			},
+		},
+	}
+
+	// Unresolvable claim: assume non-RWX so a later bind cannot deadlock.
+	if dep := DesiredCollectorDeployment(pvcCR, nil); dep.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
+		t.Fatal("PVC cache with unknown claim must use Recreate")
+	}
+
+	rwoPVC := &corev1.PersistentVolumeClaim{
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+		},
+	}
+	if dep := DesiredCollectorDeployment(pvcCR, rwoPVC); dep.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
+		t.Fatal("RWO PVC cache must use Recreate")
+	}
+
+	rwxPVC := &corev1.PersistentVolumeClaim{
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce, corev1.ReadWriteMany},
+		},
+	}
+	if dep := DesiredCollectorDeployment(pvcCR, rwxPVC); dep.Spec.Strategy.Type == appsv1.RecreateDeploymentStrategyType {
+		t.Fatal("RWX PVC cache should keep RollingUpdate for zero-gap rollouts")
 	}
 }
