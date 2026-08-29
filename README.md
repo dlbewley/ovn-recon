@@ -111,6 +111,34 @@ oc patch ovnrecon ovn-recon --type=merge -p '{
 
 You can also set collector image fields (`spec.collector.image.repository|tag|pullPolicy`) as needed. See [OPERATOR.md](OPERATOR.md) for full API details.
 
+#### Collector Snapshot Caching
+
+The collector caches each node's OVN snapshot on disk and serves it while
+fresh, so the cluster view's all-nodes sweep runs at most once per TTL
+instead of on every page load. When a live probe fails, a stale cache entry
+is served (flagged `SNAPSHOT_STALE`) in preference to fixture data. Caching
+is on by default and configured under `spec.collector.cache`:
+
+```yaml
+spec:
+  collector:
+    cache:
+      enabled: true      # default
+      ttlSeconds: 120    # freshness window; minimum 30
+      storage:
+        mode: EmptyDir   # default; or PVC with claimName
+        # claimName: collector-cache
+```
+
+- **EmptyDir** (default) needs no configuration; the cache re-warms after a
+  pod restart. Right for most clusters.
+- **PVC** keeps cached snapshots across pod restarts — useful so stale-serve
+  survives a restart during an OVN outage. Create the claim first, then set
+  `mode: PVC` and `claimName`. A few MiB is plenty. With a non-RWX claim the
+  operator switches the collector to a `Recreate` rollout (a brief gap per
+  upgrade, instead of risking a volume-attach deadlock); an RWX claim keeps
+  zero-gap rolling updates.
+
 ### Manual Installation
 
 Create the namespace, consoleplugin, service, and deployment from [manifests/manual/base](manifests/manual/base) without an operator.

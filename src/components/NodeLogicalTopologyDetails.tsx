@@ -94,7 +94,8 @@ const NodeLogicalTopologyDetails: React.FC = () => {
             setSnapshot(payload);
             setLastLoadedAt(Date.now());
         } catch (error) {
-            setSnapshot(null);
+            // Keep the last-good snapshot rendered: a transient failure (a
+            // collector pod handoff, a proxy blip) must not blank the view.
             setSnapshotError(error instanceof Error ? error.message : 'Failed to load logical topology');
         } finally {
             setIsLoading(false);
@@ -245,7 +246,9 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                             <CardBody>
                                 <AlertGroup isToast={false}>
                                     {snapshotError && (
-                                        <Alert variant="warning" isInline title={snapshotError} />
+                                        <Alert variant="warning" isInline title={snapshotError}>
+                                            {snapshot ? 'Showing the last loaded topology; refresh retries automatically.' : null}
+                                        </Alert>
                                     )}
                                     {snapshot && snapshot.warnings.length > 0 && (
                                         <Alert

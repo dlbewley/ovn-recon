@@ -27,7 +27,7 @@ func TestManagedResourceSelectorMatchesEveryManagedWritePath(t *testing.T) {
 
 	cases := map[string]map[string]string{
 		"plugin Deployment":    DesiredDeployment(cr).Labels,
-		"collector Deployment": DesiredCollectorDeployment(cr).Labels,
+		"collector Deployment": DesiredCollectorDeployment(cr, nil).Labels,
 		"plugin Service":       DesiredService(cr).Labels,
 		"collector Service":    DesiredCollectorService(cr).Labels,
 		// RBAC objects are built inline in reconcileCollectorAccessControls.

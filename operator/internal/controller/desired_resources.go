@@ -164,8 +164,37 @@ func DesiredDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deployment {
 	}
 }
 
-// DesiredCollectorDeployment renders the collector Deployment for a given OvnRecon instance.
-func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deployment {
+// collectorCacheUsesPVC reports whether the rendered cache volume will be
+// PVC-backed (mode PVC with a claim name; otherwise EmptyDir).
+func collectorCacheUsesPVC(ovnRecon *reconv1beta1.OvnRecon) bool {
+	storage := ovnRecon.Spec.Collector.Cache.Storage
+	return collectorCacheEnabledFor(ovnRecon) &&
+		strings.EqualFold(storage.Mode, "PVC") &&
+		strings.TrimSpace(storage.ClaimName) != ""
+}
+
+// collectorRolloutStrategy picks the rollout strategy from the cache volume:
+// RollingUpdate everywhere except a non-RWX PVC, where the surge pod could
+// deadlock on the RWO volume attach against the old pod's node. A nil PVC
+// (not found, or not yet looked up) is treated as non-RWX.
+func collectorRolloutStrategy(ovnRecon *reconv1beta1.OvnRecon, cachePVC *corev1.PersistentVolumeClaim) appsv1.DeploymentStrategy {
+	if !collectorCacheUsesPVC(ovnRecon) {
+		return appsv1.DeploymentStrategy{}
+	}
+	if cachePVC != nil {
+		for _, mode := range cachePVC.Spec.AccessModes {
+			if mode == corev1.ReadWriteMany {
+				return appsv1.DeploymentStrategy{}
+			}
+		}
+	}
+	return appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType}
+}
+
+// DesiredCollectorDeployment renders the collector Deployment for a given
+// OvnRecon instance. cachePVC is the looked-up cache claim when the cache is
+// PVC-backed (nil when absent); it only influences the rollout strategy.
+func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon, cachePVC *corev1.PersistentVolumeClaim) *appsv1.Deployment {
 	namespace := targetNamespace(ovnRecon)
 	imageTag := collectorImageTagFor(ovnRecon)
 	name := collectorName(ovnRecon)
@@ -218,6 +247,7 @@ func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deploym
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
+			Strategy: collectorRolloutStrategy(ovnRecon, cachePVC),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app.kubernetes.io/name":      "ovn-recon",

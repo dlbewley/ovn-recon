@@ -69,7 +69,8 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
             const payload = await fetchClusterTopology();
             setTopology(payload);
         } catch (error) {
-            setTopology(null);
+            // Keep the last-good topology rendered: a transient failure (a
+            // collector pod handoff, a proxy blip) must not blank the view.
             setFetchError(error instanceof Error ? error.message : 'Failed to load cluster topology');
         } finally {
             setIsLoading(false);
@@ -244,8 +245,9 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                 <AlertGroup isToast={false}>
                                     {fetchError && (
                                         <Alert variant="warning" isInline title={fetchError}>
-                                            The aggregate endpoint requires an ovn-collector image with
-                                            snapshot contract v2.
+                                            {topology
+                                                ? 'Showing the last loaded topology; refresh retries automatically.'
+                                                : 'The aggregate endpoint requires an ovn-collector image with snapshot contract v2.'}
                                         </Alert>
                                     )}
                                     {topology && topology.warnings.length > 0 && (
