@@ -1,4 +1,10 @@
 import * as React from 'react';
+import {
+    InfrastructureIcon,
+    MigrationIcon,
+    PluggedIcon,
+    RouteIcon,
+} from '@patternfly/react-icons';
 
 import { ConstructRole, DEFAULT_NETWORK, LogicalTier } from './logicalClassification';
 import { LadderConstruct, LadderEdge, LadderModel } from './logicalLadderModel';
@@ -68,6 +74,25 @@ const ROLE_LABELS: Record<ConstructRole, string> = {
 };
 
 export const roleLabel = (role: ConstructRole): string => ROLE_LABELS[role];
+
+// Same icon language as the node visualization: RouteIcon for anything that
+// routes, PluggedIcon for the seam to the physical network, MigrationIcon
+// for the tunnel fabric, InfrastructureIcon for plain switching.
+const ROLE_ICONS: Record<ConstructRole, React.ReactNode> = {
+    'cluster-router': <RouteIcon />,
+    'gateway-router': <RouteIcon />,
+    'transit-router': <RouteIcon />,
+    'other-router': <RouteIcon />,
+    'external-switch': <PluggedIcon />,
+    'localnet-switch': <PluggedIcon />,
+    'transit-switch': <MigrationIcon />,
+    'join-switch': <InfrastructureIcon />,
+    'node-switch': <InfrastructureIcon />,
+    'layer2-switch': <InfrastructureIcon />,
+    'other-switch': <InfrastructureIcon />,
+};
+
+export const roleIcon = (role: ConstructRole): React.ReactNode => ROLE_ICONS[role];
 
 /**
  * Human name for a network identity: CUDNs drop their OVN name prefix;
@@ -168,6 +193,9 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
                 stroke={isSelected ? 'var(--pf-t--global--border--color--clicked, #0066CC)' : color}
                 strokeWidth={isSelected ? 3 : 1.5}
             />
+            <foreignObject x={isRouter ? 16 : 8} y={CONSTRUCT_HEIGHT / 2 - 8} width={16} height={16}>
+                <div style={{ color, fontSize: 14, lineHeight: 1 }}>{roleIcon(construct.role)}</div>
+            </foreignObject>
             <text
                 x={CONSTRUCT_WIDTH / 2}
                 y={18}

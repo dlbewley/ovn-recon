@@ -32,18 +32,13 @@ import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { fetchClusterTopology } from './collectorApi';
 import { mergeZones } from './logicalClusterModel';
 import ConstructDrawerBody from './ConstructDrawerBody';
-import LogicalLadderView, { networkDisplayName, roleLabel } from './LogicalLadderView';
-import { freshnessFromAge, parseSnapshotAgeMs, SnapshotFreshnessState } from './snapshotFreshness';
+import LogicalLadderView, { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
+import SnapshotStatusLine from './SnapshotStatusLine';
+import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
 
 // Aggregate collection probes every zone, so refresh less eagerly than the
 // per-node view.
 const REFRESH_INTERVAL_MS = 60000;
-
-const freshnessVariant = (state: SnapshotFreshnessState): 'success' | 'warning' | 'danger' => {
-    if (state === 'critical') return 'danger';
-    if (state === 'warning') return 'warning';
-    return 'success';
-};
 
 interface Point {
     x: number;
@@ -219,6 +214,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                     <>
                                         <DrawerHead>
                                             <Title headingLevel="h2">
+                                                {roleIcon(selectedConstruct.role)}{' '}
                                                 {roleLabel(selectedConstruct.role)}
                                                 {selectedConstruct.node ? ` · ${selectedConstruct.node}` : ''}
                                             </Title>
@@ -245,42 +241,40 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                             <CardTitle>Cluster Topology</CardTitle>
                             <CardBody>
                                 <AlertGroup isToast={false}>
-                                    {isLoading && (
-                                        <Alert variant="info" isInline title="Collecting zone snapshots across the cluster..." />
-                                    )}
                                     {fetchError && (
                                         <Alert variant="warning" isInline title={fetchError}>
                                             The aggregate endpoint requires an ovn-collector image with
                                             snapshot contract v2.
                                         </Alert>
                                     )}
-                                    {topology && model && (
+                                    {topology && topology.warnings.length > 0 && (
                                         <Alert
-                                            variant={freshnessVariant(freshness)}
+                                            variant="warning"
                                             isInline
-                                            title={`Assembled from ${model.zoneCount} zones`}
+                                            isExpandable
+                                            title={`${topology.warnings.length} collector warning${topology.warnings.length === 1 ? '' : 's'}`}
                                         >
-                                            <div>Generated: {new Date(topology.metadata.generatedAt).toLocaleString()}</div>
+                                            {topology.warnings.map((warning) => (
+                                                <div key={`${warning.code}:${warning.message}`}>
+                                                    {warning.code}: {warning.message}
+                                                </div>
+                                            ))}
                                         </Alert>
                                     )}
-                                    {topology?.metadata.sourceHealth && topology.metadata.sourceHealth !== 'healthy' && (
-                                        <Alert
-                                            variant="warning"
-                                            isInline
-                                            title={`Aggregate source health: ${topology.metadata.sourceHealth}`}
-                                        />
-                                    )}
-                                    {topology?.warnings?.map((warning) => (
-                                        <Alert
-                                            key={`${warning.code}:${warning.message}`}
-                                            variant="warning"
-                                            isInline
-                                            title={`${warning.code}: ${warning.message}`}
-                                        />
-                                    ))}
                                 </AlertGroup>
 
-                                <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }}>
+                                <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }} alignItems={{ default: 'alignItemsCenter' }}>
+                                    {topology && model && (
+                                        <FlexItem>
+                                            <SnapshotStatusLine
+                                                freshness={freshness}
+                                                ageMs={ageMs}
+                                                zoneCount={model.zoneCount}
+                                                sourceHealth={topology.metadata.sourceHealth}
+                                                isLoading={isLoading}
+                                            />
+                                        </FlexItem>
+                                    )}
                                     <FlexItem>
                                         <TextInput
                                             aria-label="Search constructs"
@@ -330,7 +324,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
 
                                 <div
                                     className="pf-u-mt-md"
-                                    style={{ height: '680px', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: isDragging ? 'grabbing' : 'grab' }}
+                                    style={{ height: 'max(560px, calc(100vh - 340px))', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: isDragging ? 'grabbing' : 'grab' }}
                                     onWheel={handleWheel}
                                     onMouseDown={handleMouseDown}
                                     onMouseMove={handleMouseMove}
