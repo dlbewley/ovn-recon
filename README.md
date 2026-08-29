@@ -113,11 +113,13 @@ You can also set collector image fields (`spec.collector.image.repository|tag|pu
 
 #### Collector Snapshot Caching
 
-The collector caches each node's OVN snapshot on disk and serves it while
-fresh, so the cluster view's all-nodes sweep runs at most once per TTL
-instead of on every page load. When a live probe fails, a stale cache entry
-is served (flagged `SNAPSHOT_STALE`) in preference to fixture data. Caching
-is on by default and configured under `spec.collector.cache`:
+The collector caches each node's OVN snapshot on disk. Requests are served
+from cache immediately — a stale entry is returned at once while a
+background refresh revalidates it — and a startup sweep warms any missing
+entries, so page loads never block on live collection. Refresh is
+demand-driven: an idle collector runs no probes. When live probing fails,
+cached data keeps serving in preference to fixtures. Caching is on by
+default and configured under `spec.collector.cache`:
 
 ```yaml
 spec:

@@ -51,6 +51,10 @@ type Server struct {
 	cacheTTL      time.Duration
 	now           func() time.Time
 	logger        *slog.Logger
+
+	// refreshMu guards single-flight background revalidation per node.
+	refreshMu       sync.Mutex
+	refreshInFlight map[string]bool
 }
 
 // New creates a collector HTTP server.
@@ -124,16 +128,26 @@ func (s *Server) handleSnapshotByNode(w http.ResponseWriter, r *http.Request) {
 	s.writeSnapshot(w, payload, nodeName)
 }
 
-// collectZone resolves one node's zone snapshot: fresh cache first, then
-// live probe (cached on success), then stale cache, then file store — each
-// fallback annotated so degraded provenance stays visible.
+// collectZone resolves one node's zone snapshot: fresh cache first; a stale
+// entry is served immediately while a single-flight background refresh
+// revalidates it (staleness stays bounded near the TTL while anyone is
+// watching, and nothing runs when nobody is); a missing entry falls through
+// to a synchronous live probe (cached on success), then stale cache, then
+// file store — each fallback annotated so degraded provenance stays visible.
 func (s *Server) collectZone(ctx context.Context, nodeName string) (snapshot.LogicalTopologySnapshot, error) {
 	logger := s.logger.With("node", nodeName)
 
 	if s.cache != nil {
-		if cached, ok := s.cache.Get(nodeName); ok && snapshot.IsFresh(cached, s.cacheTTL, s.now()) {
-			logger.Debug("serving fresh cached snapshot", "generatedAt", cached.Metadata.GeneratedAt)
-			return cached, nil
+		if cached, ok := s.cache.Get(nodeName); ok {
+			if snapshot.IsFresh(cached, s.cacheTTL, s.now()) {
+				logger.Debug("serving fresh cached snapshot", "generatedAt", cached.Metadata.GeneratedAt)
+				return cached, nil
+			}
+			if s.liveCollector != nil {
+				logger.Debug("serving stale cached snapshot; revalidating in background", "generatedAt", cached.Metadata.GeneratedAt)
+				s.refreshZoneAsync(nodeName)
+				return cached, nil
+			}
 		}
 	}
 
@@ -177,6 +191,83 @@ func (s *Server) collectZone(ctx context.Context, nodeName string) (snapshot.Log
 	}
 
 	return s.store.GetByNode(ctx, nodeName)
+}
+
+// refreshZoneAsync revalidates one node's cache entry in the background,
+// deduplicating concurrent triggers. Runs detached from the request context.
+func (s *Server) refreshZoneAsync(nodeName string) {
+	s.refreshMu.Lock()
+	if s.refreshInFlight == nil {
+		s.refreshInFlight = map[string]bool{}
+	}
+	if s.refreshInFlight[nodeName] {
+		s.refreshMu.Unlock()
+		return
+	}
+	s.refreshInFlight[nodeName] = true
+	s.refreshMu.Unlock()
+
+	go func() {
+		defer func() {
+			s.refreshMu.Lock()
+			delete(s.refreshInFlight, nodeName)
+			s.refreshMu.Unlock()
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		payload, err := s.liveCollector.Collect(ctx, nodeName)
+		if err != nil {
+			s.logger.Warn("background cache revalidation failed", "node", nodeName, "error", err)
+			return
+		}
+		if err := s.cache.Put(nodeName, payload); err != nil {
+			s.logger.Warn("failed to write revalidated cache entry", "node", nodeName, "error", err)
+		}
+	}()
+}
+
+// WarmCache collects zones whose cache entries are missing or stale, so the
+// first request after startup serves warm. A PVC-backed cache with fresh
+// entries makes this a no-op; there is no recurring refresh cycle — after
+// startup, revalidation only happens on request (stale-while-revalidate).
+func (s *Server) WarmCache(ctx context.Context) {
+	if s.cache == nil || s.liveCollector == nil || s.nodeLister == nil {
+		return
+	}
+
+	nodes, err := s.nodeLister.ListNodes(ctx)
+	if err != nil {
+		s.logger.Warn("cache warm-up skipped; node discovery failed", "error", err)
+		return
+	}
+
+	warmed := 0
+	semaphore := make(chan struct{}, aggregateConcurrency)
+	var wg sync.WaitGroup
+	for _, nodeName := range nodes {
+		if cached, ok := s.cache.Get(nodeName); ok && snapshot.IsFresh(cached, s.cacheTTL, s.now()) {
+			continue
+		}
+		warmed++
+		wg.Add(1)
+		go func(nodeName string) {
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+			payload, err := s.liveCollector.Collect(ctx, nodeName)
+			if err != nil {
+				s.logger.Warn("cache warm-up collection failed", "node", nodeName, "error", err)
+				return
+			}
+			if err := s.cache.Put(nodeName, payload); err != nil {
+				s.logger.Warn("cache warm-up write failed", "node", nodeName, "error", err)
+			}
+		}(nodeName)
+	}
+	wg.Wait()
+	s.logger.Info("cache warm-up complete", "nodes", len(nodes), "collected", warmed)
 }
 
 func (s *Server) handleSnapshotsAggregate(w http.ResponseWriter, r *http.Request) {

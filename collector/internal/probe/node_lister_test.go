@@ -7,8 +7,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func runningPodOnNode(namespace, name, nodeName string) *corev1.Pod {
@@ -57,5 +59,55 @@ func TestListNodesFailsWhenNoPodsExist(t *testing.T) {
 
 	if _, err := factory.ListNodes(context.Background()); err == nil {
 		t.Fatal("expected error when no pods are running")
+	}
+}
+
+func TestOrderTargetsForCommandFrontsDatabaseContainer(t *testing.T) {
+	targets := []execTarget{
+		{namespace: "ovn", podName: "p", containerName: "ovn-controller"},
+		{namespace: "ovn", podName: "p", containerName: "northd"},
+		{namespace: "ovn", podName: "p", containerName: "nbdb"},
+		{namespace: "ovn", podName: "p", containerName: "sbdb"},
+	}
+
+	if got := orderTargetsForCommand(targets, "ovn-nbctl"); got[0].containerName != "nbdb" {
+		t.Fatalf("ovn-nbctl should try nbdb first, got %q", got[0].containerName)
+	}
+	if got := orderTargetsForCommand(targets, "ovn-sbctl"); got[0].containerName != "sbdb" {
+		t.Fatalf("ovn-sbctl should try sbdb first, got %q", got[0].containerName)
+	}
+	if got := orderTargetsForCommand(targets, "ip"); got[0].containerName != "ovn-controller" {
+		t.Fatalf("unknown commands keep original order, got %q", got[0].containerName)
+	}
+}
+
+func TestRunnerResolvesExecTargetsOnce(t *testing.T) {
+	clientset := fake.NewSimpleClientset(
+		runningPodOnNode("openshift-ovn-kubernetes", "ovnkube-node-a", "worker-a"),
+	)
+	listCount := 0
+	clientset.Fake.PrependReactor("list", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		listCount++
+		return false, nil, nil
+	})
+
+	runner := &KubernetesExecRunner{
+		clientset:        clientset,
+		restConfig:       &rest.Config{Host: "https://example.invalid"},
+		targetNamespaces: []string{"openshift-ovn-kubernetes"},
+		nodeName:         "worker-a",
+		logger:           slog.Default(),
+		execPod: func(_ context.Context, _, _, _ string, _ []string) (string, string, error) {
+			return `{"headings":["_uuid"],"data":[]}`, "", nil
+		},
+	}
+
+	for i := 0; i < 7; i++ {
+		if _, err := runner.Run(context.Background(), []string{"ovn-nbctl", "--format=json", "list", "Logical_Router"}); err != nil {
+			t.Fatalf("run %d failed: %v", i, err)
+		}
+	}
+	if listCount != 1 {
+		t.Fatalf("expected one pod listing across a runner's lifetime, got %d", listCount)
 	}
 }

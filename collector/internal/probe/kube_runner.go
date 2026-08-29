@@ -110,6 +110,11 @@ type KubernetesExecRunner struct {
 	nodeName         string
 	logger           *slog.Logger
 	execPod          podExecFunc
+
+	// cachedTargets memoizes exec target resolution for this runner's
+	// lifetime (one snapshot collection): seven commands share one pod
+	// listing instead of listing per command.
+	cachedTargets []execTarget
 }
 
 // Run executes a command in a target pod and returns stdout.
@@ -118,10 +123,14 @@ func (r *KubernetesExecRunner) Run(ctx context.Context, command []string) (strin
 		return "", fmt.Errorf("empty command")
 	}
 
-	targets, err := r.resolveExecTargets(ctx)
-	if err != nil {
-		return "", err
+	if r.cachedTargets == nil {
+		targets, err := r.resolveExecTargets(ctx)
+		if err != nil {
+			return "", err
+		}
+		r.cachedTargets = targets
 	}
+	targets := orderTargetsForCommand(r.cachedTargets, command[0])
 
 	var lastErr error
 	for _, target := range targets {
@@ -164,6 +173,32 @@ type execTarget struct {
 	namespace     string
 	podName       string
 	containerName string
+}
+
+// orderTargetsForCommand fronts the container the command's database lives
+// in (ovn-nbctl -> nbdb, ovn-sbctl -> sbdb), so the exec loop stops burning
+// failed attempts on the ovnkube-node pod's other containers.
+func orderTargetsForCommand(targets []execTarget, command string) []execTarget {
+	var preferred string
+	switch command {
+	case "ovn-nbctl":
+		preferred = "nbdb"
+	case "ovn-sbctl":
+		preferred = "sbdb"
+	default:
+		return targets
+	}
+
+	front := make([]execTarget, 0, len(targets))
+	rest := make([]execTarget, 0, len(targets))
+	for _, target := range targets {
+		if target.containerName == preferred {
+			front = append(front, target)
+		} else {
+			rest = append(rest, target)
+		}
+	}
+	return append(front, rest...)
 }
 
 type podExecFunc func(context.Context, string, string, string, []string) (string, string, error)

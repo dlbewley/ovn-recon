@@ -9,10 +9,20 @@ const COLLECTOR_PROXY_PREFIXES = [
     '/api/proxy/plugin/ovn-recon/api/v1/snapshots',
 ];
 
-const fetchFirst = async <T>(paths: string[]): Promise<T> => {
+// Only one prefix ever works on a given console; remember it so later
+// requests skip the two or three guaranteed failures.
+let lastWorkingPrefix: string | null = null;
+
+const orderedPrefixes = (): string[] =>
+    lastWorkingPrefix
+        ? [lastWorkingPrefix, ...COLLECTOR_PROXY_PREFIXES.filter((prefix) => prefix !== lastWorkingPrefix)]
+        : [...COLLECTOR_PROXY_PREFIXES];
+
+const fetchFirst = async <T>(buildUrl: (prefix: string) => string): Promise<T> => {
     const attempts: string[] = [];
 
-    for (const url of paths) {
+    for (const prefix of orderedPrefixes()) {
+        const url = buildUrl(prefix);
         try {
             const response = await fetch(url, {
                 headers: {
@@ -25,7 +35,9 @@ const fetchFirst = async <T>(paths: string[]): Promise<T> => {
                 continue;
             }
 
-            return await response.json() as T;
+            const payload = await response.json() as T;
+            lastWorkingPrefix = prefix;
+            return payload;
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             attempts.push(`${url} -> ${message}`);
@@ -37,8 +49,8 @@ const fetchFirst = async <T>(paths: string[]): Promise<T> => {
 
 export const fetchCollectorSnapshot = (nodeName: string): Promise<LogicalTopologySnapshot> => {
     const encodedNodeName = encodeURIComponent(nodeName);
-    return fetchFirst(COLLECTOR_PROXY_PREFIXES.map((prefix) => `${prefix}/${encodedNodeName}`));
+    return fetchFirst((prefix) => `${prefix}/${encodedNodeName}`);
 };
 
 export const fetchClusterTopology = (): Promise<ClusterLogicalTopology> =>
-    fetchFirst(COLLECTOR_PROXY_PREFIXES);
+    fetchFirst((prefix) => prefix);

@@ -60,6 +60,12 @@ func main() {
 				}
 				srv = srv.WithCache(cache, effectiveTTL)
 				logger.Info("snapshot cache enabled", "dir", cacheDir, "ttl", effectiveTTL.String())
+
+				// One startup sweep warms missing/stale entries so the first
+				// request serves from cache; a PVC-backed cache with fresh
+				// entries makes it a no-op. No recurring refresh cycle runs —
+				// after this, revalidation is demand-driven per request.
+				go srv.WarmCache(context.Background())
 			}
 		}
 	}

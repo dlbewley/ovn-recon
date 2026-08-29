@@ -41,12 +41,19 @@ This document defines the Day-1 semantics for Phase 2 snapshot delivery from the
 - Request semantics (`collectZone`, per-node and aggregate paths alike):
   1. Cache entry younger than TTL (by its own `generatedAt`, so freshness is
      meaningful across restarts) → served as-is, no probe.
-  2. Otherwise live probe; on success the result is written back atomically
-     (temp file + rename — a torn write reads as a miss, not corruption).
-  3. Probe failure with a stale cache entry → the stale entry is served with
-     `LIVE_PROBE_FAILED` + `SNAPSHOT_STALE` warnings and degraded health —
-     real observed data beats the synthetic fixture fallback.
-  4. No cache entry at all → existing fixture fallback semantics.
+  2. Stale entry → served immediately, and a single-flight background
+     revalidation refreshes it (stale-while-revalidate). Staleness stays
+     bounded near the TTL while anyone is watching; the entry's own
+     `generatedAt` carries the staleness signal to the UI freshness chip.
+  3. No entry → synchronous live probe; on success the result is written
+     back atomically (temp file + rename — a torn write reads as a miss).
+  4. Synchronous probe failure with no entry → fixture fallback with
+     `LIVE_PROBE_FAILED`; failed background revalidations are logged and the
+     stale entry keeps serving — real observed data beats fixtures.
+- Warm-up and idle behavior: one background sweep at collector startup
+  collects zones whose entries are missing or stale (a PVC-backed cache with
+  fresh entries makes it a no-op). There is NO recurring refresh cycle — an
+  idle collector runs zero probes; revalidation is demand-driven per request.
 
 ## Degraded and Error Semantics
 - `metadata.sourceHealth`:
