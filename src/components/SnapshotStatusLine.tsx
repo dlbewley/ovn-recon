@@ -13,7 +13,7 @@ import { SnapshotFreshnessState } from './snapshotFreshness';
 export interface SnapshotStatusLineProps {
     freshness: SnapshotFreshnessState;
     ageMs: number | null;
-    /** Cluster view: number of zones assembled. */
+    /** Cluster view: number of node databases assembled. */
     zoneCount?: number;
     /** Degraded/unknown source health shows a label; healthy shows nothing. */
     sourceHealth?: string;
@@ -58,7 +58,7 @@ const SnapshotStatusLine: React.FC<SnapshotStatusLineProps> = ({
         </FlexItem>
         {zoneCount != null && (
             <FlexItem>
-                <Label isCompact color="blue">Assembled from {zoneCount} zones</Label>
+                <Label isCompact color="blue">Assembled from {zoneCount} node{zoneCount === 1 ? '' : 's'}</Label>
             </FlexItem>
         )}
         {sourceHealth && sourceHealth !== 'healthy' && (

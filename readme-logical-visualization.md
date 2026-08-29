@@ -97,12 +97,19 @@ node switch can hold a hundred of them; they live in the drawer instead.
 **Edges:**
 
 - **Solid lines** are router links: a switch port of type `router` patched to
-  a logical router port. The label is the router port's addresses — e.g.
-  `100.64.0.5/16` on a gateway router's join-switch leg, or the masquerade
-  address `169.254.0.x/17` on a UDN gateway's external leg.
-- **Dashed lines** are peered router ports: two routers connected
-  back-to-back without a switch, as a UDN gateway router peers with its
-  network's transit router (`100.88.0.x/31` point-to-point pairs).
+  a logical router port. The label leads with the leg's function, decoded
+  from OVN-Kubernetes port naming, followed by the router port's addresses:
+  `join · 100.64.0.5/16` (rtoj-, router-to-router traffic inside the node),
+  `external · 192.168.4.x/24` (rtoe-, the gateway's outward leg — UDN
+  gateways also carry the `169.254.0.x/17` masquerade address here),
+  `gateway · 10.131.0.1/23` (rtos-, the workload subnet's gateway address),
+  and `tunnel · 100.88.0.x/16` (rtots-, the Geneve transit address).
+- **Dashed lines** are peered router ports (`interconnect`): two routers
+  connected back-to-back without a switch, as a UDN gateway router peers
+  with its network's transit router. Each address is annotated with its
+  function — `router 100.65.0.x/16` (the router's address on the network's
+  join subnet) and `p2p 100.88.0.x/31` (the point-to-point pair carrying
+  the tunnel between the two router instances).
 
 ## Classification: how raw rows become semantics
 

@@ -227,6 +227,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                                 <ConstructDrawerBody
                                                     construct={selectedConstruct}
                                                     model={model}
+                                                    totalNodes={model.zoneCount}
                                                     nodeHref={(node) => `/ovn-recon/ovn/${encodeURIComponent(node)}`}
                                                     physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
                                                 />
@@ -264,17 +265,6 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                 </AlertGroup>
 
                                 <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }} alignItems={{ default: 'alignItemsCenter' }}>
-                                    {topology && model && (
-                                        <FlexItem>
-                                            <SnapshotStatusLine
-                                                freshness={freshness}
-                                                ageMs={ageMs}
-                                                zoneCount={model.zoneCount}
-                                                sourceHealth={topology.metadata.sourceHealth}
-                                                isLoading={isLoading}
-                                            />
-                                        </FlexItem>
-                                    )}
                                     <FlexItem>
                                         <TextInput
                                             aria-label="Search constructs"
@@ -320,6 +310,17 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                             Refresh now
                                         </Button>
                                     </FlexItem>
+                                    {topology && model && (
+                                        <FlexItem align={{ default: 'alignRight' }}>
+                                            <SnapshotStatusLine
+                                                freshness={freshness}
+                                                ageMs={ageMs}
+                                                zoneCount={model.zoneCount}
+                                                sourceHealth={topology.metadata.sourceHealth}
+                                                isLoading={isLoading}
+                                            />
+                                        </FlexItem>
+                                    )}
                                 </Flex>
 
                                 <div

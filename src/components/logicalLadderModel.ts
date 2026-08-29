@@ -38,12 +38,22 @@ export interface LadderConstruct extends ClassifiedConstruct {
 
 export type LadderEdgeKind = 'router-link' | 'router-peer';
 
+/**
+ * The function of an edge, decoded from OVN-Kubernetes router port naming:
+ * rtoj- (router to join), rtoe- (router to external), rtos-/trtos- (router
+ * to workload switch — the subnet gateway address), rtots- (router to
+ * transit switch — the tunnel address), rtotr-/trtor- (peered routers —
+ * interconnect). Gives the address labels a readable purpose.
+ */
+export type LadderEdgeRole = 'join' | 'external' | 'gateway' | 'tunnel' | 'interconnect' | 'link';
+
 export interface LadderEdge {
     id: string;
     /** Construct uuids. */
     source: string;
     target: string;
     kind: LadderEdgeKind;
+    role: LadderEdgeRole;
     /**
      * Addresses on the router side of a router-link, or on the source router's
      * port of a router-peer.
@@ -52,6 +62,14 @@ export interface LadderEdge {
     /** Addresses on the target router's port of a router-peer. */
     peerNetworks?: string[];
 }
+
+const edgeRoleForRouterPort = (portName: string): LadderEdgeRole => {
+    if (portName.startsWith('rtoj-')) return 'join';
+    if (portName.startsWith('rtoe-')) return 'external';
+    if (portName.startsWith('rtos-') || portName.startsWith('trtos-')) return 'gateway';
+    if (portName.startsWith('rtots-')) return 'tunnel';
+    return 'link';
+};
 
 export interface LadderModel {
     constructs: LadderConstruct[];
@@ -152,6 +170,7 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
                             source: logicalSwitch.uuid,
                             target: routerUuid,
                             kind: 'router-link',
+                            role: edgeRoleForRouterPort(routerPort?.name ?? ''),
                             networks: routerPort?.networks ?? [],
                         });
                     }
@@ -187,6 +206,7 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
             source: first,
             target: second,
             kind: 'router-peer',
+            role: 'interconnect',
             networks: (flipped ? peerPort.networks : port.networks) ?? [],
             peerNetworks: (flipped ? port.networks : peerPort.networks) ?? [],
         });

@@ -22,22 +22,27 @@ describe('buildLadderModel on the captured cnv-1 zone', () => {
     it('derives the default network ladder edges from router-type ports', () => {
         expect(edgeBetween('join', 'GR_cnv-1')).toMatchObject({
             kind: 'router-link',
+            role: 'join',
             networks: ['100.64.0.5/16'],
         });
         expect(edgeBetween('join', 'ovn_cluster_router')).toMatchObject({
             kind: 'router-link',
+            role: 'join',
             networks: ['100.64.0.1/16'],
         });
         expect(edgeBetween('ext_cnv-1', 'GR_cnv-1')).toMatchObject({
             kind: 'router-link',
+            role: 'external',
             networks: ['192.168.4.72/24'],
         });
         expect(edgeBetween('cnv-1', 'ovn_cluster_router')).toMatchObject({
             kind: 'router-link',
+            role: 'gateway',
             networks: ['10.131.0.1/23'],
         });
         expect(edgeBetween('transit_switch', 'ovn_cluster_router')).toMatchObject({
             kind: 'router-link',
+            role: 'tunnel',
             networks: ['100.88.0.5/16'],
         });
     });
@@ -62,6 +67,7 @@ describe('buildLadderModel on the captured cnv-1 zone', () => {
             'cluster_udn_example.p.cudn_transit_router',
         );
         expect(peer?.kind).toBe('router-peer');
+        expect(peer?.role).toBe('interconnect');
         const allNetworks = [...(peer?.networks ?? []), ...(peer?.peerNetworks ?? [])];
         expect(allNetworks).toContain('100.88.0.10/31');
         expect(allNetworks).toContain('100.88.0.11/31');
