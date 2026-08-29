@@ -168,9 +168,26 @@ type CollectorCacheStorageSpec struct {
 	Mode string `json:"mode,omitempty"`
 
 	// ClaimName names an existing PersistentVolumeClaim to mount when mode
-	// is PVC. Ignored for EmptyDir. If empty in PVC mode, the collector
-	// falls back to EmptyDir.
+	// is PVC. Ignored for EmptyDir. If empty in PVC mode (and not managed),
+	// the collector falls back to EmptyDir.
 	ClaimName string `json:"claimName,omitempty"`
+
+	// Managed has the operator create and own the claim (RWO, owner-referenced
+	// to the OvnRecon for garbage collection), so PVC caching needs no
+	// pre-provisioned claim. Implies PVC storage regardless of mode. When
+	// claimName is empty a default of "<collector>-cache" is used. Users who
+	// need RWX or special claim settings should pre-create their own claim
+	// and leave managed false.
+	// +kubebuilder:default=false
+	Managed bool `json:"managed,omitempty"`
+
+	// Size of the managed claim. Deliberately generous default — the cache
+	// needs only a few MiB, but some provisioners enforce minimum sizes.
+	// +kubebuilder:default="1Gi"
+	Size string `json:"size,omitempty"`
+
+	// StorageClassName for the managed claim; empty uses the cluster default.
+	StorageClassName string `json:"storageClassName,omitempty"`
 }
 
 type CollectorLoggingSpec struct {

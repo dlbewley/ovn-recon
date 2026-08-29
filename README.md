@@ -129,17 +129,27 @@ spec:
       ttlSeconds: 120    # freshness window; minimum 30
       storage:
         mode: EmptyDir   # default; or PVC with claimName
+        # managed: true            # operator creates and owns the claim
         # claimName: collector-cache
+        # size: 1Gi                # managed claim size
+        # storageClassName: ""     # managed claim class; empty = cluster default
 ```
 
 - **EmptyDir** (default) needs no configuration; the cache re-warms after a
   pod restart. Right for most clusters.
 - **PVC** keeps cached snapshots across pod restarts — useful so stale-serve
-  survives a restart during an OVN outage. Create the claim first, then set
-  `mode: PVC` and `claimName`. A few MiB is plenty. With a non-RWX claim the
-  operator switches the collector to a `Recreate` rollout (a brief gap per
-  upgrade, instead of risking a volume-attach deadlock); an RWX claim keeps
-  zero-gap rolling updates.
+  survives a restart during an OVN outage. The easiest way to get one is
+  **managed mode**: set `storage.managed: true` and the operator creates and
+  owns the claim (default name `<collector>-cache`, RWO, `size` default
+  `1Gi` — generous only because some provisioners enforce minimums; the
+  cache itself needs a few MiB). The claim is garbage-collected with the
+  `OvnRecon` resource and removed if you turn `managed` back off; it
+  survives a collector disable so the cache stays warm across toggles.
+- To use a **pre-created claim** instead, leave `managed: false` and set
+  `mode: PVC` with `claimName`. With a non-RWX claim (managed claims
+  included) the operator switches the collector to a `Recreate` rollout (a
+  brief gap per upgrade, instead of risking a volume-attach deadlock); a
+  pre-created RWX claim keeps zero-gap rolling updates.
 
 ### Manual Installation
 

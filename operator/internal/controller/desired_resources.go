@@ -165,12 +165,66 @@ func DesiredDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deployment {
 }
 
 // collectorCacheUsesPVC reports whether the rendered cache volume will be
-// PVC-backed (mode PVC with a claim name; otherwise EmptyDir).
+// PVC-backed: managed mode always is; otherwise mode PVC with a claim name.
 func collectorCacheUsesPVC(ovnRecon *reconv1beta1.OvnRecon) bool {
 	storage := ovnRecon.Spec.Collector.Cache.Storage
-	return collectorCacheEnabledFor(ovnRecon) &&
-		strings.EqualFold(storage.Mode, "PVC") &&
-		strings.TrimSpace(storage.ClaimName) != ""
+	if !collectorCacheEnabledFor(ovnRecon) {
+		return false
+	}
+	if storage.Managed {
+		return true
+	}
+	return strings.EqualFold(storage.Mode, "PVC") && strings.TrimSpace(storage.ClaimName) != ""
+}
+
+// collectorCacheClaimNameFor resolves the cache claim name: the explicit
+// claimName when set, else the managed default "<collector>-cache".
+func collectorCacheClaimNameFor(ovnRecon *reconv1beta1.OvnRecon) string {
+	if name := strings.TrimSpace(ovnRecon.Spec.Collector.Cache.Storage.ClaimName); name != "" {
+		return name
+	}
+	return collectorName(ovnRecon) + "-cache"
+}
+
+const defaultCollectorCacheSize = "1Gi"
+
+// DesiredCollectorCachePVC renders the operator-managed cache claim. RWO by
+// design: the access-mode-aware rollout strategy handles it with Recreate,
+// and users needing RWX pre-create their own claim unmanaged.
+func DesiredCollectorCachePVC(ovnRecon *reconv1beta1.OvnRecon) *corev1.PersistentVolumeClaim {
+	storage := ovnRecon.Spec.Collector.Cache.Storage
+
+	size, err := resource.ParseQuantity(strings.TrimSpace(storage.Size))
+	if err != nil || size.Sign() <= 0 {
+		size = resource.MustParse(defaultCollectorCacheSize)
+	}
+
+	labels := labelsForOvnRecon(ovnRecon.Name)
+	labels["app.kubernetes.io/component"] = "collector-cache"
+
+	pvc := &corev1.PersistentVolumeClaim{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "PersistentVolumeClaim",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      collectorCacheClaimNameFor(ovnRecon),
+			Namespace: targetNamespace(ovnRecon),
+			Labels:    labels,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: size,
+				},
+			},
+		},
+	}
+	if className := strings.TrimSpace(storage.StorageClassName); className != "" {
+		pvc.Spec.StorageClassName = &className
+	}
+	return pvc
 }
 
 // collectorRolloutStrategy picks the rollout strategy from the cache volume:
@@ -480,17 +534,16 @@ func collectorCacheTTLSecondsFor(ovnRecon *reconv1beta1.OvnRecon) int32 {
 	return ttl
 }
 
-// collectorCacheVolumeFor renders the cache volume: a PVC when configured
-// with a claim name, otherwise EmptyDir (also the documented fallback for
-// PVC mode without a claimName).
+// collectorCacheVolumeFor renders the cache volume: a PVC when PVC-backed
+// (managed, or mode PVC with a claim name), otherwise EmptyDir (also the
+// documented fallback for unmanaged PVC mode without a claimName).
 func collectorCacheVolumeFor(ovnRecon *reconv1beta1.OvnRecon) corev1.Volume {
-	storage := ovnRecon.Spec.Collector.Cache.Storage
-	if strings.EqualFold(storage.Mode, "PVC") && strings.TrimSpace(storage.ClaimName) != "" {
+	if collectorCacheUsesPVC(ovnRecon) {
 		return corev1.Volume{
 			Name: "snapshot-cache",
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: storage.ClaimName,
+					ClaimName: collectorCacheClaimNameFor(ovnRecon),
 				},
 			},
 		}
