@@ -284,16 +284,6 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                 </AlertGroup>
 
                                 <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }} alignItems={{ default: 'alignItemsCenter' }}>
-                                    {snapshot && !needsCollectorUpgrade && (
-                                        <FlexItem>
-                                            <SnapshotStatusLine
-                                                freshness={freshnessState}
-                                                ageMs={snapshotAgeMs}
-                                                sourceHealth={snapshot.metadata.sourceHealth}
-                                                isLoading={isLoading}
-                                            />
-                                        </FlexItem>
-                                    )}
                                     <FlexItem>
                                         <TextInput
                                             aria-label="Search constructs"
@@ -327,6 +317,16 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             Refresh now
                                         </Button>
                                     </FlexItem>
+                                    {snapshot && !needsCollectorUpgrade && (
+                                        <FlexItem align={{ default: 'alignRight' }}>
+                                            <SnapshotStatusLine
+                                                freshness={freshnessState}
+                                                ageMs={snapshotAgeMs}
+                                                sourceHealth={snapshot.metadata.sourceHealth}
+                                                isLoading={isLoading}
+                                            />
+                                        </FlexItem>
+                                    )}
                                 </Flex>
 
                                 <div

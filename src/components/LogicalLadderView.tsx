@@ -193,20 +193,30 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
                 stroke={isSelected ? 'var(--pf-t--global--border--color--clicked, #0066CC)' : color}
                 strokeWidth={isSelected ? 3 : 1.5}
             />
-            <foreignObject x={isRouter ? 16 : 8} y={CONSTRUCT_HEIGHT / 2 - 8} width={16} height={16}>
-                <div style={{ color, fontSize: 14, lineHeight: 1 }}>{roleIcon(construct.role)}</div>
+            {/* The header renders as HTML so the role icon sits inline with
+                the title instead of floating over the name/stat lines. */}
+            <foreignObject x={0} y={4} width={CONSTRUCT_WIDTH} height={20}>
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 4,
+                        color,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                    }}
+                >
+                    {roleIcon(construct.role)}
+                    <span>
+                        {roleLabel(construct.role)}
+                        {construct.node ? ` · ${construct.node}` : ''}
+                    </span>
+                </div>
             </foreignObject>
-            <text
-                x={CONSTRUCT_WIDTH / 2}
-                y={18}
-                textAnchor="middle"
-                fontSize="12"
-                fontWeight={700}
-                fill={color}
-            >
-                {roleLabel(construct.role)}
-                {construct.node ? ` · ${construct.node}` : ''}
-            </text>
             <text
                 x={CONSTRUCT_WIDTH / 2}
                 y={34}
