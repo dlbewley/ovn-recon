@@ -190,6 +190,12 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({
                 <DescriptionListTerm>UUID</DescriptionListTerm>
                 <DescriptionListDescription><code>{construct.uuid}</code></DescriptionListDescription>
             </DescriptionListGroup>
+            {construct.bridge && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>OVS bridge</DescriptionListTerm>
+                    <DescriptionListDescription><code>{construct.bridge}</code></DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
             {construct.subnet && (
                 <DescriptionListGroup>
                     <DescriptionListTerm>Subnet</DescriptionListTerm>

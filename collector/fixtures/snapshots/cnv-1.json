@@ -1,7 +1,7 @@
 {
   "metadata": {
     "schemaVersion": "2",
-    "generatedAt": "2026-08-28T21:45:53.852163Z",
+    "generatedAt": "2026-08-29T15:30:40.909587Z",
     "sourceHealth": "healthy",
     "nodeName": "cnv-1"
   },
@@ -143,7 +143,6 @@
           "657d753f-130b-475e-b237-e0555c6a66bc",
           "65d4f5a9-c175-4688-9415-c57e87c5fded",
           "666ed854-7caf-46df-9e36-2c269cb5b770",
-          "6788e0e9-4ce6-4ad6-933a-e0875ca29b64",
           "6a1cf0ea-bf6d-401c-9a01-01be1b9b1ac1",
           "6a999d21-de0d-4e64-ab71-958e22b41acb",
           "6af6bfe3-b4e4-4da8-b31a-776424e9a342",
@@ -159,6 +158,7 @@
           "83b83d73-7251-4c71-80e1-719b73fa97ba",
           "8a145024-a67e-40d5-b551-a7d7690fd81b",
           "8f3f3c46-f1d0-4d9a-ad65-6df2c306b092",
+          "91555f60-f0c2-44eb-9f46-c10babdee273",
           "9a7d6af8-8e91-4f43-826b-e3b004daee70",
           "aa454f9a-3c2d-4656-a395-3c7b3eb888fb",
           "ae45e36e-dda5-4a71-8c49-9b5f4e995d5f",
@@ -622,6 +622,7 @@
           "063b3229-1b69-4fde-ac1f-b0b24fb04c78",
           "0adf3624-48bd-4a45-8714-26f251c0c24b",
           "103ee9dd-53a6-4965-949f-402dc2493947",
+          "1447d7a0-9a2d-499e-acfb-36779d60510e",
           "16ab81f3-8768-4c6e-8a01-2797744055b3",
           "18a783e7-b3cd-4a37-bef2-bc343dcc122e",
           "1a251c94-aa55-4110-8a97-856cbcfb2933",
@@ -629,7 +630,6 @@
           "1f4e231e-6aea-4f5e-899e-ebcc3d66937d",
           "212ef66b-c7a3-4a23-9318-5e73ca719128",
           "24ee555e-1681-499e-9bb8-cf69269fb3b1",
-          "25dc3555-861f-42b0-b4a8-944637b0399b",
           "2756913f-a195-4ed2-83f8-c25a3a6456e1",
           "2a14feb7-10bf-43c5-9f9f-8aa9a316e67c",
           "2c197c74-b36c-463e-8eaa-7ed0361999cf",
@@ -829,6 +829,7 @@
         "addresses": [
           "unknown"
         ],
+        "tag": "1924",
         "options": {
           "network_name": "physnet-vmdata"
         }
@@ -1234,21 +1235,6 @@
         }
       },
       {
-        "uuid": "25dc3555-861f-42b0-b4a8-944637b0399b",
-        "name": "ovn-recon_ovn-recon-5d988c67bd-tvjc5",
-        "addresses": [
-          "0a:58:0a:83:01:d6 10.131.1.214"
-        ],
-        "options": {
-          "iface-id-ver": "62254910-6499-48e6-ae59-ae24b44b7b72",
-          "requested-chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004"
-        },
-        "externalIds": {
-          "namespace": "ovn-recon",
-          "pod": "true"
-        }
-      },
-      {
         "uuid": "d7eaadd5-1071-4e85-b394-e4e595c96c44",
         "name": "multicluster-engine_ocm-proxyserver-665ccbfb87-wb5b9",
         "addresses": [
@@ -1509,6 +1495,21 @@
         },
         "externalIds": {
           "namespace": "openshift-storage",
+          "pod": "true"
+        }
+      },
+      {
+        "uuid": "1447d7a0-9a2d-499e-acfb-36779d60510e",
+        "name": "ovn-recon_ovn-recon-74c987d8b4-l2x6r",
+        "addresses": [
+          "0a:58:0a:83:01:da 10.131.1.218"
+        ],
+        "options": {
+          "iface-id-ver": "d8093e13-8225-4fe5-9602-00b083765e68",
+          "requested-chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004"
+        },
+        "externalIds": {
+          "namespace": "ovn-recon",
           "pod": "true"
         }
       },
@@ -2682,6 +2683,15 @@
         }
       },
       {
+        "uuid": "91555f60-f0c2-44eb-9f46-c10babdee273",
+        "type": "snat",
+        "externalIp": "192.168.4.72",
+        "logicalIp": "10.131.1.218",
+        "options": {
+          "stateless": "false"
+        }
+      },
+      {
         "uuid": "6a999d21-de0d-4e64-ab71-958e22b41acb",
         "type": "snat",
         "externalIp": "192.168.4.72",
@@ -2785,15 +2795,6 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.1.194",
-        "options": {
-          "stateless": "false"
-        }
-      },
-      {
-        "uuid": "6788e0e9-4ce6-4ad6-933a-e0875ca29b64",
-        "type": "snat",
-        "externalIp": "192.168.4.72",
-        "logicalIp": "10.131.1.214",
         "options": {
           "stateless": "false"
         }
@@ -3475,6 +3476,16 @@
           "k8s.ovn.org/topology": "layer2"
         }
       }
+    ],
+    "bridgeMappings": [
+      {
+        "localnet": "physnet",
+        "bridge": "br-ex"
+      },
+      {
+        "localnet": "physnet-vmdata",
+        "bridge": "br-vmdata"
+      }
     ]
   },
   "nodes": [
@@ -3566,6 +3577,19 @@
         },
         "type": "",
         "uuid": "103ee9dd-53a6-4965-949f-402dc2493947"
+      }
+    },
+    {
+      "id": "1447d7a0-9a2d-499e-acfb-36779d60510e",
+      "kind": "logical_switch_port",
+      "label": "ovn-recon_ovn-recon-74c987d8b4-l2x6r",
+      "data": {
+        "options": {
+          "iface-id-ver": "d8093e13-8225-4fe5-9602-00b083765e68",
+          "requested-chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004"
+        },
+        "type": "",
+        "uuid": "1447d7a0-9a2d-499e-acfb-36779d60510e"
       }
     },
     {
@@ -3675,19 +3699,6 @@
         },
         "type": "",
         "uuid": "24ee555e-1681-499e-9bb8-cf69269fb3b1"
-      }
-    },
-    {
-      "id": "25dc3555-861f-42b0-b4a8-944637b0399b",
-      "kind": "logical_switch_port",
-      "label": "ovn-recon_ovn-recon-5d988c67bd-tvjc5",
-      "data": {
-        "options": {
-          "iface-id-ver": "62254910-6499-48e6-ae59-ae24b44b7b72",
-          "requested-chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004"
-        },
-        "type": "",
-        "uuid": "25dc3555-861f-42b0-b4a8-944637b0399b"
       }
     },
     {
@@ -5171,6 +5182,12 @@
       "kind": "switch_to_port"
     },
     {
+      "id": "switch_to_port:ed431b0d-0ad4-482b-89c5-17e328d5329b:1447d7a0-9a2d-499e-acfb-36779d60510e",
+      "source": "ed431b0d-0ad4-482b-89c5-17e328d5329b",
+      "target": "1447d7a0-9a2d-499e-acfb-36779d60510e",
+      "kind": "switch_to_port"
+    },
+    {
       "id": "switch_to_port:ed431b0d-0ad4-482b-89c5-17e328d5329b:16ab81f3-8768-4c6e-8a01-2797744055b3",
       "source": "ed431b0d-0ad4-482b-89c5-17e328d5329b",
       "target": "16ab81f3-8768-4c6e-8a01-2797744055b3",
@@ -5210,12 +5227,6 @@
       "id": "switch_to_port:ed431b0d-0ad4-482b-89c5-17e328d5329b:24ee555e-1681-499e-9bb8-cf69269fb3b1",
       "source": "ed431b0d-0ad4-482b-89c5-17e328d5329b",
       "target": "24ee555e-1681-499e-9bb8-cf69269fb3b1",
-      "kind": "switch_to_port"
-    },
-    {
-      "id": "switch_to_port:ed431b0d-0ad4-482b-89c5-17e328d5329b:25dc3555-861f-42b0-b4a8-944637b0399b",
-      "source": "ed431b0d-0ad4-482b-89c5-17e328d5329b",
-      "target": "25dc3555-861f-42b0-b4a8-944637b0399b",
       "kind": "switch_to_port"
     },
     {

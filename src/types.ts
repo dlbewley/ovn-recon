@@ -219,8 +219,16 @@ export interface LogicalSwitchPortRow {
     name: string;
     type?: string;
     addresses?: string[];
+    /** VLAN tag on localnet/l2gateway ports, when set. */
+    tag?: string;
     options?: Record<string, string>;
     externalIds?: Record<string, string>;
+}
+
+/** Per-node chassis state: localnet name → physical OVS bridge. */
+export interface BridgeMappingRow {
+    localnet: string;
+    bridge: string;
 }
 
 export type NATType = 'snat' | 'dnat' | 'dnat_and_snat';
@@ -253,6 +261,8 @@ export interface LogicalDatabase {
     logicalSwitchPorts: LogicalSwitchPortRow[];
     nats: NATRow[];
     staticRoutes: StaticRouteRow[];
+    /** Absent on snapshots from collectors older than the field. */
+    bridgeMappings?: BridgeMappingRow[];
 }
 
 export interface LogicalTopologySnapshot {

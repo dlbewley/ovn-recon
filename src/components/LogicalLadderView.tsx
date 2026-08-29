@@ -3,6 +3,7 @@ import {
     InfrastructureIcon,
     MigrationIcon,
     PluggedIcon,
+    ResourcePoolIcon,
     RouteIcon,
 } from '@patternfly/react-icons';
 
@@ -51,6 +52,7 @@ export const NETWORK_PALETTE = [
 ];
 
 const TIER_LABELS: Record<LogicalTier, string> = {
+    physical: 'Physical network',
     external: 'External',
     gateway: 'Gateway routers',
     waist: 'Join / Transit',
@@ -60,6 +62,7 @@ const TIER_LABELS: Record<LogicalTier, string> = {
 };
 
 const ROLE_LABELS: Record<ConstructRole, string> = {
+    'bridge-mapping': 'Bridge mapping',
     'cluster-router': 'Cluster router',
     'gateway-router': 'Gateway router',
     'transit-router': 'Transit router',
@@ -79,6 +82,8 @@ export const roleLabel = (role: ConstructRole): string => ROLE_LABELS[role];
 // routes, PluggedIcon for the seam to the physical network, MigrationIcon
 // for the tunnel fabric, InfrastructureIcon for plain switching.
 const ROLE_ICONS: Record<ConstructRole, React.ReactNode> = {
+    // ResourcePoolIcon matches the node view's physical-interface icon.
+    'bridge-mapping': <ResourcePoolIcon />,
     'cluster-router': <RouteIcon />,
     'gateway-router': <RouteIcon />,
     'transit-router': <RouteIcon />,
@@ -140,6 +145,7 @@ const filterModel = (model: LadderModel, networkFilter: string): LadderModel => 
 };
 
 export const EDGE_ROLE_LABELS: Record<LadderEdge['role'], string> = {
+    localnet: 'localnet',
     join: 'join',
     external: 'external',
     gateway: 'gateway',
@@ -188,6 +194,7 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
     onSelect,
 }) => {
     const statParts: string[] = [];
+    if (construct.bridge) statParts.push(`→ ${construct.bridge}`);
     if (construct.subnet) statParts.push(construct.subnet);
     if (construct.podPortCount > 0) statParts.push(`${construct.podPortCount} pods`);
     if (construct.natCount > 0) statParts.push(`${construct.natCount} NAT`);

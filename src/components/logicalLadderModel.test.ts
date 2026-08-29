@@ -101,4 +101,39 @@ describe('buildLadderModel on the captured cnv-1 zone', () => {
     it('keeps the default network first in the network list', () => {
         expect(model.networks[0]).toBe('default');
     });
+
+    it('synthesizes bridge-mapping constructs at the physical tier', () => {
+        const defaultMapping = model.constructByUuid.get('physnet:default:physnet');
+        expect(defaultMapping).toMatchObject({
+            role: 'bridge-mapping',
+            tier: 'physical',
+            network: 'default',
+            name: 'physnet',
+            bridge: 'br-ex',
+        });
+
+        // The UDN band gets its own copy of the physnet exit.
+        expect(model.constructByUuid.get('physnet:cluster_udn_example-p-cudn:physnet')).toMatchObject({
+            role: 'bridge-mapping',
+            bridge: 'br-ex',
+        });
+
+        // The VLAN localnet network egresses through physnet-vmdata.
+        const vmdata = model.constructByUuid.get('physnet:cluster_udn_vlan-1924:physnet-vmdata');
+        expect(vmdata).toMatchObject({ role: 'bridge-mapping', bridge: 'br-vmdata' });
+    });
+
+    it('links switches to their bridge mapping, VLAN-tagged when set', () => {
+        const extEdge = model.edges.find(
+            (edge) => edge.id === `localnet:physnet:default:physnet:${uuidByName.get('ext_cnv-1')}`,
+        );
+        expect(extEdge).toMatchObject({ kind: 'localnet-link', role: 'localnet', networks: [] });
+
+        const vlanEdge = model.edges.find(
+            (edge) =>
+                edge.kind === 'localnet-link' &&
+                edge.target === uuidByName.get('cluster_udn_vlan.1924_ovn_localnet_switch'),
+        );
+        expect(vlanEdge?.networks).toEqual(['VLAN 1924']);
+    });
 });

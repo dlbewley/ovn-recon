@@ -23,6 +23,7 @@ import { buildLadderModel, LadderConstruct, LadderEdge, LadderModel } from './lo
 
 export interface ClusterLadderModel extends LadderModel {
     constructs: ClusterLadderConstruct[];
+    constructByUuid: Map<string, ClusterLadderConstruct>;
     /** Zone (node) names contributing to each merged construct, by uuid. */
     zonesByUuid: Map<string, string[]>;
     zoneCount: number;
@@ -32,7 +33,11 @@ export interface ClusterLadderConstruct extends LadderConstruct {
     zones: string[];
 }
 
-const constructKey = (construct: LadderConstruct): string => `${construct.kind}:${construct.name}`;
+// Identity across zones is (kind, network, name): OVN names are already
+// unique per network, and including the network keeps same-named
+// bridge-mapping constructs (e.g. 'physnet') in different bands distinct.
+const constructKey = (construct: LadderConstruct): string =>
+    `${construct.kind}:${construct.network}:${construct.name}`;
 
 // Per-zone instances of a distributed router carry near-identical rule sets
 // under different UUIDs; identity across zones is the rule's semantic content.
@@ -102,6 +107,7 @@ export const mergeZones = (snapshots: LogicalTopologySnapshot[]): ClusterLadderM
             existing.natCount = existing.natRules.length;
             existing.staticRouteCount = existing.staticRouteRules.length;
             existing.subnet = existing.subnet ?? construct.subnet;
+            existing.bridge = existing.bridge ?? construct.bridge;
             existing.managementPort = existing.managementPort ?? construct.managementPort;
             existing.node = existing.node ?? construct.node;
         }

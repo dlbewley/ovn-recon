@@ -83,8 +83,19 @@ type LogicalSwitchPortRow struct {
 	Name        string            `json:"name"`
 	Type        string            `json:"type,omitempty"`
 	Addresses   []string          `json:"addresses,omitempty"`
+	// Tag is the VLAN tag on localnet/l2gateway ports, when set.
+	Tag         string            `json:"tag,omitempty"`
 	Options     map[string]string `json:"options,omitempty"`
 	ExternalIDs map[string]string `json:"externalIds,omitempty"`
+}
+
+// BridgeMappingRow transcribes one localnet-to-OVS-bridge mapping from the
+// local chassis's other_config:ovn-bridge-mappings (Southbound). The localnet
+// is the logical provider-network name that localnet ports reference via
+// options:network_name; the bridge is the physical OVS bridge on the node.
+type BridgeMappingRow struct {
+	Localnet string `json:"localnet"`
+	Bridge   string `json:"bridge"`
 }
 
 // NATRow transcribes one NB NAT row.
@@ -120,6 +131,9 @@ type LogicalDatabase struct {
 	LogicalSwitchPorts []LogicalSwitchPortRow `json:"logicalSwitchPorts"`
 	NATs               []NATRow               `json:"nats"`
 	StaticRoutes       []StaticRouteRow       `json:"staticRoutes"`
+	// BridgeMappings is per-node (chassis) state; absent on snapshots from
+	// collectors older than the field.
+	BridgeMappings []BridgeMappingRow `json:"bridgeMappings,omitempty"`
 }
 
 // ClusterMetadata describes an aggregate collection across zones.

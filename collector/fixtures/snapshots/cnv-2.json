@@ -1,7 +1,7 @@
 {
   "metadata": {
     "schemaVersion": "2",
-    "generatedAt": "2026-08-28T21:45:55.7369Z",
+    "generatedAt": "2026-08-29T15:30:43.108152Z",
     "sourceHealth": "healthy",
     "nodeName": "cnv-2"
   },
@@ -63,6 +63,7 @@
           "08c9ff09-70c5-48f3-9f54-1f647e567903",
           "090d9247-0455-4bbe-b167-91ca2d1c8039",
           "0b31e0f9-f792-4525-807c-ba81ac59814b",
+          "10ab2555-7bae-47ad-940c-e948e782cecb",
           "12b52cce-e6cc-44f5-a70d-d95d647e906c",
           "160ddfc5-36d1-4328-80b0-08241c8a24ca",
           "161ebbac-6385-4ded-b715-11c5bc6a0d33",
@@ -74,8 +75,8 @@
           "2b1b1bc7-7a0d-4b86-a616-9dabe34ae86a",
           "2f9dee79-6aea-4acf-8f1a-681fb90b3632",
           "313672a4-a9be-44ee-acb9-33c2c46997de",
-          "36b333b8-0994-4ec3-9645-2141017322a3",
           "39451dbc-b71b-4165-9cad-d6a5ff5632ee",
+          "3db08577-04cb-4e90-92b2-12ee39e68828",
           "43037090-d4ed-49a5-8e38-0c7f7c28f6e3",
           "445f6ae0-29d8-4294-a416-63fc38af6911",
           "4d833c47-1077-4e86-8c5c-0e8c7c954283",
@@ -88,7 +89,6 @@
           "66f15c86-7bea-4669-a867-c68748ca2d54",
           "67cd0dab-6dee-48d4-9780-b5aebcc315f0",
           "69f7f52c-737c-4321-a789-cc4ba5b1dc7e",
-          "6a24546d-9191-42a8-a930-ea724da71803",
           "6f78cd6d-68bc-45b9-a2a8-812d0605dede",
           "733ed29a-f21b-49c3-9cf8-86f52ff9370c",
           "75395ef9-bdc7-4d00-8734-12825ebf1ae8",
@@ -664,7 +664,6 @@
           "34d4b04f-ab4f-4741-8e39-cac427298089",
           "3fe33ac8-4d1d-4fe4-b470-bc7abe3b74af",
           "4687f6cf-e3c6-49c5-95be-618b768fe7c1",
-          "46cd3236-f9b6-4227-ab50-8849480c36ec",
           "47f05411-a124-4c49-9a7d-52dc49e22fa7",
           "4eef3d80-a714-4a1e-ac50-2f35d66cb11b",
           "546d5ec8-f06c-4841-9437-e4a4829a9a64",
@@ -688,6 +687,7 @@
           "9eef8e07-6fbf-4b32-af2e-7cfbfce2632a",
           "a1cb3d9f-aa3d-4859-834e-7b1edd69b260",
           "a24a3b48-d2c7-47be-9c06-d4d964ab8afd",
+          "a9b7b98f-fd3a-4e0d-a61b-15a0bb819d9d",
           "ac768df9-da73-4bf6-a8cc-8134823a59ff",
           "b0a1787b-0932-4921-a5f4-e8e5937a37d2",
           "b647763e-a784-4a29-8b83-71ae7dca1d4c",
@@ -703,11 +703,11 @@
           "d3767a6e-de38-45b4-81e7-89f0258264db",
           "d5946abf-b1bd-4800-a165-2506025e8ecf",
           "df2a6e12-9674-41c1-a273-9f1d9af6ca93",
-          "e28387da-a312-4470-a4fd-8f7594a6875e",
           "e3a6e6bb-0653-4fc9-8edc-1a638d75594e",
           "e80be4b8-5cfb-46f2-91b4-6a74f00c32fe",
           "e82d1aea-6225-4497-8859-c6cf395468c6",
           "e83a97e2-f5ea-4f83-b7ab-2757a4028d79",
+          "e8fe03cc-a9b4-4143-9d4a-09cea2aeead0",
           "ea67c039-0be0-42ab-9410-58ef839a4526",
           "eb7af8f9-2856-4313-9e36-0f82673bc619",
           "f196586b-6ee0-4d72-826c-5928a51550bd",
@@ -990,6 +990,21 @@
         }
       },
       {
+        "uuid": "e8fe03cc-a9b4-4143-9d4a-09cea2aeead0",
+        "name": "ovn-recon_ovn-recon-operator-7b85fd4fb7-8fpnf",
+        "addresses": [
+          "0a:58:0a:80:03:82 10.128.3.130"
+        ],
+        "options": {
+          "iface-id-ver": "695db827-6b3d-46e1-942b-043e15130a8b",
+          "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
+        },
+        "externalIds": {
+          "namespace": "ovn-recon",
+          "pod": "true"
+        }
+      },
+      {
         "uuid": "f971bd0c-05c4-4211-ab85-cd7951bfb4ce",
         "name": "openshift-gitops_openshift-gitops-applicationset-controller-86f68cd86f-wzm7s",
         "addresses": [
@@ -1099,6 +1114,21 @@
         },
         "externalIds": {
           "node": "cnv-4"
+        }
+      },
+      {
+        "uuid": "a9b7b98f-fd3a-4e0d-a61b-15a0bb819d9d",
+        "name": "ovn-recon_ovn-recon-collector-65f545b6cc-l5spk",
+        "addresses": [
+          "0a:58:0a:80:03:84 10.128.3.132"
+        ],
+        "options": {
+          "iface-id-ver": "81f28eef-046e-400d-89cd-f89b3eb760e4",
+          "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
+        },
+        "externalIds": {
+          "namespace": "ovn-recon",
+          "pod": "true"
         }
       },
       {
@@ -1305,21 +1335,6 @@
         }
       },
       {
-        "uuid": "e28387da-a312-4470-a4fd-8f7594a6875e",
-        "name": "ovn-recon_ovn-recon-operator-58ff774b45-4mmcx",
-        "addresses": [
-          "0a:58:0a:80:03:7e 10.128.3.126"
-        ],
-        "options": {
-          "iface-id-ver": "65499f30-0862-4e61-932c-7c48d7c23488",
-          "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
-        },
-        "externalIds": {
-          "namespace": "ovn-recon",
-          "pod": "true"
-        }
-      },
-      {
         "uuid": "df19c21b-3ed9-4f90-b2d6-32b3800f4033",
         "name": "etor-GR_cluster_udn_example.p.cudn_cnv-2",
         "type": "router",
@@ -1444,6 +1459,7 @@
         "addresses": [
           "unknown"
         ],
+        "tag": "1924",
         "options": {
           "network_name": "physnet-vmdata"
         }
@@ -1817,21 +1833,6 @@
         },
         "externalIds": {
           "node": "cnv-3"
-        }
-      },
-      {
-        "uuid": "46cd3236-f9b6-4227-ab50-8849480c36ec",
-        "name": "ovn-recon_ovn-recon-collector-7755c79dd9-kg27l",
-        "addresses": [
-          "0a:58:0a:80:03:80 10.128.3.128"
-        ],
-        "options": {
-          "iface-id-ver": "e64d7357-febc-4ef9-bbd4-55b5080e9fbf",
-          "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
-        },
-        "externalIds": {
-          "namespace": "ovn-recon",
-          "pod": "true"
         }
       },
       {
@@ -2419,6 +2420,15 @@
         }
       },
       {
+        "uuid": "10ab2555-7bae-47ad-940c-e948e782cecb",
+        "type": "snat",
+        "externalIp": "192.168.4.182",
+        "logicalIp": "10.128.3.130",
+        "options": {
+          "stateless": "false"
+        }
+      },
+      {
         "uuid": "fd3a2f95-f550-494a-80fb-6f2de281d7c1",
         "type": "snat",
         "externalIp": "192.168.4.182",
@@ -2684,15 +2694,6 @@
         }
       },
       {
-        "uuid": "6a24546d-9191-42a8-a930-ea724da71803",
-        "type": "snat",
-        "externalIp": "192.168.4.182",
-        "logicalIp": "10.128.3.126",
-        "options": {
-          "stateless": "false"
-        }
-      },
-      {
         "uuid": "d426b42e-fa33-4c46-b51f-e61272d108ab",
         "type": "snat",
         "externalIp": "192.168.4.182",
@@ -2752,10 +2753,10 @@
         }
       },
       {
-        "uuid": "f1e857b8-4a50-4ad1-bc2f-5726a0701fda",
+        "uuid": "3db08577-04cb-4e90-92b2-12ee39e68828",
         "type": "snat",
         "externalIp": "192.168.4.182",
-        "logicalIp": "10.128.3.39",
+        "logicalIp": "10.128.3.132",
         "options": {
           "stateless": "false"
         }
@@ -2770,10 +2771,10 @@
         }
       },
       {
-        "uuid": "36b333b8-0994-4ec3-9645-2141017322a3",
+        "uuid": "f1e857b8-4a50-4ad1-bc2f-5726a0701fda",
         "type": "snat",
         "externalIp": "192.168.4.182",
-        "logicalIp": "10.128.3.128",
+        "logicalIp": "10.128.3.39",
         "options": {
           "stateless": "false"
         }
@@ -3293,6 +3294,16 @@
           "k8s.ovn.org/topology": "layer2"
         }
       }
+    ],
+    "bridgeMappings": [
+      {
+        "localnet": "physnet",
+        "bridge": "br-ex"
+      },
+      {
+        "localnet": "physnet-vmdata",
+        "bridge": "br-vmdata"
+      }
     ]
   },
   "nodes": [
@@ -3641,19 +3652,6 @@
         },
         "type": "",
         "uuid": "4687f6cf-e3c6-49c5-95be-618b768fe7c1"
-      }
-    },
-    {
-      "id": "46cd3236-f9b6-4227-ab50-8849480c36ec",
-      "kind": "logical_switch_port",
-      "label": "ovn-recon_ovn-recon-collector-7755c79dd9-kg27l",
-      "data": {
-        "options": {
-          "iface-id-ver": "e64d7357-febc-4ef9-bbd4-55b5080e9fbf",
-          "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
-        },
-        "type": "",
-        "uuid": "46cd3236-f9b6-4227-ab50-8849480c36ec"
       }
     },
     {
@@ -4180,6 +4178,19 @@
       }
     },
     {
+      "id": "a9b7b98f-fd3a-4e0d-a61b-15a0bb819d9d",
+      "kind": "logical_switch_port",
+      "label": "ovn-recon_ovn-recon-collector-65f545b6cc-l5spk",
+      "data": {
+        "options": {
+          "iface-id-ver": "81f28eef-046e-400d-89cd-f89b3eb760e4",
+          "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
+        },
+        "type": "",
+        "uuid": "a9b7b98f-fd3a-4e0d-a61b-15a0bb819d9d"
+      }
+    },
+    {
       "id": "ac768df9-da73-4bf6-a8cc-8134823a59ff",
       "kind": "logical_switch_port",
       "label": "multicluster-engine_cluster-manager-cfc876b7c-fpdbj",
@@ -4470,19 +4481,6 @@
       }
     },
     {
-      "id": "e28387da-a312-4470-a4fd-8f7594a6875e",
-      "kind": "logical_switch_port",
-      "label": "ovn-recon_ovn-recon-operator-58ff774b45-4mmcx",
-      "data": {
-        "options": {
-          "iface-id-ver": "65499f30-0862-4e61-932c-7c48d7c23488",
-          "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
-        },
-        "type": "",
-        "uuid": "e28387da-a312-4470-a4fd-8f7594a6875e"
-      }
-    },
-    {
       "id": "e3a6e6bb-0653-4fc9-8edc-1a638d75594e",
       "kind": "logical_switch_port",
       "label": "open-cluster-management_acm-cli-downloads-59fb598bbb-qbgjd",
@@ -4540,6 +4538,19 @@
       "label": "demo.mirror_example.l3.udn_transit_switch",
       "data": {
         "uuid": "e8bfe193-106c-41a2-b5b1-b415bf41c341"
+      }
+    },
+    {
+      "id": "e8fe03cc-a9b4-4143-9d4a-09cea2aeead0",
+      "kind": "logical_switch_port",
+      "label": "ovn-recon_ovn-recon-operator-7b85fd4fb7-8fpnf",
+      "data": {
+        "options": {
+          "iface-id-ver": "695db827-6b3d-46e1-942b-043e15130a8b",
+          "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
+        },
+        "type": "",
+        "uuid": "e8fe03cc-a9b4-4143-9d4a-09cea2aeead0"
       }
     },
     {
@@ -4898,12 +4909,6 @@
       "kind": "switch_to_port"
     },
     {
-      "id": "switch_to_port:88e8fadc-dce3-40f4-bfa3-a3d469f71a69:46cd3236-f9b6-4227-ab50-8849480c36ec",
-      "source": "88e8fadc-dce3-40f4-bfa3-a3d469f71a69",
-      "target": "46cd3236-f9b6-4227-ab50-8849480c36ec",
-      "kind": "switch_to_port"
-    },
-    {
       "id": "switch_to_port:88e8fadc-dce3-40f4-bfa3-a3d469f71a69:47f05411-a124-4c49-9a7d-52dc49e22fa7",
       "source": "88e8fadc-dce3-40f4-bfa3-a3d469f71a69",
       "target": "47f05411-a124-4c49-9a7d-52dc49e22fa7",
@@ -5042,6 +5047,12 @@
       "kind": "switch_to_port"
     },
     {
+      "id": "switch_to_port:88e8fadc-dce3-40f4-bfa3-a3d469f71a69:a9b7b98f-fd3a-4e0d-a61b-15a0bb819d9d",
+      "source": "88e8fadc-dce3-40f4-bfa3-a3d469f71a69",
+      "target": "a9b7b98f-fd3a-4e0d-a61b-15a0bb819d9d",
+      "kind": "switch_to_port"
+    },
+    {
       "id": "switch_to_port:88e8fadc-dce3-40f4-bfa3-a3d469f71a69:ac768df9-da73-4bf6-a8cc-8134823a59ff",
       "source": "88e8fadc-dce3-40f4-bfa3-a3d469f71a69",
       "target": "ac768df9-da73-4bf6-a8cc-8134823a59ff",
@@ -5132,12 +5143,6 @@
       "kind": "switch_to_port"
     },
     {
-      "id": "switch_to_port:88e8fadc-dce3-40f4-bfa3-a3d469f71a69:e28387da-a312-4470-a4fd-8f7594a6875e",
-      "source": "88e8fadc-dce3-40f4-bfa3-a3d469f71a69",
-      "target": "e28387da-a312-4470-a4fd-8f7594a6875e",
-      "kind": "switch_to_port"
-    },
-    {
       "id": "switch_to_port:88e8fadc-dce3-40f4-bfa3-a3d469f71a69:e3a6e6bb-0653-4fc9-8edc-1a638d75594e",
       "source": "88e8fadc-dce3-40f4-bfa3-a3d469f71a69",
       "target": "e3a6e6bb-0653-4fc9-8edc-1a638d75594e",
@@ -5159,6 +5164,12 @@
       "id": "switch_to_port:88e8fadc-dce3-40f4-bfa3-a3d469f71a69:e83a97e2-f5ea-4f83-b7ab-2757a4028d79",
       "source": "88e8fadc-dce3-40f4-bfa3-a3d469f71a69",
       "target": "e83a97e2-f5ea-4f83-b7ab-2757a4028d79",
+      "kind": "switch_to_port"
+    },
+    {
+      "id": "switch_to_port:88e8fadc-dce3-40f4-bfa3-a3d469f71a69:e8fe03cc-a9b4-4143-9d4a-09cea2aeead0",
+      "source": "88e8fadc-dce3-40f4-bfa3-a3d469f71a69",
+      "target": "e8fe03cc-a9b4-4143-9d4a-09cea2aeead0",
       "kind": "switch_to_port"
     },
     {
