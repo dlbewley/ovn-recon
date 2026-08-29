@@ -26,6 +26,9 @@ export interface LadderConstruct extends ClassifiedConstruct {
     managementPort?: string;
     /** Localnet port names: the seam to a physical bridge mapping. */
     localnetPorts: string[];
+    /** Bridge-mapping constructs only: the physical OVS bridge mapped to
+     * this localnet on the node(s), from chassis ovn-bridge-mappings. */
+    bridge?: string;
     /** Peer nodes reachable through remote ports (transit switches). */
     remotePeers: string[];
     /** NAT and static route rule counts on a router. */
@@ -36,7 +39,7 @@ export interface LadderConstruct extends ClassifiedConstruct {
     staticRouteRules: StaticRouteRow[];
 }
 
-export type LadderEdgeKind = 'router-link' | 'router-peer';
+export type LadderEdgeKind = 'router-link' | 'router-peer' | 'localnet-link';
 
 /**
  * The function of an edge, decoded from OVN-Kubernetes router port naming:
@@ -45,7 +48,7 @@ export type LadderEdgeKind = 'router-link' | 'router-peer';
  * transit switch — the tunnel address), rtotr-/trtor- (peered routers —
  * interconnect). Gives the address labels a readable purpose.
  */
-export type LadderEdgeRole = 'join' | 'external' | 'gateway' | 'tunnel' | 'interconnect' | 'link';
+export type LadderEdgeRole = 'join' | 'external' | 'gateway' | 'tunnel' | 'interconnect' | 'localnet' | 'link';
 
 export interface LadderEdge {
     id: string;
@@ -135,6 +138,15 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
         edges.push(edge);
     };
 
+    // Localnet ports name the provider network (options:network_name) that a
+    // switch egresses through; collected per switch to synthesize the
+    // bridge-mapping constructs at the northern boundary afterwards.
+    interface LocalnetRef {
+        networkName: string;
+        tag?: string;
+    }
+    const localnetRefsBySwitch = new Map<string, LocalnetRef[]>();
+
     for (const logicalSwitch of database.logicalSwitches) {
         const construct = constructByUuid.get(logicalSwitch.uuid);
         if (!construct) continue;
@@ -154,9 +166,16 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
                 case 'management-port':
                     construct.managementPort = port.name;
                     break;
-                case 'localnet-port':
+                case 'localnet-port': {
                     construct.localnetPorts.push(port.name);
+                    const networkName = row.options?.network_name;
+                    if (networkName) {
+                        const refs = localnetRefsBySwitch.get(logicalSwitch.uuid) ?? [];
+                        refs.push({ networkName, tag: row.tag });
+                        localnetRefsBySwitch.set(logicalSwitch.uuid, refs);
+                    }
                     break;
+                }
                 case 'remote-port':
                     if (port.node) construct.remotePeers.push(port.node);
                     break;
@@ -184,6 +203,53 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
         construct.remotePeers.sort();
         construct.localnetPorts.sort();
         construct.podPorts.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    // Northbound egress: each switch with a localnet port connects to a
+    // bridge-mapping construct at the physical tier — the localnet name and
+    // the OVS bridge the chassis maps it to. One construct per (network,
+    // localnet), so every band shows its own northern exit.
+    const bridgeByLocalnet = new Map(
+        (database.bridgeMappings ?? []).map((mapping) => [mapping.localnet, mapping.bridge]),
+    );
+    for (const [switchUuid, refs] of localnetRefsBySwitch) {
+        const switchConstruct = constructByUuid.get(switchUuid);
+        if (!switchConstruct) continue;
+
+        for (const ref of refs) {
+            const mappingUuid = `physnet:${switchConstruct.network}:${ref.networkName}`;
+            let mapping = constructByUuid.get(mappingUuid);
+            if (!mapping) {
+                mapping = {
+                    uuid: mappingUuid,
+                    name: ref.networkName,
+                    kind: 'physnet',
+                    role: 'bridge-mapping',
+                    tier: 'physical',
+                    network: switchConstruct.network,
+                    bridge: bridgeByLocalnet.get(ref.networkName),
+                    podPortCount: 0,
+                    podPorts: [],
+                    localnetPorts: [],
+                    remotePeers: [],
+                    natCount: 0,
+                    staticRouteCount: 0,
+                    natRules: [],
+                    staticRouteRules: [],
+                };
+                constructs.push(mapping);
+                constructByUuid.set(mappingUuid, mapping);
+            }
+
+            addEdge({
+                id: `localnet:${mappingUuid}:${switchUuid}`,
+                source: mappingUuid,
+                target: switchUuid,
+                kind: 'localnet-link',
+                role: 'localnet',
+                networks: ref.tag ? [`VLAN ${ref.tag}`] : [],
+            });
+        }
     }
 
     // Router-to-router adjacency travels as peered router ports (e.g. a UDN

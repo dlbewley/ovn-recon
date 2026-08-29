@@ -76,13 +76,17 @@ describe('layoutLadder on the captured cnv-1 zone', () => {
         }
     });
 
-    it('renders a Localnet network as a single-rung band', () => {
+    it('renders a Localnet network as switch plus its bridge-mapping exit', () => {
         const localnetConstructs = model.constructs.filter(
             (construct) => construct.network === 'cluster_udn_machinenet',
         );
-        expect(localnetConstructs).toHaveLength(1);
-        expect(localnetConstructs[0].tier).toBe('workload-switch');
+        expect(localnetConstructs.map((construct) => construct.tier).sort()).toEqual([
+            'physical',
+            'workload-switch',
+        ]);
         expect(layout.bands.map((band) => band.network)).toContain('cluster_udn_machinenet');
+        // The bridge mapping sits north of the switch.
+        expect(layout.tierY['physical']).toBeLessThan(layout.tierY['workload-switch']);
     });
 
     it('is deterministic', () => {

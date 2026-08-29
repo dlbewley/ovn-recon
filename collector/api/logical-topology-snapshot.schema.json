@@ -88,6 +88,7 @@
               "name": {"type": "string"},
               "type": {"type": "string"},
               "addresses": {"type": "array", "items": {"type": "string"}},
+              "tag": {"type": "string"},
               "options": {"$ref": "#/$defs/stringMap"},
               "externalIds": {"$ref": "#/$defs/stringMap"}
             },
@@ -125,6 +126,19 @@
               "outputPort": {"type": "string"},
               "options": {"$ref": "#/$defs/stringMap"},
               "externalIds": {"$ref": "#/$defs/stringMap"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "bridgeMappings": {
+          "description": "Per-node chassis state: localnet name to physical OVS bridge (other_config:ovn-bridge-mappings). Absent on snapshots from collectors older than the field.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["localnet", "bridge"],
+            "properties": {
+              "localnet": {"type": "string"},
+              "bridge": {"type": "string"}
             },
             "additionalProperties": false
           }

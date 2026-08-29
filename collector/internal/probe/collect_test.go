@@ -36,6 +36,39 @@ func healthyOutputs() map[string]string {
 		strings.Join(logicalSwitchPortCommand, " "): `{"headings":["_uuid","name","type","addresses","options","external_ids"],"data":[[["uuid","lsp-r"],"red-router-port","router",["set",["router"]],["map",[["router-port","rtos-red"]]],["map",[]]],[["uuid","lsp-pod"],"pod-a","",["set",["0a:58:0a:f4:00:05 10.244.0.5"]],["map",[]],["map",[]]]]}`,
 		strings.Join(natCommand, " "):               `{"headings":["_uuid","type","external_ip","logical_ip","logical_port","external_mac","options","external_ids"],"data":[[["uuid","nat-1"],"snat","192.168.1.11","10.244.0.0/24",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
 		strings.Join(staticRouteCommand, " "):       `{"headings":["_uuid","ip_prefix","nexthop","policy","output_port","options","external_ids"],"data":[[["uuid","sr-1"],"0.0.0.0/0","100.64.0.1",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
+		strings.Join(chassisCommand, " "):           `{"headings":["other_config"],"data":[[["map",[["ovn-bridge-mappings","physnet-vmdata:br-vmdata,physnet:br-ex"],["ct-no-masked-label","true"]]]]]}`,
+	}
+}
+
+func TestParseChassisBridgeMappings(t *testing.T) {
+	raw := `{"headings":["other_config"],"data":[[["map",[["ovn-bridge-mappings","physnet-vmdata:br-vmdata,physnet:br-ex"],["is-interconn","true"]]]]]}`
+
+	mappings, normalized, err := ParseChassisBridgeMappings(raw)
+	if err != nil {
+		t.Fatalf("parse chassis mappings failed: %v", err)
+	}
+	if normalized {
+		t.Fatalf("unexpected normalization")
+	}
+	if len(mappings) != 2 {
+		t.Fatalf("expected two mappings, got %#v", mappings)
+	}
+	if mappings[0].Localnet != "physnet" || mappings[0].Bridge != "br-ex" {
+		t.Fatalf("unexpected first mapping (sorted by localnet): %#v", mappings[0])
+	}
+	if mappings[1].Localnet != "physnet-vmdata" || mappings[1].Bridge != "br-vmdata" {
+		t.Fatalf("unexpected second mapping: %#v", mappings[1])
+	}
+}
+
+func TestParseChassisBridgeMappingsEmptyConfig(t *testing.T) {
+	raw := `{"headings":["other_config"],"data":[[["map",[["is-interconn","true"]]]]]}`
+	mappings, _, err := ParseChassisBridgeMappings(raw)
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if len(mappings) != 0 {
+		t.Fatalf("expected no mappings, got %#v", mappings)
 	}
 }
 
@@ -187,6 +220,9 @@ func TestCollectSnapshotBuildsExpectedTopology(t *testing.T) {
 	}
 	if len(db.StaticRoutes) != 1 || db.StaticRoutes[0].IPPrefix != "0.0.0.0/0" {
 		t.Fatalf("unexpected static routes: %#v", db.StaticRoutes)
+	}
+	if len(db.BridgeMappings) != 2 || db.BridgeMappings[0].Localnet != "physnet" || db.BridgeMappings[0].Bridge != "br-ex" {
+		t.Fatalf("unexpected bridge mappings: %#v", db.BridgeMappings)
 	}
 
 	nodeKinds := map[string]string{}

@@ -19,6 +19,7 @@ const NETWORK_EXTERNAL_ID = 'k8s.ovn.org/network';
 const TOPOLOGY_EXTERNAL_ID = 'k8s.ovn.org/topology';
 
 export type ConstructRole =
+    | 'bridge-mapping'
     | 'cluster-router'
     | 'gateway-router'
     | 'transit-router'
@@ -42,6 +43,7 @@ export type PortRole =
 // North-to-south tiers of the ladder layout. The waist is the east-west
 // join/transit layer between gateway routers and cluster routing.
 export type LogicalTier =
+    | 'physical'
     | 'external'
     | 'gateway'
     | 'waist'
@@ -50,6 +52,7 @@ export type LogicalTier =
     | 'workload-port';
 
 const TIER_BY_ROLE: Record<ConstructRole, LogicalTier> = {
+    'bridge-mapping': 'physical',
     'external-switch': 'external',
     'gateway-router': 'gateway',
     'join-switch': 'waist',
@@ -66,7 +69,7 @@ const TIER_BY_ROLE: Record<ConstructRole, LogicalTier> = {
 export interface ClassifiedConstruct {
     uuid: string;
     name: string;
-    kind: 'router' | 'switch';
+    kind: 'router' | 'switch' | 'physnet';
     role: ConstructRole;
     tier: LogicalTier;
     /** DEFAULT_NETWORK, or the k8s.ovn.org/network identity of a UDN/CUDN. */

@@ -38,6 +38,7 @@ The view is **not** lane-based like the physical view. It is a **ladder**:
 
   | Tier | Constructs |
   |---|---|
+  | Physical network | bridge mappings — the localnet name (`physnet`, `physnet-vmdata`) and the OVS bridge the chassis maps it to (`br-ex`, `br-vmdata`); the same objects the physical view draws as Bridge Mappings |
   | External | external switches (`ext_*`) — bridged to `br-ex`/physnet |
   | Gateway routers | per-node gateway routers (`GR_*`) — where SNAT happens |
   | Join / Transit | the `join` switch (router-to-router traffic inside a zone) and the `transit_switch` (Geneve tunnels between zones) |
@@ -69,9 +70,9 @@ router"); click it to expand. Click a band header to filter to that network.
   tunnels), and **one cluster-wide workload switch** shared by all nodes.
 - **Layer3 UDN/CUDN**: the default network's shape replicated per network —
   its own cluster router, gateway routers, and per-node switches.
-- **Localnet CUDN**: a single rung — one switch bridged straight to a
-  provider network through a localnet port. No routers; the ladder
-  degenerates deliberately.
+- **Localnet CUDN**: two rungs — one switch bridged straight to its
+  provider network's bridge mapping through a localnet port. No routers;
+  the ladder degenerates deliberately.
 
 ## Node and edge kinds
 
@@ -79,6 +80,7 @@ router"); click it to expand. Click a band header to filter to that network.
 
 | Role | OVN reality |
 |---|---|
+| Bridge mapping | chassis `other_config:ovn-bridge-mappings` — localnet name → physical OVS bridge; referenced by localnet ports' `options:network_name` |
 | Cluster router | `ovn_cluster_router` or `<net>_ovn_cluster_router` — distributed router doing east-west routing |
 | Gateway router | `GR_<node>` / `GR_<net>_<node>` — per-node router doing NAT to the outside |
 | Transit router | `<net>_transit_router` — Layer2 networks' per-zone router stitched across nodes |
@@ -104,6 +106,9 @@ node switch can hold a hundred of them; they live in the drawer instead.
   gateways also carry the `169.254.0.x/17` masquerade address here),
   `gateway · 10.131.0.1/23` (rtos-, the workload subnet's gateway address),
   and `tunnel · 100.88.0.x/16` (rtots-, the Geneve transit address).
+- **Localnet links** connect a switch's localnet port to its bridge mapping
+  at the physical tier — labelled `localnet · VLAN <tag>` when the port is
+  VLAN-tagged. This is the northbound egress path out of the logical network.
 - **Dashed lines** are peered router ports (`interconnect`): two routers
   connected back-to-back without a switch, as a UDN gateway router peers
   with its network's transit router. Each address is annotated with its

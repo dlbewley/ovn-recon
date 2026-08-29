@@ -127,6 +127,7 @@ func TestKubernetesExecRunnerCollectsSnapshotWhenFRRNamespaceIsMissing(t *testin
 		strings.Join(logicalSwitchPortCommand, " "): `{"headings":["_uuid","name","type","options"],"data":[[["uuid","lsp-r"],"red-router-port","router",["map",[["router-port","rtos-red"]]]]]}`,
 		strings.Join(natCommand, " "):               `{"headings":["_uuid","type"],"data":[]}`,
 		strings.Join(staticRouteCommand, " "):       `{"headings":["_uuid","ip_prefix"],"data":[]}`,
+		strings.Join(chassisCommand, " "):           `{"headings":["other_config"],"data":[]}`,
 	}
 
 	var buf bytes.Buffer

@@ -19,6 +19,9 @@ var (
 	logicalSwitchPortCommand = []string{"ovn-nbctl", "--format=json", "list", "Logical_Switch_Port"}
 	natCommand               = []string{"ovn-nbctl", "--format=json", "list", "NAT"}
 	staticRouteCommand       = []string{"ovn-nbctl", "--format=json", "list", "Logical_Router_Static_Route"}
+	// Bridge mappings live on the local chassis in the Southbound database;
+	// exec target resolution finds the container where ovn-sbctl works.
+	chassisCommand = []string{"ovn-sbctl", "--format=json", "--columns=other_config", "find", "Chassis", "other_config:is-remote=false"}
 )
 
 var (
@@ -158,6 +161,7 @@ func collectDatabase(ctx context.Context, runner Runner, opts CollectOptions) (*
 		LogicalSwitchPorts: collectTable(ctx, runner, opts, "Logical_Switch_Port", logicalSwitchPortCommand, ParseLogicalSwitchPorts, sink),
 		NATs:               collectTable(ctx, runner, opts, "NAT", natCommand, ParseNATs, sink),
 		StaticRoutes:       collectTable(ctx, runner, opts, "Logical_Router_Static_Route", staticRouteCommand, ParseStaticRoutes, sink),
+		BridgeMappings:     collectTable(ctx, runner, opts, "Chassis", chassisCommand, ParseChassisBridgeMappings, sink),
 	}
 
 	warnings := sink.warnings

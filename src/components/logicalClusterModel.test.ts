@@ -74,6 +74,19 @@ describe('mergeZones over the captured corpus', () => {
         expect(merged.networks).toContain('cluster_udn_machinenet');
     });
 
+    it('merges bridge mappings with bridge resolution surviving partial chassis coverage', () => {
+        const physnet = merged.constructByUuid.get('physnet:default:physnet');
+        expect(physnet?.zones.sort()).toEqual(['cnv-1', 'cnv-2', 'ctrl-1']);
+        expect(physnet?.bridge).toBe('br-ex');
+
+        // The vlan-1924 switch references physnet-vmdata from every zone,
+        // but only the cnv workers' chassis actually map it — the merged
+        // construct still resolves br-vmdata from the nodes that do.
+        const vmdata = merged.constructByUuid.get('physnet:cluster_udn_vlan-1924:physnet-vmdata');
+        expect(vmdata?.zones.sort()).toEqual(['cnv-1', 'cnv-2', 'ctrl-1']);
+        expect(vmdata?.bridge).toBe('br-vmdata');
+    });
+
     it('produces a model the ladder layout can place without loss', () => {
         for (const construct of merged.constructs) {
             expect(merged.constructByUuid.get(construct.uuid)).toBe(construct);

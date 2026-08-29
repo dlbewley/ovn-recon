@@ -3,6 +3,7 @@ package probe
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/dlbewley/ovn-recon/collector/internal/snapshot"
@@ -183,6 +184,7 @@ func ParseLogicalSwitchPorts(raw string) ([]snapshot.LogicalSwitchPortRow, bool,
 			Name:        stringField(row, "name"),
 			Type:        stringField(row, "type"),
 			Addresses:   stringSliceField(row, "addresses"),
+			Tag:         optionalStringField(row, "tag"),
 			Options:     stringMapField(row, "options"),
 			ExternalIDs: stringMapField(row, "external_ids"),
 		})
@@ -231,6 +233,45 @@ func ParseStaticRoutes(raw string) ([]snapshot.StaticRouteRow, bool, error) {
 		})
 	}
 	return routes, normalized, nil
+}
+
+// ParseChassisBridgeMappings extracts localnet-to-bridge mappings from the
+// local chassis rows' other_config:ovn-bridge-mappings, whose value is a
+// comma-separated list of "localnet:bridge" pairs.
+func ParseChassisBridgeMappings(raw string) ([]snapshot.BridgeMappingRow, bool, error) {
+	rows, normalized, err := parseTableRows(raw)
+	if err != nil {
+		return nil, false, err
+	}
+
+	mappings := []snapshot.BridgeMappingRow{}
+	seen := map[string]bool{}
+	for _, row := range rows {
+		otherConfig := stringMapField(row, "other_config")
+		for _, pair := range strings.Split(otherConfig["ovn-bridge-mappings"], ",") {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+			separator := strings.Index(pair, ":")
+			if separator <= 0 || separator == len(pair)-1 {
+				continue
+			}
+			mapping := snapshot.BridgeMappingRow{
+				Localnet: pair[:separator],
+				Bridge:   pair[separator+1:],
+			}
+			key := mapping.Localnet + ":" + mapping.Bridge
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			mappings = append(mappings, mapping)
+		}
+	}
+
+	sort.Slice(mappings, func(i, j int) bool { return mappings[i].Localnet < mappings[j].Localnet })
+	return mappings, normalized, nil
 }
 
 func stringField(row map[string]any, key string) string {
