@@ -7,7 +7,7 @@ import {
     RouteIcon,
 } from '@patternfly/react-icons';
 
-import { ConstructRole, DEFAULT_NETWORK, LogicalTier } from './logicalClassification';
+import { ConstructRole, DEFAULT_NETWORK, LogicalTier, networkResourceRef } from './logicalClassification';
 import { LadderConstruct, LadderEdge, LadderModel } from './logicalLadderModel';
 import {
     CONSTRUCT_HEIGHT,
@@ -98,6 +98,14 @@ const ROLE_ICONS: Record<ConstructRole, React.ReactNode> = {
 };
 
 export const roleIcon = (role: ConstructRole): React.ReactNode => ROLE_ICONS[role];
+
+/** Short kind chip for a band header: CUDN, UDN, or none for the default network. */
+export const networkKindBadge = (network: string): 'CUDN' | 'UDN' | undefined => {
+    const ref = networkResourceRef(network);
+    if (ref?.kind === 'ClusterUserDefinedNetwork') return 'CUDN';
+    if (ref?.kind === 'UserDefinedNetwork') return 'UDN';
+    return undefined;
+};
 
 /**
  * Human name for a network identity: CUDNs drop their OVN name prefix;
@@ -323,22 +331,46 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                                 stroke={color}
                                 strokeOpacity={0.35}
                             />
-                            <text
-                                x={band.x + band.width / 2}
-                                y={-10}
-                                textAnchor="middle"
-                                fontSize="13"
-                                fontWeight={700}
-                                fill={color}
-                                style={onNetworkSelect ? { cursor: 'pointer' } : undefined}
-                                onClick={(event) => {
-                                    if (!onNetworkSelect) return;
-                                    event.stopPropagation();
-                                    onNetworkSelect(band.network);
-                                }}
-                            >
-                                {networkDisplayName(band.network)}
-                            </text>
+                            {/* HTML header so the kind chip sits inline left of the name. */}
+                            <foreignObject x={band.x} y={-28} width={band.width} height={24}>
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: 6,
+                                        height: '100%',
+                                        cursor: onNetworkSelect ? 'pointer' : undefined,
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                    }}
+                                    onClick={(event) => {
+                                        if (!onNetworkSelect) return;
+                                        event.stopPropagation();
+                                        onNetworkSelect(band.network);
+                                    }}
+                                >
+                                    {networkKindBadge(band.network) && (
+                                        <span
+                                            data-testid={`network-kind-${band.network}`}
+                                            style={{
+                                                border: `1px solid ${color}`,
+                                                color,
+                                                borderRadius: 4,
+                                                fontSize: 10,
+                                                fontWeight: 700,
+                                                lineHeight: '14px',
+                                                padding: '0 4px',
+                                            }}
+                                        >
+                                            {networkKindBadge(band.network)}
+                                        </span>
+                                    )}
+                                    <span style={{ color, fontSize: 13, fontWeight: 700 }}>
+                                        {networkDisplayName(band.network)}
+                                    </span>
+                                </div>
+                            </foreignObject>
                         </g>
                     );
                 })}
