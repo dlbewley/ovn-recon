@@ -261,7 +261,7 @@ func (r *OvnReconReconciler) shouldEmitNormalEvent(ovnRecon *reconv1beta1.OvnRec
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods/exec,verbs=create
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;create;update;patch;delete
@@ -565,12 +565,16 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 		},
 	}
 
+	if err := r.reconcileManagedCachePVC(ctx, ovnRecon); err != nil {
+		return err
+	}
+
 	// The cache PVC's access modes decide the rollout strategy; a missing
 	// claim reads as non-RWX (Recreate) so a later bind can't deadlock.
 	var cachePVC *corev1.PersistentVolumeClaim
 	if collectorCacheUsesPVC(ovnRecon) {
 		pvc := &corev1.PersistentVolumeClaim{}
-		key := client.ObjectKey{Namespace: namespace, Name: ovnRecon.Spec.Collector.Cache.Storage.ClaimName}
+		key := client.ObjectKey{Namespace: namespace, Name: collectorCacheClaimNameFor(ovnRecon)}
 		if err := r.Get(ctx, key, pvc); err == nil {
 			cachePVC = pvc
 		} else if !errors.IsNotFound(err) {
@@ -586,6 +590,56 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 		}
 		deployment.Annotations = mergeStringMap(deployment.Annotations, desired.Annotations)
 		deployment.Spec = desired.Spec
+		return nil
+	})
+	return err
+}
+
+// reconcileManagedCachePVC creates and owns the cache claim in managed mode,
+// and removes a previously managed claim when management is turned off. PVC
+// spec is immutable after creation, so updates only maintain labels; the
+// claim also survives a collector disable (like the Service) so the cache
+// stays warm across feature toggles, and CR deletion GCs it via owner ref.
+func (r *OvnReconReconciler) reconcileManagedCachePVC(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
+	namespace := targetNamespace(ovnRecon)
+	storage := ovnRecon.Spec.Collector.Cache.Storage
+
+	if !storage.Managed {
+		// Clean up a claim we managed earlier, identified by our labels;
+		// never touch user-provided claims.
+		pvc := &corev1.PersistentVolumeClaim{}
+		key := client.ObjectKey{Namespace: namespace, Name: collectorCacheClaimNameFor(ovnRecon)}
+		if err := r.Get(ctx, key, pvc); err != nil {
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		if pvc.Labels["app.kubernetes.io/component"] != "collector-cache" ||
+			pvc.Labels["app.kubernetes.io/instance"] != ovnRecon.Name {
+			return nil
+		}
+		if err := r.Delete(ctx, pvc); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
+		return nil
+	}
+
+	desired := DesiredCollectorCachePVC(ovnRecon)
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      desired.Name,
+			Namespace: desired.Namespace,
+		},
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, pvc, func() error {
+		ensureManagedLabels(pvc, desired.Labels)
+		if err := setManagedOwner(ovnRecon, pvc, r.Scheme); err != nil {
+			return err
+		}
+		if pvc.CreationTimestamp.IsZero() {
+			pvc.Spec = desired.Spec
+		}
 		return nil
 	})
 	return err

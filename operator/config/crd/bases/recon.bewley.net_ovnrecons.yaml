@@ -57,9 +57,19 @@ spec:
                           claimName:
                             description: |-
                               ClaimName names an existing PersistentVolumeClaim to mount when mode
-                              is PVC. Ignored for EmptyDir. If empty in PVC mode, the collector
-                              falls back to EmptyDir.
+                              is PVC. Ignored for EmptyDir. If empty in PVC mode (and not managed),
+                              the collector falls back to EmptyDir.
                             type: string
+                          managed:
+                            default: false
+                            description: |-
+                              Managed has the operator create and own the claim (RWO, owner-referenced
+                              to the OvnRecon for garbage collection), so PVC caching needs no
+                              pre-provisioned claim. Implies PVC storage regardless of mode. When
+                              claimName is empty a default of "<collector>-cache" is used. Users who
+                              need RWX or special claim settings should pre-create their own claim
+                              and leave managed false.
+                            type: boolean
                           mode:
                             default: EmptyDir
                             description: |-
@@ -68,6 +78,16 @@ spec:
                             enum:
                             - EmptyDir
                             - PVC
+                            type: string
+                          size:
+                            default: 1Gi
+                            description: |-
+                              Size of the managed claim. Deliberately generous default — the cache
+                              needs only a few MiB, but some provisioners enforce minimum sizes.
+                            type: string
+                          storageClassName:
+                            description: StorageClassName for the managed claim; empty
+                              uses the cluster default.
                             type: string
                         type: object
                       ttlSeconds:
@@ -349,9 +369,19 @@ spec:
                           claimName:
                             description: |-
                               ClaimName names an existing PersistentVolumeClaim to mount when mode
-                              is PVC. Ignored for EmptyDir. If empty in PVC mode, the collector
-                              falls back to EmptyDir.
+                              is PVC. Ignored for EmptyDir. If empty in PVC mode (and not managed),
+                              the collector falls back to EmptyDir.
                             type: string
+                          managed:
+                            default: false
+                            description: |-
+                              Managed has the operator create and own the claim (RWO, owner-referenced
+                              to the OvnRecon for garbage collection), so PVC caching needs no
+                              pre-provisioned claim. Implies PVC storage regardless of mode. When
+                              claimName is empty a default of "<collector>-cache" is used. Users who
+                              need RWX or special claim settings should pre-create their own claim
+                              and leave managed false.
+                            type: boolean
                           mode:
                             default: EmptyDir
                             description: |-
@@ -360,6 +390,16 @@ spec:
                             enum:
                             - EmptyDir
                             - PVC
+                            type: string
+                          size:
+                            default: 1Gi
+                            description: |-
+                              Size of the managed claim. Deliberately generous default — the cache
+                              needs only a few MiB, but some provisioners enforce minimum sizes.
+                            type: string
+                          storageClassName:
+                            description: StorageClassName for the managed claim; empty
+                              uses the cluster default.
                             type: string
                         type: object
                       ttlSeconds:

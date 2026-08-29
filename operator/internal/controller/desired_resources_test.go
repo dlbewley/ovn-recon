@@ -574,3 +574,91 @@ func TestCollectorRolloutStrategyFollowsCacheVolume(t *testing.T) {
 		t.Fatal("RWX PVC cache should keep RollingUpdate for zero-gap rollouts")
 	}
 }
+
+func TestManagedCachePVCRendering(t *testing.T) {
+	cr := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1beta1.OvnReconSpec{
+			TargetNamespace: "ovn-recon",
+			Collector: reconv1beta1.CollectorSpec{
+				Cache: reconv1beta1.CollectorCacheSpec{
+					Storage: reconv1beta1.CollectorCacheStorageSpec{Managed: true},
+				},
+			},
+		},
+	}
+
+	pvc := DesiredCollectorCachePVC(cr)
+	if pvc.Name != "ovn-recon-collector-cache" {
+		t.Fatalf("unexpected default claim name: %s", pvc.Name)
+	}
+	if got := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; got.String() != "1Gi" {
+		t.Fatalf("expected default size 1Gi, got %s", got.String())
+	}
+	if pvc.Spec.StorageClassName != nil {
+		t.Fatalf("expected cluster-default storage class, got %v", *pvc.Spec.StorageClassName)
+	}
+	if len(pvc.Spec.AccessModes) != 1 || pvc.Spec.AccessModes[0] != corev1.ReadWriteOnce {
+		t.Fatalf("expected RWO access, got %v", pvc.Spec.AccessModes)
+	}
+	if pvc.Labels["app.kubernetes.io/component"] != "collector-cache" {
+		t.Fatalf("expected collector-cache component label, got %v", pvc.Labels)
+	}
+
+	cr.Spec.Collector.Cache.Storage.ClaimName = "custom-cache"
+	cr.Spec.Collector.Cache.Storage.Size = "256Mi"
+	className := "fast"
+	cr.Spec.Collector.Cache.Storage.StorageClassName = className
+	pvc = DesiredCollectorCachePVC(cr)
+	if pvc.Name != "custom-cache" {
+		t.Fatalf("explicit claim name not respected: %s", pvc.Name)
+	}
+	if got := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; got.String() != "256Mi" {
+		t.Fatalf("expected 256Mi, got %s", got.String())
+	}
+	if pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName != className {
+		t.Fatalf("storage class not respected: %v", pvc.Spec.StorageClassName)
+	}
+
+	// Garbage size falls back to the default rather than failing render.
+	cr.Spec.Collector.Cache.Storage.Size = "a-few-bytes"
+	pvc = DesiredCollectorCachePVC(cr)
+	if got := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; got.String() != "1Gi" {
+		t.Fatalf("expected fallback to 1Gi on unparseable size, got %s", got.String())
+	}
+}
+
+func TestManagedCacheImpliesPVCVolumeAndRecreate(t *testing.T) {
+	cr := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1beta1.OvnReconSpec{
+			TargetNamespace: "ovn-recon",
+			Collector: reconv1beta1.CollectorSpec{
+				Cache: reconv1beta1.CollectorCacheSpec{
+					// Mode left at its EmptyDir default: managed implies PVC.
+					Storage: reconv1beta1.CollectorCacheStorageSpec{Managed: true},
+				},
+			},
+		},
+	}
+
+	if !collectorCacheUsesPVC(cr) {
+		t.Fatal("managed cache must be PVC-backed regardless of mode")
+	}
+
+	dep := DesiredCollectorDeployment(cr, nil)
+	volumes := dep.Spec.Template.Spec.Volumes
+	if len(volumes) != 1 || volumes[0].PersistentVolumeClaim == nil ||
+		volumes[0].PersistentVolumeClaim.ClaimName != "ovn-recon-collector-cache" {
+		t.Fatalf("expected managed default claim mounted, got %#v", volumes)
+	}
+	// Managed claims are RWO, so the strategy must be Recreate.
+	rwoPVC := &corev1.PersistentVolumeClaim{
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+		},
+	}
+	if dep := DesiredCollectorDeployment(cr, rwoPVC); dep.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
+		t.Fatal("managed RWO cache must use Recreate")
+	}
+}
