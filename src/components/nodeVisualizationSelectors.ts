@@ -1,4 +1,5 @@
 import { bridgeMappingNodeId, lldpNodeId } from '../topology/ids';
+import { subnetCidrs } from '../topology/subnets';
 import {
     ClusterUserDefinedNetwork,
     Interface,
@@ -109,7 +110,7 @@ export const findPrimaryNetworkForVrf = (
                 : network?.topology === 'Layer3' ? network.layer3
                     : undefined;
             if (layer?.role !== 'Primary') return [];
-            return [{ kind: 'cudn', name: cudn.metadata?.name || '', subnets: layer.subnets || [] }];
+            return [{ kind: 'cudn', name: cudn.metadata?.name || '', subnets: subnetCidrs(layer.subnets) }];
         }),
         ...udns.flatMap((udn): Candidate[] => {
             const layer = udn.spec?.topology === 'Layer2' ? udn.spec.layer2
@@ -120,7 +121,7 @@ export const findPrimaryNetworkForVrf = (
                 kind: 'udn',
                 name: udn.metadata?.name || '',
                 namespace: udn.metadata?.namespace,
-                subnets: layer.subnets || []
+                subnets: subnetCidrs(layer.subnets)
             }];
         })
     ];

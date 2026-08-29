@@ -23,6 +23,7 @@ import {
     UserDefinedNetwork
 } from '../types';
 import { GraphContext } from './context';
+import { formatSubnets } from './subnets';
 import { baseFacts } from './facts';
 import { getApiResourcePath, getNamespaceQueryPath, getProjectPath } from './links';
 import {
@@ -293,7 +294,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 { label: 'Topology', value: topology || 'Unknown', provenance: 'declared' },
                 ...(role ? [{ label: 'Role', value: role, provenance: 'declared' } as Fact] : []),
                 ...((topology === 'Layer2' || topology === 'Layer3')
-                    ? [{ label: 'Subnets', value: subnets?.join(', ') || '-', provenance: 'declared' } as Fact]
+                    ? [{ label: 'Subnets', value: formatSubnets(subnets) || '-', provenance: 'declared' } as Fact]
                     : []),
                 ...(vlanId
                     ? [{ label: 'VLAN ID', value: String(vlanId), provenance: 'declared' } as Fact]
@@ -365,7 +366,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     provenance: 'declared'
                 },
                 ...((topology === 'Layer2' || topology === 'Layer3')
-                    ? [{ label: 'Subnets', value: subnets?.join(', ') || '-', provenance: 'declared' } as Fact]
+                    ? [{ label: 'Subnets', value: formatSubnets(subnets) || '-', provenance: 'declared' } as Fact]
                     : []),
                 ...(nadInNs
                     ? [{
