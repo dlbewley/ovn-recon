@@ -40,6 +40,17 @@ describe('LogicalLadderView', () => {
         return model;
     };
 
+    it('chips CUDN and UDN bands by kind, leaving the default band bare', () => {
+        render();
+        expect(
+            container.querySelector('[data-testid="network-kind-cluster_udn_example-p-cudn"]')?.textContent,
+        ).toBe('CUDN');
+        expect(
+            container.querySelector('[data-testid="network-kind-demo-mirror_example-l3-udn"]')?.textContent,
+        ).toBe('UDN');
+        expect(container.querySelector('[data-testid="network-kind-default"]')).toBeNull();
+    });
+
     it('renders one labelled band per network', () => {
         const model = render();
         const text = container.textContent ?? '';
