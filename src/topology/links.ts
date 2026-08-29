@@ -1,9 +1,16 @@
 import { LabelSelector } from '../types';
 import { ResourceRef, NodeLink } from './types';
 
-/** Console path for a resource, e.g. /k8s/ns/foo/k8s.ovn.org~v1~ClusterUserDefinedNetwork/bar. */
+/**
+ * Console path for a resource, e.g. /k8s/ns/foo/k8s.ovn.org~v1~ClusterUserDefinedNetwork/bar.
+ * Group-less apiVersions get the console's `core~` prefix (core~v1~Pod, not v1~Pod),
+ * matching getApiResourcePath below.
+ */
 export const getResourcePath = (ref: ResourceRef): string => {
-    const resourceId = ref.apiVersion ? `${ref.apiVersion.replace('/', '~')}~${ref.kind}` : ref.kind;
+    const groupVersion = ref.apiVersion.includes('/')
+        ? ref.apiVersion.replace('/', '~')
+        : `core~${ref.apiVersion}`;
+    const resourceId = ref.apiVersion ? `${groupVersion}~${ref.kind}` : ref.kind;
     const base = ref.namespace ? `/k8s/ns/${ref.namespace}` : '/k8s/cluster';
     return `${base}/${resourceId}/${ref.name}`;
 };

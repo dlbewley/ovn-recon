@@ -18,6 +18,7 @@ import {
     UserDefinedNetwork
 } from '../types';
 import { getVrfConnectionInfo } from '../components/nodeVisualizationSelectors';
+import { formatSubnets } from './subnets';
 import { InterfaceRole, interfacesWithRole } from './classify';
 import { EdgeKind } from '../components/nodeVisualizationModel';
 import { GraphContext } from './context';
@@ -308,7 +309,8 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
                 if (vlan) state += ` VLAN ${vlan}`;
             } else if (topology === 'Layer2' || topology === 'Layer3') {
                 const subnets = topology === 'Layer2' ? network?.layer2?.subnets : network?.layer3?.subnets;
-                if (subnets && subnets.length > 0) state += ` ${subnets.join(', ')}`;
+                const formatted = formatSubnets(subnets);
+                if (formatted) state += ` ${formatted}`;
             }
             return {
                 label: cudn.metadata?.name || '',

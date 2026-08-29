@@ -63,11 +63,20 @@ export interface LabelSelector {
     matchExpressions?: { key: string; operator: string; values?: string[] }[];
 }
 
+/**
+ * Layer3 subnets are objects, unlike Layer2's plain CIDR strings — the CRD
+ * schemas genuinely differ per topology.
+ */
+export interface Layer3Subnet {
+    cidr: string;
+    hostSubnet?: number;
+}
+
 export interface UserDefinedNetwork extends K8sResourceCommon {
     spec?: {
         topology?: string; // 'Layer2' | 'Layer3' (UserDefinedNetworkSpec has topology at spec level)
         layer2?: { role?: 'Primary' | 'Secondary'; subnets?: string[] };
-        layer3?: { role?: 'Primary' | 'Secondary'; subnets?: string[] };
+        layer3?: { role?: 'Primary' | 'Secondary'; subnets?: Layer3Subnet[] };
     };
     status?: {
         conditions?: { type: string; status: string; message?: string }[];
@@ -98,7 +107,7 @@ export interface ClusterUserDefinedNetwork extends K8sResourceCommon {
             };
             layer3?: {
                 role?: 'Primary' | 'Secondary';
-                subnets?: string[];
+                subnets?: Layer3Subnet[];
                 joinSubnets?: string[];
             };
         };

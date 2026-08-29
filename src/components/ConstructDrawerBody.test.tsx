@@ -74,7 +74,7 @@ describe('ConstructDrawerBody', () => {
             anchor.getAttribute('href')?.includes('/k8s/ns/'),
         );
         expect(podLink).toBeDefined();
-        expect(podLink?.getAttribute('href')).toMatch(/^\/k8s\/ns\/[^/]+\/v1~Pod\/.+$/);
+        expect(podLink?.getAttribute('href')).toMatch(/^\/k8s\/ns\/[^/]+\/core~v1~Pod\/.+$/);
     });
 
     it('links seam constructs across to the physical view', () => {
