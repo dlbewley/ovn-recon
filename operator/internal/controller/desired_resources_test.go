@@ -662,3 +662,24 @@ func TestManagedCacheImpliesPVCVolumeAndRecreate(t *testing.T) {
 		t.Fatal("managed RWO cache must use Recreate")
 	}
 }
+
+func TestCollectorFeatureEnabledDefaultsOn(t *testing.T) {
+	cr := &reconv1beta1.OvnRecon{ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"}}
+	if !collectorFeatureEnabled(cr) {
+		t.Fatal("collector must default to enabled when spec.collector.enabled is unset")
+	}
+
+	disabled := false
+	cr.Spec.Collector.Enabled = &disabled
+	if collectorFeatureEnabled(cr) {
+		t.Fatal("explicit enabled=false must disable the collector")
+	}
+
+	// The legacy gate's materialized false must not read as an explicit
+	// disable — only spec.collector.enabled carries an explicit signal.
+	cr.Spec.Collector.Enabled = nil
+	cr.Spec.FeatureGates.OVNCollector = false
+	if !collectorFeatureEnabled(cr) {
+		t.Fatal("legacy featureGates false must not override the default-on")
+	}
+}

@@ -126,6 +126,8 @@ type AccessLogSpec struct {
 
 type CollectorSpec struct {
 	// Enabled toggles logical topology features backed by the collector service.
+	// Defaults to true; set false to disable the collector and the logical views.
+	// +kubebuilder:default=true
 	Enabled *bool `json:"enabled,omitempty"`
 
 	// Image configuration for the OVN collector container image.

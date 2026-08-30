@@ -1007,7 +1007,10 @@ func collectorFeatureEnabled(ovnRecon *reconv1beta1.OvnRecon) bool {
 	if ovnRecon.Spec.Collector.Enabled != nil {
 		return *ovnRecon.Spec.Collector.Enabled
 	}
-	return ovnRecon.Spec.FeatureGates.OVNCollector
+	// Default ON when unset. The legacy featureGates.ovn-collector bool
+	// cannot express "unset" (its CRD default materializes false), so only
+	// spec.collector.enabled counts as an explicit signal.
+	return true
 }
 
 func imageTagFor(ovnRecon *reconv1beta1.OvnRecon) string {
