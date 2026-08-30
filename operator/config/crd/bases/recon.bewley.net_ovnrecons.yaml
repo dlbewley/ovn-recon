@@ -99,8 +99,10 @@ spec:
                         type: integer
                     type: object
                   enabled:
-                    description: Enabled toggles logical topology features backed
-                      by the collector service.
+                    default: true
+                    description: |-
+                      Enabled toggles logical topology features backed by the collector service.
+                      Defaults to true; set false to disable the collector and the logical views.
                     type: boolean
                   image:
                     description: Image configuration for the OVN collector container
@@ -411,8 +413,10 @@ spec:
                         type: integer
                     type: object
                   enabled:
-                    description: Enabled toggles logical topology features backed
-                      by the collector service.
+                    default: true
+                    description: |-
+                      Enabled toggles logical topology features backed by the collector service.
+                      Defaults to true; set false to disable the collector and the logical views.
                     type: boolean
                   image:
                     description: Image configuration for the OVN collector container

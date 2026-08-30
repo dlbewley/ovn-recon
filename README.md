@@ -95,16 +95,16 @@ Console plugin will be automatically enabled.
 
 For detailed operator deployment instructions, please see [docs/OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
 
-### Enable Logical Topology View (Collector)
+### Logical Topology View (Collector)
 
-The logical OVN topology view is enabled when collector support is turned on in your `OvnRecon` resource. This is a WIP feature and is not yet enabled by default.
-
-Example patch:
+The collector — and with it the logical OVN topology views — is **enabled by
+default**: an `OvnRecon` resource with no `spec.collector.enabled` value
+deploys the collector automatically. To opt out, disable it explicitly:
 
 ```bash
 oc patch ovnrecon ovn-recon --type=merge -p '{
   "spec": {
-    "collector": { "enabled": true }
+    "collector": { "enabled": false }
   }
 }'
 ```
