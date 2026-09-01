@@ -147,7 +147,8 @@ ports where each pod port links to its Pod.
 
 Snapshots carry `generatedAt`; the banner turns warning at 2 minutes and
 critical at 10. The collector caches zone snapshots on disk
-(`spec.collector.cache`: TTL ≥ 30s, default 120s, EmptyDir or PVC backed),
+(`spec.collector.cache`: TTL ≥ 30s, default 120s; PVC backed by default,
+with automatic EmptyDir fallback when no claim can be provisioned),
 serving cached zones while fresh and recollecting on expiry — this is what
 keeps the cluster view's all-zones request fast. If live probing fails, a
 stale cache entry is served with `LIVE_PROBE_FAILED` + `SNAPSHOT_STALE`

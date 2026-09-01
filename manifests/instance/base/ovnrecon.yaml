@@ -3,16 +3,16 @@ kind: OvnRecon
 metadata:
   name: ovn-recon
 spec:
+  # Everything defaults to a working install: the console plugin registers
+  # itself, the collector runs, and snapshot caching keeps a PVC when the
+  # cluster can provision one (falling back to EmptyDir with a Warning
+  # event when it cannot).
   targetNamespace: ovn-recon
-  consolePlugin:
-    displayName: OVN Recon
-    enabled: true
-    image:
-      repository: quay.io/dbewley/ovn-recon
   collector:
-    enabled: false
-    image:
-      repository: quay.io/dbewley/ovn-collector
-    probeNamespaces:
-      - openshift-ovn-kubernetes
-      - openshift-frr-k8s
+    cache:
+      storage:
+        # Written out for visibility; true is also the default. The
+        # operator creates and owns the cache claim. Set mode: EmptyDir to
+        # never use a PVC, or managed: false with claimName to bring your
+        # own claim.
+        managed: true

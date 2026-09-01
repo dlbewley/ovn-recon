@@ -21,6 +21,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -164,17 +165,136 @@ func DesiredDeployment(ovnRecon *reconv1beta1.OvnRecon) *appsv1.Deployment {
 	}
 }
 
-// collectorCacheUsesPVC reports whether the rendered cache volume will be
-// PVC-backed: managed mode always is; otherwise mode PVC with a claim name.
-func collectorCacheUsesPVC(ovnRecon *reconv1beta1.OvnRecon) bool {
-	storage := ovnRecon.Spec.Collector.Cache.Storage
+// consolePluginEnabledFor mirrors the CRD default for objects whose spec
+// omits consolePlugin entirely — the API server only materializes defaults
+// under keys present in the YAML, so a bare CR must behave like an explicit
+// one.
+func consolePluginEnabledFor(ovnRecon *reconv1beta1.OvnRecon) bool {
+	if ovnRecon.Spec.ConsolePlugin.Enabled != nil {
+		return *ovnRecon.Spec.ConsolePlugin.Enabled
+	}
+	return true
+}
+
+// Cache storage modes. The empty string reads as auto for CRs whose spec
+// omits the storage object (the CRD default never materialized).
+const (
+	cacheStorageModeAuto     = "auto"
+	cacheStorageModeEmptyDir = "emptydir"
+	cacheStorageModePVC      = "pvc"
+)
+
+func collectorCacheStorageModeFor(ovnRecon *reconv1beta1.OvnRecon) string {
+	mode := strings.ToLower(strings.TrimSpace(ovnRecon.Spec.Collector.Cache.Storage.Mode))
+	if mode == "" {
+		return cacheStorageModeAuto
+	}
+	return mode
+}
+
+// collectorCacheManagedFor mirrors the CRD default (true) when unset.
+func collectorCacheManagedFor(ovnRecon *reconv1beta1.OvnRecon) bool {
+	if managed := ovnRecon.Spec.Collector.Cache.Storage.Managed; managed != nil {
+		return *managed
+	}
+	return true
+}
+
+// collectorCacheWantsPVC is the spec-level desire for PVC backing. Explicit
+// mode always wins: EmptyDir never uses a PVC even with managed true, PVC
+// always asks for one, and auto asks whenever a claim is available (managed,
+// or a claimName). Whether the claim actually materializes is decided by
+// ResolveCollectorCacheStorage.
+func collectorCacheWantsPVC(ovnRecon *reconv1beta1.OvnRecon) bool {
 	if !collectorCacheEnabledFor(ovnRecon) {
 		return false
 	}
-	if storage.Managed {
+	switch collectorCacheStorageModeFor(ovnRecon) {
+	case cacheStorageModeEmptyDir:
+		return false
+	case cacheStorageModePVC:
 		return true
+	default: // auto
+		return collectorCacheManagedFor(ovnRecon) ||
+			strings.TrimSpace(ovnRecon.Spec.Collector.Cache.Storage.ClaimName) != ""
 	}
-	return strings.EqualFold(storage.Mode, "PVC") && strings.TrimSpace(storage.ClaimName) != ""
+}
+
+// collectorCacheStorage is the effective storage decision for one reconcile:
+// what the deployment actually mounts, after auto-mode fallback.
+type collectorCacheStorage struct {
+	usePVC bool
+	// pvc is the looked-up claim when usePVC (nil when not found yet); it
+	// only influences the rollout strategy.
+	pvc *corev1.PersistentVolumeClaim
+	// fallbackReason is set when auto mode degraded to EmptyDir; it feeds
+	// the Warning event that makes the fallback visible.
+	fallbackReason string
+}
+
+// desiredCacheStorageFromSpec is the optimistic, cluster-state-free decision:
+// what the spec asks for, assuming provisioning succeeds. Used by offline
+// rendering and as the default when no resolved decision is supplied.
+func desiredCacheStorageFromSpec(ovnRecon *reconv1beta1.OvnRecon) collectorCacheStorage {
+	return collectorCacheStorage{usePVC: collectorCacheWantsPVC(ovnRecon)}
+}
+
+// cachePVCBindTimeout is how long an auto-mode claim may stay Pending before
+// the collector falls back to EmptyDir. Aligned with the deployment readiness
+// backstop so the timeout is actually observed on a quiet cluster.
+const cachePVCBindTimeout = 2 * time.Minute
+
+// ResolveCollectorCacheStorage turns the spec's desire plus observed cluster
+// state into the effective storage decision.
+//
+// Explicit modes are honored verbatim: EmptyDir never mounts a PVC, PVC
+// always does (a missing or unbound claim is the user's explicit problem to
+// see, not something to paper over). Only auto falls back: when the claim is
+// missing without a way to create it, when no viable StorageClass exists for
+// the managed claim, or when the claim has been Pending past the bind
+// timeout. A fallback reverses on a later reconcile if the claim binds.
+func ResolveCollectorCacheStorage(
+	ovnRecon *reconv1beta1.OvnRecon,
+	claim *corev1.PersistentVolumeClaim,
+	storageClassViable bool,
+	now time.Time,
+) collectorCacheStorage {
+	if !collectorCacheWantsPVC(ovnRecon) {
+		return collectorCacheStorage{}
+	}
+	if collectorCacheStorageModeFor(ovnRecon) == cacheStorageModePVC {
+		return collectorCacheStorage{usePVC: true, pvc: claim}
+	}
+
+	claimName := collectorCacheClaimNameFor(ovnRecon)
+	managed := collectorCacheManagedFor(ovnRecon)
+
+	if claim == nil {
+		if !managed {
+			return collectorCacheStorage{fallbackReason: fmt.Sprintf(
+				"cache claim %q not found; using EmptyDir until it exists", claimName)}
+		}
+		if !storageClassViable {
+			return collectorCacheStorage{fallbackReason: fmt.Sprintf(
+				"no viable StorageClass for managed cache claim %q; using EmptyDir", claimName)}
+		}
+		// Managed claim about to be created this reconcile.
+		return collectorCacheStorage{usePVC: true}
+	}
+
+	if claim.Status.Phase == corev1.ClaimBound {
+		return collectorCacheStorage{usePVC: true, pvc: claim}
+	}
+	if managed && !storageClassViable {
+		return collectorCacheStorage{fallbackReason: fmt.Sprintf(
+			"no viable StorageClass for managed cache claim %q; using EmptyDir", claimName)}
+	}
+	if age := now.Sub(claim.CreationTimestamp.Time); age > cachePVCBindTimeout {
+		return collectorCacheStorage{fallbackReason: fmt.Sprintf(
+			"cache claim %q unbound after %s; using EmptyDir", claimName, age.Round(time.Second))}
+	}
+	// Within the bind grace period: keep asking for the PVC.
+	return collectorCacheStorage{usePVC: true, pvc: claim}
 }
 
 // collectorCacheClaimNameFor resolves the cache claim name: the explicit
@@ -227,16 +347,16 @@ func DesiredCollectorCachePVC(ovnRecon *reconv1beta1.OvnRecon) *corev1.Persisten
 	return pvc
 }
 
-// collectorRolloutStrategy picks the rollout strategy from the cache volume:
-// RollingUpdate everywhere except a non-RWX PVC, where the surge pod could
-// deadlock on the RWO volume attach against the old pod's node. A nil PVC
-// (not found, or not yet looked up) is treated as non-RWX.
-func collectorRolloutStrategy(ovnRecon *reconv1beta1.OvnRecon, cachePVC *corev1.PersistentVolumeClaim) appsv1.DeploymentStrategy {
-	if !collectorCacheUsesPVC(ovnRecon) {
+// collectorRolloutStrategy picks the rollout strategy from the effective
+// cache storage: RollingUpdate everywhere except a non-RWX PVC, where the
+// surge pod could deadlock on the RWO volume attach against the old pod's
+// node. A nil PVC (not found, or not yet looked up) is treated as non-RWX.
+func collectorRolloutStrategy(storage collectorCacheStorage) appsv1.DeploymentStrategy {
+	if !storage.usePVC {
 		return appsv1.DeploymentStrategy{}
 	}
-	if cachePVC != nil {
-		for _, mode := range cachePVC.Spec.AccessModes {
+	if storage.pvc != nil {
+		for _, mode := range storage.pvc.Spec.AccessModes {
 			if mode == corev1.ReadWriteMany {
 				return appsv1.DeploymentStrategy{}
 			}
@@ -248,7 +368,12 @@ func collectorRolloutStrategy(ovnRecon *reconv1beta1.OvnRecon, cachePVC *corev1.
 // DesiredCollectorDeployment renders the collector Deployment for a given
 // OvnRecon instance. cachePVC is the looked-up cache claim when the cache is
 // PVC-backed (nil when absent); it only influences the rollout strategy.
-func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon, cachePVC *corev1.PersistentVolumeClaim) *appsv1.Deployment {
+func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon, cacheStorage *collectorCacheStorage) *appsv1.Deployment {
+	if cacheStorage == nil {
+		// Offline rendering and spec-only tests: assume provisioning succeeds.
+		optimistic := desiredCacheStorageFromSpec(ovnRecon)
+		cacheStorage = &optimistic
+	}
 	namespace := targetNamespace(ovnRecon)
 	imageTag := collectorImageTagFor(ovnRecon)
 	name := collectorName(ovnRecon)
@@ -281,7 +406,7 @@ func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon, cachePVC *corev
 			corev1.EnvVar{Name: "COLLECTOR_CACHE_DIR", Value: collectorCacheDir},
 			corev1.EnvVar{Name: "COLLECTOR_CACHE_TTL_SECONDS", Value: strconv.FormatInt(int64(collectorCacheTTLSecondsFor(ovnRecon)), 10)},
 		)
-		volumes = append(volumes, collectorCacheVolumeFor(ovnRecon))
+		volumes = append(volumes, collectorCacheVolumeFor(ovnRecon, cacheStorage.usePVC))
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "snapshot-cache",
 			MountPath: collectorCacheDir,
@@ -301,7 +426,7 @@ func DesiredCollectorDeployment(ovnRecon *reconv1beta1.OvnRecon, cachePVC *corev
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
-			Strategy: collectorRolloutStrategy(ovnRecon, cachePVC),
+			Strategy: collectorRolloutStrategy(*cacheStorage),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app.kubernetes.io/name":      "ovn-recon",
@@ -534,11 +659,10 @@ func collectorCacheTTLSecondsFor(ovnRecon *reconv1beta1.OvnRecon) int32 {
 	return ttl
 }
 
-// collectorCacheVolumeFor renders the cache volume: a PVC when PVC-backed
-// (managed, or mode PVC with a claim name), otherwise EmptyDir (also the
-// documented fallback for unmanaged PVC mode without a claimName).
-func collectorCacheVolumeFor(ovnRecon *reconv1beta1.OvnRecon) corev1.Volume {
-	if collectorCacheUsesPVC(ovnRecon) {
+// collectorCacheVolumeFor renders the cache volume for the effective storage
+// decision: the claim when PVC-backed, otherwise EmptyDir.
+func collectorCacheVolumeFor(ovnRecon *reconv1beta1.OvnRecon, usePVC bool) corev1.Volume {
+	if usePVC {
 		return corev1.Volume{
 			Name: "snapshot-cache",
 			VolumeSource: corev1.VolumeSource{

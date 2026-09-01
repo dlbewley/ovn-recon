@@ -7,7 +7,7 @@ See also [OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
 ## Features
 
 - **Automated Deployment**: Manages the plugin backend (Deployment and Service).
-- **Optional Logical Topology Collector**: Supports an `ovn-collector` feature gate for enabling collector-backed logical topology capabilities.
+- **Logical Topology Collector**: Deploys the collector service for the logical topology views by default; `collector.enabled: false` opts out.
 - **Console Integration**: Automatically creates `ConsolePlugin` resources and patches the OpenShift Console operator to enable the plugin.
 - **Security Hardened**: Runs as non-root with minimal capabilities and mandatory seccomp profiles.
 - **Observability**: Uses standard Kubernetes Status Conditions and Events for clear state reporting.
@@ -35,13 +35,20 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 | `consolePlugin.image.pullPolicy`| `string` | `IfNotPresent` | Plugin backend ImagePullPolicy. |
 | `consolePlugin.logging.level` | `string` | `info` | Console plugin backend log level. Allowed: `error`, `warn`, `info`, `debug`. |
 | `consolePlugin.logging.accessLog.enabled` | `bool` | `false` | Enables request access logging in the console plugin backend. |
-| `collector.enabled` | `bool` | `false` | Enables logical topology features backed by the collector service. |
+| `collector.enabled` | `bool` | `true` | Enables logical topology features backed by the collector service. |
 | `collector.image.repository`| `string` | `quay.io/dbewley/ovn-collector` | OVN collector image repository. |
 | `collector.image.tag` | `string` | _inherits `consolePlugin.image.tag`_ | OVN collector image tag. |
 | `collector.image.pullPolicy`| `string` | _inherits `consolePlugin.image.pullPolicy`_ | OVN collector image pull policy. |
 | `collector.probeNamespaces` | `[]string` | `["openshift-ovn-kubernetes","openshift-frr-k8s"]` | Namespaces where collector is granted pod read/exec access. |
 | `collector.logging.level` | `string` | `info` | Collector log level. Allowed: `error`, `warn`, `info`, `debug`, `trace`. |
 | `collector.logging.includeProbeOutput` | `bool` | `false` | Includes raw probe command output in collector logs when enabled. |
+| `collector.cache.enabled` | `bool` | `true` | Enables disk-backed caching of zone snapshots. |
+| `collector.cache.ttlSeconds` | `int32` | `120` | Freshness window for cached snapshots; floored at `30`. |
+| `collector.cache.storage.mode` | `string` | `auto` | Cache backing. `auto` uses a PVC and falls back to EmptyDir (Warning event) when the claim cannot be provisioned; `EmptyDir` never uses a PVC, even with `managed: true`; `PVC` requires persistent storage and never falls back. Explicit values are always honored. |
+| `collector.cache.storage.managed` | `bool` | `true` | Operator creates and owns the cache claim (RWO, GC'd with the CR). Explicit `false` removes a previously managed claim. |
+| `collector.cache.storage.claimName` | `string` | `<collector>-cache` | Claim to mount (and to create, in managed mode). |
+| `collector.cache.storage.size` | `string` | `1Gi` | Managed claim size. |
+| `collector.cache.storage.storageClassName` | `string` | _cluster default_ | Managed claim StorageClass. |
 
 ### Migration Notes
 
@@ -62,7 +69,7 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 
 ### Feature Gate Notes
 
-- `collector.enabled` is intended to gate Phase 2 logical topology capabilities.
+- `collector.enabled` gates the logical topology capabilities and defaults to true (also when omitted entirely).
 - Collector deployment targets the same namespace as `targetNamespace`.
 - When enabled, the operator reconciles collector Deployment and Service resources named `<ovnrecon-name>-collector`.
 - When enabled, the operator also reconciles collector ServiceAccount/ClusterRole and RoleBindings in each `collector.probeNamespaces` entry.

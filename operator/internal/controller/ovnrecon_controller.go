@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -44,6 +45,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
@@ -262,6 +264,7 @@ func (r *OvnReconReconciler) shouldEmitNormalEvent(ovnRecon *reconv1beta1.OvnRec
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods/exec,verbs=create
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;create;update;patch;delete
@@ -392,7 +395,7 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				"Failed to reconcile collector access controls", "CollectorRBACReconcileFailed", "CollectorReady")
 		}
 		collectorDeploymentCtx := withReconcilePhase(ctx, "reconcile-collector-deployment")
-		if err := r.reconcileCollectorDeployment(collectorDeploymentCtx, ovnRecon); err != nil {
+		if err := r.reconcileCollectorDeployment(collectorDeploymentCtx, ovnRecon, eventPolicy); err != nil {
 			return r.reconcileStepFailed(collectorDeploymentCtx, ovnRecon, policy, eventPolicy, err,
 				"Failed to reconcile collector Deployment", "CollectorDeploymentReconcileFailed", "CollectorReady")
 		}
@@ -446,7 +449,7 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// 4. Auto-enable plugin in Console operator configuration
-	if ovnRecon.Spec.ConsolePlugin.Enabled {
+	if consolePluginEnabledFor(ovnRecon) {
 		consoleOperatorCtx := withReconcilePhase(ctx, "reconcile-console-operator")
 		enabled, err := r.reconcileConsoleOperator(consoleOperatorCtx, ovnRecon)
 		if err != nil {
@@ -554,7 +557,7 @@ func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *rec
 	return err
 }
 
-func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
+func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon, eventPolicy operatorEventPolicy) error {
 	namespace := targetNamespace(ovnRecon)
 	name := collectorName(ovnRecon)
 
@@ -569,10 +572,11 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 		return err
 	}
 
-	// The cache PVC's access modes decide the rollout strategy; a missing
-	// claim reads as non-RWX (Recreate) so a later bind can't deadlock.
+	// Resolve the effective cache storage: the claim's bound state and the
+	// viability of its StorageClass decide auto-mode fallback, and the
+	// claim's access modes decide the rollout strategy.
 	var cachePVC *corev1.PersistentVolumeClaim
-	if collectorCacheUsesPVC(ovnRecon) {
+	if collectorCacheWantsPVC(ovnRecon) {
 		pvc := &corev1.PersistentVolumeClaim{}
 		key := client.ObjectKey{Namespace: namespace, Name: collectorCacheClaimNameFor(ovnRecon)}
 		if err := r.Get(ctx, key, pvc); err == nil {
@@ -581,9 +585,18 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 			return err
 		}
 	}
+	scViable, err := r.cacheStorageClassViable(ctx, ovnRecon)
+	if err != nil {
+		return err
+	}
+	cacheStorage := ResolveCollectorCacheStorage(ovnRecon, cachePVC, scViable, time.Now())
+	if cacheStorage.fallbackReason != "" {
+		log.FromContext(ctx).Info("collector cache falling back to EmptyDir", "reason", cacheStorage.fallbackReason)
+		r.recordEvent(ctx, ovnRecon, eventPolicy, corev1.EventTypeWarning, "CollectorCacheFallback", cacheStorage.fallbackReason)
+	}
 
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
-		desired := DesiredCollectorDeployment(ovnRecon, cachePVC)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
+		desired := DesiredCollectorDeployment(ovnRecon, &cacheStorage)
 		ensureManagedLabels(deployment, desired.Labels)
 		if err := setManagedOwner(ovnRecon, deployment, r.Scheme); err != nil {
 			return err
@@ -596,15 +609,15 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 }
 
 // reconcileManagedCachePVC creates and owns the cache claim in managed mode,
-// and removes a previously managed claim when management is turned off. PVC
-// spec is immutable after creation, so updates only maintain labels; the
-// claim also survives a collector disable (like the Service) so the cache
-// stays warm across feature toggles, and CR deletion GCs it via owner ref.
+// and removes a previously managed claim when management is explicitly
+// turned off. PVC spec is immutable after creation, so updates only maintain
+// labels; the claim also survives a collector disable and an explicit
+// EmptyDir mode (like the Service) so the cache stays warm across toggles,
+// and CR deletion GCs it via owner ref.
 func (r *OvnReconReconciler) reconcileManagedCachePVC(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
 	namespace := targetNamespace(ovnRecon)
-	storage := ovnRecon.Spec.Collector.Cache.Storage
 
-	if !storage.Managed {
+	if !collectorCacheManagedFor(ovnRecon) {
 		// Clean up a claim we managed earlier, identified by our labels;
 		// never touch user-provided claims.
 		pvc := &corev1.PersistentVolumeClaim{}
@@ -622,6 +635,17 @@ func (r *OvnReconReconciler) reconcileManagedCachePVC(ctx context.Context, ovnRe
 		if err := r.Delete(ctx, pvc); err != nil && !errors.IsNotFound(err) {
 			return err
 		}
+		return nil
+	}
+
+	// Explicit EmptyDir mode: no PVC is created or mounted, but an existing
+	// managed claim stays (dormant) so its cache survives a mode toggle.
+	if collectorCacheStorageModeFor(ovnRecon) == cacheStorageModeEmptyDir {
+		return nil
+	}
+	// Managed but the cache is off entirely: nothing to create (an existing
+	// claim stays, same as the collector-disable case).
+	if !collectorCacheWantsPVC(ovnRecon) {
 		return nil
 	}
 
@@ -643,6 +667,41 @@ func (r *OvnReconReconciler) reconcileManagedCachePVC(ctx context.Context, ovnRe
 		return nil
 	})
 	return err
+}
+
+// cacheStorageClassViable reports whether the managed cache claim has a
+// StorageClass that could provision it: the named class when set, else any
+// class annotated as the cluster default. Only auto-mode managed claims
+// consult this (explicit PVC mode is honored regardless), so everything else
+// short-circuits to true. Live reads by design — see ManagerClientOptions.
+func (r *OvnReconReconciler) cacheStorageClassViable(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) (bool, error) {
+	if collectorCacheStorageModeFor(ovnRecon) != cacheStorageModeAuto || !collectorCacheManagedFor(ovnRecon) {
+		return true, nil
+	}
+	if className := strings.TrimSpace(ovnRecon.Spec.Collector.Cache.Storage.StorageClassName); className != "" {
+		sc := &storagev1.StorageClass{}
+		if err := r.Get(ctx, client.ObjectKey{Name: className}, sc); err != nil {
+			if errors.IsNotFound(err) || meta.IsNoMatchError(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		return true, nil
+	}
+	classes := &storagev1.StorageClassList{}
+	if err := r.List(ctx, classes); err != nil {
+		if meta.IsNoMatchError(err) {
+			// No storage.k8s.io API at all (bare envtest): nothing can provision.
+			return false, nil
+		}
+		return false, err
+	}
+	for _, sc := range classes.Items {
+		if sc.Annotations["storageclass.kubernetes.io/is-default-class"] == "true" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (r *OvnReconReconciler) reconcileCollectorAccessControls(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon) error {
@@ -1187,7 +1246,7 @@ func (r *OvnReconReconciler) handleDeletion(ctx context.Context, ovnRecon *recon
 		}
 
 		// Remove plugin from Console operator
-		if ovnRecon.Spec.ConsolePlugin.Enabled {
+		if consolePluginEnabledFor(ovnRecon) {
 			if err := r.removePluginFromConsole(ctx, ovnRecon); err != nil {
 				log.Error(err, "Failed to remove plugin from Console operator")
 				return reconcile.Result{}, err

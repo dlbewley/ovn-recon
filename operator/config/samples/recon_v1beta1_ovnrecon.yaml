@@ -7,33 +7,28 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: ovn-recon
 spec:
+  # Everything defaults to a working install: the console plugin registers
+  # itself, the collector runs with its default probe namespaces, images
+  # come from the operator release, and snapshot caching keeps a PVC when
+  # the cluster can provision one (EmptyDir fallback with a Warning event
+  # when it cannot).
   targetNamespace: ovn-recon
-  operator:
-    logging:
-      level: info
-      events:
-        minType: Normal
-        dedupeWindow: 5m
-  consolePlugin:
-    displayName: "OVN Recon"
-    enabled: true
-    image:
-      repository: quay.io/dbewley/ovn-recon
-      # tag: v1.2.3             # omit to use operator release tag (OPERATOR_VERSION)
-      # pullPolicy: IfNotPresent # omit to use IfNotPresent
-    logging:
-      level: info
-      accessLog:
-        enabled: false
   collector:
-    enabled: false
-    image:
-      repository: quay.io/dbewley/ovn-collector
-      # tag: v1.2.3             # defaults to consolePlugin.image.tag when omitted
-      # pullPolicy: IfNotPresent # defaults to consolePlugin.image.pullPolicy when omitted
-    probeNamespaces:
-      - openshift-ovn-kubernetes
-      - openshift-frr-k8s
-    logging:
-      level: info
-      includeProbeOutput: false
+    cache:
+      storage:
+        # Written out for visibility; true is also the default. The
+        # operator creates and owns the cache claim. Set mode: EmptyDir to
+        # never use a PVC, or managed: false with claimName to bring your
+        # own claim.
+        managed: true
+  # Common opt-outs and overrides (all optional):
+  # consolePlugin:
+  #   enabled: false            # deploy without registering in the console
+  #   image: {repository: ..., tag: ...}
+  # collector:
+  #   enabled: false            # disable the collector and logical views
+  #   probeNamespaces: [openshift-ovn-kubernetes, openshift-frr-k8s]
+  #   cache:
+  #     ttlSeconds: 120
+  #     storage:
+  #       mode: EmptyDir        # or PVC; auto is the default

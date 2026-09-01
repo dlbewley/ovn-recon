@@ -22,6 +22,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -105,6 +106,12 @@ func ManagerCacheOptions() cache.Options {
 //     rbacv1.ClusterRole,
 //     rbacv1.RoleBinding    - collector access controls, written rarely and read
 //     only inside CreateOrUpdate. Not worth a cluster-wide informer.
+//   - corev1.PersistentVolumeClaim - one cache claim read per collector
+//     reconcile. A cached read would lazily spawn a cluster-wide PVC
+//     informer for a single object.
+//   - storagev1.StorageClass - auto-mode viability check for the managed
+//     cache claim; same cluster-wide-informer argument, and the objects are
+//     not this operator's to label-scope.
 //
 // Unstructured is pinned to false (also the controller-runtime default) so the
 // ConsolePlugin (console.openshift.io/v1) and Console (operator.openshift.io/v1)
@@ -126,6 +133,8 @@ func ManagerClientOptions() client.Options {
 				&corev1.ServiceAccount{},
 				&rbacv1.ClusterRole{},
 				&rbacv1.RoleBinding{},
+				&corev1.PersistentVolumeClaim{},
+				&storagev1.StorageClass{},
 			},
 		},
 	}
