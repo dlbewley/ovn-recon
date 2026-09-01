@@ -31,7 +31,9 @@ import { ClusterLogicalTopology } from '../types';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { fetchClusterTopology } from './collectorApi';
 import { mergeZones } from './logicalClusterModel';
+import { aggregateId } from './logicalLadderLayout';
 import ConstructDrawerBody from './ConstructDrawerBody';
+import SnapshotJsonControls from './SnapshotJsonControls';
 import LogicalLadderView, { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
 import SnapshotStatusLine from './SnapshotStatusLine';
 import { freshnessFromAge, oldestSnapshotAgeMs } from './snapshotFreshness';
@@ -147,6 +149,42 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
         [model, selectedUuid],
     );
 
+    // Relationships-tab navigation: selecting a construct that sits inside a
+    // collapsed aggregate also expands its group, so the selection is visible.
+    const selectConstructFromDrawer = React.useCallback((uuid: string) => {
+        const target = model?.constructByUuid.get(uuid);
+        if (target) {
+            setExpandedGroups((current) =>
+                new Set(current).add(aggregateId(target.network, target.tier, target.role)));
+        }
+        setSelectedUuid(uuid);
+    }, [model]);
+
+    // The Config tab's raw rows come from one representative zone: the zone
+    // whose uuid survived the merge (zones[0]).
+    const drawerDatabase = React.useMemo(() => {
+        if (!selectedConstruct || !topology) return null;
+        const zone = selectedConstruct.zones?.[0];
+        const snapshot = topology.snapshots.find((candidate) => candidate.metadata.nodeName === zone);
+        return snapshot?.database ? { node: zone, database: snapshot.database } : null;
+    }, [selectedConstruct, topology]);
+
+    const snapshotJson = React.useMemo(() => {
+        if (!topology) return null;
+        if (hostFilter !== 'all') {
+            const snapshot = topology.snapshots.find(
+                (candidate) => candidate.metadata.nodeName === hostFilter);
+            return snapshot
+                ? { label: `${hostFilter} cached snapshot`, filename: `${hostFilter}-snapshot.json`, payload: snapshot }
+                : null;
+        }
+        return {
+            label: 'Cluster logical topology (all nodes)',
+            filename: 'cluster-logical-topology.json',
+            payload: topology,
+        };
+    }, [topology, hostFilter]);
+
     const toggleAggregate = React.useCallback((aggregateIdValue: string) => {
         setExpandedGroups((current) => {
             const next = new Set(current);
@@ -252,6 +290,9 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                                     totalNodes={model.zoneCount}
                                                     nodeHref={(node) => `/ovn-recon/ovn/${encodeURIComponent(node)}`}
                                                     physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
+                                                    onSelectConstruct={selectConstructFromDrawer}
+                                                    database={drawerDatabase?.database}
+                                                    databaseNode={drawerDatabase?.node}
                                                 />
                                             </CardBody>
                                         </Card>
@@ -333,6 +374,15 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                             Refresh now
                                         </Button>
                                     </FlexItem>
+                                    {snapshotJson && (
+                                        <FlexItem>
+                                            <SnapshotJsonControls
+                                                label={snapshotJson.label}
+                                                filename={snapshotJson.filename}
+                                                payload={snapshotJson.payload}
+                                            />
+                                        </FlexItem>
+                                    )}
                                     {topology && model && (
                                         <FlexItem align={{ default: 'alignRight' }}>
                                             <SnapshotStatusLine

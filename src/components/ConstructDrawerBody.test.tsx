@@ -14,6 +14,12 @@ jest.mock('react-router', () => ({
     ),
 }));
 
+// Monaco does not run under jsdom; the Config tab's editor renders as a pre.
+jest.mock('@patternfly/react-code-editor', () => ({
+    CodeEditor: ({ code }: { code: string }) => <pre data-testid="code-editor">{code}</pre>,
+    Language: { json: 'json' },
+}));
+
 const database = (cnv1 as unknown as LogicalTopologySnapshot).database as LogicalDatabase;
 const model = buildLadderModel(database);
 const byName = (name: string) =>
@@ -108,6 +114,69 @@ describe('ConstructDrawerBody', () => {
             );
         });
         expect(container.textContent).toContain('Bridge mapping on cnv-1');
+    });
+
+    const clickTab = (label: string) => {
+        const tab = [...container.querySelectorAll('button')].find(
+            (button) => button.textContent === label,
+        );
+        expect(tab).toBeDefined();
+        act(() => {
+            tab!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+    };
+
+    it('renders the three drawer tabs', () => {
+        render('GR_cnv-1');
+        const tabLabels = [...container.querySelectorAll('button')].map((button) => button.textContent);
+        for (const label of ['Overview', 'Relationships', 'Config']) {
+            expect(tabLabels).toContain(label);
+        }
+    });
+
+    it('moves the selection from a Relationships entry', () => {
+        const construct = byName('GR_cnv-1');
+        const onSelect = jest.fn();
+        act(() => {
+            root.render(
+                <ConstructDrawerBody construct={construct!} model={model} onSelectConstruct={onSelect} />,
+            );
+        });
+        clickTab('Relationships');
+        const entry = [...container.querySelectorAll('button')].find((button) =>
+            button.textContent?.includes('Join switch'),
+        );
+        expect(entry).toBeDefined();
+        act(() => {
+            entry!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        expect(onSelect).toHaveBeenCalledTimes(1);
+        const selectedUuid = onSelect.mock.calls[0][0] as string;
+        expect(model.constructByUuid.get(selectedUuid)?.role).toBe('join-switch');
+    });
+
+    it('shows raw NB rows on the Config tab when a database is supplied', () => {
+        const construct = byName('GR_cnv-1');
+        act(() => {
+            root.render(
+                <ConstructDrawerBody
+                    construct={construct!}
+                    model={model}
+                    database={database}
+                    databaseNode="cnv-1"
+                />,
+            );
+        });
+        clickTab('Config');
+        const text = container.textContent ?? '';
+        expect(text).toContain('Logical_Router rows from node cnv-1');
+        expect(container.querySelector('[data-testid="code-editor"]')?.textContent).toContain('"logicalRouter"');
+    });
+
+    it('labels the Config tab as model-derived without a database', () => {
+        render('GR_cnv-1');
+        clickTab('Config');
+        expect(container.textContent).toContain('As modeled by OVN Recon');
     });
 
     it('filters the pod list by query', () => {

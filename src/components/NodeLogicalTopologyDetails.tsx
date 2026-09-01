@@ -32,6 +32,7 @@ import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { fetchCollectorSnapshot } from './collectorApi';
 import { buildLadderModel } from './logicalLadderModel';
 import ConstructDrawerBody from './ConstructDrawerBody';
+import SnapshotJsonControls from './SnapshotJsonControls';
 import LogicalLadderView, { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
 import SnapshotStatusLine from './SnapshotStatusLine';
 import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
@@ -233,6 +234,9 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                                     model={model}
                                                     fallbackNode={name}
                                                     physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
+                                                    onSelectConstruct={setSelectedUuid}
+                                                    database={snapshot?.database ?? null}
+                                                    databaseNode={name}
                                                 />
                                             </CardBody>
                                         </Card>
@@ -320,6 +324,15 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             Refresh now
                                         </Button>
                                     </FlexItem>
+                                    {snapshot && (
+                                        <FlexItem>
+                                            <SnapshotJsonControls
+                                                label={`${name} cached snapshot`}
+                                                filename={`${name}-snapshot.json`}
+                                                payload={snapshot}
+                                            />
+                                        </FlexItem>
+                                    )}
                                     {snapshot && !needsCollectorUpgrade && (
                                         <FlexItem align={{ default: 'alignRight' }}>
                                             <SnapshotStatusLine
