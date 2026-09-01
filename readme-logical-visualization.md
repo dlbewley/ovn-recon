@@ -135,13 +135,27 @@ construct names as `example.p.cudn`.
 
 ## The drawer
 
-Selecting any card opens a drawer with the construct's full detail: role,
-network (linked to the owning `ClusterUserDefinedNetwork` /
-`UserDefinedNetwork` CR), node (linked to that node's logical view from the
-cluster page), zone provenance, subnet, NAT rules
-(`snat 192.168.4.72 ⇄ 10.131.0.6`), static routes
-(`0.0.0.0/0 → 192.168.4.1`), tunnel peers, and a filterable list of workload
-ports where each pod port links to its Pod.
+Selecting any card opens a drawer with three tabs, mirroring the physical
+view's drawer:
+
+- **Overview** — the construct's full detail: role, network (linked to the
+  owning `ClusterUserDefinedNetwork` / `UserDefinedNetwork` CR), node
+  (linked to that node's logical view from the cluster page), zone
+  provenance, subnet, NAT rules (`snat 192.168.4.72 ⇄ 10.131.0.6`), static
+  routes (`0.0.0.0/0 → 192.168.4.1`), tunnel peers, and a filterable list of
+  workload ports where each pod port links to its Pod.
+- **Relationships** — the construct's connections as navigation: each peer
+  is a link that moves the selection (expanding its aggregate group when
+  collapsed), annotated with the edge's role and addresses.
+- **Config** — the construct's raw northbound rows (its router/switch row
+  plus the ports, NAT, and static routes it references), assembled by an
+  OVN kind registry from one representative node's snapshot. Kinds the
+  model does not yet cover degrade to the model's own view of the
+  construct.
+
+The toolbar's **View JSON** control shows and downloads the raw cached
+collector payload — the selected node's snapshot on the per-node page (and
+on the cluster page when filtered to one host), or the whole aggregate.
 
 ## Freshness and fallback
 

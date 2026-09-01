@@ -1,17 +1,23 @@
 import * as React from 'react';
 import { Link } from 'react-router';
 import {
+    Button,
     DescriptionList,
     DescriptionListGroup,
     DescriptionListTerm,
     DescriptionListDescription,
+    Tab,
+    Tabs,
+    TabTitleText,
     TextInput,
 } from '@patternfly/react-core';
+import { CodeEditor, Language } from '@patternfly/react-code-editor';
 
-import { NATRow, StaticRouteRow } from '../types';
+import { LogicalDatabase, NATRow, StaticRouteRow } from '../types';
 import { networkResourceRef } from './logicalClassification';
 import { LadderConstruct, LadderModel } from './logicalLadderModel';
 import { edgeLabel, networkDisplayName, roleLabel } from './LogicalLadderView';
+import { configPayloadFor, ovnKindFor } from './ovnKindRegistry';
 import { getResourcePath } from '../topology/links';
 
 const MAX_LISTED_RULES = 10;
@@ -36,6 +42,15 @@ export interface ConstructDrawerBodyProps {
      * "All nodes" for cluster-wide constructs instead of enumerating them.
      */
     totalNodes?: number;
+    /** Move the ladder selection — makes Relationships entries navigable. */
+    onSelectConstruct?: (uuid: string) => void;
+    /**
+     * One representative node's database, for the Config tab's raw NB rows.
+     * Cluster view: the first zone the construct appears in.
+     */
+    database?: LogicalDatabase | null;
+    /** The node `database` came from, shown as the Config tab's caption. */
+    databaseNode?: string;
 }
 
 const SEAM_ROLES = new Set(['external-switch', 'localnet-switch']);
@@ -110,9 +125,8 @@ const WorkloadPortList: React.FC<{ construct: LadderConstruct }> = ({ construct 
     );
 };
 
-const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({
+const OverviewBody: React.FC<ConstructDrawerBodyProps> = ({
     construct,
-    model,
     nodeHref,
     physicalHref,
     fallbackNode,
@@ -120,18 +134,6 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({
 }) => {
     const networkRef = networkResourceRef(construct.network);
     const seamNode = SEAM_ROLES.has(construct.role) ? construct.node ?? fallbackNode : undefined;
-
-    const connections = model.edges
-        .filter((edge) => edge.source === construct.uuid || edge.target === construct.uuid)
-        .map((edge) => {
-            const otherUuid = edge.source === construct.uuid ? edge.target : edge.source;
-            const other = model.constructByUuid.get(otherUuid);
-            return {
-                id: edge.id,
-                label: other ? `${roleLabel(other.role)} (${other.name})` : otherUuid,
-                addresses: edgeLabel(edge),
-            };
-        });
 
     return (
         <DescriptionList isCompact>
@@ -246,20 +248,128 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = ({
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
-            {connections.length > 0 && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>Connections</DescriptionListTerm>
-                    <DescriptionListDescription>
-                        {connections.map((connection) => (
-                            <div key={connection.id}>
-                                {connection.label}
-                                {connection.addresses ? <> — <code>{connection.addresses}</code></> : null}
-                            </div>
-                        ))}
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
-            )}
         </DescriptionList>
+    );
+};
+
+const EDGE_ROLE_TITLES: Record<string, string> = {
+    join: 'Join',
+    external: 'External',
+    gateway: 'Gateway',
+    tunnel: 'Tunnel',
+    interconnect: 'Interconnect',
+    localnet: 'Localnet',
+    link: 'Link',
+};
+
+/**
+ * The construct's connections as navigation, mirroring the physical drawer's
+ * Relationships tab: each peer is a link that moves the ladder selection,
+ * annotated with the edge's role and addresses.
+ */
+const RelationshipsBody: React.FC<ConstructDrawerBodyProps> = ({ construct, model, onSelectConstruct }) => {
+    const connections = model.edges
+        .filter((edge) => edge.source === construct.uuid || edge.target === construct.uuid)
+        .map((edge) => {
+            const otherUuid = edge.source === construct.uuid ? edge.target : edge.source;
+            const other = model.constructByUuid.get(otherUuid);
+            return {
+                id: edge.id,
+                otherUuid,
+                label: other ? `${roleLabel(other.role)} (${other.name})` : otherUuid,
+                role: EDGE_ROLE_TITLES[edge.role] ?? edge.role,
+                addresses: edgeLabel(edge),
+                navigable: Boolean(other),
+            };
+        });
+
+    if (connections.length === 0) {
+        return <div>No connections recorded for this construct.</div>;
+    }
+    return (
+        <ul className="pf-v6-c-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+            {connections.map((connection) => (
+                <li key={connection.id} className="pf-u-mb-sm">
+                    {connection.navigable && onSelectConstruct ? (
+                        <Button
+                            variant="link"
+                            isInline
+                            onClick={() => onSelectConstruct(connection.otherUuid)}
+                        >
+                            {connection.label}
+                        </Button>
+                    ) : (
+                        connection.label
+                    )}
+                    <div style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>
+                        {connection.role}
+                        {connection.addresses ? <> — <code>{connection.addresses}</code></> : null}
+                    </div>
+                </li>
+            ))}
+        </ul>
+    );
+};
+
+/**
+ * The construct's raw northbound rows, assembled by the OVN kind registry —
+ * the logical equivalent of the physical drawer's Config (YAML) tab. When no
+ * database is at hand the model's own view of the construct is shown instead,
+ * labeled as derived.
+ */
+const ConfigBody: React.FC<ConstructDrawerBodyProps> = ({ construct, database, databaseNode }) => {
+    const { source, payload } = configPayloadFor(construct, database ?? null);
+    const caption =
+        source === 'nb-rows'
+            ? `${ovnKindFor(construct).table} rows${databaseNode ? ` from node ${databaseNode}` : ''}`
+            : 'As modeled by OVN Recon (raw rows unavailable)';
+    return (
+        <>
+            <div className="pf-u-mb-sm" style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>
+                {caption}
+            </div>
+            <CodeEditor
+                isReadOnly
+                isDownloadEnabled
+                code={JSON.stringify(payload, null, 2)}
+                language={Language.json}
+                height="400px"
+            />
+        </>
+    );
+};
+
+const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = (props) => {
+    const [activeTab, setActiveTab] = React.useState<string | number>('overview');
+
+    // A new selection starts back at Overview; keeping a stale Config tab
+    // open while the construct underneath changes reads as a glitch.
+    React.useEffect(() => {
+        setActiveTab('overview');
+    }, [props.construct.uuid]);
+
+    return (
+        <Tabs
+            activeKey={activeTab}
+            onSelect={(_event, key) => setActiveTab(key)}
+            aria-label="Construct details"
+        >
+            <Tab eventKey="overview" title={<TabTitleText>Overview</TabTitleText>}>
+                <div className="pf-u-pt-md">
+                    <OverviewBody {...props} />
+                </div>
+            </Tab>
+            <Tab eventKey="relationships" title={<TabTitleText>Relationships</TabTitleText>}>
+                <div className="pf-u-pt-md">
+                    <RelationshipsBody {...props} />
+                </div>
+            </Tab>
+            <Tab eventKey="config" title={<TabTitleText>Config</TabTitleText>}>
+                <div className="pf-u-pt-md">
+                    <ConfigBody {...props} />
+                </div>
+            </Tab>
+        </Tabs>
     );
 };
 
