@@ -46,9 +46,10 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 ### Migration Notes
 
 - New hierarchical fields are preferred: `consolePlugin.image.*`, `collector.enabled`, `collector.image.*`, and `collector.probeNamespaces`.
-- `v1beta1` is the storage version. `v1alpha1` remains served for compatibility.
-- The CRD uses API-server conversion strategy `None` (schema parity between versions), so reads/writes in either served version are accepted.
-- Legacy fields are still accepted for compatibility in both served versions:
+- `v1beta1` is the only API version. `v1alpha1` was unserved for several releases and has been removed; update any manifests still declaring `apiVersion: recon.bewley.net/v1alpha1` to `v1beta1` (the schemas were identical).
+- If upgrading from a very old install fails with a CRD error about `status.storedVersions` containing `v1alpha1`, confirm your `OvnRecon` resources are readable, then clear the stale entry:
+  `oc patch crd ovnrecons.recon.bewley.net --subresource=status --type=merge -p '{"status":{"storedVersions":["v1beta1"]}}'`
+- Legacy fields are still accepted for compatibility:
   - `image.*` (use `consolePlugin.image.*`)
   - `featureGates.ovn-collector` (use `collector.enabled`)
   - `collectorImage.*` (use `collector.image.*`)
@@ -234,8 +235,7 @@ make deploy IMG=quay.io/dbewley/ovn-recon-operator:latest
 ## Development Guide
 
 ### Repository Structure
-- `api/v1beta1/`: Preferred API definitions (`ovnrecon_types.go`).
-- `api/v1alpha1/`: Served compatibility API definitions.
+- `api/v1beta1/`: API definitions (`ovnrecon_types.go`).
 - `internal/controller/`: Reconciliation logic (`ovnrecon_controller.go`).
 - `config/`: Kustomize manifests for deployment, RBAC, and CRDs.
 - `.github/workflows/`: CI/CD pipelines for building and releasing.

@@ -24,24 +24,27 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
 
-	reconv1alpha1 "github.com/dlbewley/ovn-recon-operator/api/v1alpha1"
 	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 )
 
 var _ = Describe("OvnRecon API Version Policy", func() {
-	It("rejects v1alpha1 resources", func() {
+	It("does not serve the retired v1alpha1 version", func() {
 		ctx := context.Background()
 		name := "compat-alpha-" + rand.String(6)
 
-		alpha := &reconv1alpha1.OvnRecon{
-			ObjectMeta: metav1.ObjectMeta{Name: name},
-			Spec: reconv1alpha1.OvnReconSpec{
-				TargetNamespace: "compat-alpha",
-			},
-		}
+		alpha := &unstructured.Unstructured{}
+		alpha.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   "recon.bewley.net",
+			Version: "v1alpha1",
+			Kind:    "OvnRecon",
+		})
+		alpha.SetName(name)
+
 		err := k8sClient.Create(ctx, alpha)
 		Expect(err).To(HaveOccurred())
 		Expect(apierrors.IsNotFound(err) || meta.IsNoMatchError(err)).To(BeTrue())
