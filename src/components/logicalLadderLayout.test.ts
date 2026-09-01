@@ -152,3 +152,41 @@ describe('networkColorIndex', () => {
         expect(index).toBeLessThan(NETWORK_PALETTE_SIZE);
     });
 });
+
+describe('band colors under filtering', () => {
+    const model = buildLadderModel(database);
+    const fullLayout = layoutLadder(model);
+
+    const narrowTo = (network: string): LadderModel => {
+        const constructs = model.constructs.filter((construct) => construct.network === network);
+        return {
+            constructs,
+            constructByUuid: new Map(constructs.map((construct) => [construct.uuid, construct])),
+            edges: model.edges.filter(
+                (edge) =>
+                    model.constructByUuid.get(edge.source)?.network === network &&
+                    model.constructByUuid.get(edge.target)?.network === network,
+            ),
+            networks: [network],
+        };
+    };
+
+    it('keeps a non-default network on its palette slot when it is the only band', () => {
+        const nonDefault = fullLayout.bands.filter((band) => band.network !== 'default');
+        expect(nonDefault.length).toBeGreaterThan(0);
+        for (const band of nonDefault) {
+            const filtered = layoutLadder(narrowTo(band.network));
+            expect(filtered.bands).toHaveLength(1);
+            // The regression: a filtered network used to become "first" and
+            // inherit the neutral slot 0, turning the band gray.
+            expect(filtered.bands[0].colorIndex).toBe(band.colorIndex);
+            expect(filtered.bands[0].colorIndex).not.toBe(0);
+        }
+    });
+
+    it('keeps the default network on the neutral slot when it is the only band', () => {
+        const filtered = layoutLadder(narrowTo('default'));
+        expect(filtered.bands).toHaveLength(1);
+        expect(filtered.bands[0].colorIndex).toBe(0);
+    });
+});
