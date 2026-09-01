@@ -34,7 +34,7 @@ import { mergeZones } from './logicalClusterModel';
 import ConstructDrawerBody from './ConstructDrawerBody';
 import LogicalLadderView, { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
 import SnapshotStatusLine from './SnapshotStatusLine';
-import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
+import { freshnessFromAge, oldestSnapshotAgeMs } from './snapshotFreshness';
 
 // Aggregate collection probes every zone, so refresh less eagerly than the
 // per-node view.
@@ -99,13 +99,17 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
     // A host selection narrows the merge to that node's zone: node-bound
     // constructs collapse to that node's single instances, and shared
     // constructs render as that zone sees them — the single-node perspective.
-    const model = React.useMemo(() => {
+    const visibleSnapshots = React.useMemo(() => {
         if (!topology) return null;
-        const snapshots = hostFilter === 'all'
+        return hostFilter === 'all'
             ? topology.snapshots
             : topology.snapshots.filter((snapshot) => snapshot.metadata.nodeName === hostFilter);
-        return mergeZones(snapshots);
     }, [topology, hostFilter]);
+
+    const model = React.useMemo(
+        () => (visibleSnapshots ? mergeZones(visibleSnapshots) : null),
+        [visibleSnapshots],
+    );
 
     const selectHost = React.useCallback((host: string) => {
         setHostFilter(host);
@@ -115,9 +119,26 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
         setExpandedGroups(new Set());
     }, []);
 
+    // Re-render the age text periodically so it doesn't freeze between the
+    // 60s refetches.
+    const [ageTick, setAgeTick] = React.useState(0);
+    React.useEffect(() => {
+        const timer = window.setInterval(() => setAgeTick((tick) => tick + 1), 30000);
+        return () => window.clearInterval(timer);
+    }, []);
+
+    // Freshness comes from the zone snapshots themselves — the aggregate
+    // envelope's generatedAt is stamped at assembly time on every request,
+    // so it always reads "just now" and says nothing. The view is only as
+    // fresh as the stalest zone it is showing.
     const ageMs = React.useMemo(
-        () => (topology ? parseSnapshotAgeMs(topology.metadata.generatedAt) : null),
-        [topology],
+        () =>
+            visibleSnapshots
+                ? oldestSnapshotAgeMs(visibleSnapshots.map((snapshot) => snapshot.metadata?.generatedAt))
+                : null,
+        // ageTick is a deliberate extra dependency: it forces the age to
+        // recompute between refetches.
+        [visibleSnapshots, ageTick],
     );
     const freshness = freshnessFromAge(ageMs);
 
@@ -317,6 +338,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                             <SnapshotStatusLine
                                                 freshness={freshness}
                                                 ageMs={ageMs}
+                                                ageQualifier={(visibleSnapshots?.length ?? 0) > 1 ? 'oldest node ' : undefined}
                                                 zoneCount={model.zoneCount}
                                                 sourceHealth={topology.metadata.sourceHealth}
                                                 isLoading={isLoading}

@@ -13,6 +13,8 @@ import { SnapshotFreshnessState } from './snapshotFreshness';
 export interface SnapshotStatusLineProps {
     freshness: SnapshotFreshnessState;
     ageMs: number | null;
+    /** Prefixed to the age, e.g. "oldest node " → "Fresh · oldest node 45s ago". */
+    ageQualifier?: string;
     /** Cluster view: number of node databases assembled. */
     zoneCount?: number;
     /** Degraded/unknown source health shows a label; healthy shows nothing. */
@@ -35,8 +37,8 @@ const freshnessColor = (state: SnapshotFreshnessState): 'green' | 'yellow' | 're
     return 'green';
 };
 
-const freshnessText = (state: SnapshotFreshnessState, ageMs: number | null): string => {
-    const age = ageMs != null ? ` · ${formatAge(ageMs)}` : '';
+const freshnessText = (state: SnapshotFreshnessState, ageMs: number | null, ageQualifier = ''): string => {
+    const age = ageMs != null ? ` · ${ageQualifier}${formatAge(ageMs)}` : '';
     if (state === 'critical') return `Stale${age}`;
     if (state === 'warning') return `Aging${age}`;
     if (state === 'unknown') return 'Freshness unknown';
@@ -46,6 +48,7 @@ const freshnessText = (state: SnapshotFreshnessState, ageMs: number | null): str
 const SnapshotStatusLine: React.FC<SnapshotStatusLineProps> = ({
     freshness,
     ageMs,
+    ageQualifier,
     zoneCount,
     sourceHealth,
     isLoading,
@@ -53,7 +56,7 @@ const SnapshotStatusLine: React.FC<SnapshotStatusLineProps> = ({
     <Flex spaceItems={{ default: 'spaceItemsSm' }} alignItems={{ default: 'alignItemsCenter' }}>
         <FlexItem>
             <Label isCompact color={freshnessColor(freshness)}>
-                {freshnessText(freshness, ageMs)}
+                {freshnessText(freshness, ageMs, ageQualifier)}
             </Label>
         </FlexItem>
         {zoneCount != null && (
