@@ -118,8 +118,16 @@ from cache immediately — a stale entry is returned at once while a
 background refresh revalidates it — and a startup sweep warms any missing
 entries, so page loads never block on live collection. Refresh is
 demand-driven: an idle collector runs no probes. When live probing fails,
-cached data keeps serving in preference to fixtures. Caching is on by
-default and configured under `spec.collector.cache`:
+cached data keeps serving in preference to fixtures.
+
+Caching is on by default, and by default it is **PVC-backed**: the operator
+creates and owns a claim (managed mode) so cached snapshots survive pod
+restarts — which is exactly when stale-serve matters, such as a restart
+during an OVN outage. If the cluster cannot provision the claim (no default
+StorageClass, or the claim stays unbound), the collector **falls back to
+EmptyDir automatically** and the operator records a Warning event on the
+`OvnRecon` resource (`oc describe ovnrecon` shows it). Everything is
+configurable under `spec.collector.cache`:
 
 ```yaml
 spec:
@@ -128,28 +136,32 @@ spec:
       enabled: true      # default
       ttlSeconds: 120    # freshness window; minimum 30
       storage:
-        mode: EmptyDir   # default; or PVC with claimName
-        # managed: true            # operator creates and owns the claim
-        # claimName: collector-cache
-        # size: 1Gi                # managed claim size
-        # storageClassName: ""     # managed claim class; empty = cluster default
+        mode: auto       # default; or EmptyDir | PVC
+        managed: true    # default; operator creates and owns the claim
+        # claimName: collector-cache # bring your own claim
+        # size: 1Gi                  # managed claim size
+        # storageClassName: ""       # managed claim class; empty = cluster default
 ```
 
-- **EmptyDir** (default) needs no configuration; the cache re-warms after a
-  pod restart. Right for most clusters.
-- **PVC** keeps cached snapshots across pod restarts — useful so stale-serve
-  survives a restart during an OVN outage. The easiest way to get one is
-  **managed mode**: set `storage.managed: true` and the operator creates and
-  owns the claim (default name `<collector>-cache`, RWO, `size` default
-  `1Gi` — generous only because some provisioners enforce minimums; the
-  cache itself needs a few MiB). The claim is garbage-collected with the
-  `OvnRecon` resource and removed if you turn `managed` back off; it
-  survives a collector disable so the cache stays warm across toggles.
-- To use a **pre-created claim** instead, leave `managed: false` and set
-  `mode: PVC` with `claimName`. With a non-RWX claim (managed claims
-  included) the operator switches the collector to a `Recreate` rollout (a
-  brief gap per upgrade, instead of risking a volume-attach deadlock); a
-  pre-created RWX claim keeps zero-gap rolling updates.
+- **`mode: auto`** (default) uses a PVC — the managed claim, or `claimName`
+  — and falls back to EmptyDir with a Warning event when the claim cannot
+  be provisioned. The fallback reverses on its own once the claim binds.
+- **`mode: EmptyDir`** never creates or mounts a PVC, even with `managed:
+  true`; the cache re-warms after each pod restart. An existing managed
+  claim is kept (dormant) so switching back keeps its contents.
+- **`mode: PVC`** requires persistent storage and never falls back —
+  provisioning problems are surfaced instead of papered over.
+- **Managed claims** (`managed: true`, the default) are created and owned by
+  the operator: default name `<collector>-cache`, RWO, `size` default `1Gi`
+  (generous only because some provisioners enforce minimums; the cache
+  itself needs a few MiB). The claim is garbage-collected with the
+  `OvnRecon` resource and removed if you set `managed: false`; it survives
+  a collector disable so the cache stays warm across toggles.
+- To use a **pre-created claim** instead, set `managed: false` with
+  `claimName`. With a non-RWX claim (managed claims included) the operator
+  switches the collector to a `Recreate` rollout (a brief gap per upgrade,
+  instead of risking a volume-attach deadlock); a pre-created RWX claim
+  keeps zero-gap rolling updates.
 
 ### Manual Installation
 

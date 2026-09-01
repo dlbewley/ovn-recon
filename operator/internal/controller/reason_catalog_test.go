@@ -44,6 +44,7 @@ func TestOperatorEventReasonCatalogIsStable(t *testing.T) {
 	})
 
 	expected := []string{
+		"CollectorCacheFallback",
 		"CollectorDeploymentReconcileFailed",
 		"CollectorFeatureDisabled",
 		"CollectorRBACReconcileFailed",

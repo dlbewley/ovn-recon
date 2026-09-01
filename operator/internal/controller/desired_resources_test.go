@@ -1,10 +1,12 @@
 package controller
 
 import (
+	"testing"
+	"time"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"testing"
 
 	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
 )
@@ -440,7 +442,7 @@ func TestCollectorImageIgnoresRelatedImageWhenPluginTagPinned(t *testing.T) {
 	}
 }
 
-func TestCollectorCacheDefaultsToEmptyDirWithFloorTTL(t *testing.T) {
+func TestCollectorCacheDefaultsToManagedPVCWithFloorTTL(t *testing.T) {
 	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
 		Spec:       reconv1beta1.OvnReconSpec{TargetNamespace: "ovn-recon"},
@@ -458,8 +460,17 @@ func TestCollectorCacheDefaultsToEmptyDirWithFloorTTL(t *testing.T) {
 	if len(container.VolumeMounts) != 1 || container.VolumeMounts[0].MountPath != "/var/cache/ovn-recon" {
 		t.Fatalf("expected cache volume mount, got %#v", container.VolumeMounts)
 	}
-	if len(dep.Spec.Template.Spec.Volumes) != 1 || dep.Spec.Template.Spec.Volumes[0].EmptyDir == nil {
-		t.Fatalf("expected EmptyDir cache volume, got %#v", dep.Spec.Template.Spec.Volumes)
+	// Bare spec: managed defaults true and mode defaults auto, so the
+	// spec-optimistic render mounts the managed default claim.
+	volumes := dep.Spec.Template.Spec.Volumes
+	if len(volumes) != 1 || volumes[0].PersistentVolumeClaim == nil ||
+		volumes[0].PersistentVolumeClaim.ClaimName != "ovn-recon-collector-cache" {
+		t.Fatalf("expected managed default claim volume, got %#v", volumes)
+	}
+	// A resolved EmptyDir fallback renders EmptyDir for the same spec.
+	dep = DesiredCollectorDeployment(cr, &collectorCacheStorage{fallbackReason: "no viable StorageClass"})
+	if dep.Spec.Template.Spec.Volumes[0].EmptyDir == nil {
+		t.Fatalf("expected EmptyDir volume after fallback, got %#v", dep.Spec.Template.Spec.Volumes)
 	}
 }
 
@@ -521,22 +532,33 @@ func TestCollectorCachePVCStorage(t *testing.T) {
 		t.Fatalf("expected PVC cache volume, got %#v", volumes)
 	}
 
-	// PVC mode without a claim name falls back to EmptyDir rather than
-	// rendering an unmountable volume.
+	// PVC mode without a claim name mounts the managed default claim —
+	// managed defaults to true, so there is always a claim to name.
 	cr.Spec.Collector.Cache.Storage.ClaimName = ""
 	dep = DesiredCollectorDeployment(cr, nil)
-	if dep.Spec.Template.Spec.Volumes[0].EmptyDir == nil {
-		t.Fatalf("expected EmptyDir fallback, got %#v", dep.Spec.Template.Spec.Volumes)
+	if got := dep.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim; got == nil || got.ClaimName != "ovn-recon-collector-cache" {
+		t.Fatalf("expected managed default claim, got %#v", dep.Spec.Template.Spec.Volumes)
 	}
 }
 
 func TestCollectorRolloutStrategyFollowsCacheVolume(t *testing.T) {
 	emptyDirCR := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
-		Spec:       reconv1beta1.OvnReconSpec{TargetNamespace: "ovn-recon"},
+		Spec: reconv1beta1.OvnReconSpec{
+			TargetNamespace: "ovn-recon",
+			Collector: reconv1beta1.CollectorSpec{
+				Cache: reconv1beta1.CollectorCacheSpec{
+					Storage: reconv1beta1.CollectorCacheStorageSpec{Mode: "EmptyDir"},
+				},
+			},
+		},
 	}
 	if dep := DesiredCollectorDeployment(emptyDirCR, nil); dep.Spec.Strategy.Type == appsv1.RecreateDeploymentStrategyType {
 		t.Fatal("EmptyDir cache must keep the default RollingUpdate strategy")
+	}
+	// A resolved EmptyDir fallback also keeps RollingUpdate, whatever the spec asked.
+	if dep := DesiredCollectorDeployment(emptyDirCR, &collectorCacheStorage{}); dep.Spec.Strategy.Type == appsv1.RecreateDeploymentStrategyType {
+		t.Fatal("resolved EmptyDir storage must keep the default RollingUpdate strategy")
 	}
 
 	pvcCR := &reconv1beta1.OvnRecon{
@@ -561,7 +583,7 @@ func TestCollectorRolloutStrategyFollowsCacheVolume(t *testing.T) {
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 		},
 	}
-	if dep := DesiredCollectorDeployment(pvcCR, rwoPVC); dep.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
+	if dep := DesiredCollectorDeployment(pvcCR, &collectorCacheStorage{usePVC: true, pvc: rwoPVC}); dep.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
 		t.Fatal("RWO PVC cache must use Recreate")
 	}
 
@@ -570,7 +592,7 @@ func TestCollectorRolloutStrategyFollowsCacheVolume(t *testing.T) {
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce, corev1.ReadWriteMany},
 		},
 	}
-	if dep := DesiredCollectorDeployment(pvcCR, rwxPVC); dep.Spec.Strategy.Type == appsv1.RecreateDeploymentStrategyType {
+	if dep := DesiredCollectorDeployment(pvcCR, &collectorCacheStorage{usePVC: true, pvc: rwxPVC}); dep.Spec.Strategy.Type == appsv1.RecreateDeploymentStrategyType {
 		t.Fatal("RWX PVC cache should keep RollingUpdate for zero-gap rollouts")
 	}
 }
@@ -582,7 +604,7 @@ func TestManagedCachePVCRendering(t *testing.T) {
 			TargetNamespace: "ovn-recon",
 			Collector: reconv1beta1.CollectorSpec{
 				Cache: reconv1beta1.CollectorCacheSpec{
-					Storage: reconv1beta1.CollectorCacheStorageSpec{Managed: true},
+					Storage: reconv1beta1.CollectorCacheStorageSpec{Managed: boolPtr(true)},
 				},
 			},
 		},
@@ -628,22 +650,17 @@ func TestManagedCachePVCRendering(t *testing.T) {
 	}
 }
 
-func TestManagedCacheImpliesPVCVolumeAndRecreate(t *testing.T) {
+func boolPtr(b bool) *bool { return &b }
+
+func TestManagedCacheDefaultsToPVCVolumeAndRecreate(t *testing.T) {
+	// A bare CR: managed defaults true, mode defaults auto → PVC-backed.
 	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
-		Spec: reconv1beta1.OvnReconSpec{
-			TargetNamespace: "ovn-recon",
-			Collector: reconv1beta1.CollectorSpec{
-				Cache: reconv1beta1.CollectorCacheSpec{
-					// Mode left at its EmptyDir default: managed implies PVC.
-					Storage: reconv1beta1.CollectorCacheStorageSpec{Managed: true},
-				},
-			},
-		},
+		Spec:       reconv1beta1.OvnReconSpec{TargetNamespace: "ovn-recon"},
 	}
 
-	if !collectorCacheUsesPVC(cr) {
-		t.Fatal("managed cache must be PVC-backed regardless of mode")
+	if !collectorCacheWantsPVC(cr) {
+		t.Fatal("bare spec must want the managed cache claim (managed and auto defaults)")
 	}
 
 	dep := DesiredCollectorDeployment(cr, nil)
@@ -658,8 +675,107 @@ func TestManagedCacheImpliesPVCVolumeAndRecreate(t *testing.T) {
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 		},
 	}
-	if dep := DesiredCollectorDeployment(cr, rwoPVC); dep.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
+	if dep := DesiredCollectorDeployment(cr, &collectorCacheStorage{usePVC: true, pvc: rwoPVC}); dep.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
 		t.Fatal("managed RWO cache must use Recreate")
+	}
+}
+
+func TestExplicitModeWinsOverManaged(t *testing.T) {
+	// Explicit EmptyDir with managed true must never mount a PVC — the
+	// original inconsistency this rework exists to fix.
+	cr := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec: reconv1beta1.OvnReconSpec{
+			TargetNamespace: "ovn-recon",
+			Collector: reconv1beta1.CollectorSpec{
+				Cache: reconv1beta1.CollectorCacheSpec{
+					Storage: reconv1beta1.CollectorCacheStorageSpec{Mode: "EmptyDir", Managed: boolPtr(true)},
+				},
+			},
+		},
+	}
+	if collectorCacheWantsPVC(cr) {
+		t.Fatal("explicit EmptyDir must win over managed=true")
+	}
+	dep := DesiredCollectorDeployment(cr, nil)
+	if dep.Spec.Template.Spec.Volumes[0].EmptyDir == nil {
+		t.Fatalf("expected EmptyDir volume, got %#v", dep.Spec.Template.Spec.Volumes)
+	}
+
+	// Explicit managed=false with mode auto and no claimName: nothing to mount.
+	cr.Spec.Collector.Cache.Storage = reconv1beta1.CollectorCacheStorageSpec{Managed: boolPtr(false)}
+	if collectorCacheWantsPVC(cr) {
+		t.Fatal("auto mode with managed=false and no claimName must use EmptyDir")
+	}
+}
+
+func TestResolveCollectorCacheStorage(t *testing.T) {
+	now := time.Now()
+	autoCR := &reconv1beta1.OvnRecon{
+		ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"},
+		Spec:       reconv1beta1.OvnReconSpec{TargetNamespace: "ovn-recon"},
+	}
+
+	boundClaim := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{CreationTimestamp: metav1.NewTime(now.Add(-10 * time.Minute))},
+		Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimBound},
+	}
+	youngPending := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{CreationTimestamp: metav1.NewTime(now.Add(-10 * time.Second))},
+		Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+	}
+	oldPending := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{CreationTimestamp: metav1.NewTime(now.Add(-10 * time.Minute))},
+		Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+	}
+
+	if got := ResolveCollectorCacheStorage(autoCR, boundClaim, true, now); !got.usePVC || got.fallbackReason != "" {
+		t.Fatalf("bound claim must resolve to PVC, got %+v", got)
+	}
+	if got := ResolveCollectorCacheStorage(autoCR, youngPending, true, now); !got.usePVC {
+		t.Fatalf("claim inside bind grace period must stay PVC, got %+v", got)
+	}
+	if got := ResolveCollectorCacheStorage(autoCR, oldPending, true, now); got.usePVC || got.fallbackReason == "" {
+		t.Fatalf("claim unbound past the timeout must fall back with a reason, got %+v", got)
+	}
+	if got := ResolveCollectorCacheStorage(autoCR, nil, false, now); got.usePVC || got.fallbackReason == "" {
+		t.Fatalf("no viable StorageClass must fall back with a reason, got %+v", got)
+	}
+	if got := ResolveCollectorCacheStorage(autoCR, nil, true, now); !got.usePVC {
+		t.Fatalf("managed claim pending creation must resolve to PVC, got %+v", got)
+	}
+	// A fallback reverses once the claim binds.
+	if got := ResolveCollectorCacheStorage(autoCR, boundClaim, false, now); !got.usePVC {
+		t.Fatalf("bound claim must win even without a viable class, got %+v", got)
+	}
+
+	// Explicit PVC mode never falls back, even unbound past the timeout.
+	pvcCR := autoCR.DeepCopy()
+	pvcCR.Spec.Collector.Cache.Storage.Mode = "PVC"
+	if got := ResolveCollectorCacheStorage(pvcCR, oldPending, false, now); !got.usePVC || got.fallbackReason != "" {
+		t.Fatalf("explicit PVC mode must be honored verbatim, got %+v", got)
+	}
+
+	// Auto with an unmanaged, missing claim falls back until it exists.
+	claimCR := autoCR.DeepCopy()
+	claimCR.Spec.Collector.Cache.Storage.Managed = boolPtr(false)
+	claimCR.Spec.Collector.Cache.Storage.ClaimName = "user-cache"
+	if got := ResolveCollectorCacheStorage(claimCR, nil, true, now); got.usePVC || got.fallbackReason == "" {
+		t.Fatalf("missing unmanaged claim must fall back with a reason, got %+v", got)
+	}
+	if got := ResolveCollectorCacheStorage(claimCR, boundClaim, true, now); !got.usePVC {
+		t.Fatalf("bound unmanaged claim must resolve to PVC, got %+v", got)
+	}
+}
+
+func TestConsolePluginEnabledDefaultsOn(t *testing.T) {
+	cr := &reconv1beta1.OvnRecon{ObjectMeta: metav1.ObjectMeta{Name: "ovn-recon"}}
+	if !consolePluginEnabledFor(cr) {
+		t.Fatal("consolePlugin must default to enabled when spec.consolePlugin.enabled is unset")
+	}
+	cr.Spec.ConsolePlugin.Enabled = boolPtr(false)
+	if consolePluginEnabledFor(cr) {
+		t.Fatal("explicit enabled=false must disable console registration")
 	}
 }
 

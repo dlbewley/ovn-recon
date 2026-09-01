@@ -102,7 +102,12 @@ type OperatorEventsSpec struct {
 
 type ConsolePluginSpec struct {
 	DisplayName string `json:"displayName,omitempty"`
-	Enabled     bool   `json:"enabled,omitempty"`
+
+	// Enabled auto-registers the plugin in the Console operator configuration.
+	// Defaults to true — the plugin appears in the console without further
+	// action. Set false to deploy the plugin resources without registering.
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
 
 	// Image configuration for the plugin container.
 	Image ImageSpec `json:"image,omitempty"`
@@ -163,25 +168,28 @@ type CollectorCacheSpec struct {
 }
 
 type CollectorCacheStorageSpec struct {
-	// Mode selects EmptyDir (ephemeral, restart-stable per pod lifetime) or
-	// PVC (persistent across pod rescheduling; requires claimName).
-	// +kubebuilder:validation:Enum=EmptyDir;PVC
-	// +kubebuilder:default=EmptyDir
+	// Mode selects the cache backing. auto (the default) uses a PVC — the
+	// managed claim, or claimName — and falls back to EmptyDir with a
+	// Warning event when the claim cannot be provisioned. EmptyDir forces
+	// ephemeral storage and never creates or mounts a PVC, even with
+	// managed true. PVC requires persistent storage and never falls back;
+	// provisioning failures are surfaced instead.
+	// +kubebuilder:validation:Enum=auto;EmptyDir;PVC
+	// +kubebuilder:default=auto
 	Mode string `json:"mode,omitempty"`
 
-	// ClaimName names an existing PersistentVolumeClaim to mount when mode
-	// is PVC. Ignored for EmptyDir. If empty in PVC mode (and not managed),
-	// the collector falls back to EmptyDir.
+	// ClaimName names an existing PersistentVolumeClaim to mount instead of
+	// the managed claim. Ignored when mode is EmptyDir.
 	ClaimName string `json:"claimName,omitempty"`
 
 	// Managed has the operator create and own the claim (RWO, owner-referenced
 	// to the OvnRecon for garbage collection), so PVC caching needs no
-	// pre-provisioned claim. Implies PVC storage regardless of mode. When
-	// claimName is empty a default of "<collector>-cache" is used. Users who
-	// need RWX or special claim settings should pre-create their own claim
-	// and leave managed false.
-	// +kubebuilder:default=false
-	Managed bool `json:"managed,omitempty"`
+	// pre-provisioned claim. Defaults to true; an explicit false removes a
+	// previously managed claim. When claimName is empty a default of
+	// "<collector>-cache" is used. Users who need RWX or special claim
+	// settings should pre-create their own claim and set managed false.
+	// +kubebuilder:default=true
+	Managed *bool `json:"managed,omitempty"`
 
 	// Size of the managed claim. Deliberately generous default — the cache
 	// needs only a few MiB, but some provisioners enforce minimum sizes.

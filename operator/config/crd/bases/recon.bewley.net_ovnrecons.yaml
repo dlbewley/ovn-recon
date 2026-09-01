@@ -56,26 +56,30 @@ spec:
                         properties:
                           claimName:
                             description: |-
-                              ClaimName names an existing PersistentVolumeClaim to mount when mode
-                              is PVC. Ignored for EmptyDir. If empty in PVC mode (and not managed),
-                              the collector falls back to EmptyDir.
+                              ClaimName names an existing PersistentVolumeClaim to mount instead of
+                              the managed claim. Ignored when mode is EmptyDir.
                             type: string
                           managed:
-                            default: false
+                            default: true
                             description: |-
                               Managed has the operator create and own the claim (RWO, owner-referenced
                               to the OvnRecon for garbage collection), so PVC caching needs no
-                              pre-provisioned claim. Implies PVC storage regardless of mode. When
-                              claimName is empty a default of "<collector>-cache" is used. Users who
-                              need RWX or special claim settings should pre-create their own claim
-                              and leave managed false.
+                              pre-provisioned claim. Defaults to true; an explicit false removes a
+                              previously managed claim. When claimName is empty a default of
+                              "<collector>-cache" is used. Users who need RWX or special claim
+                              settings should pre-create their own claim and set managed false.
                             type: boolean
                           mode:
-                            default: EmptyDir
+                            default: auto
                             description: |-
-                              Mode selects EmptyDir (ephemeral, restart-stable per pod lifetime) or
-                              PVC (persistent across pod rescheduling; requires claimName).
+                              Mode selects the cache backing. auto (the default) uses a PVC — the
+                              managed claim, or claimName — and falls back to EmptyDir with a
+                              Warning event when the claim cannot be provisioned. EmptyDir forces
+                              ephemeral storage and never creates or mounts a PVC, even with
+                              managed true. PVC requires persistent storage and never falls back;
+                              provisioning failures are surfaced instead.
                             enum:
+                            - auto
                             - EmptyDir
                             - PVC
                             type: string
@@ -167,6 +171,11 @@ spec:
                   displayName:
                     type: string
                   enabled:
+                    default: true
+                    description: |-
+                      Enabled auto-registers the plugin in the Console operator configuration.
+                      Defaults to true — the plugin appears in the console without further
+                      action. Set false to deploy the plugin resources without registering.
                     type: boolean
                   image:
                     description: Image configuration for the plugin container.

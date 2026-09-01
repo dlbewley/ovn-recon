@@ -154,6 +154,18 @@ jobs:
           > Carried in release notes through the next few releases; details in OPERATOR.md.
 
           > [!IMPORTANT]
+          > **`OvnRecon` defaults changed: a bare resource is now a fully functional install.**
+          >
+          > `consolePlugin.enabled`, `collector.cache.storage.managed` (new default `true`) and
+          > `collector.cache.storage.mode` (new value and default `auto`: PVC with automatic
+          > EmptyDir fallback + Warning event) now default on. Explicit values are always
+          > honored — in particular `mode: EmptyDir` now **never** creates a PVC, even with
+          > `managed: true`. Note for pre-existing resources: the old CRD materialized
+          > `mode: EmptyDir` and `managed: false` into stored objects at creation, so existing
+          > CRs keep their previous behavior — delete those fields (or the whole `storage`
+          > block) to adopt the new defaults.
+
+          > [!IMPORTANT]
           > **The `bewley-operator-catalog:v4.20` catalog tag is deprecated and will be removed.**
           >
           > It no longer means anything: one file-based catalog now serves every supported
