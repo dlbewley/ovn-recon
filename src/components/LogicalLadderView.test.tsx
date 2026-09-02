@@ -104,4 +104,35 @@ describe('LogicalLadderView', () => {
         expect(text).not.toContain('Default cluster network');
         expect(container.querySelector('[data-testid="construct-ovn_cluster_router"]')).toBeNull();
     });
+
+    it('answers a reveal request with the construct position, once per nonce', () => {
+        const model = buildLadderModel(database);
+        const target = model.constructs.find((construct) => construct.name === 'ovn_cluster_router');
+        expect(target).toBeDefined();
+        const onRevealPosition = jest.fn();
+        const renderWith = (nonce: number) =>
+            act(() => {
+                root.render(
+                    <LogicalLadderView
+                        model={model}
+                        selectedUuid={target!.uuid}
+                        onSelect={jest.fn()}
+                        revealRequest={{ uuid: target!.uuid, nonce }}
+                        onRevealPosition={onRevealPosition}
+                    />,
+                );
+            });
+        renderWith(1);
+        expect(onRevealPosition).toHaveBeenCalledTimes(1);
+        const position = onRevealPosition.mock.calls[0][0];
+        expect(position.x).toBeGreaterThan(0);
+        expect(position.y).toBeGreaterThan(0);
+        // Same nonce re-rendered: no second answer (a later layout change
+        // must not re-yank the viewport).
+        renderWith(1);
+        expect(onRevealPosition).toHaveBeenCalledTimes(1);
+        // A new nonce for the same uuid answers again.
+        renderWith(2);
+        expect(onRevealPosition).toHaveBeenCalledTimes(2);
+    });
 });

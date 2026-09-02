@@ -38,6 +38,15 @@ export interface LogicalLadderViewProps {
     onAggregateToggle?: (aggregateId: string) => void;
     /** Invoked when a band header is clicked (filter to that network). */
     onNetworkSelect?: (network: string) => void;
+    /**
+     * Drawer navigation: ask the view to report where this construct sits so
+     * the page can pan it into view. The nonce distinguishes repeat requests
+     * for the same uuid; only the view knows the laid-out position, since it
+     * filters and lays out the model internally.
+     */
+    revealRequest?: { uuid: string; nonce: number };
+    /** Called with the construct's center in content coordinates (pre-pan/zoom). */
+    onRevealPosition?: (position: { x: number; y: number }) => void;
 }
 
 /** Band palette; index 0 is the default network's neutral slot. */
@@ -287,12 +296,27 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
     expandedGroupIds,
     onAggregateToggle,
     onNetworkSelect,
+    revealRequest,
+    onRevealPosition,
 }) => {
     const model = React.useMemo(() => filterModel(fullModel, networkFilter), [fullModel, networkFilter]);
     const layout: LadderLayout = React.useMemo(
         () => layoutLadder(model, { expandedGroupIds }),
         [model, expandedGroupIds],
     );
+
+    // Answer a reveal request once per nonce, but only when the layout can
+    // actually place the construct — a request may arrive one render before
+    // the expansion or filter change that makes the target placeable.
+    const answeredRevealNonce = React.useRef(0);
+    React.useEffect(() => {
+        if (!revealRequest || !onRevealPosition) return;
+        if (revealRequest.nonce === answeredRevealNonce.current) return;
+        const position = layout.positions[revealRequest.uuid];
+        if (!position) return;
+        answeredRevealNonce.current = revealRequest.nonce;
+        onRevealPosition(position);
+    }, [revealRequest, onRevealPosition, layout]);
 
     const query = search.trim().toLowerCase();
     const colorByNetwork = React.useMemo(() => {
