@@ -27,6 +27,9 @@ interface NodeVisualizationProps {
     enactments?: NodeNetworkConfigurationEnactment[];
 }
 
+/** Pointer travel, in CSS pixels, before a press on the background counts as a pan rather than a click. */
+const PAN_DRAG_THRESHOLD_PX = 3;
+
 const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [] }) => {
 
 
@@ -85,6 +88,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const [viewBox, setViewBox] = React.useState<{ x: number; y: number; width: number; height: number } | null>(null);
     const [isPanning, setIsPanning] = React.useState<boolean>(false);
     const [panStart, setPanStart] = React.useState<{ x: number; y: number } | null>(null);
+    /**
+     * Where the current press began. A press that never travels further than
+     * PAN_DRAG_THRESHOLD_PX from here is a click, not a pan: the view stays put
+     * and the click still reaches handleBackgroundClick to close the drawer.
+     */
+    const panOrigin = React.useRef<{ x: number; y: number } | null>(null);
     const [zoomLevel, setZoomLevel] = React.useState<number>(1);
     const svgContainerRef = React.useRef<SVGSVGElement | null>(null);
 
@@ -463,11 +472,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             return; // Let node click handler deal with it
         }
 
-        // Only pan with middle mouse button or shift + left click
-        if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
+        // A plain left drag pans, matching the logical topology view. Shift used
+        // to be required here and nowhere else, which read as the view being
+        // stuck (ovn-recon-4mq). Middle button pans too.
+        if (event.button === 0 || event.button === 1) {
             event.preventDefault();
             setIsPanning(true);
             setPanStart({ x: event.clientX, y: event.clientY });
+            panOrigin.current = { x: event.clientX, y: event.clientY };
         }
     };
 
@@ -480,6 +492,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
     const handleMouseMove = (event: React.MouseEvent<SVGSVGElement>) => {
         if (isPanning && panStart && viewBox) {
+            // Now that every left press starts a pan, a click with a pixel of
+            // jitter must not become a pan that swallows the deselect. The
+            // gesture is a click until it has clearly travelled.
+            if (!suppressBackgroundClick.current && panOrigin.current) {
+                const travelled = Math.hypot(
+                    event.clientX - panOrigin.current.x,
+                    event.clientY - panOrigin.current.y
+                );
+                if (travelled < PAN_DRAG_THRESHOLD_PX) return;
+            }
             userAdjustedView.current = true;
             suppressBackgroundClick.current = true;
             const deltaX = event.clientX - panStart.x;
@@ -505,6 +527,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const handleMouseUp = () => {
         setIsPanning(false);
         setPanStart(null);
+        panOrigin.current = null;
     };
 
     const handleZoomIn = () => handleZoom(1);
@@ -899,7 +922,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                 </FlexItem>
                                 <FlexItem>
                                     <span style={{ fontSize: '0.9em', color: 'var(--pf-t--global--text--color--subtle)' }}>
-                                        Zoom: {Math.round(zoomLevel * 100)}% | Use Ctrl/Cmd + Scroll to zoom | Shift + Drag to pan
+                                        Zoom: {Math.round(zoomLevel * 100)}% | Use Ctrl/Cmd + Scroll to zoom | Drag to pan
                                     </span>
                                 </FlexItem>
                             </Flex>
