@@ -18,6 +18,7 @@ import { networkResourceRef } from './logicalClassification';
 import { LadderConstruct, LadderModel } from './logicalLadderModel';
 import { edgeLabel, networkDisplayName, roleLabel } from './LogicalLadderView';
 import { configPayloadFor, ovnKindFor } from './ovnKindRegistry';
+import { useIsDarkTheme } from './useIsDarkTheme';
 import { getResourcePath } from '../topology/links';
 
 const MAX_LISTED_RULES = 10;
@@ -318,6 +319,7 @@ const RelationshipsBody: React.FC<ConstructDrawerBodyProps> = ({ construct, mode
  * labeled as derived.
  */
 const ConfigBody: React.FC<ConstructDrawerBodyProps> = ({ construct, database, databaseNode }) => {
+    const isDarkTheme = useIsDarkTheme();
     const { source, payload } = configPayloadFor(construct, database ?? null);
     const caption =
         source === 'nb-rows'
@@ -329,6 +331,7 @@ const ConfigBody: React.FC<ConstructDrawerBodyProps> = ({ construct, database, d
                 {caption}
             </div>
             <CodeEditor
+                isDarkTheme={isDarkTheme}
                 isReadOnly
                 isDownloadEnabled
                 code={JSON.stringify(payload, null, 2)}
