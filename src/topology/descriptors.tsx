@@ -20,7 +20,7 @@ import {
 import { getVrfConnectionInfo } from '../components/nodeVisualizationSelectors';
 import { formatSubnets } from './subnets';
 import { InterfaceRole, interfacesWithRole } from './classify';
-import { EdgeKind } from '../components/nodeVisualizationModel';
+import { EdgeMeaning } from '../components/nodeVisualizationModel';
 import { GraphContext } from './context';
 import {
     attachmentNodeId, attachmentSourceNodeId, bridgeMappingNodeId, cudnNodeId,
@@ -63,14 +63,21 @@ export interface NodePresentation {
     isSynthetic?: boolean;
 }
 
-/** Collects edges, so a descriptor never constructs the result shape itself. */
+/**
+ * Collects edges, so a descriptor never constructs the result shape itself.
+ *
+ * Both entry points demand an EdgeMeaning: a descriptor whose edges() cannot say
+ * what a line means, how far to trust it and which fields it came from is a rule
+ * nobody understands well enough to ship (ovn-recon-s3t.30). The rationale is
+ * written per instance, naming the actual values, not per rule.
+ */
 export interface EdgeSink {
-    /** An edge between two known node ids. Must say what the relationship is. */
+    /** An edge between two known node ids. */
     edge: (
         source: string | undefined,
         target: string | undefined,
-        kind: EdgeKind,
-        rule: string
+        rule: string,
+        meaning: EdgeMeaning
     ) => void;
     /**
      * An edge to whatever an interface NAME refers to. Records the reference when it
@@ -78,10 +85,10 @@ export interface EdgeSink {
      */
     named: (
         rule: string,
-        kind: EdgeKind,
         from: string,
         reference: string | undefined,
-        direction: 'to' | 'from'
+        direction: 'to' | 'from',
+        meaning: EdgeMeaning
     ) => void;
 }
 
@@ -129,9 +136,25 @@ const presentInterface = (iface: Interface): NodePresentation => ({
 const interfaceEdges = (iface: Interface, ctx: GraphContext, out: EdgeSink) => {
     const id = interfaceNodeId(iface, ctx);
     // Enslavement: this interface is a port of its controller.
-    out.named('controller', 'membership', id, iface.controller || iface.master, 'to');
+    const controller = iface.controller || iface.master;
+    // An OVS bridge's internal port shares the bridge's name; say which one this is.
+    const self = iface.name === controller ? `${iface.name} (${iface.type})` : iface.name;
+    out.named('controller', id, controller, 'to', {
+        kind: 'membership',
+        provenance: 'observed',
+        rationale: `${self} is a port of ${controller}: NodeNetworkState reports controller: ${controller}.`
+    });
     // Layering: a VLAN or MACVLAN device is built on its base interface.
-    out.named('base-iface', 'layering', id, iface.vlan?.['base-iface'] || iface['mac-vlan']?.['base-iface'], 'from');
+    const vlanBase = iface.vlan?.['base-iface'];
+    const macvlanBase = iface['mac-vlan']?.['base-iface'];
+    const vlanLabel = iface.vlan?.id != null ? `VLAN ${iface.vlan.id} ${iface.name}` : `VLAN ${iface.name}`;
+    out.named('base-iface', id, vlanBase || macvlanBase, 'from', {
+        kind: 'layering',
+        provenance: 'observed',
+        rationale: vlanBase
+            ? `${vlanLabel} is carried on ${vlanBase}: vlan.base-iface is ${vlanBase}.`
+            : `${iface.name} is a MACVLAN on ${macvlanBase}: mac-vlan.base-iface is ${macvlanBase}.`
+    });
 };
 
 /** An interface-backed descriptor differs only in role, lane, icon and colour. */
@@ -200,7 +223,12 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
             state: mapping.bridge ? `Bridge: ${mapping.bridge}` : undefined
         }),
         edges: (mapping, _ctx, out) => {
-            out.named('bridge-mapping', 'reference', bridgeMappingNodeId(mapping.localnet), mapping.bridge, 'from');
+            out.named('bridge-mapping', bridgeMappingNodeId(mapping.localnet), mapping.bridge, 'from', {
+                kind: 'reference',
+                provenance: 'observed',
+                rationale: `Bridge mapping ${mapping.localnet} resolves to bridge ${mapping.bridge}: `
+                    + 'ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.'
+            });
         }
     } as NodeTypeDescriptor<OvnBridgeMapping>,
 
@@ -231,18 +259,39 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         edges: (vrf, ctx, out) => {
             const ra = findRouteAdvertisementForVrf(ctx.routeAdvertisements, vrf.name);
             getCudnsSelectedByRouteAdvertisement(ra, ctx.cudns).forEach((cudn) => {
-                out.edge(interfaceNodeId(vrf, ctx), cudnNodeId(cudn.metadata?.name), 'reference', 'route-advertisement');
+                // The RA selects the CUDN by label -- declared. The RA is tied to THIS
+                // VRF only by sharing its (possibly truncated) name, which is convention,
+                // so the edge as a whole is inferred.
+                out.edge(interfaceNodeId(vrf, ctx), cudnNodeId(cudn.metadata?.name), 'route-advertisement', {
+                    kind: 'reference',
+                    provenance: 'inferred',
+                    rationale: `RouteAdvertisements ${ra?.metadata?.name} selects CUDN ${cudn.metadata?.name} `
+                        + `(networkSelectors) and shares its name with this VRF; the name is the only link to ${vrf.name}.`
+                });
             });
             // A Primary network and its side-effect VRF are one relationship even
-            // with no RouteAdvertisement present (ovn-recon-s3t.28). The rule names
-            // which signal matched, since this is inferred rather than declared.
+            // with no RouteAdvertisement present (ovn-recon-s3t.28). The rationale
+            // cites the signals that matched, since this is inferred rather than declared.
             const primary = findPrimaryNetworkForVrf(vrf, ctx.cudns, ctx.udns, ctx.interfaces);
             if (primary) {
                 const targetId = primary.kind === 'cudn'
                     ? cudnNodeId(primary.name)
                     : udnNodeId({ metadata: { namespace: primary.namespace, name: primary.name } });
-                out.edge(interfaceNodeId(vrf, ctx), targetId, 'reference',
-                    `primary-network (${primary.signals.join(', ')})`);
+                const network = primary.kind === 'cudn'
+                    ? `CUDN ${primary.name}`
+                    : `UDN ${primary.namespace}/${primary.name}`;
+                const nameClause = primary.name === vrf.name
+                    ? `Primary ${network} names this VRF`
+                    : `Primary ${network} names this VRF (truncated to ${vrf.name})`;
+                const subnetClause = primary.corroboration
+                    ? `; port ${primary.corroboration.port} address ${primary.corroboration.address} `
+                        + `lies inside its subnet ${primary.corroboration.subnet}`
+                    : '; no port address falls inside its subnets';
+                out.edge(interfaceNodeId(vrf, ctx), targetId, 'primary-network', {
+                    kind: 'reference',
+                    provenance: 'inferred',
+                    rationale: `${nameClause}${subnetClause}. Inferred: NodeNetworkState does not record which network a VRF serves.`
+                });
             }
         }
     } as NodeTypeDescriptor<Interface>,
@@ -276,17 +325,28 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
             const providers = new Set<string>();
             bridge.ports.forEach((port) => {
                 const peer = ctx.interfaces.find((iface) => iface.name === port.patch?.peer);
-                const provider = peer?.controller || peer?.master;
+                if (!peer) return;
+                const provider = peer.controller || peer.master;
                 if (!provider || providers.has(provider)) return;
                 providers.add(provider);
-                out.named('patch-peer', 'peer', id, provider, 'from');
+                out.named('patch-peer', id, provider, 'from', {
+                    kind: 'peer',
+                    provenance: 'observed',
+                    rationale: `${bridge.name} port ${port.name} patches to ${peer.name}, a port of ${provider}: `
+                        + 'patch.peer on both ends in NodeNetworkState.'
+                });
             });
             // The uplink: a VRF's management port (ovn-k8s-mpX) is a port ON br-int.
             interfacesWithRole(ctx, 'vrf').forEach((vrf) => {
                 const { brIntPorts } = getVrfConnectionInfo(vrf, ctx.interfaces);
                 if (brIntPorts.length > 0) {
-                    out.edge(id, interfaceNodeId(vrf, ctx), 'membership',
-                        `management-port (${brIntPorts.map((p) => p.name).join(', ')})`);
+                    const names = brIntPorts.map((p) => p.name).join(', ');
+                    out.edge(id, interfaceNodeId(vrf, ctx), 'management-port', {
+                        kind: 'membership',
+                        provenance: 'observed',
+                        rationale: `${names} ${brIntPorts.length > 1 ? 'are ports' : 'is a port'} of both `
+                            + `${bridge.name} (controller: ${bridge.name}) and VRF ${vrf.name} (vrf.port).`
+                    });
                 }
             });
         }
@@ -324,7 +384,11 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
             const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName
                 || cudn.spec?.network?.localnet?.physicalNetworkName;
             if (physicalNetworkName) {
-                out.edge(bridgeMappingNodeId(physicalNetworkName), cudnNodeId(cudn.metadata?.name), 'reference', 'physical-network-name');
+                out.edge(bridgeMappingNodeId(physicalNetworkName), cudnNodeId(cudn.metadata?.name), 'physical-network-name', {
+                    kind: 'reference',
+                    provenance: 'declared',
+                    rationale: `CUDN ${cudn.metadata?.name} declares spec.network.localnet.physicalNetworkName: ${physicalNetworkName}.`
+                });
             }
         }
     } as NodeTypeDescriptor<ClusterUserDefinedNetwork>,
@@ -381,7 +445,16 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
             </foreignObject>
         ),
         edges: (attachment, _ctx, out) => {
-            out.edge(attachmentSourceNodeId(attachment), attachmentNodeId(attachment), 'membership', 'attached-namespaces');
+            const count = attachment.namespaces.length;
+            const plural = count === 1 ? 'namespace' : 'namespaces';
+            out.edge(attachmentSourceNodeId(attachment), attachmentNodeId(attachment), 'attached-namespaces', {
+                kind: 'membership',
+                provenance: 'declared',
+                rationale: attachment.cudn
+                    ? `${count} ${plural} attached to CUDN ${attachment.cudn}, as listed in its NetworkCreated status condition.`
+                    : `${count} ${plural} attached to UDN ${attachment.udn?.namespace}/${attachment.udn?.name}: `
+                        + 'a UDN attaches the namespace it is created in.'
+            });
         }
     } as NodeTypeDescriptor<AttachmentNode>,
 
@@ -406,19 +479,48 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         },
         edges: (nad, ctx, out) => {
             const id = nadNodeId(nad);
+            const nadName = nad.metadata?.name;
+            const nadRef = `${nad.metadata?.namespace}/${nadName}`;
             const cudnName = findCudnNameForNad(nad, ctx.cudns);
-            if (cudnName) out.edge(cudnNodeId(cudnName), id, 'reference', 'cudn-created-nad');
+            if (cudnName) {
+                // A CUDN creates a NAD of its own name in each attached namespace; the
+                // match here is by name (or the network name in spec.config), not by
+                // an owner reference, so it stays inferred.
+                const how = nadName === cudnName ? 'shares its name with' : 'names in spec.config the network of';
+                out.edge(cudnNodeId(cudnName), id, 'cudn-created-nad', {
+                    kind: 'reference',
+                    provenance: 'inferred',
+                    rationale: `NAD ${nadRef} ${how} CUDN ${cudnName}, which creates a NAD of its own name in each attached namespace.`
+                });
+            }
 
             const udnForNad = ctx.udns.find(
                 (u) => u.metadata?.namespace === nad.metadata?.namespace
                     && u.metadata?.name === nad.metadata?.name
             );
-            if (udnForNad) out.edge(udnNodeId(udnForNad), id, 'reference', 'udn-created-nad');
+            if (udnForNad) {
+                out.edge(udnNodeId(udnForNad), id, 'udn-created-nad', {
+                    kind: 'reference',
+                    provenance: 'inferred',
+                    rationale: `NAD ${nadRef} and UDN ${nadRef} share namespace and name; a UDN creates a NAD of its own name.`
+                });
+            }
 
             getNadUpstreamNodeIdsForEdges(nad, ctx.cudns).forEach((upstream) => {
                 // Localnet references already arrive canonical; bridges arrive as names.
-                if (upstream.startsWith('ovn:')) out.edge(upstream, id, 'reference', 'nad-physical-network');
-                else out.named('nad-bridge', 'reference', id, upstream, 'from');
+                if (upstream.startsWith('ovn:')) {
+                    out.edge(upstream, id, 'nad-physical-network', {
+                        kind: 'reference',
+                        provenance: 'declared',
+                        rationale: `NAD ${nadRef} spec.config names physicalNetworkName ${upstream.slice('ovn:'.length)}.`
+                    });
+                } else {
+                    out.named('nad-bridge', id, upstream, 'from', {
+                        kind: 'reference',
+                        provenance: 'declared',
+                        rationale: `NAD ${nadRef} spec.config is a bridge attachment naming bridge ${upstream}.`
+                    });
+                }
             });
         }
     } as NodeTypeDescriptor<NetworkAttachmentDefinition>,
@@ -443,7 +545,13 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
             };
         },
         edges: (neighbor, _ctx, out) => {
-            out.named('lldp', 'peer', neighbor.id, neighbor.localInterface, 'to');
+            const who = neighbor.systemName || neighbor.label;
+            const port = neighbor.portId ? ` port ${neighbor.portId}` : '';
+            out.named('lldp', neighbor.id, neighbor.localInterface, 'to', {
+                kind: 'peer',
+                provenance: 'observed',
+                rationale: `${neighbor.localInterface} heard ${who}${port} over LLDP: lldp.neighbors in NodeNetworkState.`
+            });
         }
     } as NodeTypeDescriptor<LldpNeighborNode>
 ];

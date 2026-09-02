@@ -62,16 +62,23 @@ const renderValue = (fact: Fact) => {
  * An inferred value must say so: the chip flags the claim and its tooltip names
  * the rule that produced it, turning a heuristic from a liability into a feature.
  * Observed and declared values stay unadorned -- chips everywhere would say nothing.
+ * Shared with the Relationships tab so facts and edges wear the same mark.
  */
+export const ProvenanceLabel: React.FC<{ provenance: Provenance; hint?: string }> = ({ provenance, hint }) => (
+    provenance === 'inferred'
+        ? (
+            <Label isCompact color="orange" title={hint} style={{ marginLeft: '0.5em' }}>
+                inferred
+            </Label>
+        )
+        : null
+);
+
 const FactGroup: React.FC<{ fact: Fact }> = ({ fact }) => (
     <DescriptionListGroup>
         <DescriptionListTerm>
             <span title={fact.hint}>{fact.label}</span>
-            {fact.provenance === 'inferred' && (
-                <Label isCompact color="orange" title={fact.hint} style={{ marginLeft: '0.5em' }}>
-                    inferred
-                </Label>
-            )}
+            <ProvenanceLabel provenance={fact.provenance} hint={fact.hint} />
         </DescriptionListTerm>
         <DescriptionListDescription>{renderValue(fact)}</DescriptionListDescription>
     </DescriptionListGroup>

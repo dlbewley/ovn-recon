@@ -3,50 +3,50 @@
 exports[`NodeVisualization rendered structure bonded-lldp, with neighbours shown 1`] = `
 {
   "edges": [
-    "200,180 -> 260,180  solid  lldp",
-    "200,280 -> 260,280  solid  lldp",
-    "200,380 -> 260,380  solid  lldp",
-    "200,480 -> 260,480  solid  lldp",
-    "200,580 -> 260,580  solid  lldp",
-    "200,80 -> 260,80  solid  lldp",
-    "420,180 -> 480,130  solid  controller",
-    "420,280 -> 480,330  solid  controller",
-    "420,380 -> 480,330  solid  controller",
-    "420,480 -> 480,530  solid  controller",
-    "420,580 -> 480,530  solid  controller",
-    "420,80 -> 480,130  solid  controller",
-    "640,130 -> 700,130  solid  controller",
-    "640,330 -> 700,330  solid  controller",
-    "860,130 -> 920,130  dashed  bridge-mapping",
-    "860,330 -> 920,1030  dashed  bridge-mapping",
-    "860,330 -> 920,1130  dashed  bridge-mapping",
-    "860,330 -> 920,1230  dashed  bridge-mapping",
-    "860,330 -> 920,1330  dashed  bridge-mapping",
-    "860,330 -> 920,1430  dashed  bridge-mapping",
-    "860,330 -> 920,1530  dashed  bridge-mapping",
-    "860,330 -> 920,1630  dashed  bridge-mapping",
-    "860,330 -> 920,1730  dashed  bridge-mapping",
-    "860,330 -> 920,1830  dashed  bridge-mapping",
-    "860,330 -> 920,1930  dashed  bridge-mapping",
-    "860,330 -> 920,2030  dashed  bridge-mapping",
-    "860,330 -> 920,2130  dashed  bridge-mapping",
-    "860,330 -> 920,2230  dashed  bridge-mapping",
-    "860,330 -> 920,2330  dashed  bridge-mapping",
-    "860,330 -> 920,2430  dashed  bridge-mapping",
-    "860,330 -> 920,2530  dashed  bridge-mapping",
-    "860,330 -> 920,2630  dashed  bridge-mapping",
-    "860,330 -> 920,2730  dashed  bridge-mapping",
-    "860,330 -> 920,2830  dashed  bridge-mapping",
-    "860,330 -> 920,2930  dashed  bridge-mapping",
-    "860,330 -> 920,330  dashed  bridge-mapping",
-    "860,330 -> 920,430  dashed  bridge-mapping",
-    "860,330 -> 920,530  dashed  bridge-mapping",
-    "860,330 -> 920,630  dashed  bridge-mapping",
-    "860,330 -> 920,730  dashed  bridge-mapping",
-    "860,330 -> 920,830  dashed  bridge-mapping",
-    "860,330 -> 920,930  dashed  bridge-mapping",
-    "arc M 860 130 Q 905 300 860 470  solid  patch-peer",
-    "arc M 860 330 Q 905 400 860 470  solid  patch-peer",
+    "200,180 -> 260,180  solid  observed  lldp  ens5f0np0 heard lab-fabric-lf002 port Eth1/22 over LLDP: lldp.neighbors in NodeNetworkState.",
+    "200,280 -> 260,280  solid  observed  lldp  ens2f1np1 heard lab-fabric-lf001 port Eth1/23 over LLDP: lldp.neighbors in NodeNetworkState.",
+    "200,380 -> 260,380  solid  observed  lldp  ens5f1np1 heard lab-fabric-lf002 port Eth1/23 over LLDP: lldp.neighbors in NodeNetworkState.",
+    "200,480 -> 260,480  solid  observed  lldp  ens2f2np2 heard lab-fabric-lf001 port Eth1/24 over LLDP: lldp.neighbors in NodeNetworkState.",
+    "200,580 -> 260,580  solid  observed  lldp  ens5f2np2 heard lab-fabric-lf002 port Eth1/24 over LLDP: lldp.neighbors in NodeNetworkState.",
+    "200,80 -> 260,80  solid  observed  lldp  ens2f0np0 heard lab-fabric-lf001 port Eth1/22 over LLDP: lldp.neighbors in NodeNetworkState.",
+    "420,180 -> 480,130  solid  observed  controller  ens5f0np0 is a port of bond0: NodeNetworkState reports controller: bond0.",
+    "420,280 -> 480,330  solid  observed  controller  ens2f1np1 is a port of bond1: NodeNetworkState reports controller: bond1.",
+    "420,380 -> 480,330  solid  observed  controller  ens5f1np1 is a port of bond1: NodeNetworkState reports controller: bond1.",
+    "420,480 -> 480,530  solid  observed  controller  ens2f2np2 is a port of bond2: NodeNetworkState reports controller: bond2.",
+    "420,580 -> 480,530  solid  observed  controller  ens5f2np2 is a port of bond2: NodeNetworkState reports controller: bond2.",
+    "420,80 -> 480,130  solid  observed  controller  ens2f0np0 is a port of bond0: NodeNetworkState reports controller: bond0.",
+    "640,130 -> 700,130  solid  observed  controller  bond0 is a port of br-ex: NodeNetworkState reports controller: br-ex.",
+    "640,330 -> 700,330  solid  observed  controller  bond1 is a port of ovs-vm: NodeNetworkState reports controller: ovs-vm.",
+    "860,130 -> 920,130  dashed  observed  bridge-mapping  Bridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,1030  dashed  observed  bridge-mapping  Bridge mapping tenant-a-infra resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,1130  dashed  observed  bridge-mapping  Bridge mapping tenant-b-app resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,1230  dashed  observed  bridge-mapping  Bridge mapping tenant-b-db resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,1330  dashed  observed  bridge-mapping  Bridge mapping tenant-b-web resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,1430  dashed  observed  bridge-mapping  Bridge mapping tenant-c-app-processing resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,1530  dashed  observed  bridge-mapping  Bridge mapping tenant-c-infra resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,1630  dashed  observed  bridge-mapping  Bridge mapping tenant-c-primary-db resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,1730  dashed  observed  bridge-mapping  Bridge mapping tenant-c-reporting-db resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,1830  dashed  observed  bridge-mapping  Bridge mapping tenant-d-app resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,1930  dashed  observed  bridge-mapping  Bridge mapping tenant-d-db resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,2030  dashed  observed  bridge-mapping  Bridge mapping tenant-d-web resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,2130  dashed  observed  bridge-mapping  Bridge mapping tenant-e-desktop04 resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,2230  dashed  observed  bridge-mapping  Bridge mapping tenant-f-epg-svc-business resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,2330  dashed  observed  bridge-mapping  Bridge mapping tenant-f-epg-svc-clearing resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,2430  dashed  observed  bridge-mapping  Bridge mapping tenant-f-epg-svc-infra resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,2530  dashed  observed  bridge-mapping  Bridge mapping tenant-g-epg058-two resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,2630  dashed  observed  bridge-mapping  Bridge mapping tenant-g-epg143-three resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,2730  dashed  observed  bridge-mapping  Bridge mapping tenant-g-epg151 resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,2830  dashed  observed  bridge-mapping  Bridge mapping tenant-h-vis-app resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,2930  dashed  observed  bridge-mapping  Bridge mapping tenant-h-vis-viewer resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,330  dashed  observed  bridge-mapping  Bridge mapping shared-infra-db resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,430  dashed  observed  bridge-mapping  Bridge mapping shared-infra-mon resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,530  dashed  observed  bridge-mapping  Bridge mapping shared-infra-prov resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,630  dashed  observed  bridge-mapping  Bridge mapping shared-infra-sec resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,730  dashed  observed  bridge-mapping  Bridge mapping shared-infra-sys resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,830  dashed  observed  bridge-mapping  Bridge mapping shared-infra-uc resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "860,330 -> 920,930  dashed  observed  bridge-mapping  Bridge mapping shared-infra-web resolves to bridge ovs-vm: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "arc M 860 130 Q 905 300 860 470  solid  observed  patch-peer  br-int port patch-br-int-to-br-ex_worker-2.example.com patches to patch-br-ex_worker-2.example.com-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.",
+    "arc M 860 330 Q 905 400 860 470  solid  observed  patch-peer  br-int port patch-br-int-to-tenant.b.db_ovn_localnet_port patches to patch-tenant.b.db_ovn_localnet_port-to-br-int, a port of ovs-vm: patch.peer on both ends in NodeNetworkState.",
   ],
   "laneHeaders": [
     "LLDP Neighbors",
@@ -605,64 +605,64 @@ exports[`NodeVisualization rendered structure bonded-lldp, with neighbours shown
 exports[`NodeVisualization rendered structure drawer content for br-ex (ovs-bridge) 1`] = `
 {
   "Overview": "br-exovs-bridgeOverviewRelationshipsConfigTypeovs-bridgeStateupPortsbr-exens192patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-intpatch-br-ex_worker-1-to-br-int",
-  "Relationships": "br-exovs-bridgeOverviewRelationshipsConfigUpstreamens192 · controller (membership)Downstreamphysnet · bridge-mapping (reference)br-int · patch-peer (peer)",
+  "Relationships": "br-exovs-bridgeOverviewRelationshipsConfigUpstreamens192ens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.DownstreamphysnetBridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.br-intbr-int port patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1 patches to patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for ens192 (ethernet) 1`] = `
 {
   "Overview": "ens192ethernetOverviewRelationshipsConfigTypeethernetStateupMAC Address02:00:00:00:00:01MTU1500",
-  "Relationships": "ens192ethernetOverviewRelationshipsConfigDownstreambr-ex · controller (membership)",
+  "Relationships": "ens192ethernetOverviewRelationshipsConfigDownstreambr-exens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for example-p-cudn (VRF) 1`] = `
 {
   "Overview": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigTypeVRF InterfaceServes Primary Networkinferredexample-p-cudn (ClusterUserDefinedNetwork)MAC Address02:00:00:00:00:06Route Table5775Routes0.0.0.0/0 via 192.0.2.1 dev br-ex169.254.0.3/32 via 10.1.2.1 dev ovn-k8s-mp3169.254.0.16/32 via 0.0.0.0 dev ovn-k8s-mp3172.30.0.0/16 via 169.254.0.4 dev br-exbr-int Portsinferredovn-k8s-mp3 10.1.2.2/24",
-  "Relationships": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigUpstreambr-int · management-port (ovn-k8s-mp3) (membership)Downstreamexample-p-cudn · primary-network (subnet, name) (reference)",
+  "Relationships": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigUpstreambr-intovn-k8s-mp3 is a port of both br-int (controller: br-int) and VRF example-p-cudn (vrf.port).Downstreamexample-p-cudninferredPrimary CUDN example-p-cudn names this VRF; port ovn-k8s-mp3 address 10.1.2.2/24 lies inside its subnet 10.1.2.0/24. Inferred: NodeNetworkState does not record which network a VRF serves.",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for machinenet (CUDN) 1`] = `
 {
   "Overview": "machinenetLocalnet ClusterUserDefinedNetworkOverviewRelationshipsConfigTypeClusterUserDefinedNetworkTopologyLocalnetRoleSecondaryPhysical NetworkphysnetNamespace Selectornetwork/machine=Namespacesinferreddemo-mirror",
-  "Relationships": "machinenetLocalnet ClusterUserDefinedNetworkOverviewRelationshipsConfigUpstreamphysnet · physical-network-name (reference)Downstreammachinenet · attached-namespaces (membership)",
+  "Relationships": "machinenetLocalnet ClusterUserDefinedNetworkOverviewRelationshipsConfigUpstreamphysnetCUDN machinenet declares spec.network.localnet.physicalNetworkName: physnet.Downstreammachinenet1 namespace attached to CUDN machinenet, as listed in its NetworkCreated status condition.",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for machinenet (NAD) 1`] = `
 {
   "Overview": "machinenetNetworkAttachmentDefinitionOverviewRelationshipsConfigTypeNetworkAttachmentDefinitionNamespacesinferreddemo-mirrorNetworkAttachmentDefinitionsNo matching NetworkAttachmentDefinition found.",
-  "Relationships": "machinenetNetworkAttachmentDefinitionOverviewRelationshipsConfigUpstreammachinenet · attached-namespaces (membership)",
+  "Relationships": "machinenetNetworkAttachmentDefinitionOverviewRelationshipsConfigUpstreammachinenet1 namespace attached to CUDN machinenet, as listed in its NetworkCreated status condition.",
 }
 `;
 
 exports[`NodeVisualization rendered structure drawer content for physnet (OVN Bridge Mapping) 1`] = `
 {
   "Overview": "physnetOVN Bridge MappingOverviewRelationshipsConfigTypeOVN Bridge MappingBridgebr-exReferenced by CUDNsmachinenet",
-  "Relationships": "physnetOVN Bridge MappingOverviewRelationshipsConfigUpstreambr-ex · bridge-mapping (reference)Downstreammachinenet · physical-network-name (reference)",
+  "Relationships": "physnetOVN Bridge MappingOverviewRelationshipsConfigUpstreambr-exBridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.DownstreammachinenetCUDN machinenet declares spec.network.localnet.physicalNetworkName: physnet.",
 }
 `;
 
 exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes revealed 1`] = `
 {
   "edges": [
-    "1080,180 -> 700,180  solid  controller",
-    "1080,280 -> 700,280  solid  controller",
-    "1300,180 -> 1360,180  dashed  physical-network-name",
-    "1300,280 -> 1360,280  dashed  physical-network-name",
-    "1300,280 -> 1360,380  dashed  physical-network-name",
-    "1300,420 -> 1360,480  dashed  primary-network (subnet, name)",
-    "1520,180 -> 1580,179  solid  attached-namespaces",
-    "1520,280 -> 1580,281  solid  attached-namespaces",
-    "1520,480 -> 1580,479  solid  attached-namespaces",
-    "200,180 -> 700,180  solid  controller",
-    "200,280 -> 480,280  solid  base-iface",
-    "860,420 -> 1140,420  solid  management-port (ovn-k8s-mp3)",
-    "arc M 200 280 Q 450 156 700 280  solid  controller",
-    "arc M 860 180 Q 1000 80 1140 180  dashed  bridge-mapping",
-    "arc M 860 180 Q 905 300 860 420  solid  patch-peer",
-    "arc M 860 280 Q 1000 180 1140 280  dashed  bridge-mapping",
+    "1080,180 -> 700,180  solid  observed  controller  br-ex (ovs-interface) is a port of br-ex: NodeNetworkState reports controller: br-ex.",
+    "1080,280 -> 700,280  solid  observed  controller  ovs-vlan-1920 is a port of br-vmdata: NodeNetworkState reports controller: br-vmdata.",
+    "1300,180 -> 1360,180  dashed  declared  physical-network-name  CUDN machinenet declares spec.network.localnet.physicalNetworkName: physnet.",
+    "1300,280 -> 1360,280  dashed  declared  physical-network-name  CUDN vlan-1924 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
+    "1300,280 -> 1360,380  dashed  declared  physical-network-name  CUDN vlan-1926 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
+    "1300,420 -> 1360,480  dashed  inferred  primary-network  Primary CUDN example-p-cudn names this VRF; port ovn-k8s-mp3 address 10.1.2.2/24 lies inside its subnet 10.1.2.0/24. Inferred: NodeNetworkState does not record which network a VRF serves.",
+    "1520,180 -> 1580,179  solid  declared  attached-namespaces  1 namespace attached to CUDN machinenet, as listed in its NetworkCreated status condition.",
+    "1520,280 -> 1580,281  solid  declared  attached-namespaces  1 namespace attached to CUDN vlan-1924, as listed in its NetworkCreated status condition.",
+    "1520,480 -> 1580,479  solid  declared  attached-namespaces  1 namespace attached to CUDN example-p-cudn, as listed in its NetworkCreated status condition.",
+    "200,180 -> 700,180  solid  observed  controller  ens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.",
+    "200,280 -> 480,280  solid  observed  base-iface  VLAN 456 ens224.456 is carried on ens224: vlan.base-iface is ens224.",
+    "860,420 -> 1140,420  solid  observed  management-port  ovn-k8s-mp3 is a port of both br-int (controller: br-int) and VRF example-p-cudn (vrf.port).",
+    "arc M 200 280 Q 450 156 700 280  solid  observed  controller  ens224 is a port of br-vmdata: NodeNetworkState reports controller: br-vmdata.",
+    "arc M 860 180 Q 1000 80 1140 180  dashed  observed  bridge-mapping  Bridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "arc M 860 180 Q 905 300 860 420  solid  observed  patch-peer  br-int port patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1 patches to patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.",
+    "arc M 860 280 Q 1000 180 1140 280  dashed  observed  bridge-mapping  Bridge mapping physnet-vmdata resolves to bridge br-vmdata: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
   ],
   "laneHeaders": [
     "Physical Interfaces",
@@ -935,20 +935,20 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes reveal
 exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`] = `
 {
   "edges": [
-    "1080,180 -> 1140,179  solid  attached-namespaces",
-    "1080,280 -> 1140,281  solid  attached-namespaces",
-    "1080,480 -> 1140,479  solid  attached-namespaces",
-    "200,180 -> 480,180  solid  controller",
-    "200,280 -> 260,280  solid  base-iface",
-    "640,180 -> 700,180  dashed  bridge-mapping",
-    "640,280 -> 700,280  dashed  bridge-mapping",
-    "640,420 -> 700,420  solid  management-port (ovn-k8s-mp3)",
-    "860,180 -> 920,180  dashed  physical-network-name",
-    "860,280 -> 920,280  dashed  physical-network-name",
-    "860,280 -> 920,380  dashed  physical-network-name",
-    "860,420 -> 920,480  dashed  primary-network (subnet, name)",
-    "arc M 200 280 Q 340 180 480 280  solid  controller",
-    "arc M 640 180 Q 685 300 640 420  solid  patch-peer",
+    "1080,180 -> 1140,179  solid  declared  attached-namespaces  1 namespace attached to CUDN machinenet, as listed in its NetworkCreated status condition.",
+    "1080,280 -> 1140,281  solid  declared  attached-namespaces  1 namespace attached to CUDN vlan-1924, as listed in its NetworkCreated status condition.",
+    "1080,480 -> 1140,479  solid  declared  attached-namespaces  1 namespace attached to CUDN example-p-cudn, as listed in its NetworkCreated status condition.",
+    "200,180 -> 480,180  solid  observed  controller  ens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.",
+    "200,280 -> 260,280  solid  observed  base-iface  VLAN 456 ens224.456 is carried on ens224: vlan.base-iface is ens224.",
+    "640,180 -> 700,180  dashed  observed  bridge-mapping  Bridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "640,280 -> 700,280  dashed  observed  bridge-mapping  Bridge mapping physnet-vmdata resolves to bridge br-vmdata: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "640,420 -> 700,420  solid  observed  management-port  ovn-k8s-mp3 is a port of both br-int (controller: br-int) and VRF example-p-cudn (vrf.port).",
+    "860,180 -> 920,180  dashed  declared  physical-network-name  CUDN machinenet declares spec.network.localnet.physicalNetworkName: physnet.",
+    "860,280 -> 920,280  dashed  declared  physical-network-name  CUDN vlan-1924 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
+    "860,280 -> 920,380  dashed  declared  physical-network-name  CUDN vlan-1926 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
+    "860,420 -> 920,480  dashed  inferred  primary-network  Primary CUDN example-p-cudn names this VRF; port ovn-k8s-mp3 address 10.1.2.2/24 lies inside its subnet 10.1.2.0/24. Inferred: NodeNetworkState does not record which network a VRF serves.",
+    "arc M 200 280 Q 340 180 480 280  solid  observed  controller  ens224 is a port of br-vmdata: NodeNetworkState reports controller: br-vmdata.",
+    "arc M 640 180 Q 685 300 640 420  solid  observed  patch-peer  br-int port patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1 patches to patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.",
   ],
   "laneHeaders": [
     "Physical Interfaces",

@@ -95,10 +95,10 @@ describe('what the kinds are for', () => {
             Array.from(new Set(edges.filter((e) => e.kind === kind).map((e) => e.rule))).sort();
 
         expect(byKind('reference')).toEqual([
-            'bridge-mapping', 'physical-network-name', 'primary-network (subnet, name)'
+            'bridge-mapping', 'physical-network-name', 'primary-network'
         ]);
         expect(byKind('membership')).toEqual([
-            'attached-namespaces', 'controller', 'management-port (ovn-k8s-mp3)'
+            'attached-namespaces', 'controller', 'management-port'
         ]);
         expect(byKind('layering')).toEqual(['base-iface']);
     });
@@ -147,8 +147,75 @@ describe('direction of travel', () => {
         const { edges } = buildTopologyEdges(ctx, { ...VIEW, showHiddenColumns: true });
 
         const portEdge = edges.find((e) => e.source.startsWith('port:'));
-        expect(portEdge).toEqual({
+        expect(portEdge).toMatchObject({
             source: 'port:br-ex', target: 'iface:br-ex', kind: 'membership', rule: 'controller'
         });
+    });
+});
+
+/**
+ * Every edge explains itself (ovn-recon-s3t.30). A line drawn from a truncated-name
+ * match used to look identical to one drawn from `controller: br-ex`; now each carries
+ * how far to trust it and one sentence naming the fields it was read from.
+ */
+describe('why each edge exists', () => {
+    const edges = edgesFor('primary-cudn-vrf', 'primary-cudn-vrf');
+    const byRule = (rule: string): TopologyEdge => edges.find((e) => e.rule === rule)!;
+
+    it('gives every edge a provenance and a rationale, with no gaps', () => {
+        expect(edges.length).toBeGreaterThan(0);
+        edges.forEach((edge) => {
+            expect(['observed', 'declared', 'inferred']).toContain(edge.provenance);
+            expect(edge.rationale).toMatch(/\.$/);
+        });
+    });
+
+    it('keeps the rule a bare slug now that detail has a field of its own', () => {
+        // .28 packed the matched signals into the rule string for want of anywhere
+        // else to put them. Tests and snapshots key on rules; they must stay stable.
+        edges.forEach((edge) => expect(edge.rule).toMatch(/^[a-z-]+$/));
+    });
+
+    it('names the actual fields, not a generic phrase', () => {
+        expect(byRule('controller').rationale).toBe(
+            'ens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.'
+        );
+        expect(byRule('base-iface').rationale).toBe(
+            'VLAN 456 ens224.456 is carried on ens224: vlan.base-iface is ens224.'
+        );
+        expect(byRule('bridge-mapping').rationale).toContain('ovn.bridge-mappings');
+        expect(byRule('physical-network-name').rationale).toContain('spec.network.localnet.physicalNetworkName: physnet');
+        expect(byRule('management-port').rationale).toBe(
+            'ovn-k8s-mp3 is a port of both br-int (controller: br-int) and VRF example-p-cudn (vrf.port).'
+        );
+        expect(byRule('patch-peer').rationale).toMatch(/^br-int port patch-.* patches to patch-.*, a port of br-ex: patch\.peer/);
+    });
+
+    it('marks the VRF-to-network guess as inferred and cites both signals', () => {
+        // The one rule in this fixture that OVN does not state anywhere: a name match
+        // corroborated by a port address inside the network's subnet.
+        const primary = byRule('primary-network');
+        expect(primary.provenance).toBe('inferred');
+        expect(primary.rationale).toBe(
+            'Primary CUDN example-p-cudn names this VRF; port ovn-k8s-mp3 address 10.1.2.2/24 lies inside '
+            + 'its subnet 10.1.2.0/24. Inferred: NodeNetworkState does not record which network a VRF serves.'
+        );
+    });
+
+    it('trusts nmstate and specs, and doubts only the guesses', () => {
+        const rulesWith = (provenance: TopologyEdge['provenance']) =>
+            Array.from(new Set(edges.filter((e) => e.provenance === provenance).map((e) => e.rule))).sort();
+        expect(rulesWith('observed')).toEqual([
+            'base-iface', 'bridge-mapping', 'controller', 'management-port', 'patch-peer'
+        ]);
+        expect(rulesWith('declared')).toEqual(['attached-namespaces', 'physical-network-name']);
+        expect(rulesWith('inferred')).toEqual(['primary-network']);
+    });
+
+    it('reads an LLDP neighbour straight from the TLVs', () => {
+        const lldp = edgesFor('bonded-lldp', undefined, { ...VIEW, showLldp: true })
+            .find((e) => e.rule === 'lldp')!;
+        expect(lldp.provenance).toBe('observed');
+        expect(lldp.rationale).toMatch(/heard .* over LLDP: lldp\.neighbors in NodeNetworkState\.$/);
     });
 });

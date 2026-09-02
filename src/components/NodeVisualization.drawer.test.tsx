@@ -152,10 +152,25 @@ describe('NodeVisualization drawer', () => {
             selectTab('Overview');
             expect(panelText()).toContain('ovn-k8s-mp3 10.1.2.2/24 — VRF example-p-cudn');
 
-            // The uplink for VRFs and the patch to br-ex are its relationships.
+            // The uplink for VRFs and the patch to br-ex are its relationships, and
+            // each says why it exists (ovn-recon-s3t.30).
             selectTab('Relationships');
             expect(panelText()).toContain('br-ex');
             expect(panelText()).toContain('example-p-cudn');
+            expect(panelText()).toContain('ovn-k8s-mp3 is a port of both br-int (controller: br-int) and VRF example-p-cudn (vrf.port).');
+            expect(panelText()).toContain('patch.peer on both ends in NodeNetworkState.');
+            // Both of br-int's edges are read straight from nmstate: no chip.
+            expect(panelText()).not.toContain('inferred');
+        });
+
+        it('vrf, flagging the guessed network link', () => {
+            renderPrimary();
+            clickNode('example-p-cudn (VRF)');
+            selectTab('Relationships');
+            // The VRF-to-CUDN edge is a name match corroborated by a subnet; the
+            // drawer wears the same chip an inferred fact does and cites the evidence.
+            expect(panelText()).toContain('inferred');
+            expect(panelText()).toContain('port ovn-k8s-mp3 address 10.1.2.2/24 lies inside its subnet 10.1.2.0/24');
         });
 
         it('lldp-neighbor', () => {

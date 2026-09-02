@@ -315,6 +315,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
      * for a bridge, and nothing flows through it. Drawing it identically to a NIC
      * enslaved to that bridge is what made the graph read as a traffic path it is not.
      * Membership, layering and peer edges are all real links and stay solid.
+     *
+     * Provenance is a second axis (ovn-recon-s3t.30): the dash says what the edge
+     * IS, the fade says how much to trust it. An inferred edge -- a name match, a
+     * subnet containment -- draws fainter than an observed one of the same kind,
+     * and its tooltip is the rationale rather than the bare rule.
      */
     const renderConnector = (edge: TopologyEdge) => {
         const start = nodePositions[edge.source];
@@ -323,12 +328,21 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
 
         const highlighted = highlightedPath.has(edgeKey(edge.source, edge.target));
         const isReference = edge.kind === 'reference';
+        const isInferred = edge.provenance === 'inferred';
         const stroke = isHighlightActive ? (highlighted ? '#0066CC' : '#ccc') : 'currentColor';
         const strokeWidth = isHighlightActive ? (highlighted ? 4 : 1) : 2;
         const dashArray = isReference ? '6 4' : undefined;
         const opacity = isHighlightActive
             ? (highlighted ? 1 : 0.1)
-            : (isReference ? 0.65 : 1);
+            : (isInferred ? 0.4 : isReference ? 0.65 : 1);
+        const appearance = {
+            stroke,
+            strokeWidth,
+            strokeDasharray: dashArray,
+            opacity,
+            'data-provenance': edge.provenance,
+            'data-rule': edge.rule
+        };
 
         // Two nodes in ONE lane -- br-ex and br-int, cabled by their patch pair --
         // connect by an arc bulging into the gutter beside the lane, since a
@@ -342,12 +356,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                     key={`${edge.source}-${edge.target}`}
                     d={`M ${x} ${y1} Q ${x + 45} ${(y1 + y2) / 2} ${x} ${y2}`}
                     fill="none"
-                    stroke={stroke}
-                    strokeWidth={strokeWidth}
-                    strokeDasharray={dashArray}
-                    opacity={opacity}
+                    {...appearance}
                 >
-                    <title>{edge.rule}</title>
+                    <title>{edge.rationale}</title>
                 </path>
             );
         }
@@ -368,12 +379,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                     key={`${edge.source}-${edge.target}`}
                     d={`M ${from.x} ${from.y} Q ${bow.controlX} ${bow.controlY} ${to.x} ${to.y}`}
                     fill="none"
-                    stroke={stroke}
-                    strokeWidth={strokeWidth}
-                    strokeDasharray={dashArray}
-                    opacity={opacity}
+                    {...appearance}
                 >
-                    <title>{edge.rule}</title>
+                    <title>{edge.rationale}</title>
                 </path>
             );
         }
@@ -383,12 +391,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                 key={`${edge.source}-${edge.target}`}
                 x1={from.x} y1={from.y}
                 x2={to.x} y2={to.y}
-                stroke={stroke}
-                strokeWidth={strokeWidth}
-                strokeDasharray={dashArray}
-                opacity={opacity}
+                {...appearance}
             >
-                <title>{edge.rule}</title>
+                <title>{edge.rationale}</title>
             </line>
         );
     };
