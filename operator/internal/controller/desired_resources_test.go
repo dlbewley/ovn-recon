@@ -307,7 +307,6 @@ func TestHierarchicalFieldsTakePrecedenceOverLegacy(t *testing.T) {
 				Tag:        "collector-legacy-tag",
 				PullPolicy: string(corev1.PullIfNotPresent),
 			},
-			CollectorProbeNamespaces: []string{"legacy-ns"},
 		},
 	}
 

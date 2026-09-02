@@ -164,6 +164,10 @@ jobs:
           > `mode: EmptyDir` and `managed: false` into stored objects at creation, so existing
           > CRs keep their previous behavior — delete those fields (or the whole `storage`
           > block) to adopt the new defaults.
+          >
+          > The deprecated `spec.collectorProbeNamespaces` field has been **removed** — use
+          > `spec.collector.probeNamespaces`. A resource still setting only the removed field
+          > falls back to the default probe namespaces.
 
           > [!IMPORTANT]
           > **The `bewley-operator-catalog:v4.20` catalog tag is deprecated and will be removed.**

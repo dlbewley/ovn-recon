@@ -614,10 +614,7 @@ func collectorProbeNamespacesFor(ovnRecon *reconv1beta1.OvnRecon) []string {
 	if len(ovnRecon.Spec.Collector.ProbeNamespaces) != 0 {
 		return append([]string{}, ovnRecon.Spec.Collector.ProbeNamespaces...)
 	}
-	if len(ovnRecon.Spec.CollectorProbeNamespaces) == 0 {
-		return append([]string{}, defaultCollectorProbeNamespaces...)
-	}
-	return append([]string{}, ovnRecon.Spec.CollectorProbeNamespaces...)
+	return append([]string{}, defaultCollectorProbeNamespaces...)
 }
 
 func collectorLogLevelFor(ovnRecon *reconv1beta1.OvnRecon) string {

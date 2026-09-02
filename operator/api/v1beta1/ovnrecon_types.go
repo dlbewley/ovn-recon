@@ -51,10 +51,6 @@ type OvnReconSpec struct {
 	// Deprecated: use collector.image instead.
 	// CollectorImage configuration for the OVN collector container image.
 	CollectorImage LegacyCollectorImageSpec `json:"collectorImage,omitempty"`
-
-	// Deprecated: use collector.probeNamespaces instead.
-	// CollectorProbeNamespaces defines namespaces where collector is allowed to probe OVN pods.
-	CollectorProbeNamespaces []string `json:"collectorProbeNamespaces,omitempty"`
 }
 
 type ImageSpec struct {
