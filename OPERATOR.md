@@ -56,13 +56,14 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 - `v1beta1` is the only API version. `v1alpha1` was unserved for several releases and has been removed; update any manifests still declaring `apiVersion: recon.bewley.net/v1alpha1` to `v1beta1` (the schemas were identical).
 - If upgrading from a very old install fails with a CRD error about `status.storedVersions` containing `v1alpha1`, confirm your `OvnRecon` resources are readable, then clear the stale entry:
   `oc patch crd ovnrecons.recon.bewley.net --subresource=status --type=merge -p '{"status":{"storedVersions":["v1beta1"]}}'`
-- Legacy fields are still accepted for compatibility:
-  - `image.*` (use `consolePlugin.image.*`)
-  - `featureGates.ovn-collector` (use `collector.enabled`)
-  - `collectorImage.*` (use `collector.image.*`)
-- `collectorProbeNamespaces` has been **removed**; use `collector.probeNamespaces`. A resource
-  still setting only the removed field falls back to the default probe namespaces.
-- If both new and legacy fields are set, the new hierarchical fields win.
+- The legacy alias fields have been **removed**; only the hierarchical fields remain:
+  - `image.*` → `consolePlugin.image.*`
+  - `featureGates.ovn-collector` → `collector.enabled`
+  - `collectorImage.*` → `collector.image.*`
+  - `collectorProbeNamespaces` → `collector.probeNamespaces`
+- A resource still setting only a removed field falls back to that setting's default (the
+  CRD schema prunes unknown fields), so migrate any remaining manifests to the
+  hierarchical spelling.
 - If `operator.logging`, `consolePlugin.logging`, or `collector.logging` are omitted, runtime behavior matches prior defaults:
   - operator and component log levels default to `info`
   - operator events default to `minType=Normal` with `dedupeWindow=5m`

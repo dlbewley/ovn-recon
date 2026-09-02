@@ -303,13 +303,5 @@ export interface OvnRecon extends K8sResourceCommon {
         collector?: {
             enabled?: boolean;
         };
-        featureGates?: {
-            'ovn-collector'?: boolean;
-            [key: string]: boolean | undefined;
-        };
-        features?: {
-            'ovn-collector'?: boolean;
-            [key: string]: boolean | undefined;
-        };
     };
 }

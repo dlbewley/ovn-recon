@@ -278,7 +278,7 @@ func TestCollectorProbeNamespacesDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
-func TestHierarchicalFieldsTakePrecedenceOverLegacy(t *testing.T) {
+func TestHierarchicalImageFieldsResolve(t *testing.T) {
 	cr := &reconv1beta1.OvnRecon{
 		ObjectMeta: metav1.ObjectMeta{Name: "test"},
 		Spec: reconv1beta1.OvnReconSpec{
@@ -296,16 +296,6 @@ func TestHierarchicalFieldsTakePrecedenceOverLegacy(t *testing.T) {
 					PullPolicy: string(corev1.PullNever),
 				},
 				ProbeNamespaces: []string{"new-ns"},
-			},
-			Image: reconv1beta1.ImageSpec{
-				Repository: "quay.io/example/legacy-plugin",
-				Tag:        "legacy-tag",
-				PullPolicy: string(corev1.PullIfNotPresent),
-			},
-			CollectorImage: reconv1beta1.LegacyCollectorImageSpec{
-				Repository: "quay.io/example/legacy-collector",
-				Tag:        "collector-legacy-tag",
-				PullPolicy: string(corev1.PullIfNotPresent),
 			},
 		},
 	}
@@ -330,53 +320,6 @@ func TestHierarchicalFieldsTakePrecedenceOverLegacy(t *testing.T) {
 	}
 	if got := collectorProbeNamespacesFor(cr); len(got) != 1 || got[0] != "new-ns" {
 		t.Fatalf("unexpected collector probe namespace precedence: %#v", got)
-	}
-}
-
-func TestCollectorEnabledPrefersHierarchicalOverFeatureGate(t *testing.T) {
-	trueValue := true
-	falseValue := false
-
-	newDisabledLegacyEnabled := &reconv1beta1.OvnRecon{
-		Spec: reconv1beta1.OvnReconSpec{
-			Collector: reconv1beta1.CollectorSpec{
-				Enabled: &falseValue,
-			},
-			FeatureGates: reconv1beta1.FeatureGateSpec{
-				OVNCollector: true,
-			},
-		},
-	}
-	if collectorFeatureEnabled(newDisabledLegacyEnabled) {
-		t.Fatalf("collector.enabled=false should override legacy feature gate")
-	}
-
-	newUnsetLegacyEnabled := &reconv1beta1.OvnRecon{
-		Spec: reconv1beta1.OvnReconSpec{
-			Collector: reconv1beta1.CollectorSpec{
-				Enabled: nil,
-			},
-			FeatureGates: reconv1beta1.FeatureGateSpec{
-				OVNCollector: true,
-			},
-		},
-	}
-	if !collectorFeatureEnabled(newUnsetLegacyEnabled) {
-		t.Fatalf("legacy feature gate should be honored when collector.enabled is unset")
-	}
-
-	newEnabledLegacyDisabled := &reconv1beta1.OvnRecon{
-		Spec: reconv1beta1.OvnReconSpec{
-			Collector: reconv1beta1.CollectorSpec{
-				Enabled: &trueValue,
-			},
-			FeatureGates: reconv1beta1.FeatureGateSpec{
-				OVNCollector: false,
-			},
-		},
-	}
-	if !collectorFeatureEnabled(newEnabledLegacyDisabled) {
-		t.Fatalf("collector.enabled=true should override legacy feature gate")
 	}
 }
 
@@ -788,13 +731,5 @@ func TestCollectorFeatureEnabledDefaultsOn(t *testing.T) {
 	cr.Spec.Collector.Enabled = &disabled
 	if collectorFeatureEnabled(cr) {
 		t.Fatal("explicit enabled=false must disable the collector")
-	}
-
-	// The legacy gate's materialized false must not read as an explicit
-	// disable — only spec.collector.enabled carries an explicit signal.
-	cr.Spec.Collector.Enabled = nil
-	cr.Spec.FeatureGates.OVNCollector = false
-	if !collectorFeatureEnabled(cr) {
-		t.Fatal("legacy featureGates false must not override the default-on")
 	}
 }

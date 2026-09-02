@@ -39,18 +39,6 @@ type OvnReconSpec struct {
 
 	// Collector configuration.
 	Collector CollectorSpec `json:"collector,omitempty"`
-
-	// Deprecated: use consolePlugin.image instead.
-	// Image configuration for the plugin container.
-	Image ImageSpec `json:"image,omitempty"`
-
-	// Deprecated: use collector.enabled instead.
-	// FeatureGates controls optional OVN Recon capabilities.
-	FeatureGates FeatureGateSpec `json:"featureGates,omitempty"`
-
-	// Deprecated: use collector.image instead.
-	// CollectorImage configuration for the OVN collector container image.
-	CollectorImage LegacyCollectorImageSpec `json:"collectorImage,omitempty"`
 }
 
 type ImageSpec struct {
@@ -73,15 +61,6 @@ type CollectorImageSpec struct {
 	Tag string `json:"tag,omitempty"`
 	// PullPolicy for the collector container. Defaults to the console
 	// plugin's pull policy.
-	PullPolicy string `json:"pullPolicy,omitempty"`
-}
-
-type LegacyCollectorImageSpec struct {
-	// Repository is the collector container image, without a tag.
-	Repository string `json:"repository,omitempty"`
-	// Tag overrides the image tag.
-	Tag string `json:"tag,omitempty"`
-	// PullPolicy for the collector container.
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 
@@ -235,12 +214,6 @@ type CollectorLoggingSpec struct {
 	// collection problems. Defaults to false.
 	// +kubebuilder:default=false
 	IncludeProbeOutput bool `json:"includeProbeOutput,omitempty"`
-}
-
-type FeatureGateSpec struct {
-	// OVNCollector enables logical topology features backed by the collector service.
-	// +kubebuilder:default=false
-	OVNCollector bool `json:"ovn-collector,omitempty"`
 }
 
 // OvnReconStatus defines the observed state of OvnRecon.

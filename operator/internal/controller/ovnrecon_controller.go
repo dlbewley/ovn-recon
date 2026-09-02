@@ -1066,18 +1066,15 @@ func collectorFeatureEnabled(ovnRecon *reconv1beta1.OvnRecon) bool {
 	if ovnRecon.Spec.Collector.Enabled != nil {
 		return *ovnRecon.Spec.Collector.Enabled
 	}
-	// Default ON when unset. The legacy featureGates.ovn-collector bool
-	// cannot express "unset" (its CRD default materializes false), so only
-	// spec.collector.enabled counts as an explicit signal.
+	// Default ON when unset — only spec.collector.enabled is an explicit
+	// signal. (The removed legacy featureGates.ovn-collector bool could not
+	// express "unset" and is pruned from stored objects by the CRD schema.)
 	return true
 }
 
 func imageTagFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.ConsolePlugin.Image.Tag != "" {
 		return ovnRecon.Spec.ConsolePlugin.Image.Tag
-	}
-	if ovnRecon.Spec.Image.Tag != "" {
-		return ovnRecon.Spec.Image.Tag
 	}
 	// Use operator version as default tag if available.
 	if version := normalizedOperatorVersion(os.Getenv("OPERATOR_VERSION")); version != "" {

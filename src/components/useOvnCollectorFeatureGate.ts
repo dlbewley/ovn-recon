@@ -10,10 +10,8 @@ interface UseOvnCollectorFeatureGateResult {
 }
 
 const isCollectorFeatureEnabled = (instance: OvnRecon): boolean => {
-    // Only spec.collector.enabled is an explicit signal. The collector
-    // defaults ON when it is unset; the legacy featureGates/features booleans
-    // cannot express "unset" (the CRD materializes false into them), so they
-    // must never read as an explicit disable.
+    // Only spec.collector.enabled is an explicit signal; the collector
+    // defaults ON when it is unset.
     const gateFromCollector = instance.spec?.collector?.enabled;
     if (typeof gateFromCollector === 'boolean') {
         return gateFromCollector;

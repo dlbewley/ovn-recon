@@ -165,9 +165,12 @@ jobs:
           > CRs keep their previous behavior — delete those fields (or the whole `storage`
           > block) to adopt the new defaults.
           >
-          > The deprecated `spec.collectorProbeNamespaces` field has been **removed** — use
-          > `spec.collector.probeNamespaces`. A resource still setting only the removed field
-          > falls back to the default probe namespaces.
+          > All deprecated legacy alias fields have been **removed**: `spec.image.*` (use
+          > `consolePlugin.image.*`), `spec.collectorImage.*` (use `collector.image.*`),
+          > `spec.featureGates.ovn-collector` (use `collector.enabled`), and
+          > `spec.collectorProbeNamespaces` (use `collector.probeNamespaces`). A resource still
+          > setting only a removed field falls back to that setting's default — migrate any
+          > remaining manifests to the hierarchical spelling.
 
           > [!IMPORTANT]
           > **The `bewley-operator-catalog:v4.20` catalog tag is deprecated and will be removed.**
