@@ -408,59 +408,38 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     };
 
 
-    // Pan/Zoom handlers
-    const handleZoom = (delta: number, clientX?: number, clientY?: number) => {
-        if (!viewBox || !svgContainerRef.current) return;
+    // Pan/Zoom handlers. Zoom matches the logical ladder views: additive
+    // 0.1 steps clamped to [0.3, 2.5], applied about the viewport center —
+    // one consistent feel across the physical and logical topology pages.
+    const handleZoom = (direction: 1 | -1) => {
+        if (!viewBox) return;
         userAdjustedView.current = true;
 
-        const svgRect = svgContainerRef.current.getBoundingClientRect();
-        const zoomFactor = delta > 0 ? 1.1 : 0.9;
-        const newZoom = Math.max(0.1, Math.min(5, zoomLevel * zoomFactor));
+        const newZoom = direction > 0
+            ? Math.min(2.5, Number((zoomLevel + 0.1).toFixed(2)))
+            : Math.max(0.3, Number((zoomLevel - 0.1).toFixed(2)));
 
-        if (clientX !== undefined && clientY !== undefined && svgRect.width > 0 && svgRect.height > 0) {
-            // Zoom towards mouse position
-            const mouseX = clientX - svgRect.left;
-            const mouseY = clientY - svgRect.top;
-            const svgWidth = svgRect.width;
-            const svgHeight = svgRect.height;
+        const newWidth = width / newZoom;
+        const newHeight = calculatedHeight / newZoom;
+        const newX = viewBox.x + (viewBox.width - newWidth) / 2;
+        const newY = viewBox.y + (viewBox.height - newHeight) / 2;
 
-            const mouseXPercent = mouseX / svgWidth;
-            const mouseYPercent = mouseY / svgHeight;
-
-            const newWidth = width / newZoom;
-            const newHeight = calculatedHeight / newZoom;
-
-            const newX = viewBox.x + (mouseXPercent * viewBox.width) - (mouseXPercent * newWidth);
-            const newY = viewBox.y + (mouseYPercent * viewBox.height) - (mouseYPercent * newHeight);
-
-            setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight });
-        } else {
-            // Zoom towards center
-            const newWidth = width / newZoom;
-            const newHeight = calculatedHeight / newZoom;
-            const newX = viewBox.x + (viewBox.width - newWidth) / 2;
-            const newY = viewBox.y + (viewBox.height - newHeight) / 2;
-
-            setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight });
-        }
-
+        setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight });
         setZoomLevel(newZoom);
     };
 
     /**
-     * Ctrl/Cmd + wheel zooms; a plain wheel scrolls the page normally.
+     * A plain wheel over the canvas zooms one step, matching the logical
+     * ladder views.
      *
      * This must be a NATIVE listener registered non-passive: React attaches
      * wheel at the root as passive, so calling preventDefault on the synthetic
-     * event logged an error and did nothing -- and it tried to preventDefault
-     * even for plain scrolling, which was the wrong intent anyway.
+     * event logged an error and did nothing.
      */
     const wheelZoomRef = React.useRef<(event: WheelEvent) => void>(() => undefined);
     wheelZoomRef.current = (event: WheelEvent) => {
-        if (event.ctrlKey || event.metaKey) {
-            event.preventDefault();
-            handleZoom(-event.deltaY, event.clientX, event.clientY);
-        }
+        event.preventDefault();
+        handleZoom(event.deltaY < 0 ? 1 : -1);
     };
     React.useEffect(() => {
         const svg = svgContainerRef.current;
@@ -850,6 +829,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                         onChange={(first, second) => setShowHiddenColumns(getSwitchChecked(first, second))}
                                     />
                                 </FlexItem>
+                                <FlexItem><Button variant="secondary" onClick={handleZoomOut} aria-label="Zoom out">-</Button></FlexItem>
+                                <FlexItem><Button variant="secondary" onClick={handleZoomIn} aria-label="Zoom in">+</Button></FlexItem>
+                                <FlexItem><Button variant="link" onClick={handleResetZoom}>Reset view</Button></FlexItem>
                             </Flex>
                             <svg
                                 ref={svgContainerRef}
@@ -915,19 +897,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
                                     ))}
                                 </g>
                             </svg>
-                            <Flex style={{ marginTop: '16px', alignItems: 'center' }}>
-                                <FlexItem>
-                                    <Button variant="secondary" onClick={handleZoomIn} aria-label="Zoom in" style={{ marginRight: '4px' }}>+</Button>
-                                </FlexItem>
-                                <FlexItem>
-                                    <Button variant="secondary" onClick={handleZoomOut} aria-label="Zoom out" style={{ marginRight: '4px' }}>−</Button>
-                                </FlexItem>
-                                <FlexItem>
-                                    <Button variant="secondary" onClick={handleResetZoom} aria-label="Reset zoom" style={{ marginRight: '16px' }}>Reset</Button>
-                                </FlexItem>
+                            <Flex style={{ marginTop: '8px' }}>
                                 <FlexItem>
                                     <span style={{ fontSize: '0.9em', color: 'var(--pf-t--global--text--color--subtle)' }}>
-                                        Zoom: {Math.round(zoomLevel * 100)}% | Use Ctrl/Cmd + Scroll to zoom | Drag to pan
+                                        Scroll to zoom · Drag to pan
                                     </span>
                                 </FlexItem>
                             </Flex>

@@ -2,8 +2,11 @@
 module.exports = {
     preset: 'ts-jest',
     testEnvironment: 'jsdom',
-    // spike/ carries its own config (see spike/react-topology/jest.config.js)
-    testPathIgnorePatterns: ['/node_modules/', '/spike/'],
+    // spike/ carries its own config (see spike/react-topology/jest.config.js);
+    // .claude/ holds session worktrees whose copies of the tree would triple
+    // the suite and trip haste-map duplicate warnings.
+    testPathIgnorePatterns: ['/node_modules/', '/spike/', '/.claude/'],
+    modulePathIgnorePatterns: ['<rootDir>/.claude/'],
     setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
     moduleNameMapper: {
         "\\.(css|less|scss|sass)$": "<rootDir>/__mocks__/styleMock.js",
