@@ -58,22 +58,34 @@ type OvnReconSpec struct {
 }
 
 type ImageSpec struct {
+	// Repository is the plugin container image, without a tag.
 	// +kubebuilder:default=quay.io/dbewley/ovn-recon
 	Repository string `json:"repository,omitempty"`
-	Tag        string `json:"tag,omitempty"`
+	// Tag overrides the image tag. Defaults to the operator's own release
+	// version, so the plugin upgrades in lockstep with the operator.
+	Tag string `json:"tag,omitempty"`
+	// PullPolicy for the plugin container. Defaults to IfNotPresent.
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 
 type CollectorImageSpec struct {
+	// Repository is the collector container image, without a tag.
 	// +kubebuilder:default=quay.io/dbewley/ovn-collector
 	Repository string `json:"repository,omitempty"`
-	Tag        string `json:"tag,omitempty"`
+	// Tag overrides the image tag. Defaults to the console plugin's tag, so
+	// the collector upgrades in lockstep with the plugin.
+	Tag string `json:"tag,omitempty"`
+	// PullPolicy for the collector container. Defaults to the console
+	// plugin's pull policy.
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 
 type LegacyCollectorImageSpec struct {
+	// Repository is the collector container image, without a tag.
 	Repository string `json:"repository,omitempty"`
-	Tag        string `json:"tag,omitempty"`
+	// Tag overrides the image tag.
+	Tag string `json:"tag,omitempty"`
+	// PullPolicy for the collector container.
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 
@@ -83,6 +95,7 @@ type OperatorSpec struct {
 }
 
 type OperatorLoggingSpec struct {
+	// Level sets the operator controller's log verbosity. Defaults to info.
 	// +kubebuilder:validation:Enum=error;warn;info;debug;trace
 	// +kubebuilder:default=info
 	Level string `json:"level,omitempty"`
@@ -92,15 +105,22 @@ type OperatorLoggingSpec struct {
 }
 
 type OperatorEventsSpec struct {
+	// MinType is the least severe Kubernetes Event type the operator emits:
+	// Normal records routine reconcile progress, Warning restricts events to
+	// problems. Defaults to Normal.
 	// +kubebuilder:validation:Enum=Normal;Warning
 	// +kubebuilder:default=Normal
 	MinType string `json:"minType,omitempty"`
 
+	// DedupeWindow suppresses repeat events with the same reason within this
+	// duration (Go duration syntax, e.g. "5m"). Defaults to 5m.
 	// +kubebuilder:default:="5m"
 	DedupeWindow string `json:"dedupeWindow,omitempty"`
 }
 
 type ConsolePluginSpec struct {
+	// DisplayName is shown for the plugin in the console UI. Defaults to
+	// "OVN Recon".
 	DisplayName string `json:"displayName,omitempty"`
 
 	// Enabled auto-registers the plugin in the Console operator configuration.
@@ -117,14 +137,18 @@ type ConsolePluginSpec struct {
 }
 
 type ConsolePluginLoggingSpec struct {
+	// Level sets the plugin backend's log verbosity. Defaults to info.
 	// +kubebuilder:validation:Enum=error;warn;info;debug
 	// +kubebuilder:default=info
 	Level string `json:"level,omitempty"`
 
+	// AccessLog controls per-request access logging in the plugin backend.
 	AccessLog AccessLogSpec `json:"accessLog,omitempty"`
 }
 
 type AccessLogSpec struct {
+	// Enabled logs every HTTP request served by the plugin backend.
+	// Defaults to false.
 	// +kubebuilder:default=false
 	Enabled bool `json:"enabled,omitempty"`
 }
@@ -200,11 +224,19 @@ type CollectorCacheStorageSpec struct {
 	StorageClassName string `json:"storageClassName,omitempty"`
 }
 
+// CollectorLoggingSpec controls the collector service's log output.
 type CollectorLoggingSpec struct {
+	// Level sets the collector log verbosity. Defaults to info. At debug the
+	// collector logs each probe command and cache decision; trace adds
+	// per-request detail.
 	// +kubebuilder:validation:Enum=error;warn;info;debug;trace
 	// +kubebuilder:default=info
 	Level string `json:"level,omitempty"`
 
+	// IncludeProbeOutput logs the raw output of every ovn-nbctl/ovn-sbctl
+	// probe command the collector runs. Verbose — each snapshot logs the
+	// full northbound table dumps — so enable only while diagnosing
+	// collection problems. Defaults to false.
 	// +kubebuilder:default=false
 	IncludeProbeOutput bool `json:"includeProbeOutput,omitempty"`
 }
