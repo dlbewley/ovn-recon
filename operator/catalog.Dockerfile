@@ -18,6 +18,9 @@ ADD catalog /configs
 # Pre-populate the serve cache at build time so the catalog pod starts fast and
 # does not rebuild the cache on every restart. Without this the registry pod can
 # take minutes to become ready on a large catalog.
-RUN ["/bin/opm", "serve", "/configs", "--cache-dir=/tmp/cache", "--cache-only"]
+# --pprof-addr :0 — a multi-arch buildx build runs this step for every platform
+# in parallel, and the default fixed localhost:6060 pprof port makes the losers
+# die with "address already in use"; port 0 lets each pick a free one.
+RUN ["/bin/opm", "serve", "/configs", "--cache-dir=/tmp/cache", "--cache-only", "--pprof-addr=127.0.0.1:0"]
 
 LABEL operators.operatorframework.io.index.configs.v1=/configs
