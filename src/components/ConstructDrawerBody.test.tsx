@@ -155,6 +155,25 @@ describe('ConstructDrawerBody', () => {
         expect(model.constructByUuid.get(selectedUuid)?.role).toBe('join-switch');
     });
 
+    it('keeps the Relationships tab selected when the selection moves', () => {
+        const first = byName('GR_cnv-1');
+        const second = byName('ovn_cluster_router');
+        const render = (construct: typeof first) =>
+            act(() => {
+                root.render(
+                    <ConstructDrawerBody construct={construct!} model={model} onSelectConstruct={jest.fn()} />,
+                );
+            });
+        render(first);
+        clickTab('Relationships');
+        // Simulate following a link: the page swaps the construct prop.
+        render(second);
+        const relationshipsTab = [...container.querySelectorAll('button')].find(
+            (button) => button.textContent === 'Relationships',
+        );
+        expect(relationshipsTab?.getAttribute('aria-selected')).toBe('true');
+    });
+
     it('shows raw NB rows on the Config tab when a database is supplied', () => {
         const construct = byName('GR_cnv-1');
         act(() => {
