@@ -343,13 +343,11 @@ const ConfigBody: React.FC<ConstructDrawerBodyProps> = ({ construct, database, d
 };
 
 const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = (props) => {
+    // The active tab survives selection changes — hopping between constructs
+    // via the Relationships tab must keep you on Relationships, matching the
+    // physical drawer. A freshly opened drawer starts at Overview because the
+    // component mounts anew (the pages unmount it when nothing is selected).
     const [activeTab, setActiveTab] = React.useState<string | number>('overview');
-
-    // A new selection starts back at Overview; keeping a stale Config tab
-    // open while the construct underneath changes reads as a glitch.
-    React.useEffect(() => {
-        setActiveTab('overview');
-    }, [props.construct.uuid]);
 
     return (
         <Tabs
