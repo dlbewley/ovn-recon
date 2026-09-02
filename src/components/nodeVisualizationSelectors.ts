@@ -69,6 +69,11 @@ export interface PrimaryNetworkMatch {
     namespace?: string;
     /** Which signals matched, for the edge rule and the fact hint. */
     signals: ('subnet' | 'name')[];
+    /**
+     * The port address found inside one of the network's subnets, when one was.
+     * Named so the edge rationale can cite the actual evidence (ovn-recon-s3t.30).
+     */
+    corroboration?: { port: string; address: string; subnet: string };
 }
 
 /**
@@ -92,7 +97,7 @@ export const findPrimaryNetworkForVrf = (
     interfaces: Interface[]
 ): PrimaryNetworkMatch | undefined => {
     const portAddresses = getVrfConnectionInfo(vrf, interfaces)
-        .brIntPorts.flatMap((port) => getIpv4Addresses(port));
+        .brIntPorts.flatMap((port) => getIpv4Addresses(port).map((address) => ({ port: port.name, address })));
 
     const nameMatches = (name: string): boolean =>
         name === vrf.name || name.substring(0, VRF_NAME_LIMIT) === vrf.name;
@@ -127,17 +132,22 @@ export const findPrimaryNetworkForVrf = (
     ];
 
     const matches = candidates
-        .map((candidate): PrimaryNetworkMatch => ({
-            kind: candidate.kind,
-            name: candidate.name,
-            namespace: candidate.namespace,
-            signals: [
-                ...(candidate.subnets.some((subnet) =>
-                    portAddresses.some((address) => ipv4InCidr(address, subnet)))
-                    ? ['subnet' as const] : []),
-                ...(nameMatches(candidate.name) ? ['name' as const] : [])
-            ]
-        }))
+        .map((candidate): PrimaryNetworkMatch => {
+            const corroboration = candidate.subnets
+                .flatMap((subnet) => portAddresses
+                    .filter(({ address }) => ipv4InCidr(address, subnet))
+                    .map((hit) => ({ ...hit, subnet })))[0];
+            return {
+                kind: candidate.kind,
+                name: candidate.name,
+                namespace: candidate.namespace,
+                signals: [
+                    ...(corroboration ? ['subnet' as const] : []),
+                    ...(nameMatches(candidate.name) ? ['name' as const] : [])
+                ],
+                ...(corroboration ? { corroboration } : {})
+            };
+        })
         // The name must match; a subnet hit alone is not an association.
         .filter((match) => match.signals.includes('name'));
 

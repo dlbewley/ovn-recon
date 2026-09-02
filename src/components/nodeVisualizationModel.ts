@@ -2,6 +2,7 @@ import { GraphContext } from '../topology/context';
 import { NODE_TYPES } from '../topology/descriptors';
 import { resolveInterfaceRef } from '../topology/ids';
 import { LaneViewState, visibleItems } from '../topology/lanes';
+import { Provenance } from '../topology/types';
 
 /**
  * What an edge MEANS. The graph used to draw one kind of line for all of these, and the
@@ -24,11 +25,26 @@ export type EdgeKind =
     /** Two devices at opposite ends of a physical link, on different nodes. */
     | 'peer';
 
-export interface TopologyEdge {
+/**
+ * Everything an edge says about itself beyond its endpoints (ovn-recon-s3t.30).
+ *
+ * A line on the canvas used to be indistinguishable whether it came from
+ * `controller: br-ex` or from a truncated-name guess. The sink now refuses an
+ * edge that cannot explain itself, so every rule states what it means, how far
+ * to trust it, and which fields it was read from -- per instance, not per rule.
+ */
+export interface EdgeMeaning {
+    kind: EdgeKind;
+    /** Same scale as a Fact's: read from reported state, asserted by a spec, or guessed. */
+    provenance: Provenance;
+    /** One sentence naming the fields this particular edge derives from. */
+    rationale: string;
+}
+
+export interface TopologyEdge extends EdgeMeaning {
     source: string;
     target: string;
-    kind: EdgeKind;
-    /** The rule that produced it, e.g. 'controller'. Carries a rationale under s3t.30. */
+    /** The rule that produced it, e.g. 'controller'. A stable slug; detail belongs in rationale. */
     rule: string;
 }
 
@@ -77,21 +93,21 @@ export const buildTopologyEdges = (ctx: GraphContext, view: LaneViewState): Topo
         edge: (
             source: string | undefined,
             target: string | undefined,
-            kind: EdgeKind,
-            rule: string
+            rule: string,
+            meaning: EdgeMeaning
         ) => {
             if (!source || !target) return;
             const key = `${source}=>${target}`;
             if (edgeKeys.has(key)) return;
             edgeKeys.add(key);
-            edges.push({ source, target, kind, rule });
+            edges.push({ source, target, rule, ...meaning });
         },
         named: (
             rule: string,
-            kind: EdgeKind,
             from: string,
             reference: string | undefined,
-            direction: 'to' | 'from'
+            direction: 'to' | 'from',
+            meaning: EdgeMeaning
         ) => {
             if (!reference) return;
             const target = resolveInterfaceRef(reference, ctx);
@@ -101,8 +117,8 @@ export const buildTopologyEdges = (ctx: GraphContext, view: LaneViewState): Topo
                 }
                 return;
             }
-            if (direction === 'to') sink.edge(from, target, kind, rule);
-            else sink.edge(target, from, kind, rule);
+            if (direction === 'to') sink.edge(from, target, rule, meaning);
+            else sink.edge(target, from, rule, meaning);
         }
     };
 

@@ -59,20 +59,23 @@ describe('NodeVisualization rendered structure', () => {
 
         // Endpoints AND appearance: a reference edge is dashed, and that distinction is
         // the whole point of ovn-recon-s3t.25, so the baseline has to be able to see it.
+        // Provenance (s3t.30) is the other axis -- an inferred edge fades -- and the
+        // tooltip is now the rationale, so the baseline records the rule separately.
+        const describeEdge = (el: Element) => [
+            el.getAttribute('stroke-dasharray') ? 'dashed' : 'solid',
+            el.getAttribute('data-provenance') ?? '',
+            el.getAttribute('data-rule') ?? '',
+            el.querySelector('title')?.textContent ?? ''
+        ].join('  ');
         const edges = [
             ...Array.from(container.querySelectorAll('line'))
                 .map((l) => [
                     `${l.getAttribute('x1')},${l.getAttribute('y1')} -> ${l.getAttribute('x2')},${l.getAttribute('y2')}`,
-                    l.getAttribute('stroke-dasharray') ? 'dashed' : 'solid',
-                    l.querySelector('title')?.textContent ?? ''
+                    describeEdge(l)
                 ].join('  ')),
             // Same-lane edges draw as arcs; the path carries the whole geometry.
             ...Array.from(container.querySelectorAll('path[d^="M "]'))
-                .map((p) => [
-                    `arc ${p.getAttribute('d')}`,
-                    p.getAttribute('stroke-dasharray') ? 'dashed' : 'solid',
-                    p.querySelector('title')?.textContent ?? ''
-                ].join('  '))
+                .map((p) => [`arc ${p.getAttribute('d')}`, describeEdge(p)].join('  '))
         ].sort();
 
         const laneHeaders = Array.from(container.querySelectorAll('svg > text')).map((t) => t.textContent);

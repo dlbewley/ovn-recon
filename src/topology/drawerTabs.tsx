@@ -8,7 +8,7 @@ import * as yaml from 'js-yaml';
 
 import { TopologyEdge } from '../components/nodeVisualizationModel';
 import { GraphContext } from './context';
-import { baseFacts, FactList } from './facts';
+import { baseFacts, FactList, ProvenanceLabel } from './facts';
 import { nodeKindRegistry } from './registry';
 import { DrawerTabDefinition, DrawerTabId } from './types';
 
@@ -38,22 +38,28 @@ const subtle: React.CSSProperties = { color: 'var(--pf-t--global--text--color--s
 
 interface Neighbor {
     id: string;
-    rule: string;
-    kind: string;
+    edge: TopologyEdge;
 }
 
+/**
+ * Each neighbour says WHY the line exists (ovn-recon-s3t.30): the rationale
+ * names the fields the edge was read from, and an inferred edge wears the same
+ * chip an inferred fact does. The rule slug and kind survive as a tooltip.
+ */
 const neighborGroup = (title: string, neighbors: Neighbor[], hooks: DrawerTabHooks) => (
     <DescriptionListGroup>
         <DescriptionListTerm>{title}</DescriptionListTerm>
         <DescriptionListDescription>
             <ul className="pf-v6-c-list">
-                {neighbors.map((neighbor, index) => (
-                    <li key={`${neighbor.id}-${neighbor.rule}-${index}`}>
-                        <Button variant="link" isInline onClick={() => hooks.onSelectNode(neighbor.id)}>
-                            {hooks.labelFor(neighbor.id)}
+                {neighbors.map(({ id, edge }, index) => (
+                    <li key={`${id}-${edge.rule}-${index}`}>
+                        <Button variant="link" isInline onClick={() => hooks.onSelectNode(id)}>
+                            {hooks.labelFor(id)}
                         </Button>
-                        {/* The rule that derived the edge, and what the relationship IS. */}
-                        <span style={subtle}> · {neighbor.rule} ({neighbor.kind})</span>
+                        <ProvenanceLabel provenance={edge.provenance} hint={`${edge.rule} (${edge.kind})`} />
+                        <div style={{ ...subtle, fontSize: '0.9em' }} title={`${edge.rule} (${edge.kind})`}>
+                            {edge.rationale}
+                        </div>
                     </li>
                 ))}
             </ul>
@@ -85,10 +91,10 @@ export const buildDrawerTabs = (
             // the same left-to-right direction the canvas draws.
             const upstream = hooks.edges
                 .filter((edge) => edge.target === node.id)
-                .map((edge): Neighbor => ({ id: edge.source, rule: edge.rule, kind: edge.kind }));
+                .map((edge): Neighbor => ({ id: edge.source, edge }));
             const downstream = hooks.edges
                 .filter((edge) => edge.source === node.id)
-                .map((edge): Neighbor => ({ id: edge.target, rule: edge.rule, kind: edge.kind }));
+                .map((edge): Neighbor => ({ id: edge.target, edge }));
 
             return (
                 <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
