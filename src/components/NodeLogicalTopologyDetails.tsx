@@ -78,6 +78,13 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     const [lastLoadedAt, setLastLoadedAt] = React.useState<number>(Date.now());
     const [search, setSearch] = React.useState<string>('');
     const [networkFilter, setNetworkFilter] = React.useState<string>('all');
+
+    // Relationships-tab navigation reveals the target: a network filter
+    // hiding it follows it, and the view reports the laid-out position so
+    // the page can pan it into view (drawer navigation only, matching the
+    // physical view).
+    const [revealRequest, setRevealRequest] = React.useState<{ uuid: string; nonce: number }>();
+    const canvasRef = React.useRef<HTMLDivElement | null>(null);
     const [selectedUuid, setSelectedUuid] = React.useState<string | null>(null);
     const [zoom, setZoom] = React.useState<number>(1);
     const [pan, setPan] = React.useState<Point>({ x: 0, y: 0 });
@@ -138,6 +145,22 @@ const NodeLogicalTopologyDetails: React.FC = () => {
         () => (model && selectedUuid ? model.constructByUuid.get(selectedUuid) ?? null : null),
         [model, selectedUuid],
     );
+
+    const selectConstructFromDrawer = React.useCallback((uuid: string) => {
+        const target = model?.constructByUuid.get(uuid);
+        if (target) {
+            setNetworkFilter((current) => (current !== 'all' && current !== target.network ? target.network : current));
+        }
+        setSelectedUuid(uuid);
+        setRevealRequest((current) => ({ uuid, nonce: (current?.nonce ?? 0) + 1 }));
+    }, [model]);
+
+    const revealPosition = React.useCallback((position: Point) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const { width: cw, height: ch } = canvas.getBoundingClientRect();
+        setPan({ x: cw / 2 - position.x * zoom, y: ch / 2 - position.y * zoom });
+    }, [zoom]);
 
     const zoomIn = () => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))));
     const zoomOut = () => setZoom((value) => Math.max(0.4, Number((value - 0.1).toFixed(2))));
@@ -234,7 +257,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                                     model={model}
                                                     fallbackNode={name}
                                                     physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
-                                                    onSelectConstruct={setSelectedUuid}
+                                                    onSelectConstruct={selectConstructFromDrawer}
                                                     database={snapshot?.database ?? null}
                                                     databaseNode={name}
                                                 />
@@ -346,6 +369,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                 </Flex>
 
                                 <div
+                                    ref={canvasRef}
                                     className="pf-u-mt-md"
                                     style={{ height: 'max(560px, calc(100vh - 340px))', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: isDragging ? 'grabbing' : 'grab' }}
                                     onWheel={handleWheel}
@@ -362,6 +386,8 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                                 onSelect={setSelectedUuid}
                                                 networkFilter={networkFilter}
                                                 search={search}
+                                                revealRequest={revealRequest}
+                                                onRevealPosition={revealPosition}
                                             />
                                         </div>
                                     )}

@@ -150,15 +150,29 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
     );
 
     // Relationships-tab navigation: selecting a construct that sits inside a
-    // collapsed aggregate also expands its group, so the selection is visible.
+    // collapsed aggregate also expands its group, a network filter hiding the
+    // target follows it, and the view is asked to reveal it (the page pans on
+    // the reported position — mirroring the physical view, where only drawer
+    // navigation moves the viewport).
+    const [revealRequest, setRevealRequest] = React.useState<{ uuid: string; nonce: number }>();
+    const canvasRef = React.useRef<HTMLDivElement | null>(null);
     const selectConstructFromDrawer = React.useCallback((uuid: string) => {
         const target = model?.constructByUuid.get(uuid);
         if (target) {
             setExpandedGroups((current) =>
                 new Set(current).add(aggregateId(target.network, target.tier, target.role)));
+            setNetworkFilter((current) => (current !== 'all' && current !== target.network ? target.network : current));
         }
         setSelectedUuid(uuid);
+        setRevealRequest((current) => ({ uuid, nonce: (current?.nonce ?? 0) + 1 }));
     }, [model]);
+
+    const revealPosition = React.useCallback((position: { x: number; y: number }) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const { width: cw, height: ch } = canvas.getBoundingClientRect();
+        setPan({ x: cw / 2 - position.x * zoom, y: ch / 2 - position.y * zoom });
+    }, [zoom]);
 
     // The Config tab's raw rows come from one representative zone: the zone
     // whose uuid survived the merge (zones[0]).
@@ -398,6 +412,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                 </Flex>
 
                                 <div
+                                    ref={canvasRef}
                                     className="pf-u-mt-md"
                                     style={{ height: 'max(560px, calc(100vh - 340px))', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: isDragging ? 'grabbing' : 'grab' }}
                                     onWheel={handleWheel}
@@ -417,6 +432,8 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                                 expandedGroupIds={expandedGroups}
                                                 onAggregateToggle={toggleAggregate}
                                                 onNetworkSelect={setNetworkFilter}
+                                                revealRequest={revealRequest}
+                                                onRevealPosition={revealPosition}
                                             />
                                         </div>
                                     )}
