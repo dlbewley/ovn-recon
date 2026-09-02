@@ -3,6 +3,7 @@ import { Button, Modal, ModalBody, ModalFooter, ModalHeader, ModalVariant } from
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
 
 import { downloadJson } from './downloadJson';
+import { useIsDarkTheme } from './useIsDarkTheme';
 
 export interface SnapshotJsonControlsProps {
     /** What the payload is, e.g. "cnv-1 snapshot" — names the modal and file. */
@@ -18,6 +19,7 @@ export interface SnapshotJsonControlsProps {
  */
 const SnapshotJsonControls: React.FC<SnapshotJsonControlsProps> = ({ label, filename, payload }) => {
     const [isOpen, setIsOpen] = React.useState(false);
+    const isDarkTheme = useIsDarkTheme();
 
     return (
         <>
@@ -34,6 +36,7 @@ const SnapshotJsonControls: React.FC<SnapshotJsonControlsProps> = ({ label, file
                 <ModalBody>
                     {isOpen && (
                         <CodeEditor
+                            isDarkTheme={isDarkTheme}
                             isReadOnly
                             code={JSON.stringify(payload, null, 2)}
                             language={Language.json}

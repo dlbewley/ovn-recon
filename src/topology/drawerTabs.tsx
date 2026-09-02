@@ -7,6 +7,7 @@ import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import * as yaml from 'js-yaml';
 
 import { TopologyEdge } from '../components/nodeVisualizationModel';
+import { useIsDarkTheme } from '../components/useIsDarkTheme';
 import { GraphContext } from './context';
 import { baseFacts, FactList, ProvenanceLabel } from './facts';
 import { nodeKindRegistry } from './registry';
@@ -35,6 +36,26 @@ export interface DrawerTabHooks {
 }
 
 const subtle: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
+
+/**
+ * Monaco does not inherit CSS variables, so the YAML view follows the console
+ * theme explicitly — it used to hardcode dark and read wrong in light mode
+ * (ovn-recon-ehy). A component rather than inline JSX so the hook can run.
+ */
+const ThemedYamlEditor: React.FC<{ code: string }> = ({ code }) => {
+    const isDarkTheme = useIsDarkTheme();
+    return (
+        <CodeEditor
+            isDarkTheme={isDarkTheme}
+            isLineNumbersVisible
+            isReadOnly
+            code={code}
+            language={Language.yaml}
+            height="100%"
+            style={{ height: '100%' }}
+        />
+    );
+};
 
 interface Neighbor {
     id: string;
@@ -118,15 +139,7 @@ export const buildDrawerTabs = (
                 {node.raw && (
                     <>
                         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-t--global--border--color--default)' }}>
-                            <CodeEditor
-                                isDarkTheme
-                                isLineNumbersVisible
-                                isReadOnly
-                                code={yaml.dump(node.raw)}
-                                language={Language.yaml}
-                                height="100%"
-                                style={{ height: '100%' }}
-                            />
+                            <ThemedYamlEditor code={yaml.dump(node.raw)} />
                         </div>
                         <div style={{ flex: '0 0 auto', padding: 'var(--pf-t--global--spacer--md)', backgroundColor: 'var(--pf-t--global--background--color--primary--default)' }}>
                             <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-t--global--spacer--sm)' }} />
