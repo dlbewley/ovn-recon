@@ -232,6 +232,14 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                     <BreadcrumbItem isActive>Logical OVN: {name}</BreadcrumbItem>
                 </Breadcrumb>
                 <Title headingLevel="h1" className="pf-u-mt-lg">Logical OVN Topology: {name}</Title>
+                {/* Mirror of the physical page's "View logical OVN topology
+                    for this node" link, so the two views cross-link
+                    symmetrically (ovn-recon-xfr). */}
+                <p className="pf-u-mt-sm">
+                    <Link to={`/ovn-recon/node-network-state/${encodeURIComponent(name)}`}>
+                        View physical topology for this node
+                    </Link>
+                </p>
             </PageSection>
             <PageSection isFilled>
                 <Drawer isExpanded={selectedConstruct != null}>
