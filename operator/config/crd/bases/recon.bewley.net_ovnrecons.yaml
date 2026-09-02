@@ -158,13 +158,6 @@ spec:
                   tag:
                     type: string
                 type: object
-              collectorProbeNamespaces:
-                description: |-
-                  Deprecated: use collector.probeNamespaces instead.
-                  CollectorProbeNamespaces defines namespaces where collector is allowed to probe OVN pods.
-                items:
-                  type: string
-                type: array
               consolePlugin:
                 description: ConsolePlugin configuration
                 properties:

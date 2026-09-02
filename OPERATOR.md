@@ -60,7 +60,8 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
   - `image.*` (use `consolePlugin.image.*`)
   - `featureGates.ovn-collector` (use `collector.enabled`)
   - `collectorImage.*` (use `collector.image.*`)
-  - `collectorProbeNamespaces` (use `collector.probeNamespaces`)
+- `collectorProbeNamespaces` has been **removed**; use `collector.probeNamespaces`. A resource
+  still setting only the removed field falls back to the default probe namespaces.
 - If both new and legacy fields are set, the new hierarchical fields win.
 - If `operator.logging`, `consolePlugin.logging`, or `collector.logging` are omitted, runtime behavior matches prior defaults:
   - operator and component log levels default to `info`
