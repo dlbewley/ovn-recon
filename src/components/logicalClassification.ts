@@ -240,14 +240,23 @@ export const classifySwitchPort = (row: LogicalSwitchPortRow): ClassifiedPort =>
         if (managementTarget !== undefined) {
             return { uuid: row.uuid, name: row.name, role: 'management-port', node: managementTarget };
         }
-        const separator = row.name.indexOf('_');
-        if (separator > 0) {
+        // Pod ports: default-network ports are named <namespace>_<pod>, but
+        // secondary-network (UDN/localnet) ports carry a network prefix —
+        // <network-prefix>_<namespace>_<pod> (e.g. demo.mirror.vlan.1924_
+        // demo-mirror_virt-launcher-...), so splitting on the FIRST
+        // underscore read the prefix as the namespace and broke the Pod
+        // link. Kubernetes names cannot contain underscores, so the last
+        // segment is always the pod and the second-to-last the namespace;
+        // the port's external_ids.namespace, stamped by OVN-Kubernetes, is
+        // preferred when present.
+        const segments = row.name.split('_');
+        if (segments.length >= 2) {
             return {
                 uuid: row.uuid,
                 name: row.name,
                 role: 'pod-port',
-                namespace: row.name.slice(0, separator),
-                pod: row.name.slice(separator + 1),
+                namespace: row.externalIds?.['namespace'] ?? segments[segments.length - 2],
+                pod: segments[segments.length - 1],
             };
         }
     }

@@ -176,6 +176,37 @@ describe('classifySwitchPort', () => {
         });
     });
 
+    it('extracts namespace and pod from secondary-network pod ports', () => {
+        // Live-cluster shape (ovn-recon-3um): a localnet-attached pod port
+        // carries a network prefix before <namespace>_<pod>.
+        const port = classifySwitchPort({
+            uuid: 'p3',
+            name: 'demo.mirror.vlan.1924_demo-mirror_virt-launcher-ex-vm-xhd67',
+            externalIds: {
+                'k8s.ovn.org/nad': 'demo-mirror/vlan-1924',
+                namespace: 'demo-mirror',
+                pod: 'true',
+            },
+        });
+        expect(port).toMatchObject({
+            role: 'pod-port',
+            namespace: 'demo-mirror',
+            pod: 'virt-launcher-ex-vm-xhd67',
+        });
+    });
+
+    it('parses secondary-network pod ports positionally without externalIds', () => {
+        const port = classifySwitchPort({
+            uuid: 'p4',
+            name: 'demo.mirror.vlan.1924_demo-mirror_virt-launcher-ex-vm-xhd67',
+        });
+        expect(port).toMatchObject({
+            role: 'pod-port',
+            namespace: 'demo-mirror',
+            pod: 'virt-launcher-ex-vm-xhd67',
+        });
+    });
+
     it('extracts the peer node from transit remote ports', () => {
         const port = classifySwitchPort({ uuid: 'p2', name: 'tstor-cnv-4', type: 'remote' });
         expect(port).toMatchObject({ role: 'remote-port', node: 'cnv-4' });
