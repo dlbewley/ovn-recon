@@ -20,9 +20,9 @@ describe('useOvnCollectorFeatureGate', () => {
         expect(renderHook(() => useOvnCollectorFeatureGate()).enabled).toBe(false);
     });
 
-    it('ignores the legacy gate’s materialized false', () => {
+    it('ignores unrelated spec fields left over from older schemas', () => {
         watchedInstances = [
-            { spec: { featureGates: { 'ovn-collector': false } } } as OvnRecon,
+            { spec: { featureGates: { 'ovn-collector': false } } } as unknown as OvnRecon,
         ];
         expect(renderHook(() => useOvnCollectorFeatureGate()).enabled).toBe(true);
     });

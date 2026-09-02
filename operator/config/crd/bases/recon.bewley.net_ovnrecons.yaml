@@ -163,22 +163,6 @@ spec:
                       type: string
                     type: array
                 type: object
-              collectorImage:
-                description: |-
-                  Deprecated: use collector.image instead.
-                  CollectorImage configuration for the OVN collector container image.
-                properties:
-                  pullPolicy:
-                    description: PullPolicy for the collector container.
-                    type: string
-                  repository:
-                    description: Repository is the collector container image, without
-                      a tag.
-                    type: string
-                  tag:
-                    description: Tag overrides the image tag.
-                    type: string
-                type: object
               consolePlugin:
                 description: ConsolePlugin configuration
                 properties:
@@ -237,37 +221,6 @@ spec:
                         - debug
                         type: string
                     type: object
-                type: object
-              featureGates:
-                description: |-
-                  Deprecated: use collector.enabled instead.
-                  FeatureGates controls optional OVN Recon capabilities.
-                properties:
-                  ovn-collector:
-                    default: false
-                    description: OVNCollector enables logical topology features backed
-                      by the collector service.
-                    type: boolean
-                type: object
-              image:
-                description: |-
-                  Deprecated: use consolePlugin.image instead.
-                  Image configuration for the plugin container.
-                properties:
-                  pullPolicy:
-                    description: PullPolicy for the plugin container. Defaults to
-                      IfNotPresent.
-                    type: string
-                  repository:
-                    default: quay.io/dbewley/ovn-recon
-                    description: Repository is the plugin container image, without
-                      a tag.
-                    type: string
-                  tag:
-                    description: |-
-                      Tag overrides the image tag. Defaults to the operator's own release
-                      version, so the plugin upgrades in lockstep with the operator.
-                    type: string
                 type: object
               operator:
                 description: Operator configuration.

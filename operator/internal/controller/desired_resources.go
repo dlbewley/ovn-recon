@@ -583,18 +583,12 @@ func collectorImageRepositoryFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.Collector.Image.Repository != "" {
 		return ovnRecon.Spec.Collector.Image.Repository
 	}
-	if ovnRecon.Spec.CollectorImage.Repository != "" {
-		return ovnRecon.Spec.CollectorImage.Repository
-	}
 	return defaultCollectorRepository
 }
 
 func collectorImageTagFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.Collector.Image.Tag != "" {
 		return ovnRecon.Spec.Collector.Image.Tag
-	}
-	if ovnRecon.Spec.CollectorImage.Tag != "" {
-		return ovnRecon.Spec.CollectorImage.Tag
 	}
 	// Inherit plugin image tag behavior by default.
 	return imageTagFor(ovnRecon)
@@ -603,9 +597,6 @@ func collectorImageTagFor(ovnRecon *reconv1beta1.OvnRecon) string {
 func collectorImagePullPolicyFor(ovnRecon *reconv1beta1.OvnRecon) corev1.PullPolicy {
 	if ovnRecon.Spec.Collector.Image.PullPolicy != "" {
 		return corev1.PullPolicy(ovnRecon.Spec.Collector.Image.PullPolicy)
-	}
-	if ovnRecon.Spec.CollectorImage.PullPolicy != "" {
-		return corev1.PullPolicy(ovnRecon.Spec.CollectorImage.PullPolicy)
 	}
 	return imagePullPolicyFor(ovnRecon)
 }
@@ -767,8 +758,7 @@ func composeImage(repository, tag string) string {
 // we fall back to the RELATED_IMAGE_* value, and then to the built-in default.
 func pluginImageFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	spec := ovnRecon.Spec
-	if spec.ConsolePlugin.Image.Repository == "" && spec.ConsolePlugin.Image.Tag == "" &&
-		spec.Image.Repository == "" && spec.Image.Tag == "" {
+	if spec.ConsolePlugin.Image.Repository == "" && spec.ConsolePlugin.Image.Tag == "" {
 		if related := relatedImageFor("RELATED_IMAGE_PLUGIN"); related != "" {
 			return related
 		}
@@ -780,8 +770,7 @@ func pluginImageFor(ovnRecon *reconv1beta1.OvnRecon) string {
 func collectorImageFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	spec := ovnRecon.Spec
 	if spec.Collector.Image.Repository == "" && spec.Collector.Image.Tag == "" &&
-		spec.CollectorImage.Repository == "" && spec.CollectorImage.Tag == "" &&
-		spec.ConsolePlugin.Image.Tag == "" && spec.Image.Tag == "" {
+		spec.ConsolePlugin.Image.Tag == "" {
 		if related := relatedImageFor("RELATED_IMAGE_COLLECTOR"); related != "" {
 			return related
 		}
@@ -793,18 +782,12 @@ func imageRepositoryFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	if ovnRecon.Spec.ConsolePlugin.Image.Repository != "" {
 		return ovnRecon.Spec.ConsolePlugin.Image.Repository
 	}
-	if ovnRecon.Spec.Image.Repository != "" {
-		return ovnRecon.Spec.Image.Repository
-	}
 	return defaultImageRepository
 }
 
 func imagePullPolicyFor(ovnRecon *reconv1beta1.OvnRecon) corev1.PullPolicy {
 	if ovnRecon.Spec.ConsolePlugin.Image.PullPolicy != "" {
 		return corev1.PullPolicy(ovnRecon.Spec.ConsolePlugin.Image.PullPolicy)
-	}
-	if ovnRecon.Spec.Image.PullPolicy != "" {
-		return corev1.PullPolicy(ovnRecon.Spec.Image.PullPolicy)
 	}
 	return corev1.PullIfNotPresent
 }
