@@ -14,7 +14,6 @@ import {
     Drawer,
     DrawerContent,
     DrawerPanelContent,
-    DrawerPanelBody,
     DrawerHead,
     DrawerActions,
     DrawerCloseButton,
@@ -297,18 +296,16 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                                 <DrawerCloseButton onClick={() => setSelectedUuid(null)} />
                                             </DrawerActions>
                                         </DrawerHead>
-                                        <DrawerPanelBody>
-                                            <ConstructDrawerBody
-                                                construct={selectedConstruct}
-                                                model={model}
-                                                totalNodes={model.zoneCount}
-                                                nodeHref={(node) => `/ovn-recon/ovn/${encodeURIComponent(node)}`}
-                                                physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
-                                                onSelectConstruct={selectConstructFromDrawer}
-                                                database={drawerDatabase?.database}
-                                                databaseNode={drawerDatabase?.node}
-                                            />
-                                        </DrawerPanelBody>
+                                        <ConstructDrawerBody
+                                            construct={selectedConstruct}
+                                            model={model}
+                                            totalNodes={model.zoneCount}
+                                            nodeHref={(node) => `/ovn-recon/ovn/${encodeURIComponent(node)}`}
+                                            physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
+                                            onSelectConstruct={selectConstructFromDrawer}
+                                            database={drawerDatabase?.database}
+                                            databaseNode={drawerDatabase?.node}
+                                        />
                                     </>
                                 )}
                             </DrawerPanelContent>
