@@ -14,6 +14,7 @@ import {
     Drawer,
     DrawerContent,
     DrawerPanelContent,
+    DrawerPanelBody,
     DrawerHead,
     DrawerActions,
     DrawerCloseButton,
@@ -283,7 +284,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                 <Drawer isExpanded={selectedConstruct != null}>
                     <DrawerContent
                         panelContent={(
-                            <DrawerPanelContent minSize="320px">
+                            <DrawerPanelContent isResizable widths={{ default: 'width_33' }} minSize="320px">
                                 {selectedConstruct && model && (
                                     <>
                                         <DrawerHead>
@@ -296,20 +297,18 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                                 <DrawerCloseButton onClick={() => setSelectedUuid(null)} />
                                             </DrawerActions>
                                         </DrawerHead>
-                                        <Card>
-                                            <CardBody>
-                                                <ConstructDrawerBody
-                                                    construct={selectedConstruct}
-                                                    model={model}
-                                                    totalNodes={model.zoneCount}
-                                                    nodeHref={(node) => `/ovn-recon/ovn/${encodeURIComponent(node)}`}
-                                                    physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
-                                                    onSelectConstruct={selectConstructFromDrawer}
-                                                    database={drawerDatabase?.database}
-                                                    databaseNode={drawerDatabase?.node}
-                                                />
-                                            </CardBody>
-                                        </Card>
+                                        <DrawerPanelBody>
+                                            <ConstructDrawerBody
+                                                construct={selectedConstruct}
+                                                model={model}
+                                                totalNodes={model.zoneCount}
+                                                nodeHref={(node) => `/ovn-recon/ovn/${encodeURIComponent(node)}`}
+                                                physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
+                                                onSelectConstruct={selectConstructFromDrawer}
+                                                database={drawerDatabase?.database}
+                                                databaseNode={drawerDatabase?.node}
+                                            />
+                                        </DrawerPanelBody>
                                     </>
                                 )}
                             </DrawerPanelContent>

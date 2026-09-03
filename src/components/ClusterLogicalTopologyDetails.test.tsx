@@ -140,4 +140,34 @@ describe('ClusterLogicalTopologyDetails', () => {
         expect(container.querySelector('[data-testid="construct-GR_cnv-1"]')).not.toBeNull();
         expect(container.querySelector('[data-testid="construct-GR_ctrl-1"]')).not.toBeNull();
     });
+
+    /**
+     * Drawer chrome matches the physical view (ovn-recon-f9p). The panel used to
+     * wrap ConstructDrawerBody in a nested Card, so a second border floated
+     * inside the panel edge, and it had no resize handle. Console side panels
+     * render content straight into a resizable panel, so this one does too.
+     */
+    it('opens a resizable drawer with bare panel content, like the physical view', async () => {
+        await act(async () => {
+            root.render(<ClusterLogicalTopologyDetails />);
+        });
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        const construct = container.querySelector('[data-testid="construct-transit_switch"]');
+        expect(construct).not.toBeNull();
+        await act(async () => {
+            construct!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        const panel = container.querySelector('.pf-v6-c-drawer__panel');
+        expect(panel).not.toBeNull();
+        expect(panel!.classList.contains('pf-m-resizable')).toBe(true);
+        expect(panel!.classList.contains('pf-m-width-33')).toBe(true);
+        expect(panel!.querySelector('.pf-v6-c-drawer__splitter')).not.toBeNull();
+        expect(panel!.querySelector('.pf-v6-c-card')).toBeNull();
+        expect(panel!.querySelector('.pf-v6-c-drawer__body')).not.toBeNull();
+        expect(panel!.querySelector('[role="tablist"]')).not.toBeNull();
+    });
 });

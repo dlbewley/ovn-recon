@@ -14,6 +14,7 @@ import {
     Drawer,
     DrawerContent,
     DrawerPanelContent,
+    DrawerPanelBody,
     DrawerHead,
     DrawerActions,
     DrawerCloseButton,
@@ -289,7 +290,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                 <Drawer isExpanded={selectedConstruct != null}>
                     <DrawerContent
                         panelContent={(
-                            <DrawerPanelContent minSize="320px">
+                            <DrawerPanelContent isResizable widths={{ default: 'width_33' }} minSize="320px">
                                 {selectedConstruct && model && (
                                     <>
                                         <DrawerHead>
@@ -302,19 +303,17 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                                 <DrawerCloseButton onClick={() => setSelectedUuid(null)} />
                                             </DrawerActions>
                                         </DrawerHead>
-                                        <Card>
-                                            <CardBody>
-                                                <ConstructDrawerBody
-                                                    construct={selectedConstruct}
-                                                    model={model}
-                                                    fallbackNode={name}
-                                                    physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
-                                                    onSelectConstruct={selectConstructFromDrawer}
-                                                    database={snapshot?.database ?? null}
-                                                    databaseNode={name}
-                                                />
-                                            </CardBody>
-                                        </Card>
+                                        <DrawerPanelBody>
+                                            <ConstructDrawerBody
+                                                construct={selectedConstruct}
+                                                model={model}
+                                                fallbackNode={name}
+                                                physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
+                                                onSelectConstruct={selectConstructFromDrawer}
+                                                database={snapshot?.database ?? null}
+                                                databaseNode={name}
+                                            />
+                                        </DrawerPanelBody>
                                     </>
                                 )}
                             </DrawerPanelContent>

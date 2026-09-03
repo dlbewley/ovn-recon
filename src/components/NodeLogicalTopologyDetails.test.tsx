@@ -146,4 +146,32 @@ describe('NodeLogicalTopologyDetails', () => {
             expect(nodeSelect().value).toBe('cnv-2');
         });
     });
+
+    /**
+     * Drawer chrome matches the physical view (ovn-recon-f9p): resizable panel,
+     * content rendered straight into the panel body, no nested Card seam.
+     */
+    it('opens a resizable drawer with bare panel content, like the physical view', async () => {
+        await act(async () => {
+            root.render(<NodeLogicalTopologyDetails />);
+        });
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        const construct = container.querySelector('[data-testid="construct-transit_switch"]');
+        expect(construct).not.toBeNull();
+        await act(async () => {
+            construct!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        const panel = container.querySelector('.pf-v6-c-drawer__panel');
+        expect(panel).not.toBeNull();
+        expect(panel!.classList.contains('pf-m-resizable')).toBe(true);
+        expect(panel!.classList.contains('pf-m-width-33')).toBe(true);
+        expect(panel!.querySelector('.pf-v6-c-drawer__splitter')).not.toBeNull();
+        expect(panel!.querySelector('.pf-v6-c-card')).toBeNull();
+        expect(panel!.querySelector('.pf-v6-c-drawer__body')).not.toBeNull();
+        expect(panel!.querySelector('[role="tablist"]')).not.toBeNull();
+    });
 });
