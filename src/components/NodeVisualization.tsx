@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, Switch, Tabs, Tab, TabTitleText, Flex, FlexItem, Button, FormSelect, FormSelectOption } from '@patternfly/react-core';
+import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, Switch, Flex, FlexItem, Button, FormSelect, FormSelectOption } from '@patternfly/react-core';
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 
 
@@ -9,6 +9,7 @@ import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import { buildGraphContext, GraphContext } from '../topology/context';
 import { interfacesWithRole, roleOf } from '../topology/classify';
 import { buildDrawerTabs, getDrawerTabs } from '../topology/drawerTabs';
+import DrawerTabStrip from './DrawerTabStrip';
 import { edgeKey, findDuplicateIds, resolveNodeId as resolveId } from '../topology/ids';
 import {
     DrawerTabId, Graph, NodeViewModel
@@ -747,22 +748,12 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
             </DrawerHead>
             {activeNode && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-                    <div style={{ flex: '0 0 auto', zIndex: 10, boxShadow: '0 1px 2px 0 rgba(0,0,0,0.1)' }}>
-                        <Tabs
-                            activeKey={activePopoverTab}
-                            onSelect={(_event, key) => {
-                                if (typeof key === 'string') {
-                                    setActivePopoverTab(key as DrawerTabId);
-                                }
-                            }}
-                            isFilled
-                            className="node-details-tabs"
-                        >
-                            {activeNodeTabs.map((tab) => (
-                                <Tab key={tab.id} eventKey={tab.id} title={<TabTitleText>{tab.title}</TabTitleText>} />
-                            ))}
-                        </Tabs>
-                    </div>
+                    <DrawerTabStrip<DrawerTabId>
+                        tabs={activeNodeTabs}
+                        activeKey={activePopoverTab}
+                        onSelect={setActivePopoverTab}
+                        aria-label="Node details"
+                    />
                     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                         {activeNodeTabs.find((tab) => tab.id === activePopoverTab)?.render(activeNode)}
                     </div>

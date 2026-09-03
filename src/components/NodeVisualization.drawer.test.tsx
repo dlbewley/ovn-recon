@@ -576,4 +576,24 @@ describe('NodeVisualization drawer', () => {
         // With no NADs supplied, every "(NAD)" node is an attachment, not a nad.
         expect(titles.filter((t) => t.endsWith('(NAD)')).length).toBeGreaterThan(0);
     });
+
+    /**
+     * The physical drawer's tab strip is the shared DrawerTabStrip, flush under
+     * the head. The logical pages assert the same structure, so the two drawers
+     * are pinned to one treatment (ovn-recon-mow).
+     */
+    describe('tab strip', () => {
+        it('renders the shared strip directly under the drawer head', () => {
+            renderPrimary();
+            clickNode('br-ex (ovs-bridge)');
+            const panel = container.querySelector('.pf-v6-c-drawer__panel');
+            expect(panel).not.toBeNull();
+            const tablist = panel!.querySelector('[role="tablist"]');
+            expect(tablist).not.toBeNull();
+            const strip = tablist!.closest('.ovn-drawer-tab-strip');
+            expect(strip).not.toBeNull();
+            expect(strip!.closest('.pf-v6-c-drawer__body')).toBeNull();
+            expect(panel!.querySelector('.pf-v6-c-drawer__head')).not.toBeNull();
+        });
+    });
 });

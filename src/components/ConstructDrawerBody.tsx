@@ -6,9 +6,7 @@ import {
     DescriptionListGroup,
     DescriptionListTerm,
     DescriptionListDescription,
-    Tab,
-    Tabs,
-    TabTitleText,
+    DrawerPanelBody,
     TextInput,
 } from '@patternfly/react-core';
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
@@ -20,6 +18,7 @@ import { edgeLabel, networkDisplayName, roleLabel } from './LogicalLadderView';
 import { configPayloadFor, ovnKindFor } from './ovnKindRegistry';
 import { useIsDarkTheme } from './useIsDarkTheme';
 import { getResourcePath } from '../topology/links';
+import DrawerTabStrip from './DrawerTabStrip';
 
 const MAX_LISTED_RULES = 10;
 const MAX_LISTED_PORTS = 15;
@@ -342,35 +341,41 @@ const ConfigBody: React.FC<ConstructDrawerBodyProps> = ({ construct, database, d
     );
 };
 
+type ConstructTabId = 'overview' | 'relationships' | 'config';
+
+const CONSTRUCT_TABS: ReadonlyArray<{ id: ConstructTabId; title: string }> = [
+    { id: 'overview', title: 'Overview' },
+    { id: 'relationships', title: 'Relationships' },
+    { id: 'config', title: 'Config' },
+];
+
+/**
+ * Rendered directly under the page's DrawerHead. The tab strip sits flush
+ * against the panel edges and only the tab content is padded, the same
+ * structure as the physical drawer (ovn-recon-mow); wrapping the whole thing
+ * in a padded body inset the strip and made the two drawers read differently.
+ */
 const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = (props) => {
     // The active tab survives selection changes — hopping between constructs
     // via the Relationships tab must keep you on Relationships, matching the
     // physical drawer. A freshly opened drawer starts at Overview because the
     // component mounts anew (the pages unmount it when nothing is selected).
-    const [activeTab, setActiveTab] = React.useState<string | number>('overview');
+    const [activeTab, setActiveTab] = React.useState<ConstructTabId>('overview');
 
     return (
-        <Tabs
-            activeKey={activeTab}
-            onSelect={(_event, key) => setActiveTab(key)}
-            aria-label="Construct details"
-        >
-            <Tab eventKey="overview" title={<TabTitleText>Overview</TabTitleText>}>
-                <div className="pf-u-pt-md">
-                    <OverviewBody {...props} />
-                </div>
-            </Tab>
-            <Tab eventKey="relationships" title={<TabTitleText>Relationships</TabTitleText>}>
-                <div className="pf-u-pt-md">
-                    <RelationshipsBody {...props} />
-                </div>
-            </Tab>
-            <Tab eventKey="config" title={<TabTitleText>Config</TabTitleText>}>
-                <div className="pf-u-pt-md">
-                    <ConfigBody {...props} />
-                </div>
-            </Tab>
-        </Tabs>
+        <>
+            <DrawerTabStrip<ConstructTabId>
+                tabs={CONSTRUCT_TABS}
+                activeKey={activeTab}
+                onSelect={setActiveTab}
+                aria-label="Construct details"
+            />
+            <DrawerPanelBody>
+                {activeTab === 'overview' && <OverviewBody {...props} />}
+                {activeTab === 'relationships' && <RelationshipsBody {...props} />}
+                {activeTab === 'config' && <ConfigBody {...props} />}
+            </DrawerPanelBody>
+        </>
     );
 };
 

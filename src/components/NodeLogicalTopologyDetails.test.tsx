@@ -172,6 +172,15 @@ describe('NodeLogicalTopologyDetails', () => {
         expect(panel!.querySelector('.pf-v6-c-drawer__splitter')).not.toBeNull();
         expect(panel!.querySelector('.pf-v6-c-card')).toBeNull();
         expect(panel!.querySelector('.pf-v6-c-drawer__body')).not.toBeNull();
-        expect(panel!.querySelector('[role="tablist"]')).not.toBeNull();
+
+        // The tab strip is the same shared strip the physical drawer uses, and
+        // it sits flush under the head rather than inside the padded body
+        // (ovn-recon-mow).
+        const tablist = panel!.querySelector('[role="tablist"]');
+        expect(tablist).not.toBeNull();
+        expect(tablist!.closest('.pf-v6-c-drawer__body')).toBeNull();
+        const strip = tablist!.closest('.ovn-drawer-tab-strip');
+        expect(strip).not.toBeNull();
+        expect(strip!.previousElementSibling?.classList.contains('pf-v6-c-drawer__head')).toBe(true);
     });
 });

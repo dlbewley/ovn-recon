@@ -14,7 +14,6 @@ import {
     Drawer,
     DrawerContent,
     DrawerPanelContent,
-    DrawerPanelBody,
     DrawerHead,
     DrawerActions,
     DrawerCloseButton,
@@ -303,17 +302,15 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                                 <DrawerCloseButton onClick={() => setSelectedUuid(null)} />
                                             </DrawerActions>
                                         </DrawerHead>
-                                        <DrawerPanelBody>
-                                            <ConstructDrawerBody
-                                                construct={selectedConstruct}
-                                                model={model}
-                                                fallbackNode={name}
-                                                physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
-                                                onSelectConstruct={selectConstructFromDrawer}
-                                                database={snapshot?.database ?? null}
-                                                databaseNode={name}
-                                            />
-                                        </DrawerPanelBody>
+                                        <ConstructDrawerBody
+                                            construct={selectedConstruct}
+                                            model={model}
+                                            fallbackNode={name}
+                                            physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
+                                            onSelectConstruct={selectConstructFromDrawer}
+                                            database={snapshot?.database ?? null}
+                                            databaseNode={name}
+                                        />
                                     </>
                                 )}
                             </DrawerPanelContent>
