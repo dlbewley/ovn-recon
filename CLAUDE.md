@@ -27,6 +27,10 @@ Run a single test file:
 npx jest src/components/nodeVisualizationModel.test.ts
 ```
 
+Jest ignores `<rootDir>/.claude/` so the primary clone does not scan session worktrees. Inside a
+worktree the suite runs normally; if `npx jest` ever reports "No tests found", check that the
+ignore pattern is still anchored to `<rootDir>` rather than a bare `/.claude/`.
+
 ### Operator (`operator/`)
 
 ```bash
