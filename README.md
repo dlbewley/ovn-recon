@@ -44,9 +44,12 @@ The plugin watches these resources in real-time and renders interactive physical
 
 ## Using OVN Recon
 
-- **Node list**: `/ovn-recon/node-network-state`
+- **Overview**: `/ovn-recon` (the single *Networking → OVN Recon* menu entry): collector status,
+  network counts, and a node table with per-node facts and links to every view. `/ovn-recon/node-network-state`
+  still lands here so older bookmarks keep working.
 - **Physical view**: `/ovn-recon/node-network-state/:name`
-- **Logical OVN view**: `/ovn-recon/ovn/:name` (shown when collector feature gate is enabled)
+- **Cluster logical OVN view**: `/ovn-recon/ovn` (shown when the collector feature gate is enabled)
+- **Node logical OVN view**: `/ovn-recon/ovn/:name` (shown when the collector feature gate is enabled)
 
 In the physical node graph:
 - LLDP neighbors are rendered in a dedicated optional column left of physical interfaces.

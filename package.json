@@ -20,7 +20,7 @@
         "displayName": "OVN Recon",
         "description": "OpenShift Console Plugin for OVN Recon",
         "exposedModules": {
-            "NodeNetworkStateList": "./components/NodeNetworkStateList",
+            "OvnReconOverview": "./components/OvnReconOverview",
             "NodeNetworkStateDetails": "./components/NodeNetworkStateDetails",
             "NodeLogicalTopologyDetails": "./components/NodeLogicalTopologyDetails",
             "ClusterLogicalTopologyDetails": "./components/ClusterLogicalTopologyDetails"
