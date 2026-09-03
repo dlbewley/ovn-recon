@@ -17,6 +17,7 @@ import { buildNodeViewModel } from '../topology/viewModel';
 import { computeEdgeBow, computeNodeOrder, sortByRank } from './nodeVisualizationLayout';
 import { laneOrderingInput, layoutLanes, LaneViewState, PlacedNode } from '../topology/lanes';
 import { descriptorFor, iconFor, NodeTypeId, NODE_TYPES } from '../topology/descriptors';
+import { navigateToPath } from './navigateToPath';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -33,11 +34,6 @@ const PAN_DRAG_THRESHOLD_PX = 3;
 const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [] }) => {
 
 
-
-    const navigateToPath = (path: string) => {
-        window.history.pushState(null, '', path);
-        window.dispatchEvent(new PopStateEvent('popstate'));
-    };
 
     // Fetch all NodeNetworkState resources for the dropdown
     const [allNodeNetworkStates] = useK8sWatchResource<NodeNetworkState[]>({

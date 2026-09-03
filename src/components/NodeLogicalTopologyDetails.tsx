@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { DocumentTitle } from '@openshift-console/dynamic-plugin-sdk';
+import { DocumentTitle, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { useParams, Link } from 'react-router';
 import {
     PageSection,
@@ -27,7 +27,7 @@ import {
     AlertGroup,
 } from '@patternfly/react-core';
 
-import { LogicalTopologySnapshot } from '../types';
+import { LogicalTopologySnapshot, NodeNetworkState } from '../types';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { fetchCollectorSnapshot } from './collectorApi';
 import { buildLadderModel } from './logicalLadderModel';
@@ -36,6 +36,7 @@ import SnapshotJsonControls from './SnapshotJsonControls';
 import LogicalLadderView, { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
 import SnapshotStatusLine from './SnapshotStatusLine';
 import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
+import { navigateToPath } from './navigateToPath';
 
 const REFRESH_INTERVAL_MS = 30000;
 
@@ -72,6 +73,23 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     const name = React.useMemo(() => resolveNodeName(routeName), [routeName]);
     const { enabled, loaded: gateLoaded, loadError: gateError } = useOvnCollectorFeatureGate();
 
+    // The host selector lists every NodeNetworkState, the plugin's node index
+    // (the node list and the physical view's host selector use it too), so every
+    // entry point agrees on what the nodes are. The collector's own node set is
+    // not used on purpose: a node with an NNS the collector cannot snapshot
+    // should appear here and fail visibly, not vanish (ovn-recon-60x).
+    const [nodeNetworkStates] = useK8sWatchResource<NodeNetworkState[]>({
+        groupVersionKind: { group: 'nmstate.io', version: 'v1beta1', kind: 'NodeNetworkState' },
+        isList: true,
+    });
+    const nodeNames = React.useMemo(() => {
+        const names = new Set((nodeNetworkStates ?? []).map((nns) => nns.metadata?.name || '').filter(Boolean));
+        // Keep the current node selectable before the list has loaded, or when it
+        // carries no NodeNetworkState, so the select never shows the wrong node.
+        if (name) names.add(name);
+        return Array.from(names).sort((a, b) => a.localeCompare(b));
+    }, [nodeNetworkStates, name]);
+
     const [snapshot, setSnapshot] = React.useState<LogicalTopologySnapshot | null>(null);
     const [isLoading, setIsLoading] = React.useState<boolean>(false);
     const [snapshotError, setSnapshotError] = React.useState<string>('');
@@ -90,6 +108,32 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     const [pan, setPan] = React.useState<Point>({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = React.useState<boolean>(false);
     const [lastPointer, setLastPointer] = React.useState<Point | null>(null);
+
+    // Same control as the cluster view's "Filter by host", but that page filters
+    // a merged model in place while this one holds a single node's snapshot, so
+    // here a choice is a route change: another node loads its snapshot, and
+    // "All hosts" climbs back out to the cluster view.
+    const handleHostSelect = (_event: React.FormEvent<HTMLSelectElement>, value: string) => {
+        if (value === 'all') {
+            navigateToPath('/ovn-recon/ovn');
+        } else if (value && value !== name) {
+            navigateToPath(`/ovn-recon/ovn/${encodeURIComponent(value)}`);
+        }
+    };
+
+    // A snapshot is per node. Switching nodes must not leave the previous node's
+    // constructs, selection, filters or viewport on screen under the new title
+    // while the next snapshot loads.
+    React.useEffect(() => {
+        setSnapshot(null);
+        setSnapshotError('');
+        setSelectedUuid(null);
+        setRevealRequest(undefined);
+        setSearch('');
+        setNetworkFilter('all');
+        setZoom(1);
+        setPan({ x: 0, y: 0 });
+    }, [name]);
 
     const loadSnapshot = React.useCallback(async () => {
         if (!enabled || !name) return;
@@ -330,6 +374,18 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             value={search}
                                             onChange={(_event, value) => setSearch(value)}
                                         />
+                                    </FlexItem>
+                                    <FlexItem>
+                                        <FormSelect
+                                            aria-label="Filter by host"
+                                            value={name}
+                                            onChange={handleHostSelect}
+                                        >
+                                            <FormSelectOption value="all" label="All hosts" />
+                                            {nodeNames.map((nodeName) => (
+                                                <FormSelectOption key={nodeName} value={nodeName} label={nodeName} />
+                                            ))}
+                                        </FormSelect>
                                     </FlexItem>
                                     <FlexItem>
                                         <FormSelect
