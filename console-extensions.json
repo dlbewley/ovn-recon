@@ -1,19 +1,21 @@
 [
     {
-        "type": "console.navigation/section",
+        "type": "console.page/route",
         "properties": {
-            "id": "ovn-recon-section",
-            "perspective": "admin",
-            "name": "OVN Recon",
-            "insertBefore": "networking"
+            "exact": true,
+            "path": "/ovn-recon",
+            "component": {
+                "$codeRef": "OvnReconOverview"
+            }
         }
     },
     {
         "type": "console.page/route",
         "properties": {
+            "exact": true,
             "path": "/ovn-recon/node-network-state",
             "component": {
-                "$codeRef": "NodeNetworkStateList"
+                "$codeRef": "OvnReconOverview"
             }
         }
     },
@@ -48,22 +50,14 @@
     {
         "type": "console.navigation/href",
         "properties": {
-            "id": "node-network-state-nav",
+            "id": "ovn-recon-nav",
             "perspective": "admin",
             "section": "networking",
             "name": "OVN Recon",
-            "href": "/ovn-recon/node-network-state"
-        }
-    },
-    {
-        "type": "console.navigation/href",
-        "properties": {
-            "id": "ovn-logical-topology-nav",
-            "perspective": "admin",
-            "section": "networking",
-            "name": "OVN Logical Topology",
-            "href": "/ovn-recon/ovn",
-            "insertAfter": "node-network-state-nav"
+            "href": "/ovn-recon",
+            "startsWith": [
+                "/ovn-recon"
+            ]
         }
     }
 ]

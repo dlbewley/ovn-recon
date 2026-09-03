@@ -84,11 +84,11 @@ Prereleases containing `-` in the tag (e.g. `v1.0.1-beta.1`) do **not** update t
 
 ### Plugin (`src/`)
 
-The plugin registers three route-based modules in `console-extensions.json`:
+The plugin registers four route-based modules in `console-extensions.json`, reached from a single *Networking → OVN Recon* entry:
 
 | Route | Module | Purpose |
 |---|---|---|
-| `/ovn-recon/node-network-state` | `NodeNetworkStateList` | Node list |
+| `/ovn-recon` (also `/ovn-recon/node-network-state`) | `OvnReconOverview` | Overview: collector status, network counts, node table |
 | `/ovn-recon/node-network-state/:name` | `NodeNetworkStateDetails` | Physical topology per node |
 | `/ovn-recon/ovn/:name` | `NodeLogicalTopologyDetails` | Logical OVN topology (collector-gated) |
 

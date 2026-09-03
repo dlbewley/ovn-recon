@@ -273,7 +273,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
             <PageSection>
                 <Breadcrumb>
                     <BreadcrumbItem>
-                        <Link to="/ovn-recon/node-network-state">OVN Recon</Link>
+                        <Link to="/ovn-recon">OVN Recon</Link>
                     </BreadcrumbItem>
                     <BreadcrumbItem isActive>Cluster logical topology</BreadcrumbItem>
                 </Breadcrumb>
