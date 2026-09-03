@@ -4,8 +4,11 @@ module.exports = {
     testEnvironment: 'jsdom',
     // spike/ carries its own config (see spike/react-topology/jest.config.js);
     // .claude/ holds session worktrees whose copies of the tree would triple
-    // the suite and trip haste-map duplicate warnings.
-    testPathIgnorePatterns: ['/node_modules/', '/spike/', '/.claude/'],
+    // the suite and trip haste-map duplicate warnings. The pattern is anchored
+    // to <rootDir> on purpose: an unanchored '/.claude/' also matched every
+    // test INSIDE a worktree (its path contains /.claude/worktrees/), so jest
+    // run from a worktree found no tests at all.
+    testPathIgnorePatterns: ['/node_modules/', '/spike/', '<rootDir>/.claude/'],
     modulePathIgnorePatterns: ['<rootDir>/.claude/'],
     setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
     moduleNameMapper: {
