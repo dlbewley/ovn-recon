@@ -93,7 +93,7 @@ describe('OvnReconOverview', () => {
         const networks = container.querySelector('[data-testid="overview-networks-card"]');
         expect(networks!.textContent).toContain('CUDNs');
         expect(networks!.textContent).toContain('NADs2');
-        expect(networks!.textContent).toContain('RouteAdvertisements1');
+        expect(networks!.textContent).toContain('Route advertisements1');
 
         const physical = container.querySelector('[data-testid="overview-physical-card"]');
         expect(physical!.textContent).toContain('2 with NodeNetworkState');

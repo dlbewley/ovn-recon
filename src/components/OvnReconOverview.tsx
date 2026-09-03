@@ -230,7 +230,7 @@ const OvnReconOverview: React.FC = () => {
                                         <DescriptionListDescription><a href={CONSOLE_LIST.nad}>{networks.nads}</a></DescriptionListDescription>
                                     </DescriptionListGroup>
                                     <DescriptionListGroup>
-                                        <DescriptionListTerm>RouteAdvertisements</DescriptionListTerm>
+                                        <DescriptionListTerm>Route advertisements</DescriptionListTerm>
                                         <DescriptionListDescription><a href={CONSOLE_LIST.ra}>{networks.routeAdvertisements}</a></DescriptionListDescription>
                                     </DescriptionListGroup>
                                 </DescriptionList>
