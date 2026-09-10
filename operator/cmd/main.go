@@ -26,6 +26,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -38,7 +39,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	reconv1beta1 "github.com/dlbewley/ovn-recon-operator/api/v1beta1"
+	"github.com/dlbewley/ovn-recon-operator/internal/apiversions"
 	"github.com/dlbewley/ovn-recon-operator/internal/controller"
+	"github.com/dlbewley/ovn-recon-operator/internal/storagemigration"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -51,6 +54,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(reconv1beta1.AddToScheme(scheme))
+	// The stored-version migration reads and patches the OvnRecon CRD itself.
+	utilruntime.Must(apiextensionsv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -216,6 +221,18 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
+
+	// One-shot, leader-only: clear retired API versions from the OvnRecon
+	// CRD's status.storedVersions so a later release can drop them. Reads go
+	// through the uncached API reader on purpose (see cache_policy.go).
+	if err := mgr.Add(&storagemigration.StoredVersionMigrator{
+		Reader:  mgr.GetAPIReader(),
+		Writer:  mgr.GetClient(),
+		CRDName: apiversions.CRDName,
+	}); err != nil {
+		setupLog.Error(err, "unable to add stored version migration to manager")
+		os.Exit(1)
+	}
 
 	if metricsCertWatcher != nil {
 		setupLog.Info("Adding metrics certificate watcher to manager")

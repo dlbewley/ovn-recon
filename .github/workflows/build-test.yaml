@@ -138,17 +138,25 @@ jobs:
         # Tracked in beads ovn-recon-09z.
         body: |
           > [!WARNING]
-          > **The unserved `v1alpha1` OvnRecon API version has been removed; `v1beta1` is now the only version.**
+          > **`v1beta1` is the only served OvnRecon API version; `v1alpha1` remains declared only as an unserved placeholder.**
           >
-          > No action is needed for typical installs: `v1alpha1` has been unserved (unusable)
-          > since v1.0.3-a5, and the schemas were identical. Update any manifests still
-          > declaring `apiVersion: recon.bewley.net/v1alpha1` to `v1beta1`. If an upgrade from
-          > a very old install fails with a CRD error about `status.storedVersions` containing
-          > `v1alpha1`, confirm your `OvnRecon` resources are readable, then clear the stale
-          > entry:
+          > `v1alpha1` has been unserved (unusable) since v0.3.1-b2, and the schemas were
+          > identical, so update any manifests still declaring
+          > `apiVersion: recon.bewley.net/v1alpha1` to `v1beta1`. It stays declared on the CRD
+          > because clusters first installed at v0.2.2 or earlier still list it in the CRD's
+          > `status.storedVersions`, and OLM refuses to apply a CRD that drops a listed stored
+          > version. On startup this release rewrites every `OvnRecon` and clears the stale
+          > entry, which lets a later release remove `v1alpha1` for good.
+          >
+          > If an upgrade still stalls with `risk of data loss updating "ovnrecons.recon.bewley.net":
+          > new CRD removes version v1alpha1 that is listed as a stored version`, run the
+          > migration by hand, then delete the failed InstallPlan so OLM re-resolves (a failed
+          > plan is not retried on its own, even with automatic approval):
           >
           > ```
+          > oc get ovnrecons.recon.bewley.net -A -o yaml | oc replace -f -
           > oc patch crd ovnrecons.recon.bewley.net --subresource=status --type=merge -p '{"status":{"storedVersions":["v1beta1"]}}'
+          > oc delete installplan -n <operator-namespace> <failed-installplan>
           > ```
           >
           > Carried in release notes through the next few releases; details in OPERATOR.md.

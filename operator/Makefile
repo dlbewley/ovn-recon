@@ -110,6 +110,9 @@ help: ## Display this help.
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	# Re-append the retired v1alpha1 placeholder version controller-gen cannot
+	# emit (it has no Go types). See internal/apiversions/placeholder.go.
+	go run ./hack/crdplaceholder config/crd/bases/recon.bewley.net_ovnrecons.yaml
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
