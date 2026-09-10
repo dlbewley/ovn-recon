@@ -53,9 +53,14 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 ### Migration Notes
 
 - New hierarchical fields are preferred: `consolePlugin.image.*`, `collector.enabled`, `collector.image.*`, and `collector.probeNamespaces`.
-- `v1beta1` is the only API version. `v1alpha1` was unserved for several releases and has been removed; update any manifests still declaring `apiVersion: recon.bewley.net/v1alpha1` to `v1beta1` (the schemas were identical).
-- If upgrading from a very old install fails with a CRD error about `status.storedVersions` containing `v1alpha1`, confirm your `OvnRecon` resources are readable, then clear the stale entry:
-  `oc patch crd ovnrecons.recon.bewley.net --subresource=status --type=merge -p '{"status":{"storedVersions":["v1beta1"]}}'`
+- `v1beta1` is the only served API version. `v1alpha1` (storage version through v0.2.3-a8, unserved since v0.3.1-b2) has no Go types and cannot be used, but it stays **declared on the CRD as an unserved placeholder** for upgrade safety. Update any manifests still declaring `apiVersion: recon.bewley.net/v1alpha1` to `v1beta1` (the schemas were identical).
+- Why the placeholder: Kubernetes never removes an entry from a CRD's `status.storedVersions` on its own, so every cluster first installed while `v1alpha1` was the storage version still lists it. The apiserver and OLM both reject a CRD update that drops a listed stored version, and OLM applies the CRD before the CSV, so a release that removed `v1alpha1` outright could never run on those clusters to clean up. On startup the operator therefore performs a storage version migration: it rewrites every `OvnRecon` (re-encoding it as `v1beta1`) and then sets `status.storedVersions` to `[v1beta1]`. Once that has happened, a later release removes the placeholder for good.
+- If an upgrade nevertheless stalls with `risk of data loss updating "ovnrecons.recon.bewley.net": new CRD removes version v1alpha1 that is listed as a stored version` (for example when jumping straight from 1.0.3 to a release that has already dropped the placeholder), run the migration by hand and then let OLM retry. A failed InstallPlan is not retried on its own, even with automatic approval:
+  ```
+  oc get ovnrecons.recon.bewley.net -A -o yaml | oc replace -f -
+  oc patch crd ovnrecons.recon.bewley.net --subresource=status --type=merge -p '{"status":{"storedVersions":["v1beta1"]}}'
+  oc delete installplan -n <operator-namespace> <failed-installplan>
+  ```
 - The legacy alias fields have been **removed**; only the hierarchical fields remain:
   - `image.*` → `consolePlugin.image.*`
   - `featureGates.ovn-collector` → `collector.enabled`

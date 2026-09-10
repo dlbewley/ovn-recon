@@ -115,7 +115,7 @@ Canonical type contract shared across Go and TypeScript:
 
 ### Operator (`operator/`)
 
-Kubebuilder-generated operator. Reconciles `OvnRecon` CRs (`recon.bewley.net/v1alpha1`) into `Deployment`, `Service`, and `ConsolePlugin` resources. The primary instance (oldest CR) owns cluster-scoped resources. OLM bundle lives in `operator/bundle/`.
+Kubebuilder-generated operator. Reconciles `OvnRecon` CRs (`recon.bewley.net/v1beta1`) into `Deployment`, `Service`, and `ConsolePlugin` resources. The primary instance (oldest CR) owns cluster-scoped resources. OLM bundle lives in `operator/bundle/`.
 
 ## Task Tracking
 

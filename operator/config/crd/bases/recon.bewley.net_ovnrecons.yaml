@@ -14,6 +14,16 @@ spec:
     singular: ovnrecon
   scope: Cluster
   versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Retired OvnRecon API version kept declared only so clusters that
+          once stored objects as v1alpha1 can upgrade; it is not served. The operator
+          clears it from status.storedVersions on startup. Use recon.bewley.net/v1beta1.
+        type: object
+        x-kubernetes-preserve-unknown-fields: true
+    served: false
+    storage: false
   - name: v1beta1
     schema:
       openAPIV3Schema:
