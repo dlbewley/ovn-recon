@@ -10,6 +10,7 @@ import {
     findRouteAdvertisementForVrf,
     getCudnsSelectedByRouteAdvertisement,
     getNadUpstreamNodeIdsForEdges,
+    getVrfEgressInterfaces,
     parseNadConfig,
     LldpNeighborNode
 } from '../components/nodeVisualizationSelectors';
@@ -122,6 +123,16 @@ export interface NodeTypeDescriptor<T = never> {
     /** Extra content drawn inside the node box, e.g. the attachment namespace list. */
     detail?: (item: T, box: { width: number; height: number }) => React.ReactNode;
     edges?: (item: T, ctx: GraphContext, out: EdgeSink) => void;
+    /**
+     * The flow-path walk enters this node but does not continue through it.
+     *
+     * A bridge is assumed to forward between all of its ports, which is what lets a
+     * highlight run ens192 -> br-ex -> patch. br-int is not that kind of bridge: what
+     * passes between its ports is decided by OVN's flows, which the physical view
+     * cannot see. Walking through it joined every provider bridge to every VRF
+     * (ovn-recon-2h2). Selecting the node itself still lights every neighbour.
+     */
+    opaque?: boolean;
 }
 
 // --- shared behaviour ------------------------------------------------------
@@ -269,6 +280,19 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
                         + `(networkSelectors) and shares its name with this VRF; the name is the only link to ${vrf.name}.`
                 });
             });
+            // Egress: the VRF's own route table names the interface its traffic leaves
+            // by. Read, not assumed -- br-ex on a stock cluster, but the table decides
+            // (ovn-recon-2h2). One edge per egress interface; the VRF's own ports are
+            // not egress, they are where the traffic comes from.
+            getVrfEgressInterfaces(vrf, ctx.nns).forEach((egress) => {
+                const routes = egress.destinations.join(', ');
+                out.named('vrf-egress', interfaceNodeId(vrf, ctx), egress.interfaceName, 'from', {
+                    kind: 'layering',
+                    provenance: 'observed',
+                    rationale: `VRF ${vrf.name} routes ${routes} via ${egress.interfaceName}: `
+                        + `routes.running in table ${egress.tableId} name next-hop-interface ${egress.interfaceName}.`
+                });
+            });
             // A Primary network and its side-effect VRF are one relationship even
             // with no RouteAdvertisement present (ovn-recon-s3t.28). The rationale
             // cites the signals that matched, since this is inferred rather than declared.
@@ -307,6 +331,9 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         gapBefore: 40,
         icon: <InfrastructureIcon />,
         color: '#009596',
+        // OVN's flows decide what passes between br-int's ports; a highlight must
+        // not guess by walking through it.
+        opaque: true,
         // Synthesized: nmstate reports no br-int interface, only ports declaring
         // it as their controller (ovn-recon-s3t.46).
         items: (ctx) => (ctx.integrationBridge ? [ctx.integrationBridge] : []),
@@ -563,6 +590,13 @@ export const descriptorFor = (type: NodeTypeId): AnyNodeTypeDescriptor | undefin
 /** Descriptors drawing in a given lane, in table order. */
 export const descriptorsInLane = (lane: string): AnyNodeTypeDescriptor[] =>
     NODE_TYPES.filter((d) => d.lane === lane);
+
+/** Ids of every node the flow-path walk may enter but not pass through. */
+export const opaqueNodeIds = (ctx: GraphContext): Set<string> =>
+    new Set(
+        NODE_TYPES.filter((d) => d.opaque)
+            .flatMap((d) => d.items(ctx).map((item: unknown) => d.id(item, ctx)))
+    );
 
 /**
  * A few icons are keyed on the nmstate type rather than the node type, because all

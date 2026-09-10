@@ -12,12 +12,13 @@ import { buildDrawerTabs, getDrawerTabs } from '../topology/drawerTabs';
 import DrawerTabStrip from './DrawerTabStrip';
 import { edgeKey, findDuplicateIds, resolveNodeId as resolveId } from '../topology/ids';
 import {
-    DrawerTabId, Graph, NodeViewModel
+    DrawerTabId, NodeViewModel
 } from '../topology/types';
 import { buildNodeViewModel } from '../topology/viewModel';
 import { computeEdgeBow, computeNodeOrder, sortByRank } from './nodeVisualizationLayout';
 import { laneOrderingInput, layoutLanes, LaneViewState, PlacedNode } from '../topology/lanes';
-import { descriptorFor, iconFor, NodeTypeId, NODE_TYPES } from '../topology/descriptors';
+import { descriptorFor, iconFor, NodeTypeId, NODE_TYPES, opaqueNodeIds } from '../topology/descriptors';
+import { buildFlowGraph, flowPath } from '../topology/flowPath';
 import { navigateToPath } from './navigateToPath';
 
 interface NodeVisualizationProps {
@@ -203,54 +204,15 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     };
 
     // Build Graph
-    const graph = React.useMemo(() => {
-        const g: Graph = { nodes: {} };
-        const addNode = (id: string) => {
-            if (!g.nodes[id]) g.nodes[id] = { id, upstream: [], downstream: [] };
-        };
-        const addEdge = (source: string, target: string) => {
-            addNode(source);
-            addNode(target);
-            if (!g.nodes[source].downstream.includes(target)) g.nodes[source].downstream.push(target);
-            if (!g.nodes[target].upstream.includes(source)) g.nodes[target].upstream.push(source);
-        };
-
-        topologyEdges.forEach((edge) => addEdge(edge.source, edge.target));
-
-        return g;
-    }, [topologyEdges]);
+    const graph = React.useMemo(() => buildFlowGraph(topologyEdges), [topologyEdges]);
+    // Nodes the highlight walk lights but does not pass through (br-int).
+    const opaqueIds = React.useMemo(() => opaqueNodeIds(ctx), [ctx]);
 
     // Path Traversal
     const [highlightedPath, setHighlightedPath] = React.useState<Set<string>>(new Set());
     const [isHighlightActive, setIsHighlightActive] = React.useState<boolean>(false);
 
-    const getFlowPath = (startNodeId: string) => {
-        const path = new Set<string>();
-        const visited = new Set<string>();
-
-        const traverse = (nodeId: string, direction: 'upstream' | 'downstream') => {
-            if (visited.has(nodeId)) return;
-            visited.add(nodeId);
-            path.add(nodeId);
-
-            const node = graph.nodes[nodeId];
-            if (!node) return;
-
-            const nextNodes = direction === 'upstream' ? node.upstream : node.downstream;
-            nextNodes.forEach(nextId => {
-                // One key per edge: edgeKey normalises direction, so the reverse
-                // spelling this used to add "for safety" is no longer needed.
-                path.add(edgeKey(nodeId, nextId));
-                traverse(nextId, direction);
-            });
-        };
-
-        traverse(startNodeId, 'upstream');
-        visited.clear(); // Reset visited for downstream traversal (allow overlap)
-        traverse(startNodeId, 'downstream');
-
-        return path;
-    };
+    const getFlowPath = (startNodeId: string) => flowPath(graph, startNodeId, opaqueIds);
 
     const laneLayout = layoutLanes(
         ctx, laneView,

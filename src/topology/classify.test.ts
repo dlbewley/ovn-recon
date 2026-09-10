@@ -129,7 +129,7 @@ describe('classify against real captures', () => {
         expect(names('vrf')).toEqual(['example-p-cudn']);
         expect(names('bridge')).toEqual(['br-ex', 'br-vmdata']);
         expect(names('bridge-port')).toEqual(['br-ex', 'ovs-vlan-1920']);
-        expect(names('patch')).toHaveLength(4);
+        expect(names('patch')).toHaveLength(6);
         expect(names('host-local')).toEqual(['0cb0de1976d0c71', 'lo']);
         // The Geneve tunnel: no rule covers it yet. See ovn-recon-s3t.29.
         expect(names('unclassified')).toEqual(['genev_sys_6081']);

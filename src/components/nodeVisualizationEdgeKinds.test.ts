@@ -100,7 +100,7 @@ describe('what the kinds are for', () => {
         expect(byKind('membership')).toEqual([
             'attached-namespaces', 'controller', 'management-port'
         ]);
-        expect(byKind('layering')).toEqual(['base-iface']);
+        expect(byKind('layering')).toEqual(['base-iface', 'vrf-egress']);
     });
 
     it('gives the ordering pass no reason to care about kinds', () => {
@@ -189,6 +189,25 @@ describe('why each edge exists', () => {
             'ovn-k8s-mp3 is a port of both br-int (controller: br-int) and VRF example-p-cudn (vrf.port).'
         );
         expect(byRule('patch-peer').rationale).toMatch(/^br-int port patch-.* patches to patch-.*, a port of br-ex: patch\.peer/);
+        expect(byRule('vrf-egress').rationale).toBe(
+            'VRF example-p-cudn routes 0.0.0.0/0, 172.30.0.0/16 via br-ex: '
+            + 'routes.running in table 5775 name next-hop-interface br-ex.'
+        );
+    });
+
+    it('reads a VRF\'s egress from its route table, not from a bridge name', () => {
+        // The VRF's management port is on br-int, and br-int patches to every
+        // provider bridge. Which one the VRF actually leaves by is in its table
+        // (ovn-recon-2h2). Layering: traffic really flows through br-ex.
+        const egress = edges.filter((e) => e.rule === 'vrf-egress');
+        expect(egress).toEqual([expect.objectContaining({
+            source: 'iface:br-ex', target: 'vrf:example-p-cudn', kind: 'layering', provenance: 'observed'
+        })]);
+    });
+
+    it('patches br-int to both provider bridges, one peer edge each', () => {
+        expect(edges.filter((e) => e.rule === 'patch-peer').map((e) => e.source).sort())
+            .toEqual(['iface:br-ex', 'iface:br-vmdata']);
     });
 
     it('marks the VRF-to-network guess as inferred and cites both signals', () => {
@@ -206,7 +225,7 @@ describe('why each edge exists', () => {
         const rulesWith = (provenance: TopologyEdge['provenance']) =>
             Array.from(new Set(edges.filter((e) => e.provenance === provenance).map((e) => e.rule))).sort();
         expect(rulesWith('observed')).toEqual([
-            'base-iface', 'bridge-mapping', 'controller', 'management-port', 'patch-peer'
+            'base-iface', 'bridge-mapping', 'controller', 'management-port', 'patch-peer', 'vrf-egress'
         ]);
         expect(rulesWith('declared')).toEqual(['attached-namespaces', 'physical-network-name']);
         expect(rulesWith('inferred')).toEqual(['primary-network']);

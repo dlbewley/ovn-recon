@@ -30,7 +30,7 @@ const ctx = buildGraphContext({
 
 describe('buildGraphContext', () => {
     it('derives the interface and mapping lists off the NodeNetworkState', () => {
-        expect(ctx.interfaces).toHaveLength(20);
+        expect(ctx.interfaces).toHaveLength(22);
         expect(ctx.bridgeMappings.map((m) => m.localnet)).toEqual(['physnet', 'physnet-vmdata']);
     });
 

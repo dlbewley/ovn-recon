@@ -224,6 +224,15 @@
           }
         },
         {
+          "name": "patch-cluster_udn_vlan.1924_ovn_localnet_port-to-br-int",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-vmdata",
+          "patch": {
+            "peer": "patch-br-int-to-cluster_udn_vlan.1924_ovn_localnet_port"
+          }
+        },
+        {
           "name": "patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1",
           "type": "ovs-interface",
           "state": "ignore",
@@ -239,6 +248,15 @@
           "controller": "br-int",
           "patch": {
             "peer": "patch-br-ex_worker-1-to-br-int"
+          }
+        },
+        {
+          "name": "patch-br-int-to-cluster_udn_vlan.1924_ovn_localnet_port",
+          "type": "ovs-interface",
+          "state": "ignore",
+          "controller": "br-int",
+          "patch": {
+            "peer": "patch-cluster_udn_vlan.1924_ovn_localnet_port-to-br-int"
           }
         }
       ],

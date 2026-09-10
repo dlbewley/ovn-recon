@@ -31,6 +31,16 @@ export interface VrfAssociatedRoute {
     protocol?: string;
 }
 
+/** An interface a VRF's own route table sends traffic out of. */
+export interface VrfEgress {
+    /** The next-hop interface named by the routes. */
+    interfaceName: string;
+    /** Destinations routed through it, default route first. */
+    destinations: string[];
+    /** The VRF's route table the routes were read from. */
+    tableId: string;
+}
+
 export interface LldpNeighborNode {
     id: string;
     label: string;
@@ -475,8 +485,24 @@ const normalizeRoute = (route: unknown): VrfAssociatedRoute | null => {
     };
 };
 
+/**
+ * Normalised routes per NodeNetworkState, so the walk over the raw route list runs
+ * once per resource rather than once per VRF. The graph asks for every VRF's egress
+ * on each render; the drawer asks again for the selected one. Keyed weakly on the
+ * resource object: a fresh watch result is a fresh object and a fresh walk.
+ */
+const routesByNns = new WeakMap<NodeNetworkState, VrfAssociatedRoute[]>();
+
 const collectNnsRoutes = (nns: NodeNetworkState): VrfAssociatedRoute[] => {
-    const currentState = nns.status?.currentState as Record<string, unknown> | undefined;
+    const cached = routesByNns.get(nns);
+    if (cached) return cached;
+    const routes = walkNnsRoutes(nns);
+    routesByNns.set(nns, routes);
+    return routes;
+};
+
+const walkNnsRoutes = (nns: NodeNetworkState): VrfAssociatedRoute[] => {
+    const currentState = nns?.status?.currentState as Record<string, unknown> | undefined;
     if (!currentState) {
         return [];
     }
@@ -512,24 +538,70 @@ const collectNnsRoutes = (nns: NodeNetworkState): VrfAssociatedRoute[] => {
     return Array.from(dedupedByKey.values());
 };
 
+const vrfPortNames = (vrfInterface: Interface): Set<string> => new Set<string>(
+    Array.isArray(vrfInterface.vrf?.port)
+        ? vrfInterface.vrf.port
+        : typeof vrfInterface.vrf?.port === 'string'
+            ? [vrfInterface.vrf.port]
+            : []
+);
+
 export const getVrfRoutesForInterface = (
     vrfInterface: Interface,
     nns: NodeNetworkState
 ): VrfAssociatedRoute[] => {
     const vrfTableId = toStringValue(vrfInterface.vrf?.['route-table-id']);
-    const vrfPorts = new Set<string>(
-        Array.isArray(vrfInterface.vrf?.port)
-            ? vrfInterface.vrf.port
-            : typeof vrfInterface.vrf?.port === 'string'
-                ? [vrfInterface.vrf.port]
-                : []
-    );
+    const vrfPorts = vrfPortNames(vrfInterface);
 
     return collectNnsRoutes(nns).filter((route) => {
         const byTable = vrfTableId ? route.tableId === vrfTableId : false;
         const byPort = route.nextHopInterface ? vrfPorts.has(route.nextHopInterface) : false;
         return byTable || byPort;
     });
+};
+
+const DEFAULT_ROUTES = new Set(['0.0.0.0/0', '::/0']);
+
+/**
+ * Where a VRF's traffic leaves the node, read from its own route table.
+ *
+ * The graph used to imply this by walking br-int: a VRF's management port is on
+ * br-int, br-int patches to every provider bridge, so a VRF looked attached to all
+ * of them. The kernel already records the answer. Every route in the VRF's table
+ * names a next-hop interface, and the ones that are not the VRF's own ports are the
+ * interfaces it egresses through -- br-ex on a stock cluster, but whatever the table
+ * says on any other. Nothing here assumes a bridge name.
+ *
+ * One entry per egress interface, default route first within each so the rationale
+ * leads with the route that matters. Routes without a table id are not the VRF's.
+ */
+export const getVrfEgressInterfaces = (
+    vrfInterface: Interface,
+    nns: NodeNetworkState
+): VrfEgress[] => {
+    const tableId = toStringValue(vrfInterface.vrf?.['route-table-id']);
+    if (!tableId) return [];
+    const ownPorts = vrfPortNames(vrfInterface);
+
+    const byInterface = new Map<string, string[]>();
+    collectNnsRoutes(nns).forEach((route) => {
+        const via = route.nextHopInterface;
+        if (route.tableId !== tableId || !via) return;
+        if (via === vrfInterface.name || ownPorts.has(via)) return;
+        const destinations = byInterface.get(via) ?? [];
+        if (!destinations.includes(route.destination)) destinations.push(route.destination);
+        byInterface.set(via, destinations);
+    });
+
+    const isDefault = (destination: string) => DEFAULT_ROUTES.has(destination);
+    return Array.from(byInterface.entries()).map(([interfaceName, destinations]) => ({
+        interfaceName,
+        destinations: [
+            ...destinations.filter(isDefault),
+            ...destinations.filter((d) => !isDefault(d))
+        ],
+        tableId
+    }));
 };
 
 export const getCudnAssociatedNamespaces = (cudn: ClusterUserDefinedNetwork): string[] => {
