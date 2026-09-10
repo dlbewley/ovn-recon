@@ -119,15 +119,22 @@ Kubebuilder-generated operator. Reconciles `OvnRecon` CRs (`recon.bewley.net/v1b
 
 ## Task Tracking
 
-This project uses **bd** (beads) for issue tracking:
+This project uses **bd** (beads) for issue tracking. The canonical store is an
+embedded Dolt database under `.beads/`; it is not committed as ordinary files, and
+there is no `bd sync` command. Cross-machine sync rides the code's Git remote under
+`refs/dolt/data`:
 
 ```bash
+bd prime              # Workflow context + memories (hooks run this on session start)
 bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --status in_progress
 bd close <id>
-bd sync               # Sync with git at session end
+bd dolt push          # Publish Dolt history to origin at session end
+bd dolt pull          # Fetch Dolt history from origin (new clone: bd bootstrap)
 ```
+
+Do not treat any committed JSONL as the source of truth. See `.beads/README.md`.
 
 Planning documents in `docs/tasks/` should include an `Initial Beads Backlog Mapping` section with a table of bead IDs.
 
