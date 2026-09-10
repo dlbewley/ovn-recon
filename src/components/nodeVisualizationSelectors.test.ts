@@ -8,6 +8,7 @@ import {
     formatLabelSelector,
     getIpv4Addresses,
     getVrfConnectionInfo,
+    getVrfEgressInterfaces,
     getVrfRoutesForInterface,
     hasLldpNeighbors
 } from './nodeVisualizationSelectors';
@@ -51,6 +52,33 @@ describe('nodeVisualizationSelectors fixture coverage', () => {
         expect(routes.map((route) => route.destination).sort()).toEqual(['10.128.0.0/14', '172.30.0.0/16']);
         expect(routes.find((route) => route.destination === '172.30.0.0/16')?.nextHopInterface).toBe('ovn-k8s-mp1');
         expect(routes.every((route) => route.destination !== '198.51.100.0/24')).toBe(true);
+    });
+
+    it('names the interfaces a VRF egresses by from its own table, default route first', () => {
+        const nns = loadFixture('primary-cudn-vrf');
+        const vrf = findInterfaceByName(nns, 'example-p-cudn');
+
+        expect(getVrfEgressInterfaces(vrf, nns)).toEqual([{
+            interfaceName: 'br-ex',
+            destinations: ['0.0.0.0/0', '172.30.0.0/16'],
+            tableId: '5775'
+        }]);
+    });
+
+    it('does not count a VRF\'s own ports, or routes outside its table, as egress', () => {
+        // vrf-blue's table only routes via its own management ports; the route via
+        // ovn-k8s-mp1 that matches by port sits in another table.
+        const nns = loadFixture('vrf-mixed-routes');
+        const vrf = findInterfaceByName(nns, 'vrf-blue');
+
+        expect(getVrfEgressInterfaces(vrf, nns)).toEqual([]);
+    });
+
+    it('reports no egress for a VRF without a route table', () => {
+        const nns = loadFixture('primary-cudn-vrf');
+        const vrf = { ...findInterfaceByName(nns, 'example-p-cudn'), vrf: { port: ['ovn-k8s-mp3'] } };
+
+        expect(getVrfEgressInterfaces(vrf, nns)).toEqual([]);
     });
 
     it('accepts dotted route keys and ignores partial route entries without destination', () => {

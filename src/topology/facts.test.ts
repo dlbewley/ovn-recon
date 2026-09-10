@@ -340,7 +340,8 @@ describe('facts builders', () => {
             expect(ctx.integrationBridge?.ports.map((p) => p.name).sort()).toEqual([
                 'br-int', 'ovn-k8s-mp0', 'ovn-k8s-mp3',
                 'patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1',
-                'patch-br-int-to-br-ex_worker-1'
+                'patch-br-int-to-br-ex_worker-1',
+                'patch-br-int-to-cluster_udn_vlan.1924_ovn_localnet_port'
             ]);
         });
 
@@ -358,8 +359,16 @@ describe('facts builders', () => {
             const facts = factsFor('integration-bridge', ctx.integrationBridge!);
             const patches = byLabel(facts, 'Patch Ports');
             const texts = (patches.value as { text: string }[]).map((v) => v.text);
-            expect(texts).toHaveLength(2);
-            texts.forEach((text) => expect(text).toMatch(/^br-ex: patch-br-int-to-.+ ↔ patch-br-ex.+/));
+            // Two to br-ex (default network and the Primary CUDN's gateway), one to
+            // br-vmdata for the localnet network.
+            expect(texts).toHaveLength(3);
+            expect(texts.filter((t) => t.startsWith('br-ex: '))).toHaveLength(2);
+            texts.filter((t) => t.startsWith('br-ex: '))
+                .forEach((text) => expect(text).toMatch(/^br-ex: patch-br-int-to-.+ ↔ patch-br-ex.+/));
+            expect(texts.filter((t) => t.startsWith('br-vmdata: '))).toEqual([
+                'br-vmdata: patch-br-int-to-cluster_udn_vlan.1924_ovn_localnet_port'
+                + ' ↔ patch-cluster_udn_vlan.1924_ovn_localnet_port-to-br-int'
+            ]);
         });
 
         it('shows the internal port as an attribute, per the s3t.26 rule', () => {

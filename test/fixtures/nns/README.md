@@ -40,7 +40,7 @@ Optional sections such as routes and bridge mappings should be included only whe
 | `host-lldp.json` | synthetic | LLDP neighbour TLVs and the LLDP toggle |
 | `vrf-mixed-routes.json` | synthetic | VRF route matching across route key spellings |
 | `partial-missing-fields.json` | synthetic | absent optional sections; parsers must not throw |
-| `primary-cudn-vrf.json` | real CNV worker | ovs-interface shadowing a same-named ovs-bridge and holding the node IP; linux VLAN interface; VRF created by a Primary (Layer2) CUDN with its own route table; two OVS bridges with two localnet mappings; patch/veth/geneve/loopback tail |
+| `primary-cudn-vrf.json` | real CNV worker | ovs-interface shadowing a same-named ovs-bridge and holding the node IP; linux VLAN interface; VRF created by a Primary (Layer2) CUDN with its own route table; two OVS bridges with two localnet mappings, both patched to br-int (br-ex twice: default network and the Primary CUDN's gateway; br-vmdata once, for a localnet CUDN); VRF route table with a default route via br-ex; patch/veth/geneve/loopback tail |
 | `bonded-lldp.json` | real bonded UCS worker | three 802.3ad bonds — one into `br-ex`, one into a second OVS bridge, one standalone carrying its own address; LLDP neighbours on six NICs across two leaf switches; **27 localnet mappings on a single bridge** — a legacy, now-discouraged shape (see note below), retained because such clusters exist and must render; a half-configured localnet patch port that is down and unattached; two unused NICs in `down` state |
 
 `primary-cudn-vrf.json` has a companion in `test/fixtures/cudn/` holding the

@@ -36,7 +36,7 @@ const byNameAndType = (name: string, type: string) =>
 
 describe('primary-cudn-vrf fixture: shape', () => {
     it('keeps the interfaces the scenario depends on', () => {
-        expect(interfaces).toHaveLength(20);
+        expect(interfaces).toHaveLength(22);
         expect(byNameAndType('br-ex', 'ovs-bridge')).toBeDefined();
         expect(byNameAndType('br-ex', 'ovs-interface')).toBeDefined();
         expect(byNameAndType('ens224.456', 'vlan')).toBeDefined();
@@ -210,6 +210,6 @@ describe('interfaces that fall outside the lanes', () => {
     it('marks the ignored OVN plumbing as such', () => {
         const ignored = interfaces.filter((i) => i.state === 'ignore').map((i) => i.name);
         expect(ignored).toContain('br-int');
-        expect(ignored.filter((n) => n.startsWith('patch-'))).toHaveLength(4);
+        expect(ignored.filter((n) => n.startsWith('patch-'))).toHaveLength(6);
     });
 });
