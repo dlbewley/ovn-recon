@@ -24,11 +24,16 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // OvnReconSpec defines the desired state of OvnRecon.
+//
+// Every field is optional and an empty spec is a complete, working install.
+// Defaults are applied by the operator at reconcile time, not by the CRD
+// schema, so an omitted field stays omitted in the stored object and follows
+// the operator's current default across upgrades. The values the operator
+// actually resolved are published in status.effective.
 type OvnReconSpec struct {
 	// TargetNamespace is where the OVN Recon workload and Service are created.
 	// Defaults to "ovn-recon" when omitted.
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:default=ovn-recon
 	TargetNamespace string `json:"targetNamespace,omitempty"`
 
 	// Operator configuration.
@@ -42,8 +47,10 @@ type OvnReconSpec struct {
 }
 
 type ImageSpec struct {
-	// Repository is the plugin container image, without a tag.
-	// +kubebuilder:default=quay.io/dbewley/ovn-recon
+	// Repository is the plugin container image, without a tag. Leave it
+	// unset to run the image the operator release declares (RELATED_IMAGE_PLUGIN,
+	// which mirrored installs rewrite); the built-in fallback is
+	// quay.io/dbewley/ovn-recon.
 	Repository string `json:"repository,omitempty"`
 	// Tag overrides the image tag. Defaults to the operator's own release
 	// version, so the plugin upgrades in lockstep with the operator.
@@ -53,8 +60,10 @@ type ImageSpec struct {
 }
 
 type CollectorImageSpec struct {
-	// Repository is the collector container image, without a tag.
-	// +kubebuilder:default=quay.io/dbewley/ovn-collector
+	// Repository is the collector container image, without a tag. Leave it
+	// unset to run the image the operator release declares
+	// (RELATED_IMAGE_COLLECTOR, which mirrored installs rewrite); the built-in
+	// fallback is quay.io/dbewley/ovn-collector.
 	Repository string `json:"repository,omitempty"`
 	// Tag overrides the image tag. Defaults to the console plugin's tag, so
 	// the collector upgrades in lockstep with the plugin.
@@ -72,7 +81,6 @@ type OperatorSpec struct {
 type OperatorLoggingSpec struct {
 	// Level sets the operator controller's log verbosity. Defaults to info.
 	// +kubebuilder:validation:Enum=error;warn;info;debug;trace
-	// +kubebuilder:default=info
 	Level string `json:"level,omitempty"`
 
 	// Events controls Kubernetes Event behavior from the operator.
@@ -84,12 +92,10 @@ type OperatorEventsSpec struct {
 	// Normal records routine reconcile progress, Warning restricts events to
 	// problems. Defaults to Normal.
 	// +kubebuilder:validation:Enum=Normal;Warning
-	// +kubebuilder:default=Normal
 	MinType string `json:"minType,omitempty"`
 
 	// DedupeWindow suppresses repeat events with the same reason within this
 	// duration (Go duration syntax, e.g. "5m"). Defaults to 5m.
-	// +kubebuilder:default:="5m"
 	DedupeWindow string `json:"dedupeWindow,omitempty"`
 }
 
@@ -101,7 +107,6 @@ type ConsolePluginSpec struct {
 	// Enabled auto-registers the plugin in the Console operator configuration.
 	// Defaults to true — the plugin appears in the console without further
 	// action. Set false to deploy the plugin resources without registering.
-	// +kubebuilder:default=true
 	Enabled *bool `json:"enabled,omitempty"`
 
 	// Image configuration for the plugin container.
@@ -114,7 +119,6 @@ type ConsolePluginSpec struct {
 type ConsolePluginLoggingSpec struct {
 	// Level sets the plugin backend's log verbosity. Defaults to info.
 	// +kubebuilder:validation:Enum=error;warn;info;debug
-	// +kubebuilder:default=info
 	Level string `json:"level,omitempty"`
 
 	// AccessLog controls per-request access logging in the plugin backend.
@@ -124,21 +128,19 @@ type ConsolePluginLoggingSpec struct {
 type AccessLogSpec struct {
 	// Enabled logs every HTTP request served by the plugin backend.
 	// Defaults to false.
-	// +kubebuilder:default=false
 	Enabled bool `json:"enabled,omitempty"`
 }
 
 type CollectorSpec struct {
 	// Enabled toggles logical topology features backed by the collector service.
 	// Defaults to true; set false to disable the collector and the logical views.
-	// +kubebuilder:default=true
 	Enabled *bool `json:"enabled,omitempty"`
 
 	// Image configuration for the OVN collector container image.
 	Image CollectorImageSpec `json:"image,omitempty"`
 
 	// ProbeNamespaces defines namespaces where collector is allowed to probe OVN pods.
-	// +kubebuilder:default:={"openshift-ovn-kubernetes","openshift-frr-k8s"}
+	// Defaults to openshift-ovn-kubernetes and openshift-frr-k8s.
 	ProbeNamespaces []string `json:"probeNamespaces,omitempty"`
 
 	// Logging controls for the collector service.
@@ -154,12 +156,10 @@ type CollectorSpec struct {
 // SNAPSHOT_STALE) in preference to fixture data.
 type CollectorCacheSpec struct {
 	// Enabled toggles the snapshot cache. Defaults to true.
-	// +kubebuilder:default=true
 	Enabled *bool `json:"enabled,omitempty"`
 
-	// TTLSeconds is how long a cached zone snapshot stays fresh.
+	// TTLSeconds is how long a cached zone snapshot stays fresh. Defaults to 120.
 	// +kubebuilder:validation:Minimum=30
-	// +kubebuilder:default=120
 	TTLSeconds int32 `json:"ttlSeconds,omitempty"`
 
 	// Storage selects the volume backing the cache directory.
@@ -174,7 +174,6 @@ type CollectorCacheStorageSpec struct {
 	// managed true. PVC requires persistent storage and never falls back;
 	// provisioning failures are surfaced instead.
 	// +kubebuilder:validation:Enum=auto;EmptyDir;PVC
-	// +kubebuilder:default=auto
 	Mode string `json:"mode,omitempty"`
 
 	// ClaimName names an existing PersistentVolumeClaim to mount instead of
@@ -187,12 +186,10 @@ type CollectorCacheStorageSpec struct {
 	// previously managed claim. When claimName is empty a default of
 	// "<collector>-cache" is used. Users who need RWX or special claim
 	// settings should pre-create their own claim and set managed false.
-	// +kubebuilder:default=true
 	Managed *bool `json:"managed,omitempty"`
 
-	// Size of the managed claim. Deliberately generous default — the cache
-	// needs only a few MiB, but some provisioners enforce minimum sizes.
-	// +kubebuilder:default="1Gi"
+	// Size of the managed claim. Defaults to 1Gi: deliberately generous, the
+	// cache needs only a few MiB, but some provisioners enforce minimum sizes.
 	Size string `json:"size,omitempty"`
 
 	// StorageClassName for the managed claim; empty uses the cluster default.
@@ -205,14 +202,12 @@ type CollectorLoggingSpec struct {
 	// collector logs each probe command and cache decision; trace adds
 	// per-request detail.
 	// +kubebuilder:validation:Enum=error;warn;info;debug;trace
-	// +kubebuilder:default=info
 	Level string `json:"level,omitempty"`
 
 	// IncludeProbeOutput logs the raw output of every ovn-nbctl/ovn-sbctl
 	// probe command the collector runs. Verbose — each snapshot logs the
 	// full northbound table dumps — so enable only while diagnosing
 	// collection problems. Defaults to false.
-	// +kubebuilder:default=false
 	IncludeProbeOutput bool `json:"includeProbeOutput,omitempty"`
 }
 
@@ -220,6 +215,98 @@ type CollectorLoggingSpec struct {
 type OvnReconStatus struct {
 	// Conditions represent the latest available observations of an object's state
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Effective is the configuration the operator resolved and is acting on:
+	// spec values where set, otherwise the operator's defaults and the images
+	// the operator release declares. It is what an explicit spec would have to
+	// say to reproduce the current behaviour, and the place to look when the
+	// spec is sparse.
+	// +optional
+	Effective *EffectiveConfig `json:"effective,omitempty"`
+}
+
+// EffectiveConfig is the resolved configuration for one generation of the spec.
+type EffectiveConfig struct {
+	// ObservedGeneration is the spec generation these values were resolved from.
+	ObservedGeneration int64 `json:"observedGeneration"`
+	// TargetNamespace is where the workload runs.
+	TargetNamespace string `json:"targetNamespace"`
+	// Operator is the resolved operator policy. Log and event policy follow
+	// the primary OvnRecon, so these can differ from this object's spec.
+	Operator EffectiveOperator `json:"operator"`
+	// ConsolePlugin is the resolved console plugin configuration.
+	ConsolePlugin EffectiveConsolePlugin `json:"consolePlugin"`
+	// Collector is the resolved collector configuration.
+	Collector EffectiveCollector `json:"collector"`
+}
+
+type EffectiveOperator struct {
+	// LogLevel the operator controller runs at.
+	LogLevel string `json:"logLevel"`
+	// EventMinType is the least severe Kubernetes Event type emitted.
+	EventMinType string `json:"eventMinType"`
+	// EventDedupeWindow suppresses repeat events with the same reason.
+	EventDedupeWindow string `json:"eventDedupeWindow"`
+}
+
+type EffectiveConsolePlugin struct {
+	// Enabled reports whether the plugin is registered with the console.
+	Enabled bool `json:"enabled"`
+	// DisplayName shown in the console.
+	DisplayName string `json:"displayName"`
+	// Image is the full plugin image reference the Deployment runs.
+	Image string `json:"image"`
+	// PullPolicy of the plugin container.
+	PullPolicy string `json:"pullPolicy"`
+	// LogLevel of the plugin backend.
+	LogLevel string `json:"logLevel"`
+	// AccessLog reports whether per-request access logging is on.
+	AccessLog bool `json:"accessLog"`
+}
+
+type EffectiveCollector struct {
+	// Enabled reports whether the collector and logical topology views run.
+	Enabled bool `json:"enabled"`
+	// Image is the full collector image reference the Deployment runs.
+	Image string `json:"image"`
+	// PullPolicy of the collector container.
+	PullPolicy string `json:"pullPolicy"`
+	// ProbeNamespaces the collector may exec into.
+	ProbeNamespaces []string `json:"probeNamespaces"`
+	// LogLevel of the collector.
+	LogLevel string `json:"logLevel"`
+	// IncludeProbeOutput reports whether raw probe output is logged.
+	IncludeProbeOutput bool `json:"includeProbeOutput"`
+	// Cache is the resolved snapshot cache configuration.
+	Cache EffectiveCollectorCache `json:"cache"`
+}
+
+type EffectiveCollectorCache struct {
+	// Enabled reports whether snapshot caching is on.
+	Enabled bool `json:"enabled"`
+	// TTLSeconds is the freshness window after the floor was applied.
+	TTLSeconds int32 `json:"ttlSeconds"`
+	// Mode is the requested backing: auto, EmptyDir or PVC.
+	Mode string `json:"mode"`
+	// Backing is what the collector Deployment actually mounts, PVC or
+	// EmptyDir, after any auto-mode fallback. Empty while the collector is
+	// disabled.
+	// +optional
+	Backing string `json:"backing,omitempty"`
+	// FallbackReason explains an auto-mode fallback to EmptyDir.
+	// +optional
+	FallbackReason string `json:"fallbackReason,omitempty"`
+	// ClaimName is the PersistentVolumeClaim used or created for the cache.
+	// +optional
+	ClaimName string `json:"claimName,omitempty"`
+	// Managed reports whether the operator creates and owns the claim.
+	Managed bool `json:"managed"`
+	// Size of the managed claim.
+	// +optional
+	Size string `json:"size,omitempty"`
+	// StorageClassName of the managed claim; empty means the cluster default.
+	// +optional
+	StorageClassName string `json:"storageClassName,omitempty"`
 }
 
 // +kubebuilder:resource:scope=Cluster

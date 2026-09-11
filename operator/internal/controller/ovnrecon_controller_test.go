@@ -101,6 +101,17 @@ var _ = Describe("OvnRecon Controller", func() {
 			})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("ConsolePlugin"))
+
+			By("having published the resolved configuration before the ConsolePlugin step")
+			resolved := &reconv1beta1.OvnRecon{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, resolved)).To(Succeed())
+			Expect(resolved.Status.Effective).NotTo(BeNil())
+			Expect(resolved.Status.Effective.TargetNamespace).To(Equal(targetNamespace))
+			Expect(resolved.Status.Effective.ObservedGeneration).To(Equal(resolved.Generation))
+			Expect(resolved.Status.Effective.Collector.Enabled).To(BeTrue())
+			Expect(resolved.Status.Effective.ConsolePlugin.Enabled).To(BeTrue())
+			Expect(resolved.Status.Effective.Collector.Cache.Mode).To(Equal("auto"))
+			Expect(resolved.Status.Effective.Collector.Image).NotTo(BeEmpty())
 		})
 	})
 })

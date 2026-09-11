@@ -22,6 +22,13 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 
 ### Spec Configuration
 
+Every field is optional; an empty `spec` is a complete, working install. The defaults
+below are applied by the **operator at reconcile time**. The CRD schema declares none,
+so an omitted field stays omitted in the stored object and follows the operator's
+current default across upgrades instead of freezing the value that was current when
+the object was created. To see what the operator actually resolved, read
+[`status.effective`](#effective-configuration-statuseffective).
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `targetNamespace` | `string` | `ovn-recon` | The namespace where namespaced resources (Deployment, Service) are created. |
@@ -30,13 +37,13 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 | `operator.logging.events.dedupeWindow` | `string` | `5m` | Event deduplication window used by the operator event recorder. |
 | `consolePlugin.displayName` | `string` | `OVN Recon` | The name displayed in the OpenShift console. |
 | `consolePlugin.enabled` | `bool` | `true` | If true, the operator will patch the OpenShift Console configuration to enable the plugin. |
-| `consolePlugin.image.repository`| `string` | `quay.io/dbewley/ovn-recon` | Plugin backend image repository. |
+| `consolePlugin.image.repository`| `string` | _release image_ | Plugin backend image repository. Unset runs the image the operator release declares (`RELATED_IMAGE_PLUGIN`, rewritten by mirrored installs), falling back to `quay.io/dbewley/ovn-recon`. |
 | `consolePlugin.image.tag` | `string` | _operator's own version_ | Plugin backend image tag. Defaults to `OPERATOR_VERSION` (stamped into the CSV at release), falling back to `latest` only when that is unset or `dev` — i.e. for `make deploy` development installs. |
 | `consolePlugin.image.pullPolicy`| `string` | `IfNotPresent` | Plugin backend ImagePullPolicy. |
 | `consolePlugin.logging.level` | `string` | `info` | Console plugin backend log level. Allowed: `error`, `warn`, `info`, `debug`. |
 | `consolePlugin.logging.accessLog.enabled` | `bool` | `false` | Enables request access logging in the console plugin backend. |
 | `collector.enabled` | `bool` | `true` | Enables logical topology features backed by the collector service. |
-| `collector.image.repository`| `string` | `quay.io/dbewley/ovn-collector` | OVN collector image repository. |
+| `collector.image.repository`| `string` | _release image_ | OVN collector image repository. Unset runs the image the operator release declares (`RELATED_IMAGE_COLLECTOR`), falling back to `quay.io/dbewley/ovn-collector`. |
 | `collector.image.tag` | `string` | _inherits `consolePlugin.image.tag`_ | OVN collector image tag. |
 | `collector.image.pullPolicy`| `string` | _inherits `consolePlugin.image.pullPolicy`_ | OVN collector image pull policy. |
 | `collector.probeNamespaces` | `[]string` | `["openshift-ovn-kubernetes","openshift-frr-k8s"]` | Namespaces where collector is granted pod read/exec access. |
@@ -61,6 +68,15 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
   oc patch crd ovnrecons.recon.bewley.net --subresource=status --type=merge -p '{"status":{"storedVersions":["v1beta1"]}}'
   oc delete installplan -n <operator-namespace> <failed-installplan>
   ```
+- Since v1.0.4 the CRD schema declares **no defaults**; the operator applies them at reconcile time and reports the result in `status.effective`. Objects created under earlier releases still carry the values the old schema wrote into them at creation (for example `collector.enabled: false`, `collector.cache.storage.managed: false`, `mode: EmptyDir`, or an `image.repository`), and the operator honors an explicit value. Remove the fields you want to follow the current defaults:
+  ```
+  oc patch ovnrecon <name> --type=json -p '[
+    {"op":"remove","path":"/spec/collector/enabled"},
+    {"op":"remove","path":"/spec/collector/cache/storage/managed"},
+    {"op":"remove","path":"/spec/collector/cache/storage/mode"}
+  ]'
+  ```
+  Paths that are already absent make the patch fail; drop those entries and re-run. The one exception is `image.repository`: a repository equal to the built-in default is treated as unset, so such objects follow `RELATED_IMAGE_*` again without editing.
 - The legacy alias fields have been **removed**; only the hierarchical fields remain:
   - `image.*` → `consolePlugin.image.*`
   - `featureGates.ovn-collector` → `collector.enabled`
@@ -91,6 +107,30 @@ The operator reacts to the `OvnRecon` custom resource (Group: `recon.bewley.net`
 | `NamespaceReady`| `True` if the `targetNamespace` exists and is accessible. |
 | `ServiceReady` | `True` if the backend Service is reconciled. |
 | `ConsolePluginReady` | `True` if the `ConsolePlugin` resource is reconciled. |
+
+### Effective Configuration (`status.effective`)
+
+Because the spec is sparse, the operator publishes the configuration it resolved and is
+acting on under `status.effective`: spec values where set, otherwise the operator's
+defaults and the images the release declares. It is what an explicit spec would have to
+say to reproduce the current behaviour.
+
+```bash
+oc get ovnrecon ovn-recon -o jsonpath='{.status.effective}' | jq
+```
+
+| Field | Meaning |
+|-------|---------|
+| `observedGeneration` | Spec generation the values were resolved from. |
+| `targetNamespace` | Namespace the workload runs in. |
+| `operator.logLevel`, `operator.eventMinType`, `operator.eventDedupeWindow` | Operator policy. Follows the **primary** OvnRecon, so it can differ from this object's spec. |
+| `consolePlugin.enabled`, `displayName`, `image`, `pullPolicy`, `logLevel`, `accessLog` | Resolved console plugin settings; `image` is the full reference the Deployment runs. |
+| `collector.enabled`, `image`, `pullPolicy`, `probeNamespaces`, `logLevel`, `includeProbeOutput` | Resolved collector settings. |
+| `collector.cache.enabled`, `ttlSeconds` | Cache on/off and freshness window after the `30` s floor. |
+| `collector.cache.mode` | Requested backing: `auto`, `EmptyDir` or `PVC`. |
+| `collector.cache.backing` | What the collector Deployment **actually mounts** (`PVC` or `EmptyDir`) after any auto-mode fallback. Empty while the collector is disabled. |
+| `collector.cache.fallbackReason` | Why auto mode fell back to `EmptyDir`, when it did. |
+| `collector.cache.claimName`, `managed`, `size`, `storageClassName` | The claim in use or being created. |
 
 ---
 

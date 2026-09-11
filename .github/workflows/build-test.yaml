@@ -162,6 +162,29 @@ jobs:
           > Carried in release notes through the next few releases; details in OPERATOR.md.
 
           > [!IMPORTANT]
+          > **Images follow the release's `RELATED_IMAGE_*` again, and `OvnRecon` defaults now live in the operator instead of the CRD schema.**
+          >
+          > Earlier CRDs declared `consolePlugin.image.repository` and `collector.image.repository`
+          > as schema defaults, which the apiserver wrote into every object at creation. The
+          > operator only consults `RELATED_IMAGE_PLUGIN` / `RELATED_IMAGE_COLLECTOR` when the
+          > CR names no image, so that path was dead for every real object and mirrored
+          > (oc-mirror) installs pulled the hardcoded `quay.io` repository. Fixed: the CRD
+          > declares **no defaults at all**, and a repository equal to the built-in default is
+          > treated as unset, so existing objects follow the release images again without editing.
+          >
+          > Consequences: an `OvnRecon` is stored exactly as written (an empty `spec` is a full
+          > install), a changed default reaches existing objects on the next reconcile, and the
+          > values the operator actually resolved are published under **`status.effective`**
+          > (`oc get ovnrecon <name> -o jsonpath='{.status.effective}'`). Objects created under
+          > earlier releases still carry whatever the old schema wrote into them, for example
+          > `collector.enabled: false`, `managed: false` or `mode: EmptyDir`, and an explicit value
+          > is honored. Remove the fields you want to follow the defaults:
+          >
+          > ```
+          > oc patch ovnrecon <name> --type=json -p '[{"op":"remove","path":"/spec/collector/enabled"}]'
+          > ```
+
+          > [!IMPORTANT]
           > **`OvnRecon` defaults changed: a bare resource is now a fully functional install.**
           >
           > `consolePlugin.enabled`, `collector.cache.storage.managed` (new default `true`) and

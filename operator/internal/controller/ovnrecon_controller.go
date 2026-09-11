@@ -388,6 +388,9 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			"Failed to reconcile collector Service", "CollectorServiceReconcileFailed", "CollectorReady")
 	}
 
+	// cacheStorage is what the collector Deployment mounted this reconcile;
+	// it stays nil while the collector is disabled.
+	var cacheStorage *collectorCacheStorage
 	if collectorFeatureEnabled(ovnRecon) {
 		collectorRBACCtx := withReconcilePhase(ctx, "reconcile-collector-rbac")
 		if err := r.reconcileCollectorAccessControls(collectorRBACCtx, ovnRecon); err != nil {
@@ -395,10 +398,12 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				"Failed to reconcile collector access controls", "CollectorRBACReconcileFailed", "CollectorReady")
 		}
 		collectorDeploymentCtx := withReconcilePhase(ctx, "reconcile-collector-deployment")
-		if err := r.reconcileCollectorDeployment(collectorDeploymentCtx, ovnRecon, eventPolicy); err != nil {
+		storage, err := r.reconcileCollectorDeployment(collectorDeploymentCtx, ovnRecon, eventPolicy)
+		if err != nil {
 			return r.reconcileStepFailed(collectorDeploymentCtx, ovnRecon, policy, eventPolicy, err,
 				"Failed to reconcile collector Deployment", "CollectorDeploymentReconcileFailed", "CollectorReady")
 		}
+		cacheStorage = &storage
 
 		if r.updateCondition(collectorServiceCtx, ovnRecon, "CollectorReady", metav1.ConditionTrue, "CollectorReady", "Collector resources are reconciled") {
 			r.recordEvent(collectorServiceCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "CollectorReady", "Collector resources are reconciled")
@@ -417,6 +422,14 @@ func (r *OvnReconReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if r.updateCondition(collectorRBACDeleteCtx, ovnRecon, "CollectorReady", metav1.ConditionFalse, "CollectorFeatureDisabled", "Collector feature gate is disabled") {
 			r.recordEvent(collectorRBACDeleteCtx, ovnRecon, eventPolicy, corev1.EventTypeNormal, "CollectorFeatureDisabled", "Collector feature gate is disabled")
 		}
+	}
+
+	// Publish the resolved configuration. Everything that turns an omitted
+	// spec field into a value has run by now, including the collector's
+	// storage decision, so this is the earliest point the picture is complete.
+	effectiveCtx := withReconcilePhase(ctx, "effective-config")
+	if r.updateEffectiveConfig(effectiveCtx, ovnRecon, effectiveConfigFor(ovnRecon, cacheStorage, policy, eventPolicy)) {
+		r.logMessage(effectiveCtx, policy, operatorLogLevelDebug, "Published resolved configuration in status.effective")
 	}
 
 	// 3. Reconcile ConsolePlugin
@@ -557,7 +570,10 @@ func (r *OvnReconReconciler) reconcileService(ctx context.Context, ovnRecon *rec
 	return err
 }
 
-func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon, eventPolicy operatorEventPolicy) error {
+// reconcileCollectorDeployment renders the collector Deployment and returns
+// the cache storage decision it was rendered with, so status.effective can
+// report what is actually mounted.
+func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, ovnRecon *reconv1beta1.OvnRecon, eventPolicy operatorEventPolicy) (collectorCacheStorage, error) {
 	namespace := targetNamespace(ovnRecon)
 	name := collectorName(ovnRecon)
 
@@ -569,7 +585,7 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 	}
 
 	if err := r.reconcileManagedCachePVC(ctx, ovnRecon); err != nil {
-		return err
+		return collectorCacheStorage{}, err
 	}
 
 	// Resolve the effective cache storage: the claim's bound state and the
@@ -582,12 +598,12 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 		if err := r.Get(ctx, key, pvc); err == nil {
 			cachePVC = pvc
 		} else if !errors.IsNotFound(err) {
-			return err
+			return collectorCacheStorage{}, err
 		}
 	}
 	scViable, err := r.cacheStorageClassViable(ctx, ovnRecon)
 	if err != nil {
-		return err
+		return collectorCacheStorage{}, err
 	}
 	cacheStorage := ResolveCollectorCacheStorage(ovnRecon, cachePVC, scViable, time.Now())
 	if cacheStorage.fallbackReason != "" {
@@ -605,7 +621,7 @@ func (r *OvnReconReconciler) reconcileCollectorDeployment(ctx context.Context, o
 		deployment.Spec = desired.Spec
 		return nil
 	})
-	return err
+	return cacheStorage, err
 }
 
 // reconcileManagedCachePVC creates and owns the cache claim in managed mode,

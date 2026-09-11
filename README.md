@@ -114,6 +114,14 @@ oc patch ovnrecon ovn-recon --type=merge -p '{
 
 You can also set collector image fields (`spec.collector.image.repository|tag|pullPolicy`) as needed. See [OPERATOR.md](OPERATOR.md) for full API details.
 
+The `OvnRecon` spec stays as sparse as you wrote it: the CRD declares no defaults, the
+operator applies them at reconcile time, and the values it actually resolved (images,
+enabled flags, cache backing) are published under `status.effective`:
+
+```bash
+oc get ovnrecon ovn-recon -o jsonpath='{.status.effective}' | jq
+```
+
 #### Collector Snapshot Caching
 
 The collector caches each node's OVN snapshot on disk. Requests are served
