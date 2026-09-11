@@ -17,8 +17,10 @@ limitations under the License.
 package apiversions
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -67,6 +69,43 @@ func TestGeneratedCRDCarriesRetiredPlaceholder(t *testing.T) {
 		alpha.Schema.OpenAPIV3Schema.XPreserveUnknownFields == nil ||
 		!*alpha.Schema.OpenAPIV3Schema.XPreserveUnknownFields {
 		t.Fatalf("%s placeholder must preserve unknown fields so any historical object validates", RetiredV1alpha1)
+	}
+}
+
+// Defaults live in the controller (ovn-recon-n7t). A schema default would be
+// written into every object at creation and freeze there, so none may exist.
+func TestGeneratedCRDHasNoSchemaDefaults(t *testing.T) {
+	path := filepath.Join("..", "..", "config", "crd", "bases", "recon.bewley.net_ovnrecons.yaml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var doc map[string]interface{}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	var found []string
+	walkDefaults(doc, "", &found)
+	if len(found) > 0 {
+		t.Fatalf("CRD schema declares defaults; move them into the controller:\n%s", strings.Join(found, "\n"))
+	}
+}
+
+func walkDefaults(node interface{}, path string, found *[]string) {
+	switch v := node.(type) {
+	case map[string]interface{}:
+		if _, ok := v["default"]; ok {
+			if _, isSchema := v["type"]; isSchema {
+				*found = append(*found, path)
+			}
+		}
+		for k, child := range v {
+			walkDefaults(child, path+"/"+k, found)
+		}
+	case []interface{}:
+		for i, child := range v {
+			walkDefaults(child, fmt.Sprintf("%s[%d]", path, i), found)
+		}
 	}
 }
 

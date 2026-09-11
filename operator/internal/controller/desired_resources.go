@@ -686,11 +686,17 @@ func consolePluginAccessLogDirectiveFor(ovnRecon *reconv1beta1.OvnRecon) string 
 }
 
 // DesiredConsolePlugin renders the ConsolePlugin for a given OvnRecon instance.
-func DesiredConsolePlugin(ovnRecon *reconv1beta1.OvnRecon) *unstructured.Unstructured {
-	displayName := ovnRecon.Spec.ConsolePlugin.DisplayName
-	if displayName == "" {
-		displayName = "OVN Recon"
+const defaultConsolePluginDisplayName = "OVN Recon"
+
+func consolePluginDisplayNameFor(ovnRecon *reconv1beta1.OvnRecon) string {
+	if name := strings.TrimSpace(ovnRecon.Spec.ConsolePlugin.DisplayName); name != "" {
+		return name
 	}
+	return defaultConsolePluginDisplayName
+}
+
+func DesiredConsolePlugin(ovnRecon *reconv1beta1.OvnRecon) *unstructured.Unstructured {
+	displayName := consolePluginDisplayNameFor(ovnRecon)
 
 	plugin := &unstructured.Unstructured{}
 	plugin.SetGroupVersionKind(schema.GroupVersionKind{
@@ -751,14 +757,28 @@ func composeImage(repository, tag string) string {
 	return fmt.Sprintf("%s:%s", repository, tag)
 }
 
+// repositoryIsUnset reports whether a repository field carries no user
+// intent. Empty is the obvious case. The built-in default counts too: CRDs
+// before v1.0.4 declared it as a schema default, so the apiserver wrote it
+// into every object at creation and those objects still carry it. Treating it
+// as "unset" is what lets such CRs follow RELATED_IMAGE_* again; a user who
+// typed the same repository by hand loses nothing, because the related image
+// is that repository at the release tag, or its mirror.
+func repositoryIsUnset(repository, builtinDefault string) bool {
+	repository = strings.TrimSpace(repository)
+	return repository == "" || repository == builtinDefault
+}
+
 // pluginImageFor resolves the console plugin image.
 //
 // An explicit repository or tag on the CR always wins, so a user pinning either
-// one keeps the composed behaviour they expect. Only when the CR says nothing do
-// we fall back to the RELATED_IMAGE_* value, and then to the built-in default.
+// one keeps the composed behaviour they expect. Only when the CR says nothing
+// (see repositoryIsUnset) do we fall back to the RELATED_IMAGE_* value, and
+// then to the built-in default.
 func pluginImageFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	spec := ovnRecon.Spec
-	if spec.ConsolePlugin.Image.Repository == "" && spec.ConsolePlugin.Image.Tag == "" {
+	if repositoryIsUnset(spec.ConsolePlugin.Image.Repository, defaultImageRepository) &&
+		spec.ConsolePlugin.Image.Tag == "" {
 		if related := relatedImageFor("RELATED_IMAGE_PLUGIN"); related != "" {
 			return related
 		}
@@ -769,8 +789,8 @@ func pluginImageFor(ovnRecon *reconv1beta1.OvnRecon) string {
 // collectorImageFor resolves the collector image, with the same precedence.
 func collectorImageFor(ovnRecon *reconv1beta1.OvnRecon) string {
 	spec := ovnRecon.Spec
-	if spec.Collector.Image.Repository == "" && spec.Collector.Image.Tag == "" &&
-		spec.ConsolePlugin.Image.Tag == "" {
+	if repositoryIsUnset(spec.Collector.Image.Repository, defaultCollectorRepository) &&
+		spec.Collector.Image.Tag == "" && spec.ConsolePlugin.Image.Tag == "" {
 		if related := relatedImageFor("RELATED_IMAGE_COLLECTOR"); related != "" {
 			return related
 		}
