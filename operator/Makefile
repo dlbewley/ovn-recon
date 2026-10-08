@@ -218,11 +218,11 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 ifeq ($(DOCKER_BUILDX_NO_ISOLATED_BUILDER),1)
-	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} $(if $(IMAGE_EXTRA_TAG),--tag $(IMAGE_EXTRA_TAG),) -f Dockerfile.cross .
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) $(BUILD_ARGS) --tag ${IMG} $(if $(IMAGE_EXTRA_TAG),--tag $(IMAGE_EXTRA_TAG),) -f Dockerfile.cross .
 else
 	- $(CONTAINER_TOOL) buildx create --name operator-builder
 	$(CONTAINER_TOOL) buildx use operator-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} $(if $(IMAGE_EXTRA_TAG),--tag $(IMAGE_EXTRA_TAG),) -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) $(BUILD_ARGS) --tag ${IMG} $(if $(IMAGE_EXTRA_TAG),--tag $(IMAGE_EXTRA_TAG),) -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm operator-builder
 endif
 	rm -f Dockerfile.cross

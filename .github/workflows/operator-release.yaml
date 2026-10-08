@@ -271,11 +271,17 @@ jobs:
         # way, because the channel decides what is offered, not the image tag.
         REPO=quay.io/dbewley/bewley-operator-catalog
         CATALOG_IMG=$REPO:latest
+        # Never pass $EXPIRY_LABEL here. The catalog image is what every
+        # CatalogSource points at; :latest is rebuilt by prereleases, and an
+        # expiring :latest would vanish 30 days after a quiet spell and break
+        # every subscriber at once. Bundle and operand images may expire (the
+        # prune tool drops dangling bundles from the catalog); the catalog
+        # itself must not.
         if [[ "$VERSION" != *"-"* ]]; then
-          make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG BUILD_ARGS="$EXPIRY_LABEL" \
+          make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG \
             CATALOG_EXTRA_IMG="$REPO:stable $REPO:v4.20"
         else
-          make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG BUILD_ARGS="$EXPIRY_LABEL" \
+          make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG \
             CATALOG_EXTRA_IMG="$REPO:v4.20"
         fi
 
