@@ -83,18 +83,52 @@ def version_key(name):
     return (int(major), int(minor), int(patch), 0 if pre else 1, pre or "")
 
 
+def is_prerelease(name):
+    """ovn-recon-operator.v1.0.4-b3 -> True; ...v1.0.4 -> False."""
+    return version_key(name)[3] == 0
+
+
 def channel_head(channel):
-    """The entry nothing else replaces — the tip of the upgrade chain."""
+    """The entry nothing else replaces or skips — the tip of the upgrade graph."""
     entries = channel.get("entries", [])
     if not entries:
         return None
-    replaced = {e.get("replaces") for e in entries if e.get("replaces")}
-    heads = [e["name"] for e in entries if e["name"] not in replaced]
+    superseded = {e.get("replaces") for e in entries if e.get("replaces")}
+    for e in entries:
+        superseded.update(e.get("skips", []))
+    heads = [e["name"] for e in entries if e["name"] not in superseded]
     if not heads:
         return None
     # A well-formed channel has exactly one head; if the graph forked, take the
     # highest version so the new bundle extends the newest branch.
     return max(heads, key=version_key)
+
+
+def plan_edges(entries, name):
+    """Decide the replaces/skips edges for a new entry.
+
+    Shape: a new bundle REPLACES the newest stable release below it and SKIPS
+    every entry between that stable and itself (the prereleases it supersedes).
+    OLM can then upgrade from the stable, or from any skipped prerelease,
+    straight to the new entry in one InstallPlan. Without skips the channel is a
+    linear chain through every prerelease ever published, and a subscriber on
+    the last stable walks all of them one hop at a time (26 hops from v1.0.3 to
+    v1.0.4-b3, each a full rollout, each needing its images to still exist).
+
+    When no stable release sits below the new entry (a channel that has only
+    ever carried prereleases, or a first entry) fall back to replacing the head.
+
+    Returns (replaces, skips); replaces may be None, skips is a sorted list.
+    """
+    key = version_key(name)
+    below = [e["name"] for e in entries if version_key(e["name"]) < key]
+    stables = [n for n in below if not is_prerelease(n)]
+    if not stables:
+        head = channel_head({"entries": entries})
+        return head, []
+    stable = max(stables, key=version_key)
+    skips = sorted((n for n in below if version_key(n) > version_key(stable)), key=version_key)
+    return stable, skips
 
 
 def main():
@@ -159,11 +193,17 @@ def main():
                 f"A lower version usually belongs in its own channel (that is how two release "
                 f"streams stay separate). Pass --allow-downgrade if this is deliberate."
             )
+        replaces, skips = plan_edges(chan["entries"], name)
         entry = {"name": name}
-        if head:
-            entry["replaces"] = head
+        if replaces:
+            entry["replaces"] = replaces
+        if skips:
+            entry["skips"] = skips
         chan["entries"].append(entry)
-        print(f"channel {chan_name}: added {name}" + (f" replacing {head}" if head else " (first entry)"))
+        summary = f" replacing {replaces}" if replaces else " (first entry)"
+        if skips:
+            summary += f", skipping {len(skips)} prerelease(s) {skips[0]} .. {skips[-1]}"
+        print(f"channel {chan_name}: added {name}" + summary)
 
     objs.append(bundle)
 

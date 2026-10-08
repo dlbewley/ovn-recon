@@ -35,3 +35,7 @@ _spike/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+# Python bytecode from the operator hack scripts and their tests
+__pycache__/
+*.pyc

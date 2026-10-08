@@ -365,55 +365,172 @@
         },
         {
             "name": "ovn-recon-operator.v1.0.4-a1",
-            "replaces": "ovn-recon-operator.v1.0.4-a0"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-a2",
-            "replaces": "ovn-recon-operator.v1.0.4-a1"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-a3",
-            "replaces": "ovn-recon-operator.v1.0.4-a2"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1",
+                "ovn-recon-operator.v1.0.4-a2"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-a4",
-            "replaces": "ovn-recon-operator.v1.0.4-a3"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1",
+                "ovn-recon-operator.v1.0.4-a2",
+                "ovn-recon-operator.v1.0.4-a3"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-a5",
-            "replaces": "ovn-recon-operator.v1.0.4-a4"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1",
+                "ovn-recon-operator.v1.0.4-a2",
+                "ovn-recon-operator.v1.0.4-a3",
+                "ovn-recon-operator.v1.0.4-a4"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-a6",
-            "replaces": "ovn-recon-operator.v1.0.4-a5"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1",
+                "ovn-recon-operator.v1.0.4-a2",
+                "ovn-recon-operator.v1.0.4-a3",
+                "ovn-recon-operator.v1.0.4-a4",
+                "ovn-recon-operator.v1.0.4-a5"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-a7",
-            "replaces": "ovn-recon-operator.v1.0.4-a6"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1",
+                "ovn-recon-operator.v1.0.4-a2",
+                "ovn-recon-operator.v1.0.4-a3",
+                "ovn-recon-operator.v1.0.4-a4",
+                "ovn-recon-operator.v1.0.4-a5",
+                "ovn-recon-operator.v1.0.4-a6"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-a8",
-            "replaces": "ovn-recon-operator.v1.0.4-a7"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1",
+                "ovn-recon-operator.v1.0.4-a2",
+                "ovn-recon-operator.v1.0.4-a3",
+                "ovn-recon-operator.v1.0.4-a4",
+                "ovn-recon-operator.v1.0.4-a5",
+                "ovn-recon-operator.v1.0.4-a6",
+                "ovn-recon-operator.v1.0.4-a7"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-a9",
-            "replaces": "ovn-recon-operator.v1.0.4-a8"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1",
+                "ovn-recon-operator.v1.0.4-a2",
+                "ovn-recon-operator.v1.0.4-a3",
+                "ovn-recon-operator.v1.0.4-a4",
+                "ovn-recon-operator.v1.0.4-a5",
+                "ovn-recon-operator.v1.0.4-a6",
+                "ovn-recon-operator.v1.0.4-a7",
+                "ovn-recon-operator.v1.0.4-a8"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-b0",
-            "replaces": "ovn-recon-operator.v1.0.4-a9"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1",
+                "ovn-recon-operator.v1.0.4-a2",
+                "ovn-recon-operator.v1.0.4-a3",
+                "ovn-recon-operator.v1.0.4-a4",
+                "ovn-recon-operator.v1.0.4-a5",
+                "ovn-recon-operator.v1.0.4-a6",
+                "ovn-recon-operator.v1.0.4-a7",
+                "ovn-recon-operator.v1.0.4-a8",
+                "ovn-recon-operator.v1.0.4-a9"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-b1",
-            "replaces": "ovn-recon-operator.v1.0.4-b0"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1",
+                "ovn-recon-operator.v1.0.4-a2",
+                "ovn-recon-operator.v1.0.4-a3",
+                "ovn-recon-operator.v1.0.4-a4",
+                "ovn-recon-operator.v1.0.4-a5",
+                "ovn-recon-operator.v1.0.4-a6",
+                "ovn-recon-operator.v1.0.4-a7",
+                "ovn-recon-operator.v1.0.4-a8",
+                "ovn-recon-operator.v1.0.4-a9",
+                "ovn-recon-operator.v1.0.4-b0"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-b2",
-            "replaces": "ovn-recon-operator.v1.0.4-b1"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1",
+                "ovn-recon-operator.v1.0.4-a2",
+                "ovn-recon-operator.v1.0.4-a3",
+                "ovn-recon-operator.v1.0.4-a4",
+                "ovn-recon-operator.v1.0.4-a5",
+                "ovn-recon-operator.v1.0.4-a6",
+                "ovn-recon-operator.v1.0.4-a7",
+                "ovn-recon-operator.v1.0.4-a8",
+                "ovn-recon-operator.v1.0.4-a9",
+                "ovn-recon-operator.v1.0.4-b0",
+                "ovn-recon-operator.v1.0.4-b1"
+            ]
         },
         {
             "name": "ovn-recon-operator.v1.0.4-b3",
-            "replaces": "ovn-recon-operator.v1.0.4-b2"
+            "replaces": "ovn-recon-operator.v1.0.3",
+            "skips": [
+                "ovn-recon-operator.v1.0.4-a0",
+                "ovn-recon-operator.v1.0.4-a1",
+                "ovn-recon-operator.v1.0.4-a2",
+                "ovn-recon-operator.v1.0.4-a3",
+                "ovn-recon-operator.v1.0.4-a4",
+                "ovn-recon-operator.v1.0.4-a5",
+                "ovn-recon-operator.v1.0.4-a6",
+                "ovn-recon-operator.v1.0.4-a7",
+                "ovn-recon-operator.v1.0.4-a8",
+                "ovn-recon-operator.v1.0.4-a9",
+                "ovn-recon-operator.v1.0.4-b0",
+                "ovn-recon-operator.v1.0.4-b1",
+                "ovn-recon-operator.v1.0.4-b2"
+            ]
         }
     ]
 }

@@ -344,6 +344,18 @@ it came from `main`.
 >
 > Before any maintenance branch is cut, the workflow must derive the channel, the floating tags, and the catalog content from the branch or tag pattern. Tracked in `ovn-recon-ych`.
 
+**Upgrade graph shape.** `catalog-fbc-add` gives every new bundle `replaces: <newest stable
+release below it>` and `skips: [<every entry between that stable and itself>]`. So a prerelease
+replaces the last GA and skips the earlier prereleases of the same version, and a GA replaces the
+previous GA and skips all of its own prereleases. OLM can then upgrade from the stable, or from any
+skipped prerelease, straight to the channel head in one InstallPlan. Before this (v1.0.4-b3 and
+earlier) `latest` was a linear chain through every prerelease, and a `latest` subscriber on v1.0.3
+walked 26 hops to reach the head, each hop a full rollout that needed that prerelease's images to
+still exist. The `stable` channel carries no prereleases, so its entries simply replace each other.
+`make catalog-fbc-verify` enforces one head per channel and that every entry still reaches it;
+against the published catalog it allows a prerelease entry to be rewired (that only adds upgrade
+paths) but refuses any change to a stable entry's edges.
+
 The catalog is a [File-Based Catalog](docs/tasks/fbc-migration.md) under `operator/catalog/`, where channel membership and upgrade edges are **declared** rather than inferred. This is what makes two independent upgrade graphs expressible in one catalog, and therefore a prerequisite for the pre/post-4.22 split. The previous sqlite index (`opm index add --mode semver`) inferred edges from version ordering and would have synthesized an upgrade edge from the legacy stream to the current one.
 
 ---

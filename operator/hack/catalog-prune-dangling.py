@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Remove prerelease catalog entries whose bundle images no longer exist.
 
-Prerelease bundle images are published with a quay.expires-at label and are
-pruned automatically. The catalog keeps referencing them by tag, so over time it
+Prerelease bundle images are published with a quay.expires-after label and
+expire automatically. The catalog keeps referencing them by tag, so over time it
 accumulates entries that cannot be installed. This removes those entries and
 repairs the upgrade chain so the channel still has exactly one head.
 
@@ -14,8 +14,9 @@ Scope is deliberately narrow:
   * A registry lookup that fails for any reason other than a definite 404 is
     treated as "present". Never prune on a network hiccup.
 
-Chain repair: removing X splices it out. Anything that replaced X is re-pointed
-at whatever X replaced, so the chain stays connected end to end.
+Graph repair: removing X splices it out. Anything that replaced X is re-pointed
+at whatever X replaced, and X is dropped from every skips list, so the graph
+stays connected end to end with exactly one head.
 
 Dry run by default; pass --apply to write.
 """
@@ -76,8 +77,10 @@ def image_exists(ref):
 
 
 def channel_head(entries):
-    replaced = {e.get("replaces") for e in entries if e.get("replaces")}
-    return [e["name"] for e in entries if e["name"] not in replaced]
+    superseded = {e.get("replaces") for e in entries if e.get("replaces")}
+    for e in entries:
+        superseded.update(e.get("skips", []))
+    return [e["name"] for e in entries if e["name"] not in superseded]
 
 
 def main():
@@ -146,6 +149,12 @@ def main():
                     new["replaces"] = r
                 else:
                     new.pop("replaces", None)
+            if e.get("skips"):
+                skips = [sk for sk in e["skips"] if sk not in missing]
+                if skips:
+                    new["skips"] = skips
+                else:
+                    new.pop("skips", None)
             kept.append(new)
         before, after = len(entries), len(kept)
         heads = channel_head(kept)

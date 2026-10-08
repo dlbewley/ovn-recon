@@ -4,16 +4,23 @@
 Two independent checks:
 
   INTEGRITY (always, offline)
-    Every channel has exactly one head, every entry reaches that head by its
-    replaces chain, and no replaces points at an entry that is not present.
-    A forked or broken graph strands users on a version with no upgrade path.
+    Every channel has exactly one head, every entry reaches that head through
+    replaces or skips edges, and no edge points at an entry that is not
+    present. A forked or broken graph strands users on a version with no
+    upgrade path.
 
   REGRESSION (with --ref, needs network)
     Diffs the local catalog against a published catalog image. The change must
     be ADDITIVE: no bundle removed, no image ref changed on a pre-existing
-    bundle, no edge rewritten on a pre-existing channel entry, default channel
+    bundle, no edge rewritten on a pre-existing STABLE entry, default channel
     unchanged. That is what makes "existing users are unaffected" a checked
     fact rather than an assumption.
+
+    Prerelease entries may be rewired as long as they still reach the head.
+    Rewiring a prerelease from "replaces the previous prerelease" to "skipped
+    by the head" only adds an upgrade path for whoever sits on it; it never
+    removes one. Stable entries are what released users sit on, so their edges
+    stay immutable.
 
 Exit non-zero if either check fails. Uses only the Python standard library.
 """
@@ -74,8 +81,36 @@ def load(path):
 
 
 def channels(objs):
-    return {c["name"]: {e["name"]: e.get("replaces") for e in c.get("entries", [])}
+    """{channel: {entry: {"replaces": str|None, "skips": [..]}}}"""
+    return {c["name"]: {e["name"]: {"replaces": e.get("replaces"), "skips": sorted(e.get("skips", []))}
+                        for e in c.get("entries", [])}
             for c in objs if c.get("schema") == "olm.channel"}
+
+
+def is_prerelease(name):
+    _, _, ver = name.partition(".v")
+    return "-" in ver
+
+
+def heads_of(entries):
+    superseded = {v["replaces"] for v in entries.values() if v["replaces"]}
+    for v in entries.values():
+        superseded.update(v["skips"])
+    return [n for n in entries if n not in superseded]
+
+
+def reachable_from_head(entries, head):
+    """Entries with an upgrade path to head, following replaces and skips backwards."""
+    seen, stack = set(), [head]
+    while stack:
+        cur = stack.pop()
+        if cur in seen or cur not in entries:
+            continue
+        seen.add(cur)
+        if entries[cur]["replaces"]:
+            stack.append(entries[cur]["replaces"])
+        stack.extend(entries[cur]["skips"])
+    return seen
 
 
 def bundles(objs):
@@ -94,24 +129,25 @@ def check_integrity(objs):
     if not chans:
         problems.append("no olm.channel objects found")
     for name, entries in sorted(chans.items()):
-        replaced = {r for r in entries.values() if r}
-        heads = [n for n in entries if n not in replaced]
+        heads = heads_of(entries)
         if len(heads) != 1:
             problems.append(f"channel {name!r}: expected exactly 1 head, found {len(heads)}: {sorted(heads)}")
             continue
-        seen, cur = set(), heads[0]
-        while cur and cur not in seen:
-            seen.add(cur)
-            cur = entries.get(cur)
-        unreachable = sorted(set(entries) - seen)
+        unreachable = sorted(set(entries) - reachable_from_head(entries, heads[0]))
         if unreachable:
             problems.append(f"channel {name!r}: no upgrade path to head for {unreachable}")
-        for n, r in sorted(entries.items()):
+        for n, edges in sorted(entries.items()):
+            r = edges["replaces"]
             if r and r not in entries:
                 problems.append(f"channel {name!r}: {n} replaces {r}, which is not in the channel")
+            for sk in edges["skips"]:
+                if sk not in entries:
+                    problems.append(f"channel {name!r}: {n} skips {sk}, which is not in the channel")
             if n not in known:
                 problems.append(f"channel {name!r}: entry {n} has no olm.bundle object")
-        print(f"  channel {name!r}: {len(entries)} entries, head {heads[0]}, all reachable")
+        skipping = sum(1 for e in entries.values() if e["skips"])
+        print(f"  channel {name!r}: {len(entries)} entries, head {heads[0]}, all reachable"
+              + (f", {skipping} entries carry skips" if skipping else ""))
     return problems
 
 
@@ -130,11 +166,21 @@ def check_regression(old, new):
         o, n = oc[name], nc[name]
         for gone in sorted(set(o) - set(n)):
             problems.append(f"channel {name!r}: entry {gone} was REMOVED")
+        heads = heads_of(n)
+        reachable = reachable_from_head(n, heads[0]) if len(heads) == 1 else set()
+        rewired = []
         for k in sorted(set(o) & set(n)):
-            if o[k] != n[k]:
-                problems.append(f"channel {name!r}: edge rewritten on {k}: replaces {o[k]!r} -> {n[k]!r}")
+            if o[k] == n[k]:
+                continue
+            if is_prerelease(k) and k in reachable:
+                rewired.append(k)
+                continue
+            problems.append(f"channel {name!r}: edge rewritten on {k}: {o[k]!r} -> {n[k]!r}")
         added = sorted(set(n) - set(o))
         print(f"  channel {name!r}: +{len(added)} entries {added if added else ''}".rstrip())
+        if rewired:
+            print(f"  channel {name!r}: {len(rewired)} prerelease entries rewired (still reach the head): "
+                  f"{rewired[0]} .. {rewired[-1]}")
 
     for gone in sorted(set(ob) - set(nb)):
         problems.append(f"bundle {gone} was REMOVED")
