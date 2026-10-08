@@ -42,8 +42,9 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/}
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           if [[ "$VERSION" == *"-"* ]]; then
-            EXPIRY_TIME=$(date -d "30 days" +%s)
-            echo "EXPIRY_LABEL=--label quay.expires-at=$EXPIRY_TIME" >> $GITHUB_ENV
+            # quay.expires-after is the label Quay honors; quay.expires-at (used until
+            # 2026-10) is not, which is why no prerelease image ever expired.
+            echo "EXPIRY_LABEL=--label quay.expires-after=30d" >> $GITHUB_ENV
           else
             echo "EXPIRY_LABEL=" >> $GITHUB_ENV
           fi

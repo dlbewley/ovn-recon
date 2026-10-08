@@ -126,8 +126,12 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./... 2>&1 | grep -v "k8s.io/kube-openapi" || true
 
+.PHONY: catalog-fbc-test
+catalog-fbc-test: ## Unit-test the catalog graph logic in hack/ (replaces/skips planning, integrity, regression rules).
+	python3 -m unittest discover -s hack -p 'test_*.py'
+
 .PHONY: test
-test: manifests generate fmt vet setup-envtest ## Run tests.
+test: manifests generate fmt vet setup-envtest catalog-fbc-test ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.

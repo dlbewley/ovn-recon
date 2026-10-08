@@ -110,9 +110,12 @@ logic in the release workflow, so the two stay consistent without being told twi
 Previously they were unset, so operator-sdk fell back to `alpha` and a local `make bundle`
 silently rewrote `bundle/metadata/annotations.yaml`, dropping the real channels.
 
-`catalog-fbc-add` renders the bundle, appends it, and points its `replaces` at the current channel
-head. Because the bundle image does not exist until CI builds it, the add can also render the local
-bundle directory and stamp the ref it *will* be published under:
+`catalog-fbc-add` renders the bundle, appends it, and wires its edges: `replaces` points at the
+newest stable release below the new bundle and `skips` lists every entry between that stable and
+the new bundle (the prereleases it supersedes), so OLM upgrades from the stable or from any skipped
+prerelease directly to the head. Until v1.0.4-b3 the script pointed `replaces` at the current head,
+which made `latest` a linear chain through every prerelease; the v1.0.4 prerelease entries were
+rewired once to the new shape when the behaviour changed (ovn-recon-jdx).
 
 ```bash
 python3 hack/catalog-add-bundle.py --opm bin/opm \
