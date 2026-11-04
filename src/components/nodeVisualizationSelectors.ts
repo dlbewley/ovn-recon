@@ -331,6 +331,21 @@ export const getIpv4Addresses = (iface: { ipv4?: { address?: Ipv4AddressEntry[] 
         });
 };
 
+/**
+ * The interface holding a given IPv4 address, when one does. Used to resolve a VXLAN
+ * device's `vxlan.local` to the underlay interface that carries the tunnel. Returns the
+ * first holder in NNS order; an address on two interfaces is a misconfiguration this
+ * view does not try to adjudicate.
+ */
+export const findInterfaceHoldingAddress = (
+    address: string | undefined,
+    interfaces: Interface[]
+): Interface | undefined => {
+    if (!address) return undefined;
+    return interfaces.find((iface) =>
+        (iface.ipv4?.address ?? []).some((entry) => entry?.ip === address));
+};
+
 export const getVrfConnectionInfo = (
     vrfInterface: Interface,
     interfaces: Interface[]

@@ -1,0 +1,337 @@
+{
+  "apiVersion": "nmstate.io/v1",
+  "kind": "NodeNetworkState",
+  "metadata": {
+    "name": "worker-evpn"
+  },
+  "status": {
+    "currentState": {
+      "interfaces": [
+        {
+          "bridge": {
+            "port": [
+              {
+                "name": "br-ex"
+              },
+              {
+                "name": "ens192"
+              },
+              {
+                "name": "patch-br-ex_cluster_udn_demo.evpn.vni10010_worker-evpn-to-br-int"
+              },
+              {
+                "name": "patch-br-ex_worker-evpn-to-br-int"
+              }
+            ]
+          },
+          "ipv4": {
+            "enabled": true,
+            "dhcp": true
+          },
+          "name": "br-ex",
+          "state": "up",
+          "type": "ovs-bridge"
+        },
+        {
+          "controller": "br-ex",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "192.0.2.72",
+                "prefix-length": 24
+              },
+              {
+                "ip": "169.254.0.2",
+                "prefix-length": 17
+              }
+            ],
+            "dhcp": true
+          },
+          "mac-address": "02:1F:0B:8A:0D:DD",
+          "mtu": 1500,
+          "name": "br-ex",
+          "state": "up",
+          "type": "ovs-interface"
+        },
+        {
+          "controller": "br-int",
+          "ipv4": {
+            "enabled": false
+          },
+          "mac-address": "02:6A:CD:4F:AA:B2",
+          "mtu": 1400,
+          "name": "br-int",
+          "state": "ignore",
+          "type": "ovs-interface"
+        },
+        {
+          "alt-names": [
+            {
+              "name": "enp11s0"
+            }
+          ],
+          "controller": "br-ex",
+          "driver": "vmxnet3",
+          "ethernet": {
+            "auto-negotiation": false,
+            "duplex": "full",
+            "speed": 10000
+          },
+          "ipv4": {
+            "enabled": false
+          },
+          "mac-address": "02:EB:50:DC:76:7B",
+          "mtu": 1500,
+          "name": "ens192",
+          "pci-address": "0000:0b:00.0",
+          "permanent-mac-address": "00:50:56:B4:AE:17",
+          "state": "up",
+          "type": "ethernet"
+        },
+        {
+          "bridge": {
+            "port": [
+              {
+                "name": "evx4.4a75265e",
+                "stp-hairpin-mode": false,
+                "stp-path-cost": 100,
+                "stp-priority": 32,
+                "vlan": {
+                  "enable-native": false,
+                  "mode": "trunk",
+                  "trunk-tags": [
+                    {
+                      "id": 2
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "ovl2.9",
+                "stp-hairpin-mode": false,
+                "stp-path-cost": 100,
+                "stp-priority": 32,
+                "vlan": {
+                  "mode": "access",
+                  "tag": 2,
+                  "trunk-tags": []
+                }
+              }
+            ]
+          },
+          "ipv4": {
+            "enabled": false
+          },
+          "mac-address": "02:56:BE:D3:D2:3F",
+          "mtu": 1400,
+          "name": "evbr.4a75265e",
+          "state": "up",
+          "type": "linux-bridge"
+        },
+        {
+          "controller": "evbr.4a75265e",
+          "ipv4": {
+            "enabled": false
+          },
+          "mac-address": "02:9C:FD:4F:6D:D8",
+          "mtu": 1400,
+          "name": "evx4.4a75265e",
+          "state": "up",
+          "type": "vxlan",
+          "vxlan": {
+            "destination-port": 4789,
+            "id": 0,
+            "learning": false,
+            "local": "192.0.2.72"
+          }
+        },
+        {
+          "mac-address": "02:48:1D:42:61:75",
+          "name": "genev_sys_6081",
+          "state": "ignore",
+          "type": "unknown"
+        },
+        {
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "127.0.0.1",
+                "prefix-length": 8
+              }
+            ]
+          },
+          "mac-address": "02:C8:EB:14:10:CB",
+          "mtu": 65536,
+          "name": "lo",
+          "state": "up",
+          "type": "loopback"
+        },
+        {
+          "ipv4": {
+            "enabled": false
+          },
+          "mac-address": "02:EF:19:F4:50:25",
+          "mtu": 65575,
+          "name": "mp9-udn-vrf",
+          "state": "up",
+          "type": "vrf",
+          "vrf": {
+            "port": [
+              "ovn-k8s-mp9",
+              "svl2.9"
+            ],
+            "route-table-id": 1146
+          }
+        },
+        {
+          "controller": "br-int",
+          "ipv4": {
+            "enabled": false
+          },
+          "mac-address": "02:6B:9B:74:1E:71",
+          "mtu": 1400,
+          "name": "ovl2.9",
+          "state": "down",
+          "type": "ovs-interface"
+        },
+        {
+          "controller": "br-int",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "10.131.0.2",
+                "prefix-length": 23
+              }
+            ]
+          },
+          "mac-address": "02:1A:3E:BB:01:C3",
+          "mtu": 1400,
+          "name": "ovn-k8s-mp0",
+          "state": "ignore",
+          "type": "ovs-interface"
+        },
+        {
+          "controller": "br-int",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              {
+                "ip": "10.10.10.2",
+                "prefix-length": 24
+              }
+            ]
+          },
+          "mac-address": "02:EC:C4:F4:0B:AE",
+          "mtu": 1400,
+          "name": "ovn-k8s-mp9",
+          "state": "ignore",
+          "type": "ovs-interface"
+        },
+        {
+          "controller": "br-ex",
+          "name": "patch-br-ex_cluster_udn_demo.evpn.vni10010_worker-evpn-to-br-int",
+          "patch": {
+            "peer": "patch-br-int-to-br-ex_cluster_udn_demo.evpn.vni10010_worker-evpn"
+          },
+          "state": "ignore",
+          "type": "ovs-interface"
+        },
+        {
+          "controller": "br-ex",
+          "name": "patch-br-ex_worker-evpn-to-br-int",
+          "patch": {
+            "peer": "patch-br-int-to-br-ex_worker-evpn"
+          },
+          "state": "ignore",
+          "type": "ovs-interface"
+        },
+        {
+          "controller": "br-int",
+          "name": "patch-br-int-to-br-ex_cluster_udn_demo.evpn.vni10010_worker-evpn",
+          "patch": {
+            "peer": "patch-br-ex_cluster_udn_demo.evpn.vni10010_worker-evpn-to-br-int"
+          },
+          "state": "ignore",
+          "type": "ovs-interface"
+        },
+        {
+          "controller": "br-int",
+          "name": "patch-br-int-to-br-ex_worker-evpn",
+          "patch": {
+            "peer": "patch-br-ex_worker-evpn-to-br-int"
+          },
+          "state": "ignore",
+          "type": "ovs-interface"
+        },
+        {
+          "controller": "mp9-udn-vrf",
+          "ipv4": {
+            "enabled": false
+          },
+          "mac-address": "02:90:ED:F4:A6:2F",
+          "mtu": 1400,
+          "name": "svl2.9",
+          "state": "down",
+          "type": "vlan",
+          "vlan": {
+            "base-iface": "evbr.4a75265e",
+            "id": 2,
+            "loose-binding": false,
+            "protocol": "802.1q",
+            "registration-protocol": "none",
+            "reorder-headers": true
+          }
+        }
+      ],
+      "ovn": {
+        "bridge-mappings": [
+          {
+            "bridge": "br-ex",
+            "localnet": "physnet"
+          }
+        ]
+      },
+      "routes": {
+        "running": [
+          {
+            "destination": "169.254.0.3/32",
+            "next-hop-address": "10.10.10.1",
+            "next-hop-interface": "ovn-k8s-mp9",
+            "state": "ignore",
+            "table-id": 1146,
+            "vrf-name": "mp9-udn-vrf"
+          },
+          {
+            "destination": "169.254.0.28/32",
+            "mtu": 1400,
+            "next-hop-address": "0.0.0.0",
+            "next-hop-interface": "ovn-k8s-mp9",
+            "state": "ignore",
+            "table-id": 1146,
+            "vrf-name": "mp9-udn-vrf"
+          },
+          {
+            "destination": "172.30.0.0/16",
+            "mtu": 1400,
+            "next-hop-address": "169.254.0.4",
+            "next-hop-interface": "br-ex",
+            "source": "169.254.0.2",
+            "table-id": 1146,
+            "vrf-name": "mp9-udn-vrf"
+          },
+          {
+            "destination": "0.0.0.0/0",
+            "metric": 48,
+            "next-hop-address": "192.0.2.1",
+            "next-hop-interface": "br-ex",
+            "source": "192.0.2.72",
+            "table-id": 254
+          }
+        ]
+      }
+    }
+  }
+}

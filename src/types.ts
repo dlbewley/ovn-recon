@@ -34,6 +34,18 @@ export interface Interface {
     mac_address?: string;
     'mac-address'?: string;
     vrf?: { port?: string[] | string; 'route-table-id'?: number };
+    /**
+     * A VXLAN tunnel device. `local` is the VTEP address, which some other interface on
+     * this node holds; `id` is the VNI, and 0 when VNIs are mapped per VLAN on the bridge
+     * the device is enslaved to (the EVPN shape).
+     */
+    vxlan?: {
+        id?: number;
+        local?: string;
+        remote?: string;
+        'destination-port'?: number;
+        learning?: boolean;
+    };
     ipv4?: { enabled?: boolean; address?: Ipv4AddressEntry[] };
     [key: string]: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 }

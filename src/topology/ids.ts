@@ -114,15 +114,20 @@ export const resolveNodeId = (
  * bridge mapping -- to the node it refers to.
  *
  * Always `iface:` and never `port:`: a reference by name means the bridge, not the
- * bridge's internal port. Returns undefined when no interface carries that name, so
- * callers can report the dangling reference instead of dropping it silently.
+ * bridge's internal port. A VRF is the one interface drawn under its own prefix, so a
+ * device enslaved to one (a VLAN carrying an EVPN UDN, say) resolves to `vrf:` --
+ * before ovn-recon-s3t.52 that edge pointed at an `iface:` id no node had. Returns
+ * undefined when no interface carries that name, so callers can report the dangling
+ * reference instead of dropping it silently.
  */
 export const resolveInterfaceRef = (
     name: string | undefined,
     ctx: Pick<GraphContext, 'interfaces'>
 ): string | undefined => {
     if (!name) return undefined;
-    return ctx.interfaces.some((i) => i.name === name) ? ifaceNodeId(name) : undefined;
+    const match = ctx.interfaces.find((i) => i.name === name);
+    if (!match) return undefined;
+    return match.type === 'vrf' ? vrfNodeId(name) : ifaceNodeId(name);
 };
 
 /**

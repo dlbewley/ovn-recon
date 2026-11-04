@@ -644,6 +644,144 @@ exports[`NodeVisualization rendered structure drawer content for physnet (OVN Br
 }
 `;
 
+exports[`NodeVisualization rendered structure evpn-vxlan, default view 1`] = `
+{
+  "edges": [
+    "420,180 -> 480,230  solid  observed  controller  evx4.4a75265e is a port of evbr.4a75265e: NodeNetworkState reports controller: evbr.4a75265e.",
+    "640,130 -> 260,180  solid  observed  vxlan-local  evx4.4a75265e tunnels over br-ex: vxlan.local 192.0.2.72 is an address of br-ex.",
+    "640,130 -> 700,130  dashed  observed  bridge-mapping  Bridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "640,130 -> 700,270  solid  observed  vrf-egress  VRF mp9-udn-vrf routes 172.30.0.0/16 via br-ex: routes.running in table 1146 name next-hop-interface br-ex.",
+    "640,230 -> 260,80  solid  observed  base-iface  VLAN 2 svl2.9 is carried on evbr.4a75265e: vlan.base-iface is evbr.4a75265e.",
+    "640,370 -> 700,270  solid  observed  management-port  ovn-k8s-mp9 is a port of both br-int (controller: br-int) and VRF mp9-udn-vrf (vrf.port).",
+    "arc M 200 80 Q 340 155 480 130  solid  observed  controller  ens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.",
+    "arc M 420 80 Q 560 -15 700 270  solid  observed  controller  svl2.9 is a port of mp9-udn-vrf: NodeNetworkState reports controller: mp9-udn-vrf.",
+    "arc M 640 130 Q 685 250 640 370  solid  observed  patch-peer  br-int port patch-br-int-to-br-ex_cluster_udn_demo.evpn.vni10010_worker-evpn patches to patch-br-ex_cluster_udn_demo.evpn.vni10010_worker-evpn-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.",
+  ],
+  "laneHeaders": [
+    "Physical Interfaces",
+    "VLAN Interfaces",
+    "Bridges",
+    "Integration",
+    "Bridge Mappings",
+    "VRFs",
+    "Attachments",
+    "Other Interfaces",
+  ],
+  "nodes": [
+    {
+      "fill": "#666",
+      "labels": [
+        "genev_sys_6081",
+        "unknown",
+        "ignore",
+      ],
+      "title": "genev_sys_6081 (unknown)",
+      "x": 0,
+      "y": 0,
+    },
+    {
+      "fill": "#666",
+      "labels": [
+        "lo",
+        "loopback",
+        "up",
+      ],
+      "title": "lo (loopback)",
+      "x": 180,
+      "y": 0,
+    },
+    {
+      "fill": "#009596",
+      "labels": [
+        "evx4.4a75265e",
+        "vxlan",
+        "up",
+      ],
+      "title": "evx4.4a75265e (vxlan)",
+      "x": 260,
+      "y": 140,
+    },
+    {
+      "fill": "#9933CC",
+      "labels": [
+        "svl2.9",
+        "vlan",
+        "down",
+      ],
+      "title": "svl2.9 (vlan)",
+      "x": 260,
+      "y": 40,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "ens192",
+        "ethernet",
+        "up",
+      ],
+      "title": "ens192 (ethernet)",
+      "x": 40,
+      "y": 40,
+    },
+    {
+      "fill": "#FF6600",
+      "labels": [
+        "evbr.4a75265e",
+        "linux-bridge",
+        "up",
+      ],
+      "title": "evbr.4a75265e (linux-bridge)",
+      "x": 480,
+      "y": 190,
+    },
+    {
+      "fill": "#009596",
+      "labels": [
+        "br-int",
+        "OVN Integration",
+        "6 ports",
+      ],
+      "title": "br-int (OVN Integration)",
+      "x": 480,
+      "y": 330,
+    },
+    {
+      "fill": "#FF6600",
+      "labels": [
+        "br-ex",
+        "ovs-bridge",
+        "up",
+      ],
+      "title": "br-ex (ovs-bridge)",
+      "x": 480,
+      "y": 90,
+    },
+    {
+      "fill": "#CC6600",
+      "labels": [
+        "mp9-udn-vrf",
+        "VRF",
+        "ovn-k8s-mp9, svl2.9 Tbl 1146",
+      ],
+      "title": "mp9-udn-vrf (VRF)",
+      "x": 700,
+      "y": 230,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "physnet",
+        "OVN Bridge Mapping",
+        "Bridge: br-ex",
+      ],
+      "title": "physnet (OVN Bridge Mapping)",
+      "x": 700,
+      "y": 90,
+    },
+  ],
+}
+`;
+
 exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes revealed 1`] = `
 {
   "edges": [

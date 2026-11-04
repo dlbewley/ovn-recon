@@ -1,11 +1,12 @@
 import * as React from 'react';
 import {
-    InfrastructureIcon, LinuxIcon, MigrationIcon, NetworkIcon, PficonVcenterIcon,
-    PluggedIcon, ResourcePoolIcon, RouteIcon, TagIcon
+    ConnectedIcon, InfrastructureIcon, LinuxIcon, MigrationIcon, NetworkIcon,
+    PficonVcenterIcon, PluggedIcon, ResourcePoolIcon, RouteIcon, TagIcon
 } from '@patternfly/react-icons';
 
 import {
     findCudnNameForNad,
+    findInterfaceHoldingAddress,
     findPrimaryNetworkForVrf,
     findRouteAdvertisementForVrf,
     getCudnsSelectedByRouteAdvertisement,
@@ -49,7 +50,7 @@ import {
  */
 
 export type NodeTypeId =
-    | 'physical' | 'bond' | 'vlan' | 'bridge' | 'bridge-port' | 'vrf' | 'integration-bridge'
+    | 'physical' | 'bond' | 'vlan' | 'vxlan' | 'bridge' | 'bridge-port' | 'vrf' | 'integration-bridge'
     | 'ovn-mapping' | 'cudn' | 'udn' | 'attachment' | 'nad' | 'lldp-neighbor' | 'other';
 
 /** What the node shows on the canvas and in the drawer header. */
@@ -166,6 +167,20 @@ const interfaceEdges = (iface: Interface, ctx: GraphContext, out: EdgeSink) => {
             ? `${vlanLabel} is carried on ${vlanBase}: vlan.base-iface is ${vlanBase}.`
             : `${iface.name} is a MACVLAN on ${macvlanBase}: mac-vlan.base-iface is ${macvlanBase}.`
     });
+    // Underlay: a VXLAN device tunnels over whichever interface holds its VTEP address.
+    // nmstate names the address, not the interface, so the holder is looked up; an
+    // address nothing on this node holds is reported as unresolved, not dropped.
+    const vtep = iface.vxlan?.local;
+    if (iface.type === 'vxlan' && vtep) {
+        const underlay = findInterfaceHoldingAddress(vtep, ctx.interfaces);
+        out.named('vxlan-local', id, underlay?.name ?? vtep, 'from', {
+            kind: 'layering',
+            provenance: 'observed',
+            rationale: underlay
+                ? `${iface.name} tunnels over ${underlay.name}: vxlan.local ${vtep} is an address of ${underlay.name}.`
+                : `${iface.name} tunnels from ${vtep}: vxlan.local names an address no interface on this node holds.`
+        });
+    }
 };
 
 /** An interface-backed descriptor differs only in role, lane, icon and colour. */
@@ -213,6 +228,9 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
     interfaceType('physical', 'physical', 'eth', <ResourcePoolIcon />, '#0066CC'),
     interfaceType('bond', 'bond', 'bond', <PficonVcenterIcon />, '#663399'),
     interfaceType('vlan', 'vlan', 'vlan', <TagIcon />, '#9933CC'),
+    // Shares the VLAN lane: both are devices layered on something to their left. The
+    // icon and colour keep a tunnel endpoint tellable from a tag (ovn-recon-s3t.52).
+    interfaceType('vxlan', 'vxlan', 'vlan', <ConnectedIcon />, '#009596'),
     interfaceType('bridge', 'bridge', 'bridge', <InfrastructureIcon />, '#FF6600'),
     interfaceType('bridge-port', 'bridge-port', 'logical', <NetworkIcon />, '#0099CC'),
     // Rendered in the grid at the foot of the canvas rather than in a lane.
@@ -609,7 +627,8 @@ const INTERFACE_ICONS: Record<string, React.ReactNode> = {
     'ovs-bridge': <InfrastructureIcon />,
     'ovs-interface': <NetworkIcon />,
     vlan: <TagIcon />,
-    'mac-vlan': <TagIcon />
+    'mac-vlan': <TagIcon />,
+    vxlan: <ConnectedIcon />
 };
 
 export const iconFor = (descriptor: AnyNodeTypeDescriptor, item: unknown): React.ReactNode => {
