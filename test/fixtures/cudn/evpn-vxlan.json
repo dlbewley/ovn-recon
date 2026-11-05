@@ -1,0 +1,62 @@
+[
+  {
+    "apiVersion": "k8s.ovn.org/v1",
+    "kind": "ClusterUserDefinedNetwork",
+    "metadata": {
+      "name": "demo-evpn-vni10010",
+      "labels": {
+        "app.kubernetes.io/name": "demo-evpn",
+        "app.kubernetes.io/part-of": "demo-evpn"
+      }
+    },
+    "spec": {
+      "namespaceSelector": {
+        "matchLabels": {
+          "kubernetes.io/metadata.name": "demo-evpn"
+        }
+      },
+      "network": {
+        "evpn": {
+          "macVRF": {
+            "routeTarget": "65002:10010",
+            "vni": 10010
+          },
+          "vtep": "demo-evpn-vteps"
+        },
+        "layer2": {
+          "ipam": {
+            "lifecycle": "Persistent"
+          },
+          "role": "Primary",
+          "subnets": [
+            "10.10.10.0/24"
+          ]
+        },
+        "topology": "Layer2",
+        "transport": "EVPN"
+      }
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "TransportAccepted",
+          "status": "True",
+          "reason": "EVPNTransportAccepted",
+          "message": "Transport has been configured as 'EVPN'."
+        },
+        {
+          "type": "NetworkCreated",
+          "status": "True",
+          "reason": "NetworkAttachmentDefinitionCreated",
+          "message": "NetworkAttachmentDefinition has been created in following namespaces: [demo-evpn]"
+        },
+        {
+          "type": "NetworkAllocationSucceeded",
+          "status": "True",
+          "reason": "NetworkAllocationSucceeded",
+          "message": "Network allocation succeeded for all synced nodes."
+        }
+      ]
+    }
+  }
+]

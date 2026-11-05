@@ -38,6 +38,8 @@ OVN Recon visualizes the following Kubernetes Custom Resources:
 - **UserDefinedNetwork (UDN)** - Namespace-scoped network definitions used by secondary network workflows.
 - **NetworkAttachmentDefinition (NAD)** - Multus CNI resource that references a CUDN and allows pods to attach to secondary networks.
 - **RouteAdvertisements** - Cluster-scoped route advertisement policy objects used for VRF-to-network relationships.
+- **VTEP** - Cluster-scoped EVPN tunnel endpoint pool. Used to say which VTEP a node's VXLAN device and EVPN bridge belong to, and which EVPN networks ride on it. Optional: absent on clusters without EVPN.
+- **Node** - Only the node being viewed, and only its `k8s.ovn.org/vteps` annotation, which records the address OVN-Kubernetes discovered for each VTEP on that node. Optional.
 - **OvnRecon** - Operator custom resource that controls plugin/collector deployment and logical topology feature gating.
 
 The plugin watches these resources in real-time and renders interactive physical/logical topology views to show how interfaces, bridges, networks, routes, and attachments are connected.

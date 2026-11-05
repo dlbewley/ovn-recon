@@ -1,11 +1,16 @@
 import {
     CUDN_NETWORK_PREFIX,
+    EVPN_NETWORK_DEVICES,
+    EVPN_VTEP_DEVICES,
+    findEvpnNetworkForDevice,
     findPatchPortsForCudn,
     findPrimaryNetworkForVrf,
     findRouteAdvertisementForVrf,
+    findVtepForDevice,
     formatLabelSelector,
     getCudnAssociatedNamespaces,
     getCudnsSelectedByRouteAdvertisement,
+    getCudnsUsingVtep,
     getIpv4Addresses,
     getNadUpstreamNodeIds,
     getNetworkPatchPorts,
@@ -14,14 +19,18 @@ import {
     getRouteAdvertisementsMatchingCudn,
     getVrfConnectionInfo,
     getVrfRoutesForInterface,
+    NETWORK_ID_ANNOTATION,
     NetworkPatchPort,
     NncpClaim,
+    NODE_VTEPS_ANNOTATION,
     parseNadConfig,
     resolvePatchPortCudn,
     VrfAssociatedRoute
 } from '../components/nodeVisualizationSelectors';
 import {
     ClusterUserDefinedNetwork,
+    EvpnNetworkConfig,
+    EvpnVrfConfig,
     Interface,
     NetworkAttachmentDefinition,
     RouteAdvertisements,
@@ -107,6 +116,15 @@ const raRef = (name: string): ResourceRef => ({
 
 const nadRef = (namespace: string, name: string): ResourceRef => ({
     apiVersion: 'k8s.cni.cncf.io/v1', kind: 'NetworkAttachmentDefinition', name, namespace
+});
+
+/** Cluster-scoped, so no namespace. */
+const vtepRef = (name: string): ResourceRef => ({
+    apiVersion: 'k8s.ovn.org/v1', kind: 'VTEP', name
+});
+
+const udnRef = (namespace: string, name: string): ResourceRef => ({
+    apiVersion: 'k8s.ovn.org/v1', kind: 'UserDefinedNetwork', name, namespace
 });
 
 const routeText = (route: VrfAssociatedRoute): string => [
@@ -258,6 +276,150 @@ const patchedNetworkItem = (port: NetworkPatchPort, ctx: GraphContext): FactItem
     return { text: `${where}: network ${port.networkName}${suffix}` };
 };
 
+/** A CUDN's EVPN VRFs as one phrase: `MAC-VRF VNI 10010 (RT 65002:10010)`. */
+const evpnVrfText = (evpn: EvpnNetworkConfig | undefined): string => {
+    const describe = (label: string, vrf: EvpnVrfConfig | undefined): string[] => (vrf
+        ? [`${label}${vrf.vni != null ? ` VNI ${vrf.vni}` : ''}${vrf.routeTarget ? ` (RT ${vrf.routeTarget})` : ''}`]
+        : []);
+    return [...describe('MAC-VRF', evpn?.macVRF), ...describe('IP-VRF', evpn?.ipVRF)].join(', ');
+};
+
+/**
+ * The VTEP an EVPN bridge or VXLAN device was created for (ovn-recon-s3t.53).
+ *
+ * The link is the device's NAME: OVN-Kubernetes derives it from the VTEP name, and
+ * nothing in NodeNetworkState says so -- inferred, with the rule in the hint. One thing
+ * can lift it: the Node's k8s.ovn.org/vteps annotation records the address discovered
+ * for each VTEP, and when that equals a VXLAN device's own vxlan.local the two agree
+ * without any appeal to naming. A disagreement is the finding, and is flagged.
+ *
+ * No known VTEP name fits the device, no fact: before EVPN, and for an NNS read
+ * without its cluster, the drawer is exactly what it was.
+ */
+const evpnVtepFacts = (raw: Interface | undefined, ctx: GraphContext): Fact[] => {
+    const device = findVtepForDevice(raw?.name, ctx.vtepNames);
+    if (!raw || !device) return [];
+    const { vtepName } = device;
+    const vtep = ctx.vteps.find((candidate) => candidate.metadata?.name === vtepName);
+    const accepted = vtep?.status?.conditions?.find((condition) => condition.type === 'Accepted');
+    const local = raw.vxlan?.local;
+    const discovered = ctx.nodeVteps[vtepName];
+    const agrees = Boolean(local && discovered?.includes(local));
+
+    const items: FactItem[] = [
+        { text: vtepName, ref: vtepRef(vtepName) },
+        { text: `This device: ${EVPN_VTEP_DEVICES[device.prefix]}` },
+        ...(vtep
+            ? [
+                ...(vtep.spec?.mode ? [{ text: `Mode: ${vtep.spec.mode}` }] : []),
+                ...(vtep.spec?.cidrs?.length ? [{ text: `CIDRs: ${vtep.spec.cidrs.join(', ')}` }] : []),
+                accepted
+                    ? {
+                        text: accepted.status === 'True'
+                            ? `Accepted: True${accepted.reason ? ` — ${accepted.reason}` : ''}`
+                            : `⚠ Accepted: ${accepted.status}`
+                                + `${accepted.reason ? ` — ${accepted.reason}` : ''}`
+                                + `${accepted.message ? `: ${accepted.message}` : ''}`
+                    }
+                    : { text: 'Accepted: not reported' }
+            ]
+            : [{ text: 'VTEP resource not read — its name is known from a CUDN or the Node annotation' }]),
+        ...(discovered?.length
+            ? [{
+                text: !local
+                    ? `Address on this node: ${discovered.join(', ')}`
+                    : agrees
+                        ? `Address on this node: ${discovered.join(', ')} — equals vxlan.local`
+                        : `⚠ Address on this node: ${discovered.join(', ')} — but vxlan.local is ${local}`
+            }]
+            : [])
+    ];
+
+    const nameRule = device.how === 'hash'
+        ? `${raw.name} is ${device.prefix} plus the first 8 hex digits of sha256("${vtepName}"), the form `
+            + 'OVN-Kubernetes uses when the VTEP name does not fit in a 15-character interface name'
+        : `${raw.name} is ${device.prefix} plus the VTEP name`;
+    const using = getCudnsUsingVtep(vtepName, ctx.cudns);
+
+    return [
+        {
+            label: 'VTEP',
+            value: items,
+            provenance: agrees ? 'declared' : 'inferred',
+            hint: agrees
+                ? `The Node's ${NODE_VTEPS_ANNOTATION} annotation records this device's vxlan.local as the address `
+                    + `OVN-Kubernetes discovered for the VTEP. The device name agrees: ${nameRule}.`
+                : `Matched by name: ${nameRule}. The naming is an OVN-Kubernetes implementation detail; `
+                    + 'nothing in NodeNetworkState records the link.'
+        },
+        {
+            label: 'EVPN Networks',
+            value: using.map((cudn): FactItem => {
+                const name = cudn.metadata?.name || 'Unknown';
+                const vrfs = evpnVrfText(cudn.spec?.network?.evpn);
+                return { text: vrfs ? `${name} — ${vrfs}` : name, ref: cudnRef(name) };
+            }),
+            provenance: 'declared',
+            hint: 'CUDNs whose spec.network.evpn.vtep names this VTEP.',
+            emptyText: 'No CUDN names this VTEP'
+        }
+    ];
+};
+
+/**
+ * The network a per-network EVPN device belongs to (ovn-recon-s3t.53): the SVIs and
+ * the OVS port are named after the CUDN, or after the network ID when the name does
+ * not fit. The ID is resolved through the NetworkAttachmentDefinitions, so with none
+ * loaded nothing can be said either way and no fact is emitted.
+ */
+const evpnNetworkFacts = (raw: Interface | undefined, ctx: GraphContext): Fact[] => {
+    const device = findEvpnNetworkForDevice(raw?.name, ctx.cudns, ctx.udns, ctx.nads);
+    if (!raw || !device) return [];
+    if (!device.network && ctx.nads.length === 0 && device.how === 'network-id') return [];
+    const { network, nad } = device;
+    const vlanId = raw.vlan?.id;
+
+    const items: FactItem[] = [
+        ...(network
+            ? [network.kind === 'cudn'
+                ? { text: `CUDN ${network.name}`, ref: cudnRef(network.name) }
+                : { text: `UDN ${network.namespace}/${network.name}`, ref: udnRef(network.namespace, network.name) }]
+            : []),
+        { text: `This device: ${EVPN_NETWORK_DEVICES[device.prefix]}` },
+        ...(device.how === 'network-id' && nad
+            ? [{ text: `Network ID ${device.key}: NetworkAttachmentDefinition ${nad.namespace}/${nad.name}`, ref: nadRef(nad.namespace, nad.name) }]
+            : []),
+        ...(device.ambiguous
+            ? [{ text: `⚠ Network ID ${device.key} is claimed by ${device.ambiguous.join(' and ')} — matched to neither` }]
+            : []),
+        ...(!network && !device.ambiguous
+            ? [{
+                text: device.how === 'name'
+                    ? `⚠ No CUDN is named ${device.key}`
+                    : nad
+                        ? `⚠ Network ID ${device.key} is carried by a NetworkAttachmentDefinition whose network is not known`
+                        : `⚠ No NetworkAttachmentDefinition carries ${NETWORK_ID_ANNOTATION}: ${device.key}`
+            }]
+            : []),
+        ...(network && device.vid != null && vlanId != null
+            ? [{
+                text: vlanId === device.vid
+                    ? `VLAN ${vlanId} equals the vid in the network's EVPN config`
+                    : `⚠ VLAN ${vlanId}, but the network's EVPN config assigns vid ${device.vid}`
+            }]
+            : [])
+    ];
+
+    return [{
+        label: 'EVPN Network',
+        value: items,
+        provenance: 'inferred',
+        hint: `Matched by name: OVN-Kubernetes names an EVPN network's devices ${Object.keys(EVPN_NETWORK_DEVICES).join(', ')} `
+            + 'plus the CUDN name, or plus the network ID when that name does not fit in a 15-character interface '
+            + `name. The ID is the ${NETWORK_ID_ANNOTATION} annotation on the network's NetworkAttachmentDefinition.`
+    }];
+};
+
 export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
     interface: {
         label: 'Interface',
@@ -291,6 +453,8 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 ];
                 facts.push({ label: 'VXLAN', value: items, provenance: 'observed' });
             }
+            // EVPN: which VTEP this device was created for, or which network it serves.
+            facts.push(...evpnVtepFacts(raw, ctx), ...evpnNetworkFacts(raw, ctx));
             const macAddress = getMacAddress(raw);
             if (macAddress) {
                 facts.push({ label: 'MAC Address', value: macAddress, provenance: 'observed' });
@@ -383,6 +547,19 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     : []),
                 // Beside Physical Network: for a Localnet CUDN this corroborates it.
                 ...cudnPatchPortFacts(cudn, ctx),
+                ...(network?.evpn
+                    ? [{
+                        label: 'EVPN',
+                        value: [
+                            ...(network.evpn.vtep
+                                ? [{ text: `VTEP: ${network.evpn.vtep}`, ref: vtepRef(network.evpn.vtep) }]
+                                : []),
+                            ...(evpnVrfText(network.evpn) ? [{ text: evpnVrfText(network.evpn) }] : [])
+                        ],
+                        provenance: 'declared',
+                        hint: 'spec.network.evpn: the VTEP whose VXLAN devices carry this network, and its VRFs.'
+                    } as Fact]
+                    : []),
                 ...(cudn?.spec?.namespaceSelector
                     ? [(() => {
                         const text = formatLabelSelector(cudn.spec!.namespaceSelector)

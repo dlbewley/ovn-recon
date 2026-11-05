@@ -1,0 +1,25 @@
+[
+  {
+    "apiVersion": "k8s.ovn.org/v1",
+    "kind": "VTEP",
+    "metadata": {
+      "name": "demo-evpn-vteps"
+    },
+    "spec": {
+      "cidrs": [
+        "192.0.2.0/24"
+      ],
+      "mode": "Unmanaged"
+    },
+    "status": {
+      "conditions": [
+        {
+          "type": "Accepted",
+          "status": "True",
+          "reason": "Allocated",
+          "message": "VTEP allocation succeeded"
+        }
+      ]
+    }
+  }
+]

@@ -1,4 +1,5 @@
 import { bridgeMappingNodeId, lldpNodeId } from '../topology/ids';
+import { sha256Hex } from '../topology/sha256';
 import { subnetCidrs } from '../topology/subnets';
 import {
     ClusterUserDefinedNetwork,
@@ -9,7 +10,8 @@ import {
     NodeNetworkState,
     NetworkAttachmentDefinition,
     RouteAdvertisements,
-    UserDefinedNetwork
+    UserDefinedNetwork,
+    Vtep
 } from '../types';
 
 interface MatchExpression {
@@ -917,4 +919,277 @@ export const findPatchPortsForCudn = (
         else result.ambiguous.push({ port, candidates });
     });
     return result;
+};
+
+// --- EVPN device names (ovn-recon-s3t.53) ------------------------------------
+
+/**
+ * OVN-Kubernetes names every kernel device it creates for EVPN from a 4-character
+ * prefix, a separator and an identifier, capped at the kernel's 15-character
+ * interface-name limit (go-controller/pkg/node/controllers/evpn/utils.go):
+ *
+ *   per VTEP      evbr (bridge)   evx4 / evx6 (VXLAN, by address family)
+ *   per network   svl2 (L2 SVI)   svl3 (L3 SVI)   ovl2 (OVS port)
+ *
+ *   `-` then the readable name: the VTEP name, or the CUDN name
+ *   `.` then a computed fallback when the readable form is too long: the first 8 hex
+ *       digits of sha256(VTEP name), or the network ID
+ *
+ * A `.` is not valid in a Kubernetes name and a name cannot start with `-`, so the two
+ * forms cannot collide. Nothing in NodeNetworkState or the API declares any of this,
+ * which is why everything resting on it is inferred -- and the hash cannot be undone,
+ * so a device is matched by deriving the name each known VTEP WOULD produce.
+ */
+const INTERFACE_NAME_LIMIT = 15;
+
+export type EvpnVtepDevicePrefix = 'evbr' | 'evx4' | 'evx6';
+export type EvpnNetworkDevicePrefix = 'svl2' | 'svl3' | 'ovl2';
+
+/** What each per-VTEP device is, for the drawer. */
+export const EVPN_VTEP_DEVICES: Record<EvpnVtepDevicePrefix, string> = {
+    evbr: 'EVPN bridge',
+    evx4: 'VXLAN device (IPv4)',
+    evx6: 'VXLAN device (IPv6)'
+};
+
+/** What each per-network device is, for the drawer. */
+export const EVPN_NETWORK_DEVICES: Record<EvpnNetworkDevicePrefix, string> = {
+    svl2: 'Layer 2 SVI (MAC-VRF)',
+    svl3: 'Layer 3 SVI (IP-VRF)',
+    ovl2: 'OVS Layer 2 port'
+};
+
+/** Node annotation: `{"<vtep>":{"ips":["<address>"]}}`, the address discovered per VTEP. */
+export const NODE_VTEPS_ANNOTATION = 'k8s.ovn.org/vteps';
+/** NetworkAttachmentDefinition annotation carrying the network's numeric ID. */
+export const NETWORK_ID_ANNOTATION = 'k8s.ovn.org/network-id';
+
+const vtepNameHashes = new Map<string, string>();
+const vtepNameHash = (vtepName: string): string => {
+    let hash = vtepNameHashes.get(vtepName);
+    if (hash === undefined) {
+        hash = sha256Hex(vtepName).slice(0, 8);
+        vtepNameHashes.set(vtepName, hash);
+    }
+    return hash;
+};
+
+/** The name OVN-Kubernetes gives one of a VTEP's devices. */
+export const evpnVtepDeviceName = (prefix: EvpnVtepDevicePrefix, vtepName: string): string => {
+    const readable = `${prefix}-${vtepName}`;
+    return readable.length <= INTERFACE_NAME_LIMIT ? readable : `${prefix}.${vtepNameHash(vtepName)}`;
+};
+
+/**
+ * The address OVN-Kubernetes recorded for each VTEP on a node, from the Node's
+ * `k8s.ovn.org/vteps` annotation. Empty for anything unparseable: an annotation this
+ * cannot read is the same as one that is not there.
+ */
+export const parseNodeVteps = (annotation: string | undefined): Record<string, string[]> => {
+    if (!annotation) return {};
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(annotation);
+    } catch {
+        return {};
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const result: Record<string, string[]> = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([vtepName, value]) => {
+        const ips = (value as { ips?: unknown } | null)?.ips;
+        if (Array.isArray(ips)) {
+            result[vtepName] = ips.filter((ip): ip is string => typeof ip === 'string');
+        }
+    });
+    return result;
+};
+
+/**
+ * Every VTEP name the cluster has told us about, from any source.
+ *
+ * A device can only be matched to a VTEP whose name is known, and the VTEP resource
+ * is not the only place the name appears: a CUDN declares the VTEP it rides on, and
+ * the Node annotation is keyed by VTEP name. Taking the union means a reader without
+ * permission to list VTEPs -- or looking at an NNS beside CUDNs only -- still gets
+ * the link.
+ */
+export const getKnownVtepNames = (
+    vteps: Vtep[],
+    cudns: ClusterUserDefinedNetwork[],
+    nodeVteps: Record<string, string[]>
+): string[] => Array.from(new Set([
+    ...vteps.map((vtep) => vtep.metadata?.name),
+    ...cudns.map((cudn) => cudn.spec?.network?.evpn?.vtep),
+    ...Object.keys(nodeVteps)
+].filter((name): name is string => Boolean(name)))).sort();
+
+export interface EvpnVtepDevice {
+    prefix: EvpnVtepDevicePrefix;
+    vtepName: string;
+    /** `name`: the device name spells the VTEP out. `hash`: it carries the sha256 prefix. */
+    how: 'name' | 'hash';
+}
+
+/**
+ * The VTEP a device was created for, or undefined.
+ *
+ * Fails to NO MATCH when two known VTEP names would produce the same device name --
+ * possible only through an 8-hex-digit hash collision, but a wrong VTEP is worse than
+ * none.
+ */
+export const findVtepForDevice = (
+    deviceName: string | undefined,
+    vtepNames: string[]
+): EvpnVtepDevice | undefined => {
+    if (!deviceName) return undefined;
+    const prefix = deviceName.slice(0, 4) as EvpnVtepDevicePrefix;
+    const separator = deviceName.charAt(4);
+    if (!(prefix in EVPN_VTEP_DEVICES) || (separator !== '-' && separator !== '.')) return undefined;
+    const candidates = vtepNames.filter((vtepName) => evpnVtepDeviceName(prefix, vtepName) === deviceName);
+    if (candidates.length !== 1) return undefined;
+    return { prefix, vtepName: candidates[0], how: separator === '-' ? 'name' : 'hash' };
+};
+
+/** CUDNs declaring `spec.network.evpn.vtep: <vtepName>`. */
+export const getCudnsUsingVtep = (
+    vtepName: string | undefined,
+    cudns: ClusterUserDefinedNetwork[]
+): ClusterUserDefinedNetwork[] =>
+    (vtepName ? cudns.filter((cudn) => cudn.spec?.network?.evpn?.vtep === vtepName) : []);
+
+export interface EvpnNetworkDeviceName {
+    prefix: EvpnNetworkDevicePrefix;
+    /** `name`: the suffix is a CUDN name. `network-id`: it is the network's numeric ID. */
+    how: 'name' | 'network-id';
+    /** The CUDN name or the network ID, as written in the device name. */
+    key: string;
+}
+
+/** Read a per-network EVPN device name. Pure string work. */
+export const parseEvpnNetworkDeviceName = (deviceName: string | undefined): EvpnNetworkDeviceName | undefined => {
+    if (!deviceName) return undefined;
+    const prefix = deviceName.slice(0, 4) as EvpnNetworkDevicePrefix;
+    if (!(prefix in EVPN_NETWORK_DEVICES)) return undefined;
+    const separator = deviceName.charAt(4);
+    const key = deviceName.slice(5);
+    if (!key) return undefined;
+    if (separator === '-') return { prefix, how: 'name', key };
+    if (separator === '.' && /^\d+$/.test(key)) return { prefix, how: 'network-id', key };
+    return undefined;
+};
+
+export type EvpnNetworkRef =
+    | { kind: 'cudn'; name: string }
+    | { kind: 'udn'; namespace: string; name: string };
+
+const networkRefLabel = (ref: EvpnNetworkRef): string =>
+    (ref.kind === 'cudn' ? `CUDN ${ref.name}` : `UDN ${ref.namespace}/${ref.name}`);
+
+/**
+ * The network a NetworkAttachmentDefinition belongs to.
+ *
+ * The network name in spec.config is preferred to the NAD's own name: a CUDN and a
+ * namespaced UDN may share a name, and only the config's `cluster_udn_` prefix says
+ * which of them created this NAD.
+ */
+const networkForNad = (
+    nad: NetworkAttachmentDefinition,
+    cudns: ClusterUserDefinedNetwork[],
+    udns: UserDefinedNetwork[]
+): EvpnNetworkRef | undefined => {
+    const hasCudn = (name: string) => cudns.some((cudn) => cudn.metadata?.name === name);
+    const configName = getNadNetworkName(nad);
+    if (configName?.startsWith(CUDN_NETWORK_PREFIX)) {
+        const name = configName.slice(CUDN_NETWORK_PREFIX.length);
+        return hasCudn(name) ? { kind: 'cudn', name } : undefined;
+    }
+    const namespace = nad.metadata?.namespace;
+    const name = nad.metadata?.name;
+    if (namespace && name
+        && udns.some((udn) => udn.metadata?.namespace === namespace && udn.metadata?.name === name)) {
+        return { kind: 'udn', namespace, name };
+    }
+    const cudnName = findCudnNameForNad(nad, cudns);
+    return cudnName ? { kind: 'cudn', name: cudnName } : undefined;
+};
+
+/** The VLAN id a NAD's config assigns one of its network's VRFs on the EVPN bridge. */
+const evpnVidFromNad = (
+    nad: NetworkAttachmentDefinition | undefined,
+    prefix: EvpnNetworkDevicePrefix
+): number | undefined => {
+    const evpn = parseNadConfig(nad?.spec?.config)?.evpn as
+        { macVRF?: { vid?: unknown }; ipVRF?: { vid?: unknown } } | undefined;
+    const vid = prefix === 'svl3' ? evpn?.ipVRF?.vid : evpn?.macVRF?.vid;
+    return typeof vid === 'number' ? vid : undefined;
+};
+
+export interface EvpnNetworkDevice extends EvpnNetworkDeviceName {
+    /** The network the device belongs to. Absent when the name resolves to nothing, or to more than one. */
+    network?: EvpnNetworkRef;
+    /** A NetworkAttachmentDefinition of that network: the one carrying the ID, when matched by ID. */
+    nad?: { namespace: string; name: string };
+    /** The VLAN id that NAD's config assigns this device's VRF on the EVPN bridge. */
+    vid?: number;
+    /** Networks claiming the same ID, when more than one does. Matched to none of them. */
+    ambiguous?: string[];
+}
+
+/**
+ * The network a per-network EVPN device belongs to.
+ *
+ * Returns undefined for a name that is not an EVPN device's at all, and a result with
+ * no `network` for one that is but resolves to nothing -- the caller can then say
+ * what the device is while admitting it does not know whose.
+ *
+ * A network ID lives only on the network's NetworkAttachmentDefinitions, so the
+ * ID form is resolved through them. A CUDN creates one NAD per attached namespace,
+ * all carrying the same ID; that is one network, not an ambiguity.
+ */
+export const findEvpnNetworkForDevice = (
+    deviceName: string | undefined,
+    cudns: ClusterUserDefinedNetwork[],
+    udns: UserDefinedNetwork[],
+    nads: NetworkAttachmentDefinition[]
+): EvpnNetworkDevice | undefined => {
+    const parsed = parseEvpnNetworkDeviceName(deviceName);
+    if (!parsed) return undefined;
+    const nadRefOf = (nad: NetworkAttachmentDefinition | undefined) => (nad?.metadata?.name
+        ? { namespace: nad.metadata.namespace || 'default', name: nad.metadata.name }
+        : undefined);
+
+    if (parsed.how === 'name') {
+        // Only a CUDN's name is ever spelled out; a namespaced UDN always gets the ID form.
+        if (!cudns.some((cudn) => cudn.metadata?.name === parsed.key)) return parsed;
+        const nad = nads.find((candidate) => {
+            const network = networkForNad(candidate, cudns, udns);
+            return network?.kind === 'cudn' && network.name === parsed.key;
+        });
+        return {
+            ...parsed,
+            network: { kind: 'cudn', name: parsed.key },
+            nad: nadRefOf(nad),
+            vid: evpnVidFromNad(nad, parsed.prefix)
+        };
+    }
+
+    const carriers = nads.filter((nad) => nad.metadata?.annotations?.[NETWORK_ID_ANNOTATION] === parsed.key);
+    const networks = new Map<string, { network: EvpnNetworkRef; nad: NetworkAttachmentDefinition }>();
+    carriers.forEach((nad) => {
+        const network = networkForNad(nad, cudns, udns);
+        if (!network) return;
+        const label = networkRefLabel(network);
+        if (!networks.has(label)) networks.set(label, { network, nad });
+    });
+    if (networks.size > 1) {
+        return { ...parsed, ambiguous: Array.from(networks.keys()).sort() };
+    }
+    const [match] = Array.from(networks.values());
+    const nad = match?.nad ?? carriers[0];
+    return {
+        ...parsed,
+        network: match?.network,
+        nad: nadRefOf(nad),
+        vid: evpnVidFromNad(nad, parsed.prefix)
+    };
 };

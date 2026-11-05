@@ -48,6 +48,11 @@ Optional sections such as routes and bridge mappings should be included only whe
 `ClusterUserDefinedNetwork` objects from the same cluster, since the VRF, the localnet
 mappings and the attachment namespaces only make sense together.
 
+`evpn-vxlan.json` has three: the CUDN in `test/fixtures/cudn/`, the VTEP it names in
+`test/fixtures/vtep/`, and the NAD carrying its network ID in `test/fixtures/nad/`. The
+device names in the NNS are derived from the VTEP name and the network ID, so none of
+the four can be renamed alone.
+
 Prefer extending a real capture over inventing a synthetic one. Synthetic fixtures only
 prove the parsers handle shapes we already thought of — the real captures are what surfaced
 the `prefix-length` / `prefix_length` split and the bridge-shadowing case.

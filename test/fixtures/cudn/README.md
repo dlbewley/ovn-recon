@@ -23,3 +23,4 @@ Same as `../nns/README.md`. In addition:
 | Fixture | Covers |
 |---|---|
 | `primary-cudn-vrf.json` | one Layer2 `Primary` CUDN producing a VRF; three `Localnet` CUDNs across two physical networks, two of them sharing one network and distinguished by access VLAN; one CUDN attached to no namespaces |
+| `evpn-vxlan.json` | one Layer2 `Primary` CUDN with `transport: EVPN`, naming the VTEP in `../vtep/evpn-vxlan.json` and declaring a MAC-VRF VNI and route target; its name is too long to appear in device names, so the node's SVI and OVS port carry the network ID from `../nad/evpn-vxlan.json` instead |

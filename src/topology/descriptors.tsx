@@ -6,17 +6,23 @@ import {
 
 import {
     findCudnNameForNad,
+    findEvpnNetworkForDevice,
     findInterfaceHoldingAddress,
     findPatchPortsForCudn,
     findPrimaryNetworkForVrf,
     findRouteAdvertisementForVrf,
+    findVtepForDevice,
     getCudnsSelectedByRouteAdvertisement,
+    getCudnsUsingVtep,
     getNadUpstreamNodeIdsForEdges,
     getVrfEgressInterfaces,
     parseNadConfig,
     patchPortNetworkName,
     CUDN_NETWORK_PREFIX,
-    LldpNeighborNode
+    EVPN_NETWORK_DEVICES,
+    LldpNeighborNode,
+    NETWORK_ID_ANNOTATION,
+    NODE_VTEPS_ANNOTATION
 } from '../components/nodeVisualizationSelectors';
 import {
     ClusterUserDefinedNetwork, Interface, NetworkAttachmentDefinition, OvnBridgeMapping,
@@ -174,14 +180,67 @@ const interfaceEdges = (iface: Interface, ctx: GraphContext, out: EdgeSink) => {
     // nmstate names the address, not the interface, so the holder is looked up; an
     // address nothing on this node holds is reported as unresolved, not dropped.
     const vtep = iface.vxlan?.local;
+    // EVPN: the cluster-scoped VTEP this device was created for, by its name.
+    const vtepDevice = findVtepForDevice(iface.name, ctx.vtepNames);
+    // The Node annotation records the address OVN-Kubernetes discovered for each VTEP
+    // here. When it equals this device's own local address the two agree without any
+    // appeal to naming -- which lifts what follows from a guess to a statement.
+    const annotated = Boolean(vtepDevice && vtep && ctx.nodeVteps[vtepDevice.vtepName]?.includes(vtep));
     if (iface.type === 'vxlan' && vtep) {
         const underlay = findInterfaceHoldingAddress(vtep, ctx.interfaces);
+        const discovered = annotated
+            ? ` OVN-Kubernetes recorded the same address for VTEP ${vtepDevice?.vtepName} in the Node's ${NODE_VTEPS_ANNOTATION} annotation.`
+            : '';
         out.named('vxlan-local', id, underlay?.name ?? vtep, 'from', {
             kind: 'layering',
             provenance: 'observed',
-            rationale: underlay
+            rationale: (underlay
                 ? `${iface.name} tunnels over ${underlay.name}: vxlan.local ${vtep} is an address of ${underlay.name}.`
-                : `${iface.name} tunnels from ${vtep}: vxlan.local names an address no interface on this node holds.`
+                : `${iface.name} tunnels from ${vtep}: vxlan.local names an address no interface on this node holds.`)
+                + discovered
+        });
+    }
+    // The networks riding on the tunnel: every CUDN that names this VTEP. Drawn from
+    // the VXLAN device only -- the VTEP's bridge reaches the same networks through
+    // its port, and a second line per network would say one thing twice.
+    if (vtepDevice && vtepDevice.prefix !== 'evbr') {
+        const nameRule = vtepDevice.how === 'hash'
+            ? `${iface.name} is ${vtepDevice.prefix} plus the first 8 hex digits of sha256("${vtepDevice.vtepName}")`
+            : `${iface.name} is ${vtepDevice.prefix} plus the VTEP name`;
+        getCudnsUsingVtep(vtepDevice.vtepName, ctx.cudns).forEach((cudn) => {
+            const cudnName = cudn.metadata?.name;
+            const declared = `CUDN ${cudnName} declares spec.network.evpn.vtep: ${vtepDevice.vtepName}`;
+            out.edge(id, cudnNodeId(cudnName), 'evpn-vtep', {
+                kind: 'reference',
+                provenance: annotated ? 'declared' : 'inferred',
+                rationale: annotated
+                    ? `${declared}, and the Node's ${NODE_VTEPS_ANNOTATION} annotation gives that VTEP the address `
+                        + `${vtep}, which is ${iface.name}'s vxlan.local. The device name agrees: ${nameRule}.`
+                    : `${declared}, and ${nameRule}. Inferred: the naming is an OVN-Kubernetes `
+                        + 'implementation detail, and no Node annotation was read to confirm the address.'
+            });
+        });
+    }
+    // The network a per-network EVPN device belongs to, read from its name.
+    const networkDevice = findEvpnNetworkForDevice(iface.name, ctx.cudns, ctx.udns, ctx.nads);
+    if (networkDevice?.network) {
+        const { network } = networkDevice;
+        const label = network.kind === 'cudn' ? `CUDN ${network.name}` : `UDN ${network.namespace}/${network.name}`;
+        const targetId = network.kind === 'cudn'
+            ? cudnNodeId(network.name)
+            : udnNodeId({ metadata: { namespace: network.namespace, name: network.name } });
+        const how = networkDevice.how === 'name'
+            ? `its name is ${networkDevice.prefix} plus the CUDN name`
+            : `its name is ${networkDevice.prefix} plus network ID ${networkDevice.key}, which NetworkAttachmentDefinition `
+                + `${networkDevice.nad?.namespace}/${networkDevice.nad?.name} carries as ${NETWORK_ID_ANNOTATION}`;
+        const vlan = networkDevice.vid != null && iface.vlan?.id === networkDevice.vid
+            ? ` Its VLAN id ${networkDevice.vid} is the vid that network's EVPN config assigns.`
+            : '';
+        out.edge(id, targetId, 'evpn-network', {
+            kind: 'reference',
+            provenance: 'inferred',
+            rationale: `${iface.name} is the ${EVPN_NETWORK_DEVICES[networkDevice.prefix]} of ${label}: ${how}.${vlan}`
+                + ' Inferred: the naming is an OVN-Kubernetes implementation detail.'
         });
     }
 };

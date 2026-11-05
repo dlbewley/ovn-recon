@@ -94,7 +94,7 @@ The plugin registers four route-based modules in `console-extensions.json`, reac
 
 **Physical topology pipeline** (`NodeNetworkStateDetails` → `NodeVisualization`):
 
-1. `useK8sWatchResource` watches live K8s resources: `NodeNetworkState`, `ClusterUserDefinedNetwork`, `UserDefinedNetwork`, `NetworkAttachmentDefinition`, `RouteAdvertisements`
+1. `useK8sWatchResource` watches live K8s resources: `NodeNetworkState`, `ClusterUserDefinedNetwork`, `UserDefinedNetwork`, `NetworkAttachmentDefinition`, `RouteAdvertisements`, `NodeNetworkConfigurationEnactment`, `VTEP` (EVPN; absent on clusters without it), and the viewed node's own `Node` (for its `k8s.ovn.org/vteps` annotation only)
 2. `nodeVisualizationSelectors.ts` — pure functions that extract relationships from raw resource data (VRF routes, CUDN/NAD associations, LLDP neighbors, route advertisement lookups)
 3. `nodeVisualizationModel.ts` — builds a graph model: nodes typed as `interface | ovn-mapping | cudn | udn | attachment | nad | vrf | lldp-neighbor | other`, and edges between them
 4. `nodeVisualizationLayout.ts` — assigns grid positions using gravity-based column sorting (no external graph library)

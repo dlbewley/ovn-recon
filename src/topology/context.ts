@@ -1,4 +1,6 @@
-import { extractLldpNeighbors, getCudnAssociatedNamespaces, LldpNeighborNode } from '../components/nodeVisualizationSelectors';
+import {
+    extractLldpNeighbors, getCudnAssociatedNamespaces, getKnownVtepNames, parseNodeVteps, LldpNeighborNode
+} from '../components/nodeVisualizationSelectors';
 import { AttachmentNode, IntegrationBridgeNode } from './types';
 import {
     ClusterUserDefinedNetwork,
@@ -8,7 +10,8 @@ import {
     NodeNetworkState,
     OvnBridgeMapping,
     RouteAdvertisements,
-    UserDefinedNetwork
+    UserDefinedNetwork,
+    Vtep
 } from '../types';
 
 /**
@@ -33,6 +36,23 @@ export interface GraphContext {
      * NNS was imported from elsewhere, in which case no origin can be claimed.
      */
     enactments: NodeNetworkConfigurationEnactment[];
+    /**
+     * The cluster's VTEP resources (ovn-recon-s3t.53). Empty before EVPN, when the
+     * reader may not list them, and for an imported NNS.
+     */
+    vteps: Vtep[];
+    /**
+     * The address OVN-Kubernetes discovered for each VTEP on THIS node, from the
+     * Node's k8s.ovn.org/vteps annotation, keyed by VTEP name. Empty when the Node
+     * was not read or carries no annotation.
+     */
+    nodeVteps: Record<string, string[]>;
+    /**
+     * Every VTEP name known from any source -- VTEP resources, CUDN specs, the Node
+     * annotation. A device is matched to a VTEP by deriving the device name each of
+     * these would produce.
+     */
+    vtepNames: string[];
     /**
      * Names of interfaces that are declared bridges. Needed to resolve the case where
      * an ovs-interface shares its name with the bridge it belongs to; without it the
@@ -91,6 +111,9 @@ export interface GraphContextInput {
     nads?: NetworkAttachmentDefinition[];
     routeAdvertisements?: RouteAdvertisements[];
     enactments?: NodeNetworkConfigurationEnactment[];
+    vteps?: Vtep[];
+    /** The raw k8s.ovn.org/vteps annotation off this node's Node object. */
+    nodeVtepsAnnotation?: string;
 }
 
 const BRIDGE_TYPES = ['linux-bridge', 'ovs-bridge', 'openvswitch'];
@@ -110,9 +133,12 @@ export const buildGraphContext = ({
     udns = [],
     nads = [],
     routeAdvertisements = [],
-    enactments = []
+    enactments = [],
+    vteps = [],
+    nodeVtepsAnnotation
 }: GraphContextInput): GraphContext => {
     const interfaces: Interface[] = nns?.status?.currentState?.interfaces ?? [];
+    const nodeVteps = parseNodeVteps(nodeVtepsAnnotation);
 
     return {
         nns,
@@ -123,6 +149,9 @@ export const buildGraphContext = ({
         nads,
         routeAdvertisements,
         enactments,
+        vteps,
+        nodeVteps,
+        vtepNames: getKnownVtepNames(vteps, cudns, nodeVteps),
         explicitBridgeNames: new Set(
             interfaces.filter((i) => BRIDGE_TYPES.includes(i.type)).map((i) => i.name)
         ),

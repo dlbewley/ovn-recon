@@ -1,0 +1,31 @@
+[
+  {
+    "apiVersion": "k8s.cni.cncf.io/v1",
+    "kind": "NetworkAttachmentDefinition",
+    "metadata": {
+      "name": "demo-evpn-vni10010",
+      "namespace": "demo-evpn",
+      "annotations": {
+        "k8s.ovn.org/network-id": "9",
+        "k8s.ovn.org/network-name": "cluster_udn_demo-evpn-vni10010"
+      },
+      "labels": {
+        "app.kubernetes.io/name": "demo-evpn",
+        "app.kubernetes.io/part-of": "demo-evpn",
+        "k8s.ovn.org/user-defined-network": ""
+      },
+      "ownerReferences": [
+        {
+          "apiVersion": "k8s.ovn.org/v1",
+          "kind": "ClusterUserDefinedNetwork",
+          "name": "demo-evpn-vni10010",
+          "controller": true,
+          "blockOwnerDeletion": true
+        }
+      ]
+    },
+    "spec": {
+      "config": "{\"allowPersistentIPs\":true,\"cniVersion\":\"1.1.0\",\"evpn\":{\"vtep\":\"demo-evpn-vteps\",\"macVRF\":{\"vni\":10010,\"routeTarget\":\"65002:10010\",\"vid\":2}},\"joinSubnet\":\"100.65.0.0/16,fd99::/64\",\"name\":\"cluster_udn_demo-evpn-vni10010\",\"netAttachDefName\":\"demo-evpn/demo-evpn-vni10010\",\"role\":\"primary\",\"subnets\":\"10.10.10.0/24\",\"topology\":\"layer2\",\"transitSubnet\":\"100.88.0.0/16\",\"transport\":\"evpn\",\"type\":\"ovn-k8s-cni-overlay\"}"
+    }
+  }
+]

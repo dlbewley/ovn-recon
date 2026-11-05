@@ -1,10 +1,11 @@
 import * as React from 'react';
 import { useParams, Link, useLocation } from 'react-router';
 import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
-import { DocumentTitle, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
+import { DocumentTitle, K8sResourceCommon, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import NodeVisualization from './NodeVisualization';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
-import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements } from '../types';
+import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements, Vtep } from '../types';
+import { NODE_VTEPS_ANNOTATION } from './nodeVisualizationSelectors';
 
 interface NodeNetworkStateDetailsProps {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -96,6 +97,33 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
         [allEnactments, name]
     );
 
+    // EVPN (ovn-recon-s3t.53). The VTEP kind arrived with EVPN support, so on a cluster
+    // without it the watch reports no such model and yields nothing; a reader who may
+    // not list VTEPs gets the same. Both are ignored: the graph draws as it did before.
+    const [vteps] = useK8sWatchResource<Vtep[]>({
+        groupVersionKind: {
+            group: 'k8s.ovn.org',
+            version: 'v1',
+            kind: 'VTEP',
+        },
+        isList: true,
+    });
+
+    // This node's Node object, for the one annotation recording which address
+    // OVN-Kubernetes discovered for each VTEP here. Watched by name, never as a list.
+    const nodeWatchResource = React.useMemo(() => name ? {
+        groupVersionKind: {
+            version: 'v1',
+            kind: 'Node',
+        },
+        name: name,
+        isList: false,
+    } : null, [name]);
+    const [node] = useK8sWatchResource<K8sResourceCommon>(nodeWatchResource);
+    // Passed on as the annotation string alone: a Node's status changes constantly,
+    // and handing the whole object down would rebuild the graph on every heartbeat.
+    const nodeVtepsAnnotation = node?.metadata?.annotations?.[NODE_VTEPS_ANNOTATION];
+
     if (!name) {
         return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
     }
@@ -150,7 +178,11 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
                 )}
             </PageSection>
             <PageSection isFilled>
-                <NodeVisualization nns={nns} cudns={cudns} udns={udns} nads={nads} routeAdvertisements={routeAdvertisements} enactments={enactments} />
+                <NodeVisualization
+                    nns={nns} cudns={cudns} udns={udns} nads={nads}
+                    routeAdvertisements={routeAdvertisements} enactments={enactments}
+                    vteps={vteps || undefined} nodeVtepsAnnotation={nodeVtepsAnnotation}
+                />
             </PageSection>
         </>
     );

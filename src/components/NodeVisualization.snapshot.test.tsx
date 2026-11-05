@@ -4,7 +4,7 @@ import * as React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
-import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
+import { ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState, Vtep } from '../types';
 import NodeVisualization from './NodeVisualization';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
@@ -124,6 +124,22 @@ describe('NodeVisualization rendered structure', () => {
             root.render(<NodeVisualization
                 nns={fixture<NodeNetworkState>('nns', 'evpn-vxlan.json')}
                 cudns={[]} udns={[]} nads={[]} routeAdvertisements={[]} />);
+        });
+        expect(describeGraph()).toMatchSnapshot();
+    });
+
+    it('evpn-vxlan, with the cluster\'s VTEP, CUDN and NAD', () => {
+        // Beside its cluster the same node says which VTEP the tunnel is and which
+        // network rides on it: the VXLAN device and the SVI each reach the CUDN, and
+        // the CUDN's gateway patch pair reaches it from br-ex (ovn-recon-s3t.53, .29).
+        act(() => {
+            root.render(<NodeVisualization
+                nns={fixture<NodeNetworkState>('nns', 'evpn-vxlan.json')}
+                cudns={fixture<ClusterUserDefinedNetwork[]>('cudn', 'evpn-vxlan.json')}
+                nads={fixture<NetworkAttachmentDefinition[]>('nad', 'evpn-vxlan.json')}
+                vteps={fixture<Vtep[]>('vtep', 'evpn-vxlan.json')}
+                nodeVtepsAnnotation={JSON.stringify({ 'demo-evpn-vteps': { ips: ['192.0.2.72'] } })}
+                udns={[]} routeAdvertisements={[]} />);
         });
         expect(describeGraph()).toMatchSnapshot();
     });
