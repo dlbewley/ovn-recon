@@ -92,6 +92,8 @@ export interface UserDefinedNetwork extends K8sResourceCommon {
     };
     status?: {
         conditions?: { type: string; status: string; message?: string }[];
+        /** As ClusterUserDefinedNetwork.status.vrfName. */
+        vrfName?: string;
     };
 }
 
@@ -129,6 +131,12 @@ export interface ClusterUserDefinedNetwork extends K8sResourceCommon {
     };
     status?: {
         conditions?: { type: string; status: string; message?: string }[];
+        /**
+         * The Linux VRF device OVN-Kubernetes creates for a Primary network on each
+         * node. Published by newer releases so consumers need not derive the name;
+         * absent on older ones, where it has to be worked out.
+         */
+        vrfName?: string;
     };
 }
 

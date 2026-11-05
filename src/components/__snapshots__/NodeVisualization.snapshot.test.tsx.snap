@@ -785,19 +785,20 @@ exports[`NodeVisualization rendered structure evpn-vxlan, default view 1`] = `
 exports[`NodeVisualization rendered structure evpn-vxlan, with the cluster's VTEP, CUDN and NAD 1`] = `
 {
   "edges": [
-    "1080,130 -> 1140,129  solid  declared  attached-namespaces  1 namespace attached to CUDN demo-evpn-vni10010, as listed in its NetworkCreated status condition.",
+    "1080,165 -> 1140,164  solid  declared  attached-namespaces  1 namespace attached to CUDN demo-evpn-vni10010, as listed in its NetworkCreated status condition.",
     "420,180 -> 480,230  solid  observed  controller  evx4.4a75265e is a port of evbr.4a75265e: NodeNetworkState reports controller: evbr.4a75265e.",
     "640,130 -> 260,180  solid  observed  vxlan-local  evx4.4a75265e tunnels over br-ex: vxlan.local 192.0.2.72 is an address of br-ex. OVN-Kubernetes recorded the same address for VTEP demo-evpn-vteps in the Node's k8s.ovn.org/vteps annotation.",
     "640,130 -> 700,130  dashed  observed  bridge-mapping  Bridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
     "640,130 -> 700,270  solid  observed  vrf-egress  VRF mp9-udn-vrf routes 172.30.0.0/16 via br-ex: routes.running in table 1146 name next-hop-interface br-ex.",
     "640,230 -> 260,80  solid  observed  base-iface  VLAN 2 svl2.9 is carried on evbr.4a75265e: vlan.base-iface is evbr.4a75265e.",
     "640,370 -> 700,270  solid  observed  management-port  ovn-k8s-mp9 is a port of both br-int (controller: br-int) and VRF mp9-udn-vrf (vrf.port).",
+    "860,270 -> 920,165  dashed  inferred  primary-network  VRF mp9-udn-vrf is named for network ID 9, which NetworkAttachmentDefinition demo-evpn/demo-evpn-vni10010 of Primary CUDN demo-evpn-vni10010 carries as k8s.ovn.org/network-id; port ovn-k8s-mp9 address 10.10.10.2/24 lies inside its subnet 10.10.10.0/24. Inferred: the naming is an OVN-Kubernetes implementation detail; NodeNetworkState does not record which network a VRF serves.",
     "arc M 200 80 Q 340 155 480 130  solid  observed  controller  ens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.",
-    "arc M 420 180 Q 670 244 920 130  dashed  declared  evpn-vtep  CUDN demo-evpn-vni10010 declares spec.network.evpn.vtep: demo-evpn-vteps, and the Node's k8s.ovn.org/vteps annotation gives that VTEP the address 192.0.2.72, which is evx4.4a75265e's vxlan.local. The device name agrees: evx4.4a75265e is evx4 plus the first 8 hex digits of sha256("demo-evpn-vteps").",
+    "arc M 420 180 Q 670 199 920 165  dashed  declared  evpn-vtep  CUDN demo-evpn-vni10010 declares spec.network.evpn.vtep: demo-evpn-vteps, and the Node's k8s.ovn.org/vteps annotation gives that VTEP the address 192.0.2.72, which is evx4.4a75265e's vxlan.local. The device name agrees: evx4.4a75265e is evx4 plus the first 8 hex digits of sha256("demo-evpn-vteps").",
     "arc M 420 80 Q 560 -15 700 270  solid  observed  controller  svl2.9 is a port of mp9-udn-vrf: NodeNetworkState reports controller: mp9-udn-vrf.",
-    "arc M 420 80 Q 670 16 920 130  dashed  inferred  evpn-network  svl2.9 is the Layer 2 SVI (MAC-VRF) of CUDN demo-evpn-vni10010: its name is svl2 plus network ID 9, which NetworkAttachmentDefinition demo-evpn/demo-evpn-vni10010 carries as k8s.ovn.org/network-id. Its VLAN id 2 is the vid that network's EVPN config assigns. Inferred: the naming is an OVN-Kubernetes implementation detail.",
+    "arc M 420 80 Q 670 -29 920 165  dashed  inferred  evpn-network  svl2.9 is the Layer 2 SVI (MAC-VRF) of CUDN demo-evpn-vni10010: its name is svl2 plus network ID 9, which NetworkAttachmentDefinition demo-evpn/demo-evpn-vni10010 carries as k8s.ovn.org/network-id. Its VLAN id 2 is the vid that network's EVPN config assigns. Inferred: the naming is an OVN-Kubernetes implementation detail.",
     "arc M 640 130 Q 685 250 640 370  solid  observed  patch-peer  br-int port patch-br-int-to-br-ex_cluster_udn_demo.evpn.vni10010_worker-evpn patches to patch-br-ex_cluster_udn_demo.evpn.vni10010_worker-evpn-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.",
-    "arc M 640 130 Q 780 30 920 130  dashed  inferred  patch-port-cudn  CUDN demo-evpn-vni10010 reaches br-ex through patch port patch-br-ex_cluster_udn_demo.evpn.vni10010_worker-evpn-to-br-int: the port is on br-ex and its name embeds cluster_udn_demo.evpn.vni10010, this CUDN's name with dashes written as dots. Inferred: the naming is an OVN-Kubernetes implementation detail, not something NodeNetworkState declares.",
+    "arc M 640 130 Q 780 213 920 165  dashed  inferred  patch-port-cudn  CUDN demo-evpn-vni10010 reaches br-ex through patch port patch-br-ex_cluster_udn_demo.evpn.vni10010_worker-evpn-to-br-int: the port is on br-ex and its name embeds cluster_udn_demo.evpn.vni10010, this CUDN's name with dashes written as dots. Inferred: the naming is an OVN-Kubernetes implementation detail, not something NodeNetworkState declares.",
   ],
   "laneHeaders": [
     "Physical Interfaces",
@@ -830,7 +831,7 @@ exports[`NodeVisualization rendered structure evpn-vxlan, with the cluster's VTE
       ],
       "title": "demo-evpn-vni10010 (NAD)",
       "x": 1140,
-      "y": 89,
+      "y": 124,
     },
     {
       "fill": "#666",
@@ -940,7 +941,7 @@ exports[`NodeVisualization rendered structure evpn-vxlan, with the cluster's VTE
       ],
       "title": "demo-evpn-vni10010 (CUDN)",
       "x": 920,
-      "y": 90,
+      "y": 125,
     },
   ],
 }
