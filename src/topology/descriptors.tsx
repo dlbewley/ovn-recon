@@ -376,7 +376,7 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
             // A Primary network and its side-effect VRF are one relationship even
             // with no RouteAdvertisement present (ovn-recon-s3t.28). The rationale
             // cites the signals that matched, since this is inferred rather than declared.
-            const primary = findPrimaryNetworkForVrf(vrf, ctx.cudns, ctx.udns, ctx.interfaces);
+            const primary = findPrimaryNetworkForVrf(vrf, ctx.cudns, ctx.udns, ctx.interfaces, ctx.nads);
             if (primary) {
                 const targetId = primary.kind === 'cudn'
                     ? cudnNodeId(primary.name)
@@ -391,11 +391,30 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
                     ? `; port ${primary.corroboration.port} address ${primary.corroboration.address} `
                         + `lies inside its subnet ${primary.corroboration.subnet}`
                     : '; no port address falls inside its subnets';
-                out.edge(interfaceNodeId(vrf, ctx), targetId, 'primary-network', {
-                    kind: 'reference',
-                    provenance: 'inferred',
-                    rationale: `${nameClause}${subnetClause}. Inferred: NodeNetworkState does not record which network a VRF serves.`
-                });
+                // Strongest evidence first (ovn-recon-s3t.57). A network that publishes
+                // its own VRF name is declared; an ID read out of the VRF's name, or
+                // the network's name on the VRF, is convention and stays inferred.
+                const meaning: EdgeMeaning = primary.signals.includes('status')
+                    ? {
+                        kind: 'reference',
+                        provenance: 'declared',
+                        rationale: `Primary ${network} reports status.vrfName: ${vrf.name}${subnetClause}.`
+                    }
+                    : primary.signals.includes('network-id')
+                        ? {
+                            kind: 'reference',
+                            provenance: 'inferred',
+                            rationale: `VRF ${vrf.name} is named for network ID ${primary.networkId}, which `
+                                + `NetworkAttachmentDefinition ${primary.nad?.namespace}/${primary.nad?.name} of Primary ${network} `
+                                + `carries as ${NETWORK_ID_ANNOTATION}${subnetClause}. Inferred: the naming is an `
+                                + 'OVN-Kubernetes implementation detail; NodeNetworkState does not record which network a VRF serves.'
+                        }
+                        : {
+                            kind: 'reference',
+                            provenance: 'inferred',
+                            rationale: `${nameClause}${subnetClause}. Inferred: NodeNetworkState does not record which network a VRF serves.`
+                        };
+                out.edge(interfaceNodeId(vrf, ctx), targetId, 'primary-network', meaning);
             }
         }
     } as NodeTypeDescriptor<Interface>,

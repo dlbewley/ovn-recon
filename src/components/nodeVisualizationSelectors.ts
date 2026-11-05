@@ -79,14 +79,35 @@ export interface PrimaryNetworkMatch {
     kind: 'cudn' | 'udn';
     name: string;
     namespace?: string;
-    /** Which signals matched, for the edge rule and the fact hint. */
-    signals: ('subnet' | 'name')[];
+    /**
+     * Which signals matched, for the edge rule and the fact hint.
+     * status      -- the network's own status.vrfName is this VRF. Declared.
+     * network-id  -- the VRF is named mp<ID>-udn-vrf and a NAD of the network carries that ID.
+     * name        -- the VRF carries the network's name.
+     * subnet      -- a VRF port address lies inside the network's subnet. Corroboration only.
+     */
+    signals: ('status' | 'network-id' | 'subnet' | 'name')[];
     /**
      * The port address found inside one of the network's subnets, when one was.
      * Named so the edge rationale can cite the actual evidence (ovn-recon-s3t.30).
      */
     corroboration?: { port: string; address: string; subnet: string };
+    /** The network ID read out of the VRF name, when the `network-id` signal matched. */
+    networkId?: string;
+    /** The NetworkAttachmentDefinition carrying that ID. */
+    nad?: { namespace: string; name: string };
 }
+
+/**
+ * The network ID in a VRF named `mp<ID>-udn-vrf` (ovn-recon-s3t.57).
+ *
+ * OVN-Kubernetes names a Primary network's VRF after the CUDN only when the CUDN's
+ * name fits in a 15-character interface name; otherwise, and always for a namespaced
+ * UDN, it falls back to this ID-derived form (go-controller/pkg/util/multi_network.go,
+ * GetNetworkVRFName). Upstream never truncates a name to make it fit.
+ */
+export const parseNetworkIdFromVrfName = (vrfName: string | undefined): string | undefined =>
+    /^mp(\d+)-udn-vrf$/.exec(vrfName ?? '')?.[1];
 
 /**
  * The Primary Layer2/Layer3 network this VRF exists to serve (ovn-recon-s3t.28).
@@ -94,19 +115,29 @@ export interface PrimaryNetworkMatch {
  * A Primary UDN or CUDN creates a per-node VRF as a side effect; Localnet
  * networks can never be Primary and are excluded outright.
  *
- * NAME IS REQUIRED, SUBNET ONLY CORROBORATES. OVN-Kubernetes names the VRF
- * after the network (truncated to the kernel's 15-character interface-name
- * limit), so the name is the mechanism. Subnets are NOT unique across
- * UDNs/CUDNs -- networks map to OVS logical switches uplinked to OVN routers
- * that NAT overlapping ranges apart -- so a subnet-containment match on its own
- * could pick the wrong network. It serves only to break ties when several long
- * network names share a truncated prefix.
+ * AN IDENTIFYING SIGNAL IS REQUIRED, SUBNET ONLY CORROBORATES. Three things can
+ * identify the network, strongest first (ovn-recon-s3t.57):
+ *
+ *   status      the network's status.vrfName is this VRF. Newer OVN-Kubernetes
+ *               publishes it precisely so nobody has to derive the name.
+ *   network-id  the VRF is named mp<ID>-udn-vrf -- the form used when the network's
+ *               name does not fit in an interface name, and always for a namespaced
+ *               UDN -- and a NetworkAttachmentDefinition of the network carries that
+ *               ID. Needs the NADs; without them the ID says nothing.
+ *   name        the VRF carries the network's name, verbatim or truncated to the
+ *               kernel's 15-character limit.
+ *
+ * Subnets are NOT unique across UDNs/CUDNs -- networks map to OVS logical switches
+ * uplinked to OVN routers that NAT overlapping ranges apart -- so a
+ * subnet-containment match on its own could pick the wrong network. It serves only
+ * to break ties when several long network names share a truncated prefix.
  */
 export const findPrimaryNetworkForVrf = (
     vrf: Interface,
     cudns: ClusterUserDefinedNetwork[],
     udns: UserDefinedNetwork[],
-    interfaces: Interface[]
+    interfaces: Interface[],
+    nads: NetworkAttachmentDefinition[] = []
 ): PrimaryNetworkMatch | undefined => {
     const portAddresses = getVrfConnectionInfo(vrf, interfaces)
         .brIntPorts.flatMap((port) => getIpv4Addresses(port).map((address) => ({ port: port.name, address })));
@@ -114,11 +145,23 @@ export const findPrimaryNetworkForVrf = (
     const nameMatches = (name: string): boolean =>
         name === vrf.name || name.substring(0, VRF_NAME_LIMIT) === vrf.name;
 
+    // The network whose ID the VRF name carries, when it carries one and exactly one
+    // network claims it.
+    const networkId = parseNetworkIdFromVrfName(vrf.name);
+    const byId = networkId ? findNetworkByNetworkId(networkId, cudns, udns, nads) : undefined;
+    const idMatches = (candidate: Candidate): boolean => {
+        const network = byId?.network;
+        if (!network || network.kind !== candidate.kind || network.name !== candidate.name) return false;
+        return network.kind === 'cudn' || network.namespace === candidate.namespace;
+    };
+
     interface Candidate {
         kind: 'cudn' | 'udn';
         name: string;
         namespace?: string;
         subnets: string[];
+        /** status.vrfName, when the network publishes one. */
+        vrfName?: string;
     }
     const candidates: Candidate[] = [
         ...cudns.flatMap((cudn): Candidate[] => {
@@ -127,7 +170,12 @@ export const findPrimaryNetworkForVrf = (
                 : network?.topology === 'Layer3' ? network.layer3
                     : undefined;
             if (layer?.role !== 'Primary') return [];
-            return [{ kind: 'cudn', name: cudn.metadata?.name || '', subnets: subnetCidrs(layer.subnets) }];
+            return [{
+                kind: 'cudn',
+                name: cudn.metadata?.name || '',
+                subnets: subnetCidrs(layer.subnets),
+                vrfName: cudn.status?.vrfName
+            }];
         }),
         ...udns.flatMap((udn): Candidate[] => {
             const layer = udn.spec?.topology === 'Layer2' ? udn.spec.layer2
@@ -138,7 +186,8 @@ export const findPrimaryNetworkForVrf = (
                 kind: 'udn',
                 name: udn.metadata?.name || '',
                 namespace: udn.metadata?.namespace,
-                subnets: subnetCidrs(layer.subnets)
+                subnets: subnetCidrs(layer.subnets),
+                vrfName: udn.status?.vrfName
             }];
         })
     ];
@@ -149,21 +198,35 @@ export const findPrimaryNetworkForVrf = (
                 .flatMap((subnet) => portAddresses
                     .filter(({ address }) => ipv4InCidr(address, subnet))
                     .map((hit) => ({ ...hit, subnet })))[0];
+            const byNetworkId = idMatches(candidate);
             return {
                 kind: candidate.kind,
                 name: candidate.name,
                 namespace: candidate.namespace,
                 signals: [
+                    ...(candidate.vrfName && candidate.vrfName === vrf.name ? ['status' as const] : []),
+                    ...(byNetworkId ? ['network-id' as const] : []),
                     ...(corroboration ? ['subnet' as const] : []),
                     ...(nameMatches(candidate.name) ? ['name' as const] : [])
                 ],
-                ...(corroboration ? { corroboration } : {})
+                ...(corroboration ? { corroboration } : {}),
+                ...(byNetworkId
+                    ? {
+                        networkId,
+                        nad: byId?.nad?.metadata?.name
+                            ? { namespace: byId.nad.metadata.namespace || 'default', name: byId.nad.metadata.name }
+                            : undefined
+                    }
+                    : {})
             };
         })
-        // The name must match; a subnet hit alone is not an association.
-        .filter((match) => match.signals.includes('name'));
+        // Something must identify the network; a subnet hit alone is not an association.
+        .filter((match) => match.signals.some((signal) => signal !== 'subnet'));
 
-    return matches.find((match) => match.signals.includes('subnet')) ?? matches[0];
+    return matches.find((match) => match.signals.includes('status'))
+        ?? matches.find((match) => match.signals.includes('network-id'))
+        ?? matches.find((match) => match.signals.includes('subnet'))
+        ?? matches[0];
 };
 
 /** One policy's claim on an interface or bridge mapping, from its enactment. */
@@ -1124,6 +1187,42 @@ const evpnVidFromNad = (
     return typeof vid === 'number' ? vid : undefined;
 };
 
+export interface NetworkIdMatch {
+    /** The one network claiming the ID. Absent when none does, or more than one. */
+    network?: EvpnNetworkRef;
+    /** A NetworkAttachmentDefinition carrying the ID: the matched network's, else the first found. */
+    nad?: NetworkAttachmentDefinition;
+    /** Networks claiming the same ID, when more than one does. Matched to none of them. */
+    ambiguous?: string[];
+}
+
+/**
+ * The network a numeric network ID belongs to.
+ *
+ * The ID lives only on the network's NetworkAttachmentDefinitions, as the
+ * k8s.ovn.org/network-id annotation, so it is resolved through them. A CUDN creates
+ * one NAD per attached namespace, all carrying the same ID; that is one network, not
+ * an ambiguity. Two different networks claiming one ID match neither.
+ */
+export const findNetworkByNetworkId = (
+    networkId: string,
+    cudns: ClusterUserDefinedNetwork[],
+    udns: UserDefinedNetwork[],
+    nads: NetworkAttachmentDefinition[]
+): NetworkIdMatch => {
+    const carriers = nads.filter((nad) => nad.metadata?.annotations?.[NETWORK_ID_ANNOTATION] === networkId);
+    const networks = new Map<string, { network: EvpnNetworkRef; nad: NetworkAttachmentDefinition }>();
+    carriers.forEach((nad) => {
+        const network = networkForNad(nad, cudns, udns);
+        if (!network) return;
+        const label = networkRefLabel(network);
+        if (!networks.has(label)) networks.set(label, { network, nad });
+    });
+    if (networks.size > 1) return { ambiguous: Array.from(networks.keys()).sort() };
+    const [match] = Array.from(networks.values());
+    return { network: match?.network, nad: match?.nad ?? carriers[0] };
+};
+
 export interface EvpnNetworkDevice extends EvpnNetworkDeviceName {
     /** The network the device belongs to. Absent when the name resolves to nothing, or to more than one. */
     network?: EvpnNetworkRef;
@@ -1142,9 +1241,8 @@ export interface EvpnNetworkDevice extends EvpnNetworkDeviceName {
  * no `network` for one that is but resolves to nothing -- the caller can then say
  * what the device is while admitting it does not know whose.
  *
- * A network ID lives only on the network's NetworkAttachmentDefinitions, so the
- * ID form is resolved through them. A CUDN creates one NAD per attached namespace,
- * all carrying the same ID; that is one network, not an ambiguity.
+ * The ID form is resolved through the NetworkAttachmentDefinitions carrying it; see
+ * findNetworkByNetworkId.
  */
 export const findEvpnNetworkForDevice = (
     deviceName: string | undefined,
@@ -1173,23 +1271,12 @@ export const findEvpnNetworkForDevice = (
         };
     }
 
-    const carriers = nads.filter((nad) => nad.metadata?.annotations?.[NETWORK_ID_ANNOTATION] === parsed.key);
-    const networks = new Map<string, { network: EvpnNetworkRef; nad: NetworkAttachmentDefinition }>();
-    carriers.forEach((nad) => {
-        const network = networkForNad(nad, cudns, udns);
-        if (!network) return;
-        const label = networkRefLabel(network);
-        if (!networks.has(label)) networks.set(label, { network, nad });
-    });
-    if (networks.size > 1) {
-        return { ...parsed, ambiguous: Array.from(networks.keys()).sort() };
-    }
-    const [match] = Array.from(networks.values());
-    const nad = match?.nad ?? carriers[0];
+    const byId = findNetworkByNetworkId(parsed.key, cudns, udns, nads);
+    if (byId.ambiguous) return { ...parsed, ambiguous: byId.ambiguous };
     return {
         ...parsed,
-        network: match?.network,
-        nad: nadRefOf(nad),
-        vid: evpnVidFromNad(nad, parsed.prefix)
+        network: byId.network,
+        nad: nadRefOf(byId.nad),
+        vid: evpnVidFromNad(byId.nad, parsed.prefix)
     };
 };

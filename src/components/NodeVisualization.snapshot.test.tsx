@@ -132,6 +132,7 @@ describe('NodeVisualization rendered structure', () => {
         // Beside its cluster the same node says which VTEP the tunnel is and which
         // network rides on it: the VXLAN device and the SVI each reach the CUDN, and
         // the CUDN's gateway patch pair reaches it from br-ex (ovn-recon-s3t.53, .29).
+        // The network's own VRF, named for its network ID, reaches it too (s3t.57).
         act(() => {
             root.render(<NodeVisualization
                 nns={fixture<NodeNetworkState>('nns', 'evpn-vxlan.json')}

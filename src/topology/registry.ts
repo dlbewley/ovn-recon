@@ -747,7 +747,11 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
             // table, so it runs here, for the drawer, never during graph render.
             const vrfRoutes = getVrfRoutesForInterface(raw, ctx.nns);
 
-            const primary = findPrimaryNetworkForVrf(raw, ctx.cudns, ctx.udns, ctx.interfaces);
+            const primary = findPrimaryNetworkForVrf(raw, ctx.cudns, ctx.udns, ctx.interfaces, ctx.nads);
+            const created = 'This VRF was created by OVN-Kubernetes as a side effect of defining that Primary network. ';
+            const corroborated = primary?.corroboration
+                ? ` Port ${primary.corroboration.port} address ${primary.corroboration.address} lies inside its subnet ${primary.corroboration.subnet}.`
+                : '';
 
             return [
                 // Type only: the old State line ('ovn-k8s-mp3 Tbl 5775') just
@@ -770,11 +774,20 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                                     name: primary.name, namespace: primary.namespace
                                 }
                         }],
-                        provenance: 'inferred',
-                        hint: `This VRF was created by OVN-Kubernetes as a side effect of defining that Primary network. `
-                            + `Matched by ${primary.signals.join(' and ')}: a Primary Layer2 or Layer3 network gets a `
-                            + 'per-node VRF named after it (truncated to 15 characters), holding routes in the '
-                            + 'network\'s subnet. Localnet networks cannot be Primary.'
+                        // Strongest evidence first (ovn-recon-s3t.57): the network's own
+                        // status is declared; an ID or a name on the VRF is convention.
+                        provenance: primary.signals.includes('status') ? 'declared' : 'inferred',
+                        hint: primary.signals.includes('status')
+                            ? `${created}The network's status.vrfName names this VRF.${corroborated}`
+                            : primary.signals.includes('network-id')
+                                ? `${created}Matched by network ID: a network whose name does not fit in a 15-character `
+                                    + `interface name gets a VRF named mp<network ID>-udn-vrf, and NetworkAttachmentDefinition `
+                                    + `${primary.nad?.namespace}/${primary.nad?.name} carries ${NETWORK_ID_ANNOTATION}: `
+                                    + `${primary.networkId}.${corroborated}`
+                                : `${created}`
+                                    + `Matched by ${primary.signals.join(' and ')}: a Primary Layer2 or Layer3 network gets a `
+                                    + 'per-node VRF named after it (truncated to 15 characters), holding routes in the '
+                                    + 'network\'s subnet. Localnet networks cannot be Primary.'
                     } as Fact]
                     : []),
                 ...(macAddress
