@@ -1,4 +1,6 @@
 import {
+    CUDN_NETWORK_PREFIX,
+    findPatchPortsForCudn,
     findPrimaryNetworkForVrf,
     findRouteAdvertisementForVrf,
     formatLabelSelector,
@@ -6,13 +8,16 @@ import {
     getCudnsSelectedByRouteAdvertisement,
     getIpv4Addresses,
     getNadUpstreamNodeIds,
+    getNetworkPatchPorts,
     getPoliciesClaimingBridgeMapping,
     getPoliciesClaimingInterface,
     getRouteAdvertisementsMatchingCudn,
     getVrfConnectionInfo,
     getVrfRoutesForInterface,
+    NetworkPatchPort,
     NncpClaim,
     parseNadConfig,
+    resolvePatchPortCudn,
     VrfAssociatedRoute
 } from '../components/nodeVisualizationSelectors';
 import {
@@ -192,6 +197,67 @@ const VRF_RA_HINT =
     + 'after truncation to 15 characters (the kernel interface-name limit). '
     + 'Nothing in the API records this link.';
 
+/**
+ * The patch-port naming heuristic (ovn-recon-s3t.29). OVN-Kubernetes builds a patch
+ * port's name from the network it serves; nothing in NodeNetworkState or the CUDN
+ * declares the link, so every fact resting on it is inferred and says so.
+ */
+const PATCH_NAME_RULE =
+    `a CUDN's network is ${CUDN_NETWORK_PREFIX}<name> with dashes written as dots. `
+    + 'The naming is an OVN-Kubernetes implementation detail and the dash-to-dot step '
+    + 'cannot be undone, so a port name that fits two CUDNs is matched to neither.';
+
+/**
+ * The patch pair(s) OVN-Kubernetes built for a CUDN on this node.
+ *
+ * For an overlay CUDN this is the only thing tying it to a bridge, and the graph
+ * draws it. For a Localnet CUDN the pair reaches the bridge its bridge mapping
+ * already names, so it is CORROBORATION of the declared Physical Network rather
+ * than a second link: the fact says whether the two agree, and a disagreement is
+ * the finding. No pair, no fact -- its absence proves nothing about the network.
+ */
+const cudnPatchPortFacts = (cudn: ClusterUserDefinedNetwork | undefined, ctx: GraphContext): Fact[] => {
+    const { matched, ambiguous } = findPatchPortsForCudn(cudn?.metadata?.name, ctx.cudns, ctx.interfaces);
+    if (matched.length === 0 && ambiguous.length === 0) return [];
+    const physicalNetworkName = cudn?.spec?.network?.localNet?.physicalNetworkName
+        || cudn?.spec?.network?.localnet?.physicalNetworkName;
+    const mapping = ctx.bridgeMappings.find((m) => m.localnet === physicalNetworkName);
+
+    return [{
+        label: 'Patch Ports',
+        value: [
+            ...matched.flatMap((port): FactItem[] => [
+                { text: `${port.bridge}: ${port.portName}${port.peerName ? ` ↔ ${port.peerName}` : ''}` },
+                ...(port.form === 'localnet' && mapping
+                    ? [{
+                        text: mapping.bridge === port.bridge
+                            ? `Agrees with bridge mapping ${mapping.localnet} → ${mapping.bridge}`
+                            : `⚠ bridge mapping ${mapping.localnet} names ${mapping.bridge}, not ${port.bridge}`
+                    }]
+                    : [])
+            ]),
+            ...ambiguous.map(({ port, candidates }): FactItem => ({
+                text: `⚠ ${port.portName} on ${port.bridge} fits ${candidates.join(' and ')} alike — matched to neither`
+            }))
+        ],
+        provenance: 'inferred',
+        hint: `Matched by name: OVN-Kubernetes names a network's patch ports after it, and ${PATCH_NAME_RULE} `
+            + 'An overlay network\'s pair is its gateway onto a provider bridge; a Localnet network\'s pair '
+            + 'reaches the bridge its physical network maps to, corroborating that mapping.'
+    }];
+};
+
+/** What a patch pair's name says it carries, for the integration bridge's drawer. */
+const patchedNetworkItem = (port: NetworkPatchPort, ctx: GraphContext): FactItem => {
+    const where = port.bridge ?? 'no bridge';
+    const suffix = `${port.form === 'localnet' ? ' (localnet)' : ''}`
+        + `${port.bridge ? '' : ` — ${port.portName} is on no bridge`}`;
+    if (port.isDefaultNetwork) return { text: `${where}: cluster default network${suffix}` };
+    const cudnName = resolvePatchPortCudn(port, ctx.cudns);
+    if (cudnName) return { text: `${where}: CUDN ${cudnName}${suffix}`, ref: cudnRef(cudnName) };
+    return { text: `${where}: network ${port.networkName}${suffix}` };
+};
+
 export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
     interface: {
         label: 'Interface',
@@ -315,6 +381,8 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 ...(physicalNetworkName
                     ? [{ label: 'Physical Network', value: physicalNetworkName, provenance: 'declared' } as Fact]
                     : []),
+                // Beside Physical Network: for a Localnet CUDN this corroborates it.
+                ...cudnPatchPortFacts(cudn, ctx),
                 ...(cudn?.spec?.namespaceSelector
                     ? [(() => {
                         const text = formatLabelSelector(cudn.spec!.namespaceSelector)
@@ -639,6 +707,16 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     provenance: 'observed',
                     hint: 'Reciprocal patch.peer pairs cable br-int to each provider bridge.',
                     emptyText: 'No patch ports reported in NNS.'
+                },
+                {
+                    // Which network each pair is for -- including the unqualified one,
+                    // which is the cluster default network's (ovn-recon-s3t.29).
+                    label: 'Patched Networks',
+                    value: getNetworkPatchPorts(ctx.interfaces).map((port) => patchedNetworkItem(port, ctx)),
+                    provenance: 'inferred',
+                    hint: 'Read out of the patch port names on the provider side: a pair naming no network is the '
+                        + 'cluster default network\'s, <network>_ovn_localnet_port is a Localnet network\'s, and '
+                        + PATCH_NAME_RULE
                 },
                 ...(internalPort
                     ? [{

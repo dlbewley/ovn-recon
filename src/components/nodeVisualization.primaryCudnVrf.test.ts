@@ -203,7 +203,8 @@ describe('interfaces that fall outside the lanes', () => {
         expect(types.has('veth')).toBe(true);
         expect(types.has('loopback')).toBe(true);
         // The geneve tunnel reports as 'unknown' -- exactly the case a role table has
-        // to give an explicit home rather than a negation. See ovn-recon-s3t.8.
+        // to give an explicit home rather than a negation: classify() names it
+        // overlay-tunnel by its genev_sys_ prefix (ovn-recon-s3t.29).
         expect(interfaces.find((i) => i.name.startsWith('genev_sys_'))?.type).toBe('unknown');
     });
 

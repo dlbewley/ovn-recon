@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { classify, interfacesWithRole, isDrawn, roleOf, InterfaceRole } from './classify';
+import { classify, FOOT_GRID_ROLES, interfacesWithRole, isDrawn, roleOf, InterfaceRole } from './classify';
 import { buildGraphContext, GraphContext } from './context';
 import { Interface, NodeNetworkState } from '../types';
 
@@ -84,18 +84,45 @@ describe('classify: roles that are present but not drawn', () => {
     it('names the two undrawn roles explicitly', () => {
         expect(isDrawn('unmanaged')).toBe(false);
         expect(isDrawn('patch')).toBe(false);
-        (['physical', 'bond', 'vlan', 'vxlan', 'bridge', 'bridge-port', 'vrf', 'host-local', 'unclassified'] as const)
+        (['physical', 'bond', 'vlan', 'vxlan', 'bridge', 'bridge-port', 'vrf', 'host-local', 'overlay-tunnel', 'unclassified'] as const)
             .forEach((role) => expect(isDrawn(role)).toBe(true));
     });
 });
 
 describe('classify: the ignore rule is deliberately not top-level', () => {
     it('keeps an ignored interface of an unrecognised type visible', () => {
-        // The Geneve tunnel in primary-cudn-vrf.json is type 'unknown', state 'ignore',
-        // and has always been drawn in the catch-all. Hoisting the ignore rule above
-        // the type rules would silently remove it.
-        expect(roleIn([{ name: 'genev_sys_6081', type: 'unknown', state: 'ignore' }], 'genev_sys_6081'))
+        // Hoisting the ignore rule above the type rules would silently remove every
+        // device nmstate reports but cannot type.
+        expect(roleIn([{ name: 'mystery0', type: 'unknown', state: 'ignore' }], 'mystery0'))
             .toBe('unclassified');
+    });
+});
+
+describe('classify: the Geneve tunnel has a role of its own (ovn-recon-s3t.29)', () => {
+    it('recognises it by name, since nmstate cannot type it', () => {
+        const ctx = ctxOf([{ name: 'genev_sys_6081', type: 'unknown', state: 'ignore' }]);
+        expect(classify(ctx.interfaces[0], ctx)).toEqual({
+            role: 'overlay-tunnel',
+            reason: 'the Geneve tunnel device OVS creates for the OVN overlay, recognised by its genev_sys_ name'
+        });
+    });
+
+    it('does not depend on the UDP port in the name', () => {
+        expect(roleIn([{ name: 'genev_sys_6082', type: 'unknown', state: 'ignore' }], 'genev_sys_6082'))
+            .toBe('overlay-tunnel');
+    });
+
+    it('is drawn, at the foot of the canvas, as it was while unclassified', () => {
+        expect(isDrawn('overlay-tunnel')).toBe(true);
+        expect(FOOT_GRID_ROLES).toEqual(['host-local', 'overlay-tunnel', 'unclassified']);
+    });
+
+    it('leaves the tunnel hidden where nmstate reports it as an ignored NIC', () => {
+        // The rule sits BELOW `unmanaged` on purpose: it names what used to be
+        // unclassified and changes what no cluster draws. Hoisting it would start
+        // drawing the tunnel on clusters that hide it today.
+        expect(roleIn([{ name: 'genev_sys_6081', type: 'ethernet', state: 'ignore' }], 'genev_sys_6081'))
+            .toBe('unmanaged');
     });
 });
 
@@ -138,8 +165,9 @@ describe('classify against real captures', () => {
         expect(names('bridge-port')).toEqual(['br-ex', 'ovs-vlan-1920']);
         expect(names('patch')).toHaveLength(6);
         expect(names('host-local')).toEqual(['0cb0de1976d0c71', 'lo']);
-        // The Geneve tunnel: no rule covers it yet. See ovn-recon-s3t.29.
-        expect(names('unclassified')).toEqual(['genev_sys_6081']);
+        expect(names('overlay-tunnel')).toEqual(['genev_sys_6081']);
+        // Nothing on a real capture falls through the table any more.
+        expect(names('unclassified')).toEqual([]);
     });
 
     it('splits the EVPN worker so the tunnel chain has a lane at every hop', () => {
@@ -150,7 +178,8 @@ describe('classify against real captures', () => {
         expect(names('vlan')).toEqual(['svl2.9']);
         expect(names('bridge')).toEqual(['br-ex', 'evbr.4a75265e']);
         expect(names('vrf')).toEqual(['mp9-udn-vrf']);
-        expect(names('unclassified')).toEqual(['genev_sys_6081']);
+        expect(names('overlay-tunnel')).toEqual(['genev_sys_6081']);
+        expect(names('unclassified')).toEqual([]);
     });
 
     it('splits the bonded worker, including three bonds with different fates', () => {
@@ -161,20 +190,20 @@ describe('classify against real captures', () => {
         expect(names('bridge')).toEqual(['br-ex', 'ovs-vm']);
         // Nine interfaces report type 'ethernet', but only eight are NICs: on this
         // cluster the Geneve tunnel reports as an ignored ethernet, so the ignore rule
-        // keeps it out of the physical lane. In primary-cudn-vrf.json the same tunnel
-        // reports as 'unknown' instead -- the type varies by cluster, the outcome does
-        // not, since both are undrawn.
+        // keeps it out of the physical lane and it is not drawn. In primary-cudn-vrf.json
+        // the same tunnel reports as 'unknown' and draws at the foot of the canvas as an
+        // overlay-tunnel: the type varies by cluster, and so, for now, does the outcome.
         expect(names('physical')).toHaveLength(8);
         expect(names('physical')).not.toContain('genev_sys_6081');
-        expect(roleIn([{ name: 'genev_sys_6081', type: 'ethernet', state: 'ignore' }], 'genev_sys_6081'))
-            .toBe('unmanaged');
+        expect(names('overlay-tunnel')).toEqual([]);
+        expect(roleOf(ctx.interfaces.find((i) => i.name === 'genev_sys_6081')!, ctx)).toBe('unmanaged');
     });
 
     it('leaves nothing in a lane it does not belong in', () => {
         // Every drawn interface belongs to exactly one lane.
         const ctx = fixtureCtx('bonded-lldp');
         const drawn = ctx.interfaces.filter((i) => isDrawn(roleOf(i, ctx)));
-        const counted = (['physical', 'bond', 'vlan', 'vxlan', 'bridge', 'bridge-port', 'vrf', 'host-local', 'unclassified'] as const)
+        const counted = (['physical', 'bond', 'vlan', 'vxlan', 'bridge', 'bridge-port', 'vrf', 'host-local', 'overlay-tunnel', 'unclassified'] as const)
             .reduce((total, role) => total + interfacesWithRole(ctx, role).length, 0);
 
         expect(counted).toBe(drawn.length);

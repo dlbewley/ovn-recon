@@ -605,7 +605,7 @@ exports[`NodeVisualization rendered structure bonded-lldp, with neighbours shown
 exports[`NodeVisualization rendered structure drawer content for br-ex (ovs-bridge) 1`] = `
 {
   "Overview": "br-exovs-bridgeOverviewRelationshipsConfigTypeovs-bridgeStateupPortsbr-exens192patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-intpatch-br-ex_worker-1-to-br-int",
-  "Relationships": "br-exovs-bridgeOverviewRelationshipsConfigUpstreamens192ens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.DownstreamphysnetBridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.example-p-cudnVRF example-p-cudn routes 0.0.0.0/0, 172.30.0.0/16 via br-ex: routes.running in table 5775 name next-hop-interface br-ex.br-intbr-int port patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1 patches to patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.",
+  "Relationships": "br-exovs-bridgeOverviewRelationshipsConfigUpstreamens192ens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.DownstreamphysnetBridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.example-p-cudnVRF example-p-cudn routes 0.0.0.0/0, 172.30.0.0/16 via br-ex: routes.running in table 5775 name next-hop-interface br-ex.br-intbr-int port patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1 patches to patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.example-p-cudninferredCUDN example-p-cudn reaches br-ex through patch port patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int: the port is on br-ex and its name embeds cluster_udn_example.p.cudn, this CUDN's name with dashes written as dots. Inferred: the naming is an OVN-Kubernetes implementation detail, not something NodeNetworkState declares.",
 }
 `;
 
@@ -788,18 +788,19 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes reveal
     "1080,180 -> 700,180  solid  observed  controller  br-ex (ovs-interface) is a port of br-ex: NodeNetworkState reports controller: br-ex.",
     "1080,280 -> 700,280  solid  observed  controller  ovs-vlan-1920 is a port of br-vmdata: NodeNetworkState reports controller: br-vmdata.",
     "1300,180 -> 1360,180  dashed  declared  physical-network-name  CUDN machinenet declares spec.network.localnet.physicalNetworkName: physnet.",
-    "1300,280 -> 1360,280  dashed  declared  physical-network-name  CUDN vlan-1924 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
-    "1300,280 -> 1360,380  dashed  declared  physical-network-name  CUDN vlan-1926 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
-    "1300,420 -> 1360,480  dashed  inferred  primary-network  Primary CUDN example-p-cudn names this VRF; port ovn-k8s-mp3 address 10.1.2.2/24 lies inside its subnet 10.1.2.0/24. Inferred: NodeNetworkState does not record which network a VRF serves.",
+    "1300,280 -> 1360,400  dashed  declared  physical-network-name  CUDN vlan-1924 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
+    "1300,280 -> 1360,500  dashed  declared  physical-network-name  CUDN vlan-1926 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
+    "1300,420 -> 1360,300  dashed  inferred  primary-network  Primary CUDN example-p-cudn names this VRF; port ovn-k8s-mp3 address 10.1.2.2/24 lies inside its subnet 10.1.2.0/24. Inferred: NodeNetworkState does not record which network a VRF serves.",
     "1520,180 -> 1580,179  solid  declared  attached-namespaces  1 namespace attached to CUDN machinenet, as listed in its NetworkCreated status condition.",
-    "1520,280 -> 1580,281  solid  declared  attached-namespaces  1 namespace attached to CUDN vlan-1924, as listed in its NetworkCreated status condition.",
-    "1520,480 -> 1580,479  solid  declared  attached-namespaces  1 namespace attached to CUDN example-p-cudn, as listed in its NetworkCreated status condition.",
+    "1520,300 -> 1580,299  solid  declared  attached-namespaces  1 namespace attached to CUDN example-p-cudn, as listed in its NetworkCreated status condition.",
+    "1520,400 -> 1580,401  solid  declared  attached-namespaces  1 namespace attached to CUDN vlan-1924, as listed in its NetworkCreated status condition.",
     "200,180 -> 700,180  solid  observed  controller  ens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.",
     "200,280 -> 480,280  solid  observed  base-iface  VLAN 456 ens224.456 is carried on ens224: vlan.base-iface is ens224.",
     "860,420 -> 1140,420  solid  observed  management-port  ovn-k8s-mp3 is a port of both br-int (controller: br-int) and VRF example-p-cudn (vrf.port).",
     "arc M 200 280 Q 450 156 700 280  solid  observed  controller  ens224 is a port of br-vmdata: NodeNetworkState reports controller: br-vmdata.",
     "arc M 860 180 Q 1000 360 1140 420  solid  observed  vrf-egress  VRF example-p-cudn routes 0.0.0.0/0, 172.30.0.0/16 via br-ex: routes.running in table 5775 name next-hop-interface br-ex.",
     "arc M 860 180 Q 1000 80 1140 180  dashed  observed  bridge-mapping  Bridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "arc M 860 180 Q 1110 33 1360 300  dashed  inferred  patch-port-cudn  CUDN example-p-cudn reaches br-ex through patch port patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int: the port is on br-ex and its name embeds cluster_udn_example.p.cudn, this CUDN's name with dashes written as dots. Inferred: the naming is an OVN-Kubernetes implementation detail, not something NodeNetworkState declares.",
     "arc M 860 180 Q 905 300 860 420  solid  observed  patch-peer  br-int port patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1 patches to patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.",
     "arc M 860 280 Q 1000 180 1140 280  dashed  observed  bridge-mapping  Bridge mapping physnet-vmdata resolves to bridge br-vmdata: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
     "arc M 860 280 Q 905 350 860 420  solid  observed  patch-peer  br-int port patch-br-int-to-cluster_udn_vlan.1924_ovn_localnet_port patches to patch-cluster_udn_vlan.1924_ovn_localnet_port-to-br-int, a port of br-vmdata: patch.peer on both ends in NodeNetworkState.",
@@ -876,13 +877,24 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes reveal
     {
       "fill": "#CC0099",
       "labels": [
+        "example-p-cudn",
+        "CUDN",
+        "Layer2 10.1.2.0/24",
+      ],
+      "title": "example-p-cudn (CUDN)",
+      "x": 1360,
+      "y": 260,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
         "vlan-1924",
         "CUDN",
         "Localnet VLAN 1924",
       ],
       "title": "vlan-1924 (CUDN)",
       "x": 1360,
-      "y": 240,
+      "y": 360,
     },
     {
       "fill": "#CC0099",
@@ -893,18 +905,7 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes reveal
       ],
       "title": "vlan-1926 (CUDN)",
       "x": 1360,
-      "y": 340,
-    },
-    {
-      "fill": "#CC0099",
-      "labels": [
-        "example-p-cudn",
-        "CUDN",
-        "Layer2 10.1.2.0/24",
-      ],
-      "title": "example-p-cudn (CUDN)",
-      "x": 1360,
-      "y": 440,
+      "y": 460,
     },
     {
       "fill": "#F0AB00",
@@ -919,22 +920,22 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes reveal
     {
       "fill": "#F0AB00",
       "labels": [
-        "vlan-1924",
-        "NAD",
-      ],
-      "title": "vlan-1924 (NAD)",
-      "x": 1580,
-      "y": 241,
-    },
-    {
-      "fill": "#F0AB00",
-      "labels": [
         "example-p-cudn",
         "NAD",
       ],
       "title": "example-p-cudn (NAD)",
       "x": 1580,
-      "y": 439,
+      "y": 259,
+    },
+    {
+      "fill": "#F0AB00",
+      "labels": [
+        "vlan-1924",
+        "NAD",
+      ],
+      "title": "vlan-1924 (NAD)",
+      "x": 1580,
+      "y": 361,
     },
     {
       "fill": "#666",
@@ -1076,8 +1077,8 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`]
 {
   "edges": [
     "1080,180 -> 1140,179  solid  declared  attached-namespaces  1 namespace attached to CUDN machinenet, as listed in its NetworkCreated status condition.",
-    "1080,280 -> 1140,281  solid  declared  attached-namespaces  1 namespace attached to CUDN vlan-1924, as listed in its NetworkCreated status condition.",
-    "1080,480 -> 1140,479  solid  declared  attached-namespaces  1 namespace attached to CUDN example-p-cudn, as listed in its NetworkCreated status condition.",
+    "1080,300 -> 1140,299  solid  declared  attached-namespaces  1 namespace attached to CUDN example-p-cudn, as listed in its NetworkCreated status condition.",
+    "1080,400 -> 1140,401  solid  declared  attached-namespaces  1 namespace attached to CUDN vlan-1924, as listed in its NetworkCreated status condition.",
     "200,180 -> 480,180  solid  observed  controller  ens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.",
     "200,280 -> 260,280  solid  observed  base-iface  VLAN 456 ens224.456 is carried on ens224: vlan.base-iface is ens224.",
     "640,180 -> 700,180  dashed  observed  bridge-mapping  Bridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
@@ -1085,11 +1086,12 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`]
     "640,280 -> 700,280  dashed  observed  bridge-mapping  Bridge mapping physnet-vmdata resolves to bridge br-vmdata: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
     "640,420 -> 700,420  solid  observed  management-port  ovn-k8s-mp3 is a port of both br-int (controller: br-int) and VRF example-p-cudn (vrf.port).",
     "860,180 -> 920,180  dashed  declared  physical-network-name  CUDN machinenet declares spec.network.localnet.physicalNetworkName: physnet.",
-    "860,280 -> 920,280  dashed  declared  physical-network-name  CUDN vlan-1924 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
-    "860,280 -> 920,380  dashed  declared  physical-network-name  CUDN vlan-1926 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
-    "860,420 -> 920,480  dashed  inferred  primary-network  Primary CUDN example-p-cudn names this VRF; port ovn-k8s-mp3 address 10.1.2.2/24 lies inside its subnet 10.1.2.0/24. Inferred: NodeNetworkState does not record which network a VRF serves.",
+    "860,280 -> 920,400  dashed  declared  physical-network-name  CUDN vlan-1924 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
+    "860,280 -> 920,500  dashed  declared  physical-network-name  CUDN vlan-1926 declares spec.network.localnet.physicalNetworkName: physnet-vmdata.",
+    "860,420 -> 920,300  dashed  inferred  primary-network  Primary CUDN example-p-cudn names this VRF; port ovn-k8s-mp3 address 10.1.2.2/24 lies inside its subnet 10.1.2.0/24. Inferred: NodeNetworkState does not record which network a VRF serves.",
     "arc M 200 280 Q 340 180 480 280  solid  observed  controller  ens224 is a port of br-vmdata: NodeNetworkState reports controller: br-vmdata.",
     "arc M 640 180 Q 685 300 640 420  solid  observed  patch-peer  br-int port patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1 patches to patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.",
+    "arc M 640 180 Q 780 420 920 300  dashed  inferred  patch-port-cudn  CUDN example-p-cudn reaches br-ex through patch port patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int: the port is on br-ex and its name embeds cluster_udn_example.p.cudn, this CUDN's name with dashes written as dots. Inferred: the naming is an OVN-Kubernetes implementation detail, not something NodeNetworkState declares.",
     "arc M 640 280 Q 685 350 640 420  solid  observed  patch-peer  br-int port patch-br-int-to-cluster_udn_vlan.1924_ovn_localnet_port patches to patch-cluster_udn_vlan.1924_ovn_localnet_port-to-br-int, a port of br-vmdata: patch.peer on both ends in NodeNetworkState.",
   ],
   "laneHeaders": [
@@ -1128,22 +1130,22 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`]
     {
       "fill": "#F0AB00",
       "labels": [
-        "vlan-1924",
-        "NAD",
-      ],
-      "title": "vlan-1924 (NAD)",
-      "x": 1140,
-      "y": 241,
-    },
-    {
-      "fill": "#F0AB00",
-      "labels": [
         "example-p-cudn",
         "NAD",
       ],
       "title": "example-p-cudn (NAD)",
       "x": 1140,
-      "y": 439,
+      "y": 259,
+    },
+    {
+      "fill": "#F0AB00",
+      "labels": [
+        "vlan-1924",
+        "NAD",
+      ],
+      "title": "vlan-1924 (NAD)",
+      "x": 1140,
+      "y": 361,
     },
     {
       "fill": "#666",
@@ -1302,13 +1304,24 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`]
     {
       "fill": "#CC0099",
       "labels": [
+        "example-p-cudn",
+        "CUDN",
+        "Layer2 10.1.2.0/24",
+      ],
+      "title": "example-p-cudn (CUDN)",
+      "x": 920,
+      "y": 260,
+    },
+    {
+      "fill": "#CC0099",
+      "labels": [
         "vlan-1924",
         "CUDN",
         "Localnet VLAN 1924",
       ],
       "title": "vlan-1924 (CUDN)",
       "x": 920,
-      "y": 240,
+      "y": 360,
     },
     {
       "fill": "#CC0099",
@@ -1319,18 +1332,7 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`]
       ],
       "title": "vlan-1926 (CUDN)",
       "x": 920,
-      "y": 340,
-    },
-    {
-      "fill": "#CC0099",
-      "labels": [
-        "example-p-cudn",
-        "CUDN",
-        "Layer2 10.1.2.0/24",
-      ],
-      "title": "example-p-cudn (CUDN)",
-      "x": 920,
-      "y": 440,
+      "y": 460,
     },
   ],
 }
