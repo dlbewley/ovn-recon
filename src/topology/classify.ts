@@ -22,6 +22,8 @@ export type InterfaceRole =
     | 'bond'
     /** A VLAN or MACVLAN device layered on a base interface. */
     | 'vlan'
+    /** A VXLAN tunnel device: a VTEP, enslaved to a bridge and carried on an underlay. */
+    | 'vxlan'
     /** A bridge, whether declared as one or acting as one. */
     | 'bridge'
     /** An OVS internal port on a bridge. */
@@ -77,6 +79,11 @@ const RULES: Rule[] = [
         role: 'vlan',
         reason: 'a VLAN or MACVLAN device on a base interface',
         when: (iface) => VLAN_TYPES.includes(iface.type)
+    },
+    {
+        role: 'vxlan',
+        reason: 'a VXLAN tunnel device (VTEP) on an underlay address',
+        when: (iface) => iface.type === 'vxlan'
     },
     {
         // ORDER MATTERS: this must precede the acting-as-a-bridge rule below. An OVS

@@ -212,6 +212,19 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     provenance: 'observed'
                 });
             }
+            if (raw?.type === 'vxlan' && raw?.vxlan) {
+                // A VTEP. The VNI is per-device when set; 0 means the VNIs are mapped
+                // per VLAN on the bridge this device is enslaved to, as EVPN does it.
+                const vxlan = raw.vxlan;
+                const items = [
+                    { text: vxlan.id ? `VNI: ${vxlan.id}` : 'VNI: per-VLAN on the bridge (id 0)' },
+                    ...(vxlan.local ? [{ text: `Local VTEP: ${vxlan.local}` }] : []),
+                    ...(vxlan.remote ? [{ text: `Remote: ${vxlan.remote}` }] : []),
+                    ...(vxlan['destination-port'] ? [{ text: `UDP port: ${vxlan['destination-port']}` }] : []),
+                    ...(vxlan.learning != null ? [{ text: `MAC learning: ${vxlan.learning ? 'on' : 'off'}` }] : [])
+                ];
+                facts.push({ label: 'VXLAN', value: items, provenance: 'observed' });
+            }
             const macAddress = getMacAddress(raw);
             if (macAddress) {
                 facts.push({ label: 'MAC Address', value: macAddress, provenance: 'observed' });

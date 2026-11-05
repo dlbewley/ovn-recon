@@ -89,6 +89,11 @@ describe('resolveInterfaceRef', () => {
 
     it('returns undefined for a name no interface carries', () => {
         expect(resolveInterfaceRef('br-nonexistent', ctx)).toBeUndefined();
+    });
+
+    it('resolves a VRF name to the vrf: id its node actually uses', () => {
+        const ctx = { interfaces: [{ name: 'mp9-udn-vrf', type: 'vrf', state: 'up' }] };
+        expect(resolveInterfaceRef('mp9-udn-vrf', ctx)).toBe('vrf:mp9-udn-vrf');
         expect(resolveInterfaceRef(undefined, ctx)).toBeUndefined();
     });
 });

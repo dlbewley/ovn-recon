@@ -69,6 +69,13 @@ describe('classify: roles that are present but not drawn', () => {
             .toBe('unmanaged');
     });
 
+    it('recognises a VXLAN device as a VTEP, not as the catch-all', () => {
+        // Before ovn-recon-s3t.52 no rule matched type vxlan, so an EVPN node's tunnel
+        // endpoint landed in the grey grid with no edges.
+        expect(roleIn([{ name: 'evx4.4a75265e', type: 'vxlan', state: 'up', controller: 'evbr.4a75265e' }], 'evx4.4a75265e'))
+            .toBe('vxlan');
+    });
+
     it('treats an ignored NIC as unmanaged', () => {
         expect(roleIn([{ name: 'genev_sys_6081', type: 'ethernet', state: 'ignore' }], 'genev_sys_6081'))
             .toBe('unmanaged');
@@ -77,7 +84,7 @@ describe('classify: roles that are present but not drawn', () => {
     it('names the two undrawn roles explicitly', () => {
         expect(isDrawn('unmanaged')).toBe(false);
         expect(isDrawn('patch')).toBe(false);
-        (['physical', 'bond', 'vlan', 'bridge', 'bridge-port', 'vrf', 'host-local', 'unclassified'] as const)
+        (['physical', 'bond', 'vlan', 'vxlan', 'bridge', 'bridge-port', 'vrf', 'host-local', 'unclassified'] as const)
             .forEach((role) => expect(isDrawn(role)).toBe(true));
     });
 });
@@ -102,7 +109,7 @@ describe('classify is total', () => {
     });
 
     it('resolves every interface in every fixture to some role', () => {
-        ['basic-host', 'primary-cudn-vrf', 'bonded-lldp', 'vrf-mixed-routes', 'partial-missing-fields']
+        ['basic-host', 'primary-cudn-vrf', 'bonded-lldp', 'vrf-mixed-routes', 'partial-missing-fields', 'evpn-vxlan']
             .forEach((name) => {
                 const ctx = fixtureCtx(name);
                 ctx.interfaces.forEach((iface) => {
@@ -135,6 +142,17 @@ describe('classify against real captures', () => {
         expect(names('unclassified')).toEqual(['genev_sys_6081']);
     });
 
+    it('splits the EVPN worker so the tunnel chain has a lane at every hop', () => {
+        const ctx = fixtureCtx('evpn-vxlan');
+        const names = (role: InterfaceRole) => interfacesWithRole(ctx, role).map((i) => i.name).sort();
+
+        expect(names('vxlan')).toEqual(['evx4.4a75265e']);
+        expect(names('vlan')).toEqual(['svl2.9']);
+        expect(names('bridge')).toEqual(['br-ex', 'evbr.4a75265e']);
+        expect(names('vrf')).toEqual(['mp9-udn-vrf']);
+        expect(names('unclassified')).toEqual(['genev_sys_6081']);
+    });
+
     it('splits the bonded worker, including three bonds with different fates', () => {
         const ctx = fixtureCtx('bonded-lldp');
         const names = (role: InterfaceRole) => interfacesWithRole(ctx, role).map((i) => i.name).sort();
@@ -156,7 +174,7 @@ describe('classify against real captures', () => {
         // Every drawn interface belongs to exactly one lane.
         const ctx = fixtureCtx('bonded-lldp');
         const drawn = ctx.interfaces.filter((i) => isDrawn(roleOf(i, ctx)));
-        const counted = (['physical', 'bond', 'vlan', 'bridge', 'bridge-port', 'vrf', 'host-local', 'unclassified'] as const)
+        const counted = (['physical', 'bond', 'vlan', 'vxlan', 'bridge', 'bridge-port', 'vrf', 'host-local', 'unclassified'] as const)
             .reduce((total, role) => total + interfacesWithRole(ctx, role).length, 0);
 
         expect(counted).toBe(drawn.length);

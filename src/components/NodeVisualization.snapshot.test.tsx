@@ -117,6 +117,17 @@ describe('NodeVisualization rendered structure', () => {
         expect(describeGraph()).toMatchSnapshot();
     });
 
+    it('evpn-vxlan, default view', () => {
+        // The VXLAN device draws in the VLAN lane with its underlay and bridge edges,
+        // and the VLAN it feeds reaches the VRF (ovn-recon-s3t.52).
+        act(() => {
+            root.render(<NodeVisualization
+                nns={fixture<NodeNetworkState>('nns', 'evpn-vxlan.json')}
+                cudns={[]} udns={[]} nads={[]} routeAdvertisements={[]} />);
+        });
+        expect(describeGraph()).toMatchSnapshot();
+    });
+
     it('bonded-lldp, with neighbours shown', () => {
         act(() => {
             root.render(<NodeVisualization
