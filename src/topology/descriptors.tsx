@@ -7,12 +7,15 @@ import {
 import {
     findCudnNameForNad,
     findInterfaceHoldingAddress,
+    findPatchPortsForCudn,
     findPrimaryNetworkForVrf,
     findRouteAdvertisementForVrf,
     getCudnsSelectedByRouteAdvertisement,
     getNadUpstreamNodeIdsForEdges,
     getVrfEgressInterfaces,
     parseNadConfig,
+    patchPortNetworkName,
+    CUDN_NETWORK_PREFIX,
     LldpNeighborNode
 } from '../components/nodeVisualizationSelectors';
 import {
@@ -425,16 +428,35 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
                 resourceRef: resourceRefOf(cudn, 'ClusterUserDefinedNetwork')
             };
         },
-        edges: (cudn, _ctx, out) => {
+        edges: (cudn, ctx, out) => {
+            const name = cudn.metadata?.name;
             const physicalNetworkName = cudn.spec?.network?.localNet?.physicalNetworkName
                 || cudn.spec?.network?.localnet?.physicalNetworkName;
             if (physicalNetworkName) {
-                out.edge(bridgeMappingNodeId(physicalNetworkName), cudnNodeId(cudn.metadata?.name), 'physical-network-name', {
+                out.edge(bridgeMappingNodeId(physicalNetworkName), cudnNodeId(name), 'physical-network-name', {
                     kind: 'reference',
                     provenance: 'declared',
-                    rationale: `CUDN ${cudn.metadata?.name} declares spec.network.localnet.physicalNetworkName: ${physicalNetworkName}.`
+                    rationale: `CUDN ${name} declares spec.network.localnet.physicalNetworkName: ${physicalNetworkName}.`
                 });
             }
+            // An overlay (Layer2/Layer3) CUDN has no bridge mapping, so nothing above
+            // ties it to the node. Its gateway's patch pair does: OVN-Kubernetes names
+            // the pair after the network (ovn-recon-s3t.29). GATEWAY FORM ONLY -- a
+            // Localnet CUDN's localnet-form pair reaches the bridge its mapping already
+            // names, so a second line would draw one attachment twice; that pair is
+            // corroboration, and is reported as a fact on the CUDN instead.
+            findPatchPortsForCudn(name, ctx.cudns, ctx.interfaces).matched
+                .filter((port) => port.form === 'gateway')
+                .forEach((port) => {
+                    out.named('patch-port-cudn', cudnNodeId(name), port.bridge, 'from', {
+                        kind: 'reference',
+                        provenance: 'inferred',
+                        rationale: `CUDN ${name} reaches ${port.bridge} through patch port ${port.portName}: `
+                            + `the port is on ${port.bridge} and its name embeds ${CUDN_NETWORK_PREFIX}${patchPortNetworkName(name || '')}, `
+                            + 'this CUDN\'s name with dashes written as dots. Inferred: the naming is an '
+                            + 'OVN-Kubernetes implementation detail, not something NodeNetworkState declares.'
+                    });
+                });
         }
     } as NodeTypeDescriptor<ClusterUserDefinedNetwork>,
 

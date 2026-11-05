@@ -719,3 +719,202 @@ export const getNadUpstreamNodeIdsForEdges = (
     }
     return upstream;
 };
+
+// --- OVS patch port names (ovn-recon-s3t.29) ---------------------------------
+
+/**
+ * OVN-Kubernetes's fixed pieces of a patch port name. br-int is the only bridge it
+ * patches from, so every provider-side port ends `-to-br-int` and every br-int-side
+ * port starts `patch-br-int-to-`.
+ */
+const PATCH_PREFIX = 'patch-';
+const PATCH_TO_INTEGRATION_SUFFIX = '-to-br-int';
+const PATCH_FROM_INTEGRATION_PREFIX = 'patch-br-int-to-';
+const LOCALNET_PORT_SUFFIX = '_ovn_localnet_port';
+
+/** The OVN network name of a ClusterUserDefinedNetwork is this plus its own name. */
+export const CUDN_NETWORK_PREFIX = 'cluster_udn_';
+
+/**
+ * A network name as OVN-Kubernetes embeds it in a port name: `-` and `/` both become
+ * `.`, and a `.` already in the name is left alone. LOSSY -- `a-b` and `a.b` come out
+ * the same -- which is why nothing here ever runs it backwards.
+ */
+export const patchPortNetworkName = (name: string): string => name.replace(/[-/]/g, '.');
+
+export interface PatchPortName {
+    /**
+     * gateway  -- `patch-<bridge>_[<network>_]<node>-to-br-int`: the network's gateway
+     *             router reaching a provider bridge. Layer2 and Layer3 networks, and
+     *             the cluster default network when no network is named.
+     * localnet -- `patch-<network>_ovn_localnet_port-to-br-int`: a Localnet network's
+     *             logical switch reaching the bridge its physical network maps to.
+     */
+    form: 'gateway' | 'localnet';
+    /** Which end of the pair carries this name. */
+    side: 'provider' | 'integration';
+    /**
+     * The OVN network name as embedded, dashes already dots: `cluster_udn_example.p.cudn`.
+     * Undefined on a gateway-form name that names no network -- the cluster default.
+     */
+    networkName?: string;
+    /** The bridge a gateway-form name embeds. A localnet-form name carries none. */
+    bridge?: string;
+    /** The node a gateway-form name embeds. */
+    node?: string;
+}
+
+/**
+ * Read an OVS patch port name. Pure string work; returns undefined for anything that
+ * is not one of the two forms OVN-Kubernetes generates.
+ *
+ * A gateway-form name is `<bridge>_<network>_<node>` with underscores inside the
+ * network name too (`cluster_udn_...`), so only its ends can be split off: the node
+ * is whatever follows the last underscore, since a Kubernetes node name cannot
+ * contain one. The bridge is the port's controller when the caller knows it (an OVS
+ * bridge name may itself contain an underscore), else whatever precedes the first.
+ */
+export const parsePatchPortName = (name: string, controller?: string): PatchPortName | undefined => {
+    let side: PatchPortName['side'];
+    let port: string;
+    if (name.startsWith(PATCH_FROM_INTEGRATION_PREFIX)) {
+        side = 'integration';
+        port = name.slice(PATCH_FROM_INTEGRATION_PREFIX.length);
+    } else if (name.startsWith(PATCH_PREFIX) && name.endsWith(PATCH_TO_INTEGRATION_SUFFIX)) {
+        side = 'provider';
+        port = name.slice(PATCH_PREFIX.length, -PATCH_TO_INTEGRATION_SUFFIX.length);
+    } else {
+        return undefined;
+    }
+
+    // Checked first: `cluster_udn_x_ovn_localnet_port` would otherwise read as a
+    // gateway port on a bridge called `cluster`.
+    if (port.endsWith(LOCALNET_PORT_SUFFIX)) {
+        const networkName = port.slice(0, -LOCALNET_PORT_SUFFIX.length);
+        return networkName ? { form: 'localnet', side, networkName } : undefined;
+    }
+
+    const bridgeEnd = side === 'provider' && controller && port.startsWith(`${controller}_`)
+        ? controller.length
+        : port.indexOf('_');
+    const nodeStart = port.lastIndexOf('_');
+    if (bridgeEnd <= 0 || nodeStart === port.length - 1) return undefined;
+    const bridge = port.slice(0, bridgeEnd);
+    const node = port.slice(nodeStart + 1);
+    // One underscore: `<bridge>_<node>`, nothing between them.
+    if (nodeStart === bridgeEnd) return { form: 'gateway', side, bridge, node };
+    const networkName = port.slice(bridgeEnd + 1, nodeStart);
+    return networkName ? { form: 'gateway', side, networkName, bridge, node } : undefined;
+};
+
+/** One network's patch pair, anchored on the port at the provider-bridge end. */
+export interface NetworkPatchPort {
+    form: PatchPortName['form'];
+    /** As PatchPortName.networkName: dotted, and undefined for the cluster default network. */
+    networkName?: string;
+    /** True for the unqualified gateway pair, which is the cluster default network's. */
+    isDefaultNetwork: boolean;
+    /**
+     * The bridge the pair terminates on: the provider-side port's controller, as
+     * NodeNetworkState reports it -- not the bridge spelled in the name. Undefined
+     * when the port is on no bridge, which a half-configured mapping leaves behind.
+     */
+    bridge?: string;
+    node?: string;
+    /** The provider-side port. */
+    portName: string;
+    /** Its `patch.peer` on br-int, when nmstate reports one. */
+    peerName?: string;
+}
+
+const patchPortsByInterfaces = new WeakMap<Interface[], NetworkPatchPort[]>();
+
+/**
+ * Every network patch pair on the node, in NodeNetworkState order.
+ *
+ * Read from the provider end only -- each pair would otherwise be counted twice --
+ * and the bridge is that port's `controller`, the same field the integration bridge's
+ * `patch-peer` edge follows from the other end, so the two agree on which bridge a
+ * pair reaches. Cached per interface list: the graph asks once per CUDN.
+ */
+export const getNetworkPatchPorts = (interfaces: Interface[]): NetworkPatchPort[] => {
+    const cached = patchPortsByInterfaces.get(interfaces);
+    if (cached) return cached;
+    const ports = interfaces.flatMap((iface): NetworkPatchPort[] => {
+        const bridge = iface.controller || iface.master || undefined;
+        const parsed = parsePatchPortName(iface.name, bridge);
+        if (!parsed || parsed.side !== 'provider') return [];
+        return [{
+            form: parsed.form,
+            networkName: parsed.networkName,
+            isDefaultNetwork: parsed.form === 'gateway' && parsed.networkName === undefined,
+            bridge,
+            node: parsed.node,
+            portName: iface.name,
+            peerName: iface.patch?.peer || undefined
+        }];
+    });
+    patchPortsByInterfaces.set(interfaces, ports);
+    return ports;
+};
+
+/**
+ * Names of the CUDNs a patch pair's embedded network name could stand for.
+ *
+ * Compared FORWARDS: each CUDN name is put through the same transform and matched
+ * against the embedded name, because the transform cannot be undone. Only a name
+ * carrying the `cluster_udn_` prefix is a CUDN's -- a bare `tenant.b.db` is a network
+ * some NetworkAttachmentDefinition named, and a CUDN that happens to be called
+ * `tenant-b-db` has nothing to do with it.
+ */
+const cudnCandidatesForPatchPort = (
+    port: NetworkPatchPort,
+    cudns: ClusterUserDefinedNetwork[]
+): string[] => {
+    if (!port.networkName?.startsWith(CUDN_NETWORK_PREFIX)) return [];
+    const dotted = port.networkName.slice(CUDN_NETWORK_PREFIX.length);
+    return cudns
+        .map((cudn) => cudn.metadata?.name || '')
+        .filter((name) => name && patchPortNetworkName(name) === dotted);
+};
+
+/**
+ * The CUDN a patch pair belongs to, or undefined.
+ *
+ * Fails to NO MATCH rather than a wrong one, twice over: when the port is on no
+ * bridge there is nothing to link the network to, and when two CUDN names collide
+ * after the transform (`a-b` and `a.b`) the name cannot say which one it means.
+ */
+export const resolvePatchPortCudn = (
+    port: NetworkPatchPort,
+    cudns: ClusterUserDefinedNetwork[]
+): string | undefined => {
+    if (!port.bridge) return undefined;
+    const candidates = cudnCandidatesForPatchPort(port, cudns);
+    return candidates.length === 1 ? candidates[0] : undefined;
+};
+
+export interface CudnPatchPorts {
+    /** Pairs that resolve to this CUDN and to no other. */
+    matched: NetworkPatchPort[];
+    /** Pairs whose name fits this CUDN and at least one other; matched to neither. */
+    ambiguous: { port: NetworkPatchPort; candidates: string[] }[];
+}
+
+/** The patch pairs naming one CUDN, with the ones that could not be told apart. */
+export const findPatchPortsForCudn = (
+    cudnName: string | undefined,
+    cudns: ClusterUserDefinedNetwork[],
+    interfaces: Interface[]
+): CudnPatchPorts => {
+    const result: CudnPatchPorts = { matched: [], ambiguous: [] };
+    if (!cudnName) return result;
+    getNetworkPatchPorts(interfaces).forEach((port) => {
+        if (!port.bridge) return;
+        const candidates = cudnCandidatesForPatchPort(port, cudns);
+        if (!candidates.includes(cudnName)) return;
+        if (candidates.length === 1) result.matched.push(port);
+        else result.ambiguous.push({ port, candidates });
+    });
+    return result;
+};

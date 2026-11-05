@@ -95,7 +95,7 @@ describe('what the kinds are for', () => {
             Array.from(new Set(edges.filter((e) => e.kind === kind).map((e) => e.rule))).sort();
 
         expect(byKind('reference')).toEqual([
-            'bridge-mapping', 'physical-network-name', 'primary-network'
+            'bridge-mapping', 'patch-port-cudn', 'physical-network-name', 'primary-network'
         ]);
         expect(byKind('membership')).toEqual([
             'attached-namespaces', 'controller', 'management-port'
@@ -228,7 +228,7 @@ describe('why each edge exists', () => {
             'base-iface', 'bridge-mapping', 'controller', 'management-port', 'patch-peer', 'vrf-egress'
         ]);
         expect(rulesWith('declared')).toEqual(['attached-namespaces', 'physical-network-name']);
-        expect(rulesWith('inferred')).toEqual(['primary-network']);
+        expect(rulesWith('inferred')).toEqual(['patch-port-cudn', 'primary-network']);
     });
 
     it('reads an LLDP neighbour straight from the TLVs', () => {

@@ -7,7 +7,7 @@ import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, Networ
 import { hasLldpNeighbors } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import { buildGraphContext, GraphContext } from '../topology/context';
-import { interfacesWithRole, roleOf } from '../topology/classify';
+import { FOOT_GRID_ROLES, interfacesWithRole, roleOf } from '../topology/classify';
 import { buildDrawerTabs, getDrawerTabs } from '../topology/drawerTabs';
 import DrawerTabStrip from './DrawerTabStrip';
 import { edgeKey, findDuplicateIds, resolveNodeId as resolveId } from '../topology/ids';
@@ -111,10 +111,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     const resolveNodeId = (iface: any, type: string) => resolveId(iface, type, ctx);
 
     // Lanes are populated by topology ROLE, not by nmstate type. See topology/classify.
-    // The catch-all grid at the foot of the canvas. 'unclassified' landing here is a
-    // prompt to add a rule, not a resting place.
+    // The grid at the foot of the canvas; classify decides which roles land in it.
     const otherInterfaces = ctx.interfaces.filter((iface) =>
-        ['host-local', 'unclassified'].includes(roleOf(iface, ctx)));
+        FOOT_GRID_ROLES.includes(roleOf(iface, ctx)));
 
     const laneView: LaneViewState = { showHiddenColumns, showNads, showLldp: showLldpColumn };
 
