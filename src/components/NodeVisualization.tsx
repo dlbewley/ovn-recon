@@ -3,7 +3,7 @@ import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, D
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 
 
-import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements } from '../types';
+import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements, Vtep } from '../types';
 import { hasLldpNeighbors } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import { buildGraphContext, GraphContext } from '../topology/context';
@@ -28,12 +28,20 @@ interface NodeVisualizationProps {
     nads?: NetworkAttachmentDefinition[];
     routeAdvertisements?: RouteAdvertisements[];
     enactments?: NodeNetworkConfigurationEnactment[];
+    vteps?: Vtep[];
+    /** The raw k8s.ovn.org/vteps annotation off this node's Node object, when readable. */
+    nodeVtepsAnnotation?: string;
 }
+
+/** A stable default: a fresh `[]` per render would rebuild the graph context every time. */
+const NO_VTEPS: Vtep[] = [];
 
 /** Pointer travel, in CSS pixels, before a press on the background counts as a pan rather than a click. */
 const PAN_DRAG_THRESHOLD_PX = 3;
 
-const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [] }) => {
+const NodeVisualization: React.FC<NodeVisualizationProps> = ({
+    nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [], vteps = NO_VTEPS, nodeVtepsAnnotation
+}) => {
 
 
 
@@ -69,8 +77,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({ nns, cudns = [], 
     };
 
     const ctx: GraphContext = React.useMemo(
-        () => buildGraphContext({ nns, cudns, udns, nads, routeAdvertisements, enactments }),
-        [nns, cudns, udns, nads, routeAdvertisements, enactments]
+        () => buildGraphContext({
+            nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation
+        }),
+        [nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation]
     );
     const { interfaces } = ctx;
     const { lldpNeighbors } = ctx;

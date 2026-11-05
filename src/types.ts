@@ -122,10 +122,46 @@ export interface ClusterUserDefinedNetwork extends K8sResourceCommon {
                 subnets?: Layer3Subnet[];
                 joinSubnets?: string[];
             };
+            /** 'EVPN' when the network is carried over VXLAN/EVPN rather than Geneve. */
+            transport?: string;
+            evpn?: EvpnNetworkConfig;
         };
     };
     status?: {
         conditions?: { type: string; status: string; message?: string }[];
+    };
+}
+
+/** One VRF of an EVPN network: its VXLAN network identifier and BGP route target. */
+export interface EvpnVrfConfig {
+    vni?: number;
+    routeTarget?: string;
+}
+
+/**
+ * `spec.network.evpn` on a ClusterUserDefinedNetwork. `vtep` names the cluster-scoped
+ * VTEP whose devices carry the network; a Layer2 network has a MAC-VRF, a routed one
+ * an IP-VRF, and a network may have both.
+ */
+export interface EvpnNetworkConfig {
+    vtep?: string;
+    macVRF?: EvpnVrfConfig;
+    ipVRF?: EvpnVrfConfig;
+}
+
+/**
+ * The cluster-scoped `k8s.ovn.org/v1` VTEP: the address pool EVPN tunnels terminate
+ * on. In `Unmanaged` mode OVN-Kubernetes discovers one existing node address inside
+ * `spec.cidrs` and records it on the Node; the kernel devices it creates for the VTEP
+ * are named after the VTEP (see the EVPN selectors).
+ */
+export interface Vtep extends K8sResourceCommon {
+    spec?: {
+        cidrs?: string[];
+        mode?: string;
+    };
+    status?: {
+        conditions?: { type: string; status: string; reason?: string; message?: string }[];
     };
 }
 
