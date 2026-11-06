@@ -59,6 +59,17 @@ export interface Interface {
     ethernet?: { speed?: number; duplex?: string; 'auto-negotiation'?: boolean };
     /** Each neighbour is a list of TLV objects; see normalizeLldpNeighbor. */
     lldp?: { enabled?: boolean; neighbors?: unknown[] };
+    /**
+     * A bond. `port` lists the member interfaces (`slaves` in older nmstate). `options`
+     * are the kernel bonding options as nmstate reports them, which may be strings,
+     * numbers or booleans, and may be absent altogether.
+     */
+    'link-aggregation'?: {
+        mode?: string;
+        port?: string[];
+        slaves?: string[];
+        options?: Record<string, string | number | boolean | null | undefined>;
+    };
     [key: string]: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
