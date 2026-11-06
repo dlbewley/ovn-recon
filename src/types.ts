@@ -47,6 +47,18 @@ export interface Interface {
         learning?: boolean;
     };
     ipv4?: { enabled?: boolean; address?: Ipv4AddressEntry[] };
+    /** The kernel driver bound to the device, e.g. `igc` or `vmxnet3`. */
+    driver?: string;
+    'pci-address'?: string;
+    /** The address the hardware reports, which `mac-address` may have been set away from. */
+    'permanent-mac-address'?: string;
+    'alt-names'?: { name?: string }[];
+    'min-mtu'?: number;
+    'max-mtu'?: number;
+    /** Negotiated link. `speed` is in Mb/s, and not positive when the link is down. */
+    ethernet?: { speed?: number; duplex?: string; 'auto-negotiation'?: boolean };
+    /** Each neighbour is a list of TLV objects; see normalizeLldpNeighbor. */
+    lldp?: { enabled?: boolean; neighbors?: unknown[] };
     [key: string]: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 

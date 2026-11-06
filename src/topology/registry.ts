@@ -2,6 +2,7 @@ import {
     CUDN_NETWORK_PREFIX,
     EVPN_NETWORK_DEVICES,
     EVPN_VTEP_DEVICES,
+    extractLldpNeighbors,
     findEvpnNetworkForDevice,
     findPatchPortsForCudn,
     findPrimaryNetworkForVrf,
@@ -77,6 +78,100 @@ const getMacAddress = (raw: unknown): string | undefined => {
     const record = raw as Record<string, unknown>;
     const macAddress = record.mac_address ?? record['mac-address'];
     return typeof macAddress === 'string' ? macAddress : undefined;
+};
+
+/** nmstate reports Mb/s. Not positive means the kernel does not know, as on a link that is down. */
+const formatLinkSpeed = (mbps: unknown): string | undefined => {
+    if (typeof mbps !== 'number' || !(mbps > 0)) {
+        return undefined;
+    }
+    return mbps >= 1000 ? `${mbps / 1000} Gb/s` : `${mbps} Mb/s`;
+};
+
+/** Speed, duplex and auto-negotiation as one row: they are read together or not at all. */
+const linkFacts = (raw: Interface): Fact[] => {
+    const link = raw.ethernet;
+    const autoNegotiation = link?.['auto-negotiation'];
+    const parts = [
+        formatLinkSpeed(link?.speed),
+        // 'unknown' is ethtool's word for a link that is down; it is not worth a row.
+        link?.duplex && link.duplex !== 'unknown' ? `${link.duplex} duplex` : undefined,
+        typeof autoNegotiation === 'boolean' ? `auto-negotiation ${autoNegotiation ? 'on' : 'off'}` : undefined
+    ].filter((part): part is string => Boolean(part));
+    return parts.length > 0
+        ? [{ label: 'Link', value: parts.join(' · '), provenance: 'observed' }]
+        : [];
+};
+
+/**
+ * Shown only when it differs from the address in use, which is when it says something:
+ * the NIC is answering to an address other than its own.
+ */
+const permanentMacFacts = (raw: Interface, macAddress: string | undefined, ctx: GraphContext): Fact[] => {
+    const permanent = raw['permanent-mac-address'];
+    if (typeof permanent !== 'string' || !permanent || !macAddress
+        || permanent.toLowerCase() === macAddress.toLowerCase()) {
+        return [];
+    }
+    const controllerName = raw.controller || raw.master;
+    const bond = ctx.interfaces.find((iface) => iface.name === controllerName && iface.type === 'bond');
+    return [{
+        label: 'Permanent MAC',
+        value: permanent,
+        provenance: 'observed',
+        hint: bond
+            ? `The address the hardware reports. ${raw.name} is a member of bond ${bond.name}, and a bond gives `
+                + 'its members a shared address, so the address in use differs.'
+            : 'The address the hardware reports. The address in use differs, so it was set by configuration.'
+    }];
+};
+
+/**
+ * Three states, because they mean different things: off, on with nobody answering,
+ * and on with a neighbour. An interface that does not report lldp at all says nothing.
+ */
+const lldpFacts = (raw: Interface): Fact[] => {
+    if (!raw.lldp || typeof raw.lldp.enabled !== 'boolean') {
+        return [];
+    }
+    if (!raw.lldp.enabled) {
+        return [{ label: 'LLDP', value: 'Disabled', provenance: 'observed' }];
+    }
+    const neighbors = extractLldpNeighbors([raw]);
+    if (neighbors.length === 0) {
+        return [{
+            label: 'LLDP',
+            value: 'Enabled, no neighbors heard',
+            provenance: 'observed',
+            hint: 'lldp.enabled is true, but NodeNetworkState lists no neighbor on this interface.'
+        }];
+    }
+    const texts = neighbors.map((neighbor) => (
+        neighbor.portId ? `${neighbor.label}, ${neighbor.portId}` : neighbor.label
+    ));
+    return [{
+        label: 'LLDP',
+        // Two neighbours answering with the same name and port would be one line twice.
+        value: Array.from(new Set(texts)).map((text) => ({ text })),
+        provenance: 'observed',
+        hint: 'lldp.enabled is true. Each entry is a neighbor heard on this interface: its system name and port. '
+            + 'Turn on "Show LLDP neighbors" to draw them.'
+    }];
+};
+
+/** Where the device sits on the bus, and the other names udev gave it. */
+const hardwareIdentityFacts = (raw: Interface): Fact[] => {
+    const altNames = (Array.isArray(raw['alt-names']) ? raw['alt-names'] : [])
+        .map((entry) => entry?.name)
+        .filter((name): name is string => typeof name === 'string' && name.length > 0);
+    return [
+        ...(typeof raw['pci-address'] === 'string' && raw['pci-address']
+            ? [{ label: 'PCI Address', value: raw['pci-address'], provenance: 'observed' } as Fact]
+            : []),
+        ...(altNames.length > 0
+            ? [{ label: 'Alternative Names', value: altNames.join(', '), provenance: 'observed' } as Fact]
+            : [])
+    ];
 };
 
 const getAttachmentNamespaces = (node: NodeViewModel): string[] => (
@@ -502,16 +597,37 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
             }
             // EVPN: which VTEP this device was created for, or which network it serves.
             facts.push(...evpnVtepFacts(raw, ctx), ...evpnNetworkFacts(raw, ctx));
+            // A NIC says what it is before what it is addressed as (ovn-recon-s3t.62).
+            // Every field here may be absent from a trimmed or older NodeNetworkState.
+            const nic = raw?.type === 'ethernet' ? raw : undefined;
+            if (nic) {
+                if (typeof nic.driver === 'string' && nic.driver) {
+                    facts.push({ label: 'Driver', value: nic.driver, provenance: 'observed' });
+                }
+                facts.push(...linkFacts(nic));
+            }
             const macAddress = getMacAddress(raw);
             if (macAddress) {
                 facts.push({ label: 'MAC Address', value: macAddress, provenance: 'observed' });
             }
+            if (nic) {
+                facts.push(...permanentMacFacts(nic, macAddress, ctx));
+            }
             if (raw?.mtu) {
-                facts.push({ label: 'MTU', value: String(raw.mtu), provenance: 'observed' });
+                // The ceiling is the NIC's own; on a virtual device it is only the kernel's.
+                const maxMtu = nic?.['max-mtu'];
+                facts.push({
+                    label: 'MTU',
+                    value: typeof maxMtu === 'number' && maxMtu > 0 ? `${raw.mtu} (max ${maxMtu})` : String(raw.mtu),
+                    provenance: 'observed'
+                });
             }
             const ipv4 = getIpv4Addresses(raw);
             if (ipv4.length > 0) {
                 facts.push({ label: 'IPv4', value: ipv4.join(', '), provenance: 'observed' });
+            }
+            if (nic) {
+                facts.push(...lldpFacts(nic), ...hardwareIdentityFacts(nic));
             }
             if (raw?.type === 'linux-bridge' || raw?.type === 'ovs-bridge') {
                 facts.push({
