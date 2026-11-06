@@ -11,6 +11,7 @@ import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import {
     findNetworkByNetworkId,
     findPrimaryNetworkForVrf,
+    findUnresolvedVrfNetworkId,
     parseNetworkIdFromVrfName
 } from './nodeVisualizationSelectors';
 import {
@@ -248,5 +249,119 @@ describe('the VRF drawer says how it found the network', () => {
 
     it('is absent when nothing identifies the network', () => {
         expect(servesFact(ctxWith({ cudns }))).toBeUndefined();
+    });
+});
+
+/**
+ * A VRF named for an ID that leads nowhere says so (ovn-recon-s3t.60).
+ *
+ * Delete a Primary network and its VRF can stay behind on a node, still named for the
+ * network ID. No edge and no "Serves Primary Network" fact is the right answer, but
+ * silence left the leftover looking like a VRF the plugin had simply not understood.
+ */
+const ORPHAN = 'mp8-udn-vrf';
+const orphanVrf: Interface = {
+    name: ORPHAN, type: 'vrf', state: 'up', vrf: { port: [], 'route-table-id': 1011 }
+} as Interface;
+const nnsWithOrphan: NodeNetworkState = {
+    ...nns,
+    status: { ...nns.status, currentState: { ...nns.status!.currentState!, interfaces: [...interfaces, orphanVrf] } }
+} as NodeNetworkState;
+const orphanCtx = (input: Partial<GraphContextInput> = {}): GraphContext =>
+    buildGraphContext({ nns: nnsWithOrphan, ...input });
+const vrfFacts = (ctx: GraphContext, name: string): Fact[] => {
+    const item = ctx.interfaces.find((i) => i.name === name)!;
+    return nodeKindRegistry.vrf.facts!(buildNodeViewModel(item, descriptorFor('vrf')!, ctx), ctx);
+};
+const networkIdFact = (ctx: GraphContext, name = ORPHAN): Fact | undefined =>
+    vrfFacts(ctx, name).find((f) => f.label === 'Network ID');
+
+describe('a network ID that resolves to no Primary network', () => {
+    it('is reported as carried by nothing when no NAD has it', () => {
+        expect(findUnresolvedVrfNetworkId(orphanVrf, cudns, [], interfaces, nads))
+            .toEqual({ networkId: '8', reason: 'no-carrier' });
+    });
+
+    it('is reported as ambiguous when two networks claim it', () => {
+        const clash = [nadWithId('ns-a', 'blue', '8'), nadWithId('ns-b', 'green', '8')];
+        expect(findUnresolvedVrfNetworkId(orphanVrf, [primaryCudn('blue'), primaryCudn('green')], [], interfaces, clash))
+            .toEqual({ networkId: '8', reason: 'ambiguous', ambiguous: ['CUDN blue', 'CUDN green'] });
+    });
+
+    it('names the network when the ID belongs to one that cannot own a VRF', () => {
+        expect(findUnresolvedVrfNetworkId(
+            orphanVrf, [primaryCudn('blue', 'Secondary')], [], interfaces, [nadWithId('ns-a', 'blue', '8')]
+        )).toEqual({
+            networkId: '8',
+            reason: 'not-primary',
+            network: { kind: 'cudn', name: 'blue' },
+            nad: { namespace: 'ns-a', name: 'blue' }
+        });
+    });
+
+    it('names the NAD when it carries the ID but its network is gone', () => {
+        expect(findUnresolvedVrfNetworkId(orphanVrf, [], [], interfaces, [nadWithId('ns-a', 'gone', '8')]))
+            .toEqual({ networkId: '8', reason: 'unknown-network', nad: { namespace: 'ns-a', name: 'gone' } });
+    });
+
+    it('says nothing while no NADs are loaded: the ID lives only on them', () => {
+        expect(findUnresolvedVrfNetworkId(orphanVrf, cudns, [], interfaces, [])).toBeUndefined();
+    });
+
+    it('says nothing about a VRF that is matched, by the ID or by status', () => {
+        expect(findUnresolvedVrfNetworkId(vrf, cudns, [], interfaces, nads)).toBeUndefined();
+        // The ID resolves nowhere, but the network names this VRF itself.
+        expect(findUnresolvedVrfNetworkId(orphanVrf, withStatusVrfName(ORPHAN), [], interfaces, nads)).toBeUndefined();
+    });
+
+    it('says nothing about a VRF not named for an ID', () => {
+        expect(findUnresolvedVrfNetworkId(vrfNamed('example-p-cudn'), cudns, [], interfaces, nads)).toBeUndefined();
+    });
+});
+
+describe('the VRF drawer explains an ID that led nowhere', () => {
+    it('names the ID and says no NAD carries it', () => {
+        const ctx = orphanCtx({ cudns, nads });
+        const fact = networkIdFact(ctx)!;
+        expect(fact.provenance).toBe('inferred');
+        expect(fact.value).toEqual([
+            { text: 'This VRF is named for network ID 8' },
+            { text: '⚠ No NetworkAttachmentDefinition carries k8s.ovn.org/network-id: 8' }
+        ]);
+        expect(fact.hint).toContain('probably deleted and this VRF left behind');
+        expect(fact.hint).toContain('namespaces you cannot read');
+        expect(vrfFacts(ctx, ORPHAN).find((f) => f.label === 'Serves Primary Network')).toBeUndefined();
+    });
+
+    it('links the network when the ID belongs to one with no VRF', () => {
+        const fact = networkIdFact(orphanCtx({
+            cudns: [primaryCudn('blue', 'Secondary')], nads: [nadWithId('ns-a', 'blue', '8')]
+        }))!;
+        expect(fact.value).toEqual([
+            { text: 'This VRF is named for network ID 8' },
+            {
+                text: '⚠ Network ID 8 belongs to CUDN blue, which is not a Primary Layer2 or Layer3 network and so has no VRF',
+                ref: { apiVersion: 'k8s.ovn.org/v1', kind: 'ClusterUserDefinedNetwork', name: 'blue' }
+            }
+        ]);
+        expect(fact.hint).toContain('could not be matched to a Primary network');
+    });
+
+    it('links the NAD when its network is not known', () => {
+        const fact = networkIdFact(orphanCtx({ nads: [nadWithId('ns-a', 'gone', '8')] }))!;
+        expect((fact.value as { text: string; ref?: unknown }[])[1]).toMatchObject({
+            text: '⚠ NetworkAttachmentDefinition ns-a/gone carries that ID, but the network it belongs to is not known',
+            ref: { kind: 'NetworkAttachmentDefinition', namespace: 'ns-a', name: 'gone' }
+        });
+    });
+
+    it('is absent for a matched VRF and while no NADs are loaded', () => {
+        expect(networkIdFact(orphanCtx({ cudns, nads }), 'mp9-udn-vrf')).toBeUndefined();
+        expect(networkIdFact(orphanCtx({ cudns }))).toBeUndefined();
+    });
+
+    it('draws no edge for it', () => {
+        const edges = primaryEdges(orphanCtx({ cudns, nads }));
+        expect(edges.map((e) => [e.source, e.target])).toEqual([[VRF_ID, CUDN_ID]]);
     });
 });
