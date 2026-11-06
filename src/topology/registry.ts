@@ -6,6 +6,7 @@ import {
     findPatchPortsForCudn,
     findPrimaryNetworkForVrf,
     findRouteAdvertisementForVrf,
+    findUnresolvedVrfNetworkId,
     findVtepForDevice,
     formatLabelSelector,
     getCudnAssociatedNamespaces,
@@ -25,6 +26,7 @@ import {
     NODE_VTEPS_ANNOTATION,
     parseNadConfig,
     resolvePatchPortCudn,
+    UnresolvedVrfNetworkId,
     VrfAssociatedRoute
 } from '../components/nodeVisualizationSelectors';
 import {
@@ -420,6 +422,51 @@ const evpnNetworkFacts = (raw: Interface | undefined, ctx: GraphContext): Fact[]
     }];
 };
 
+/**
+ * The ID in an mp<ID>-udn-vrf name, when it resolved to no Primary network
+ * (ovn-recon-s3t.60). A leftover VRF otherwise reads the same as one nobody understood.
+ */
+const unresolvedVrfNetworkIdFacts = (unresolved: UnresolvedVrfNetworkId | undefined): Fact[] => {
+    if (!unresolved) return [];
+    const { networkId, reason, network, nad, ambiguous } = unresolved;
+
+    const why = (): FactItem => {
+        if (reason === 'ambiguous') {
+            return { text: `⚠ Network ID ${networkId} is claimed by ${ambiguous?.join(' and ')} — matched to neither` };
+        }
+        if (reason === 'not-primary' && network) {
+            return {
+                text: `⚠ Network ID ${networkId} belongs to `
+                    + (network.kind === 'cudn' ? `CUDN ${network.name}` : `UDN ${network.namespace}/${network.name}`)
+                    + ', which is not a Primary Layer2 or Layer3 network and so has no VRF',
+                ref: network.kind === 'cudn' ? cudnRef(network.name) : udnRef(network.namespace, network.name)
+            };
+        }
+        if (reason === 'unknown-network' && nad) {
+            return {
+                text: `⚠ NetworkAttachmentDefinition ${nad.namespace}/${nad.name} carries that ID, `
+                    + 'but the network it belongs to is not known',
+                ref: nadRef(nad.namespace, nad.name)
+            };
+        }
+        return { text: `⚠ No NetworkAttachmentDefinition carries ${NETWORK_ID_ANNOTATION}: ${networkId}` };
+    };
+
+    return [{
+        label: 'Network ID',
+        value: [{ text: `This VRF is named for network ID ${networkId}` }, why()],
+        provenance: 'inferred',
+        hint: 'OVN-Kubernetes names a Primary network\'s VRF mp<network ID>-udn-vrf when the network\'s name does not '
+            + 'fit in a 15-character interface name, and always for a namespaced UDN. The ID is the '
+            + `${NETWORK_ID_ANNOTATION} annotation on the network's NetworkAttachmentDefinitions. `
+            + (reason === 'no-carrier'
+                ? 'None of the NetworkAttachmentDefinitions visible to you carries this one, so the network was probably '
+                    + 'deleted and this VRF left behind — or its NetworkAttachmentDefinitions are in namespaces you '
+                    + 'cannot read.'
+                : 'This VRF could not be matched to a Primary network through it.')
+    }];
+};
+
 export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
     interface: {
         label: 'Interface',
@@ -752,6 +799,11 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
             const corroborated = primary?.corroboration
                 ? ` Port ${primary.corroboration.port} address ${primary.corroboration.address} lies inside its subnet ${primary.corroboration.subnet}.`
                 : '';
+            // A name that points at a network ID nothing resolves: say so, or a
+            // leftover VRF reads the same as one nobody understood (ovn-recon-s3t.60).
+            const unresolved = primary
+                ? undefined
+                : findUnresolvedVrfNetworkId(raw, ctx.cudns, ctx.udns, ctx.interfaces, ctx.nads);
 
             return [
                 // Type only: the old State line ('ovn-k8s-mp3 Tbl 5775') just
@@ -790,6 +842,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                                     + 'network\'s subnet. Localnet networks cannot be Primary.'
                     } as Fact]
                     : []),
+                ...unresolvedVrfNetworkIdFacts(unresolved),
                 ...(macAddress
                     ? [{ label: 'MAC Address', value: macAddress, provenance: 'observed' } as Fact]
                     : []),

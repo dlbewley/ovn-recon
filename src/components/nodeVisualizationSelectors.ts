@@ -229,6 +229,58 @@ export const findPrimaryNetworkForVrf = (
         ?? matches[0];
 };
 
+/** Why a VRF named for a network ID was matched to no Primary network. */
+export interface UnresolvedVrfNetworkId {
+    /** The network ID read out of the VRF name. */
+    networkId: string;
+    /**
+     * no-carrier       -- no NetworkAttachmentDefinition carries the ID.
+     * ambiguous        -- more than one network claims it.
+     * unknown-network  -- a NAD carries it, but the network that NAD belongs to is not known.
+     * not-primary      -- it belongs to a network that is not Primary Layer2 or Layer3,
+     *                     which gets no VRF, so this VRF cannot be that network's.
+     */
+    reason: 'no-carrier' | 'ambiguous' | 'unknown-network' | 'not-primary';
+    /** A NetworkAttachmentDefinition carrying the ID, when one does. */
+    nad?: { namespace: string; name: string };
+    /** The network the ID belongs to, when it is one that cannot own a VRF. */
+    network?: EvpnNetworkRef;
+    /** The networks claiming the ID, when more than one does. */
+    ambiguous?: string[];
+}
+
+/**
+ * What became of the network ID in a VRF's name, when it led nowhere (ovn-recon-s3t.60).
+ *
+ * A VRF named mp<ID>-udn-vrf that findPrimaryNetworkForVrf matches to nothing is
+ * usually a leftover: its network was deleted and the VRF stayed behind. Saying
+ * nothing about it leaves an orphan looking the same as a VRF nobody understood, so
+ * this reports the ID and the reason it resolved to no network.
+ *
+ * Undefined for a VRF not named for an ID, for one that IS matched (by any signal),
+ * and while no NADs are loaded at all: the ID lives only on them, so without them
+ * "nothing carries it" would be a guess.
+ */
+export const findUnresolvedVrfNetworkId = (
+    vrf: Interface,
+    cudns: ClusterUserDefinedNetwork[],
+    udns: UserDefinedNetwork[],
+    interfaces: Interface[],
+    nads: NetworkAttachmentDefinition[]
+): UnresolvedVrfNetworkId | undefined => {
+    const networkId = parseNetworkIdFromVrfName(vrf.name);
+    if (!networkId || nads.length === 0) return undefined;
+    if (findPrimaryNetworkForVrf(vrf, cudns, udns, interfaces, nads)) return undefined;
+
+    const byId = findNetworkByNetworkId(networkId, cudns, udns, nads);
+    if (byId.ambiguous) return { networkId, reason: 'ambiguous', ambiguous: byId.ambiguous };
+    const nad = byId.nad?.metadata?.name
+        ? { namespace: byId.nad.metadata.namespace || 'default', name: byId.nad.metadata.name }
+        : undefined;
+    if (byId.network) return { networkId, reason: 'not-primary', network: byId.network, nad };
+    return nad ? { networkId, reason: 'unknown-network', nad } : { networkId, reason: 'no-carrier' };
+};
+
 /** One policy's claim on an interface or bridge mapping, from its enactment. */
 export interface NncpClaim {
     policyName: string;
