@@ -10,6 +10,8 @@ import {
     NodeNetworkState,
     NetworkAttachmentDefinition,
     RouteAdvertisements,
+    SriovConfig,
+    SriovVf,
     UserDefinedNetwork,
     Vtep
 } from '../types';
@@ -574,6 +576,66 @@ export const extractLldpNeighbors = (interfaces: Interface[]): LldpNeighborNode[
     });
 
     return neighbors;
+};
+
+/** The SR-IOV configuration of a physical function, when the NIC reports one. */
+export const getSriovConfig = (iface: Interface | undefined): SriovConfig | undefined => {
+    const sriov = iface?.ethernet?.['sr-iov'];
+    return sriov && typeof sriov === 'object' ? sriov : undefined;
+};
+
+/** The VFs a physical function reports, in id order, tolerating a trimmed capture. */
+export const getSriovVfs = (iface: Interface | undefined): SriovVf[] => {
+    const vfs = getSriovConfig(iface)?.vfs;
+    return Array.isArray(vfs)
+        ? vfs.filter((vf): vf is SriovVf => Boolean(vf) && typeof vf === 'object' && typeof vf.id === 'number')
+        : [];
+};
+
+export interface SriovVfParent {
+    pf: Interface;
+    vf: SriovVf;
+}
+
+/**
+ * The physical function a host interface is a virtual function of, found by the PF
+ * naming it in `ethernet.sr-iov.vfs[].iface-name`. Observed, not guessed from names:
+ * udev names a VF after its own PCI address, which need not resemble the PF's
+ * (`enp1s0f0v2` is VF 2 of `enp194s0f0np0` in the sriov fixture).
+ */
+export const findSriovParent = (name: string, interfaces: Interface[]): SriovVfParent | undefined => {
+    for (const pf of interfaces) {
+        const vf = getSriovVfs(pf).find((candidate) => candidate['iface-name'] === name);
+        if (vf) {
+            return { pf, vf };
+        }
+    }
+    return undefined;
+};
+
+/**
+ * The settings on a VF that decide what it may do: whether it may change its own MAC
+ * (trust), whether the PF drops frames with a different source (spoof check), and any
+ * VLAN or rate the PF imposes. Zero rates and VLAN 0 are "unset" and are omitted.
+ */
+export const describeSriovVfSettings = (vf: SriovVf): string[] => {
+    const parts: string[] = [];
+    if (typeof vf.trust === 'boolean') {
+        parts.push(`trust ${vf.trust ? 'on' : 'off'}`);
+    }
+    if (typeof vf['spoof-check'] === 'boolean') {
+        parts.push(`spoof check ${vf['spoof-check'] ? 'on' : 'off'}`);
+    }
+    if (typeof vf['vlan-id'] === 'number' && vf['vlan-id'] > 0) {
+        const qos = typeof vf.qos === 'number' && vf.qos > 0 ? ` qos ${vf.qos}` : '';
+        parts.push(`VLAN ${vf['vlan-id']}${qos}`);
+    }
+    const min = typeof vf['min-tx-rate'] === 'number' && vf['min-tx-rate'] > 0 ? vf['min-tx-rate'] : undefined;
+    const max = typeof vf['max-tx-rate'] === 'number' && vf['max-tx-rate'] > 0 ? vf['max-tx-rate'] : undefined;
+    if (min != null || max != null) {
+        parts.push(`tx rate ${min != null ? `min ${min}` : ''}${min != null && max != null ? ' ' : ''}${max != null ? `max ${max}` : ''} Mb/s`);
+    }
+    return parts;
 };
 
 export const hasLldpNeighbors = (interfaces: Interface[]): boolean =>

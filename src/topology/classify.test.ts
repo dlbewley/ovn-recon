@@ -136,7 +136,7 @@ describe('classify is total', () => {
     });
 
     it('resolves every interface in every fixture to some role', () => {
-        ['basic-host', 'primary-cudn-vrf', 'bonded-lldp', 'vrf-mixed-routes', 'partial-missing-fields', 'evpn-vxlan']
+        ['basic-host', 'primary-cudn-vrf', 'bonded-lldp', 'vrf-mixed-routes', 'partial-missing-fields', 'evpn-vxlan', 'sriov']
             .forEach((name) => {
                 const ctx = fixtureCtx(name);
                 ctx.interfaces.forEach((iface) => {

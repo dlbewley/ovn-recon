@@ -17,6 +17,33 @@ export interface Ipv4AddressEntry {
     prefix_length?: number;
 }
 
+/**
+ * One virtual function of an SR-IOV NIC, as its physical function reports it.
+ * `iface-name` is present only while the VF is a host interface: a VF moved into a
+ * pod's network namespace or bound to a userspace driver keeps its entry but loses
+ * the name, which is how the host says it is in use elsewhere.
+ */
+export interface SriovVf {
+    id: number;
+    'iface-name'?: string;
+    'mac-address'?: string;
+    trust?: boolean;
+    'spoof-check'?: boolean;
+    'vlan-id'?: number;
+    'vlan-proto'?: string;
+    qos?: number;
+    'min-tx-rate'?: number;
+    'max-tx-rate'?: number;
+}
+
+/** `ethernet.sr-iov` on a physical function. Reported only by NICs that support it. */
+export interface SriovConfig {
+    'total-vfs'?: number;
+    'max-vfs'?: number;
+    'drivers-autoprobe'?: boolean;
+    vfs?: SriovVf[];
+}
+
 export interface Interface {
     name: string;
     type: string;
@@ -56,7 +83,7 @@ export interface Interface {
     'min-mtu'?: number;
     'max-mtu'?: number;
     /** Negotiated link. `speed` is in Mb/s, and not positive when the link is down. */
-    ethernet?: { speed?: number; duplex?: string; 'auto-negotiation'?: boolean };
+    ethernet?: { speed?: number; duplex?: string; 'auto-negotiation'?: boolean; 'sr-iov'?: SriovConfig };
     /** Each neighbour is a list of TLV objects; see normalizeLldpNeighbor. */
     lldp?: { enabled?: boolean; neighbors?: unknown[] };
     /**

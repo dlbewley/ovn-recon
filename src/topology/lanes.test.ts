@@ -34,7 +34,7 @@ describe('lane visibility', () => {
 
     it('shows every lane, empty or not, when nothing is hidden', () => {
         expect(laneIds({ showHiddenColumns: true })).toEqual([
-            'eth', 'bond', 'vlan', 'bridge', 'logical', 'l3', 'networks', 'attachments'
+            'eth', 'vf', 'bond', 'vlan', 'bridge', 'logical', 'l3', 'networks', 'attachments'
         ]);
     });
 
