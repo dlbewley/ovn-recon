@@ -1332,3 +1332,107 @@ export const findEvpnNetworkForDevice = (
         vid: evpnVidFromNad(byId.nad, parsed.prefix)
     };
 };
+
+// ---------------------------------------------------------------------------
+// Bonds (ovn-recon-s3t.61)
+// ---------------------------------------------------------------------------
+
+/**
+ * A gloss for the kernel bonding modes whose names do not say what they do. The mode
+ * is always shown as the kernel spells it; this only adds what an operator would call it.
+ */
+const BOND_MODE_GLOSS: Record<string, string> = {
+    'balance-rr': 'round-robin',
+    '802.3ad': 'LACP',
+    'balance-tlb': 'adaptive transmit load balancing',
+    'balance-alb': 'adaptive load balancing'
+};
+
+/** Modes that pick a member per flow, and so have a transmit hash policy. */
+const BOND_MODES_WITH_XMIT_HASH = ['balance-xor', '802.3ad', 'balance-tlb'];
+/** Modes that can prefer one member. */
+const BOND_MODES_WITH_PRIMARY = ['active-backup', 'balance-tlb', 'balance-alb'];
+
+/** A bonding option as a number: nmstate reports intervals as numbers or numeric strings. */
+const bondOptionNumber = (value: unknown): number | undefined => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+    if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number(value);
+    return undefined;
+};
+
+/** A bonding option as a yes/no: nmstate reports booleans, the kernel 'on'/'off' or 1/0. */
+const bondOptionFlag = (value: unknown): boolean | undefined => {
+    if (typeof value === 'boolean') return value;
+    if (value === 1 || value === '1' || value === 'on') return true;
+    if (value === 0 || value === '0' || value === 'off') return false;
+    return undefined;
+};
+
+/** The member interfaces a bond declares. */
+export const getBondMembers = (iface: Interface | undefined): string[] => {
+    const aggregation = iface?.['link-aggregation'];
+    const members: unknown = aggregation?.port ?? aggregation?.slaves;
+    return Array.isArray(members) ? members.filter((m): m is string => typeof m === 'string') : [];
+};
+
+/**
+ * What a bond's link-aggregation says about how it behaves, as drawer lines.
+ *
+ * Selective on purpose: nmstate reports some thirty kernel options, most at their
+ * defaults, and the Config tab already shows them all. These are the ones that answer
+ * "what kind of bond is this, and what must the switch side match": the mode, the
+ * members, and the options that mode actually reads. An option is only reported for a
+ * mode that uses it -- every bond carries an xmit_hash_policy, but active-backup
+ * ignores it.
+ *
+ * Options may be absent entirely; mode and members still stand on their own. Empty
+ * for an interface with no link-aggregation.
+ */
+export const describeBond = (iface: Interface | undefined): string[] => {
+    const aggregation = iface?.['link-aggregation'];
+    if (!aggregation) return [];
+    const mode = typeof aggregation.mode === 'string' ? aggregation.mode : undefined;
+    const options = aggregation.options ?? {};
+    const members = getBondMembers(iface);
+    const text = (key: string): string | undefined => {
+        const value = options[key];
+        return value == null || value === '' ? undefined : String(value);
+    };
+
+    const lines: string[] = [];
+    if (mode) lines.push(`Mode: ${mode}${BOND_MODE_GLOSS[mode] ? ` (${BOND_MODE_GLOSS[mode]})` : ''}`);
+    if (members.length > 0) lines.push(`Members: ${members.join(', ')}`);
+
+    if (mode && BOND_MODES_WITH_XMIT_HASH.includes(mode) && text('xmit_hash_policy')) {
+        lines.push(`Transmit hash: ${text('xmit_hash_policy')}`);
+    }
+    if (mode === '802.3ad') {
+        if (text('lacp_rate')) lines.push(`LACP rate: ${text('lacp_rate')}`);
+        const active = bondOptionFlag(options.lacp_active);
+        if (active != null) lines.push(`LACP: ${active ? 'active' : 'passive'}`);
+        const minLinks = bondOptionNumber(options.min_links);
+        if (minLinks) lines.push(`Min links: ${minLinks}`);
+    }
+    if (mode && BOND_MODES_WITH_PRIMARY.includes(mode) && text('primary')) {
+        lines.push(`Primary: ${text('primary')}`);
+    }
+
+    // Link monitoring: MII polling or ARP probing, never both. Only stated when the
+    // options are reported at all -- absent options are not "no monitoring".
+    const miimon = bondOptionNumber(options.miimon);
+    const arpInterval = bondOptionNumber(options.arp_interval);
+    if (miimon) {
+        lines.push(`Link monitor: MII every ${miimon} ms`);
+    } else if (arpInterval) {
+        const targets = text('arp_ip_target');
+        lines.push(`Link monitor: ARP every ${arpInterval} ms${targets ? ` to ${targets}` : ''}`);
+    } else if (miimon === 0 && (arpInterval === 0 || arpInterval === undefined)) {
+        lines.push('Link monitor: none');
+    }
+    const upDelay = bondOptionNumber(options.updelay);
+    const downDelay = bondOptionNumber(options.downdelay);
+    if (upDelay) lines.push(`Up delay: ${upDelay} ms`);
+    if (downDelay) lines.push(`Down delay: ${downDelay} ms`);
+
+    return lines;
+};
