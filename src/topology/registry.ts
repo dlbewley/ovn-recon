@@ -3,7 +3,11 @@ import {
     describeBond,
     EVPN_NETWORK_DEVICES,
     EVPN_VTEP_DEVICES,
+    describeSriovVfSettings,
     extractLldpNeighbors,
+    findSriovParent,
+    getSriovConfig,
+    getSriovVfs,
     findEvpnNetworkForDevice,
     findPatchPortsForCudn,
     findPrimaryNetworkForVrf,
@@ -157,6 +161,60 @@ const lldpFacts = (raw: Interface): Fact[] => {
         provenance: 'observed',
         hint: 'lldp.enabled is true. Each entry is a neighbor heard on this interface: its system name and port. '
             + 'Turn on "Show LLDP neighbors" to draw them.'
+    }];
+};
+
+/**
+ * What a physical function has carved out of itself. Each VF is listed whether or not
+ * it is a host interface: one that is not has gone somewhere nmstate cannot follow,
+ * and that absence is the fact an operator is usually after.
+ */
+const sriovPfFacts = (raw: Interface): Fact[] => {
+    const sriov = getSriovConfig(raw);
+    if (!sriov) {
+        return [];
+    }
+    const vfs = getSriovVfs(raw);
+    const total = typeof sriov['total-vfs'] === 'number' ? sriov['total-vfs'] : vfs.length;
+    const max = typeof sriov['max-vfs'] === 'number' ? sriov['max-vfs'] : undefined;
+    const capacity = total === 0
+        ? `Capable, no VFs configured${max != null ? ` (max ${max})` : ''}`
+        : `${total}${max != null ? ` of ${max}` : ''} VF${total === 1 ? '' : 's'} configured`;
+    const items: FactItem[] = [
+        { text: capacity },
+        ...(sriov['drivers-autoprobe'] === false ? [{ text: 'Driver autoprobe off: new VFs get no host driver' }] : []),
+        ...vfs.map((vf) => {
+            const name = vf['iface-name'];
+            const where = name
+                ? name
+                : `no host interface${vf['mac-address'] ? ` (${vf['mac-address']})` : ''}`;
+            return { text: [`VF ${vf.id}: ${where}`, ...describeSriovVfSettings(vf)].join(' · ') };
+        })
+    ];
+    return [{
+        label: 'SR-IOV',
+        value: items,
+        provenance: 'observed',
+        hint: 'ethernet.sr-iov in NodeNetworkState. A VF with no host interface has been moved into a pod\'s '
+            + 'network namespace or bound to a userspace driver such as vfio-pci; nmstate sees only that it left.'
+    }];
+};
+
+/** Which physical function this VF was carved out of, by that PF's own report. */
+const sriovVfFacts = (raw: Interface, ctx: GraphContext): Fact[] => {
+    const parent = findSriovParent(raw.name, ctx.interfaces);
+    if (!parent) {
+        return [];
+    }
+    return [{
+        label: 'SR-IOV VF',
+        value: [
+            { text: `VF ${parent.vf.id} of ${parent.pf.name}` },
+            ...describeSriovVfSettings(parent.vf).map((text) => ({ text }))
+        ],
+        provenance: 'observed',
+        hint: `ethernet.sr-iov.vfs[${parent.vf.id}].iface-name on ${parent.pf.name} is ${raw.name}. `
+            + 'The settings are the PF\'s, which decide what the VF may do.'
     }];
 };
 
@@ -616,7 +674,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 if (typeof nic.driver === 'string' && nic.driver) {
                     facts.push({ label: 'Driver', value: nic.driver, provenance: 'observed' });
                 }
-                facts.push(...linkFacts(nic));
+                facts.push(...linkFacts(nic), ...sriovPfFacts(nic), ...sriovVfFacts(nic, ctx));
             }
             const macAddress = getMacAddress(raw);
             if (macAddress) {

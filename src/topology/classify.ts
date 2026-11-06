@@ -1,3 +1,4 @@
+import { findSriovParent } from '../components/nodeVisualizationSelectors';
 import { Interface } from '../types';
 import { GraphContext } from './context';
 
@@ -18,6 +19,8 @@ import { GraphContext } from './context';
 export type InterfaceRole =
     /** A physical NIC. */
     | 'physical'
+    /** An SR-IOV virtual function that is a host interface, carved out of a physical NIC. */
+    | 'sriov-vf'
     /** A link aggregation. */
     | 'bond'
     /** A VLAN or MACVLAN device layered on a base interface. */
@@ -147,6 +150,14 @@ const RULES: Rule[] = [
         role: 'bridge-port',
         reason: 'an OVS internal port',
         when: (iface) => iface.type === 'ovs-interface'
+    },
+    {
+        // ORDER MATTERS: before `physical`. A VF is an ethernet device to nmstate, and
+        // only its PF's vfs list tells it apart from a NIC of its own.
+        role: 'sriov-vf',
+        reason: 'a virtual function of an SR-IOV NIC, named in that NIC\'s ethernet.sr-iov.vfs',
+        when: (iface, ctx) =>
+            iface.type === 'ethernet' && Boolean(findSriovParent(iface.name, ctx.interfaces))
     },
     {
         role: 'physical',

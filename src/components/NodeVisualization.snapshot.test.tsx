@@ -128,6 +128,18 @@ describe('NodeVisualization rendered structure', () => {
         expect(describeGraph()).toMatchSnapshot();
     });
 
+    it('sriov, default view', () => {
+        // The five VFs on the host draw in a Virtual Functions lane between the NICs
+        // and the bonds, each reached from its PF; the PFs keep their bond and bridge
+        // edges (ovn-recon-s3t.63).
+        act(() => {
+            root.render(<NodeVisualization
+                nns={fixture<NodeNetworkState>('nns', 'sriov.json')}
+                cudns={[]} udns={[]} nads={[]} routeAdvertisements={[]} />);
+        });
+        expect(describeGraph()).toMatchSnapshot();
+    });
+
     it('evpn-vxlan, with the cluster\'s VTEP, CUDN and NAD', () => {
         // Beside its cluster the same node says which VTEP the tunnel is and which
         // network rides on it: the VXLAN device and the SVI each reach the CUDN, and

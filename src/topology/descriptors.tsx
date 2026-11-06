@@ -1,6 +1,6 @@
 import * as React from 'react';
 import {
-    ConnectedIcon, InfrastructureIcon, LinuxIcon, MigrationIcon, NetworkIcon,
+    CloneIcon, ConnectedIcon, InfrastructureIcon, LinuxIcon, MigrationIcon, NetworkIcon,
     PficonVcenterIcon, PluggedIcon, ResourcePoolIcon, RouteIcon, TagIcon
 } from '@patternfly/react-icons';
 
@@ -11,6 +11,7 @@ import {
     findPatchPortsForCudn,
     findPrimaryNetworkForVrf,
     findRouteAdvertisementForVrf,
+    findSriovParent,
     findVtepForDevice,
     getCudnsSelectedByRouteAdvertisement,
     getCudnsUsingVtep,
@@ -59,7 +60,7 @@ import {
  */
 
 export type NodeTypeId =
-    | 'physical' | 'bond' | 'vlan' | 'vxlan' | 'bridge' | 'bridge-port' | 'vrf' | 'integration-bridge'
+    | 'physical' | 'sriov-vf' | 'bond' | 'vlan' | 'vxlan' | 'bridge' | 'bridge-port' | 'vrf' | 'integration-bridge'
     | 'ovn-mapping' | 'cudn' | 'udn' | 'attachment' | 'nad' | 'lldp-neighbor' | 'other';
 
 /** What the node shows on the canvas and in the drawer header. */
@@ -176,6 +177,16 @@ const interfaceEdges = (iface: Interface, ctx: GraphContext, out: EdgeSink) => {
             ? `${vlanLabel} is carried on ${vlanBase}: vlan.base-iface is ${vlanBase}.`
             : `${iface.name} is a MACVLAN on ${macvlanBase}: mac-vlan.base-iface is ${macvlanBase}.`
     });
+    // Carving: a VF is cut out of the PF that lists it, by the PF's own report.
+    const parent = findSriovParent(iface.name, ctx.interfaces);
+    if (parent) {
+        out.named('sriov-pf', id, parent.pf.name, 'from', {
+            kind: 'layering',
+            provenance: 'observed',
+            rationale: `${iface.name} is VF ${parent.vf.id} of ${parent.pf.name}: `
+                + `ethernet.sr-iov.vfs[${parent.vf.id}].iface-name on ${parent.pf.name} is ${iface.name}.`
+        });
+    }
     // Underlay: a VXLAN device tunnels over whichever interface holds its VTEP address.
     // nmstate names the address, not the interface, so the holder is looked up; an
     // address nothing on this node holds is reported as unresolved, not dropped.
@@ -288,6 +299,11 @@ const resourceRefOf = (
  */
 export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
     interfaceType('physical', 'physical', 'eth', <ResourcePoolIcon />, '#0066CC'),
+    {
+        // nmstate calls a VF `ethernet`; the drawer and canvas say what kind.
+        ...interfaceType('sriov-vf', 'sriov-vf', 'vf', <CloneIcon />, '#3E8635'),
+        present: (iface) => ({ ...presentInterface(iface), subtitle: 'ethernet (SR-IOV VF)', graphLabel: 'VF' })
+    },
     interfaceType('bond', 'bond', 'bond', <PficonVcenterIcon />, '#663399'),
     interfaceType('vlan', 'vlan', 'vlan', <TagIcon />, '#9933CC'),
     // Shares the VLAN lane: both are devices layered on something to their left. The
@@ -732,7 +748,8 @@ const INTERFACE_ICONS: Record<string, React.ReactNode> = {
 };
 
 export const iconFor = (descriptor: AnyNodeTypeDescriptor, item: unknown): React.ReactNode => {
-    if (descriptor.kind === 'interface') {
+    // A VF is `ethernet` to nmstate; its descriptor, not its type, says what to draw.
+    if (descriptor.kind === 'interface' && descriptor.type !== 'sriov-vf') {
         const type = (item as Interface | undefined)?.type;
         return (type && INTERFACE_ICONS[type]) || descriptor.icon;
     }

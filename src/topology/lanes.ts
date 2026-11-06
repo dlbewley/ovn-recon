@@ -59,6 +59,9 @@ export const LANES: Lane[] = [
         visible: (_ctx, view) => view.showLldp
     },
     { id: 'eth', title: 'Physical Interfaces', visible: whenPopulated },
+    // Between the NICs and what is built on them: a VF is carved out of a NIC to its
+    // left and may be bonded or bridged to its right, like any other device.
+    { id: 'vf', title: 'Virtual Functions', visible: whenPopulated },
     { id: 'bond', title: 'Bonds', visible: whenPopulated },
     { id: 'vlan', title: 'VLAN Interfaces', visible: whenPopulated },
     { id: 'bridge', title: 'Bridges', visible: whenPopulated },
