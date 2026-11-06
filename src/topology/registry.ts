@@ -1,5 +1,6 @@
 import {
     CUDN_NETWORK_PREFIX,
+    describeBond,
     EVPN_NETWORK_DEVICES,
     EVPN_VTEP_DEVICES,
     findEvpnNetworkForDevice,
@@ -499,6 +500,17 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     ...(vxlan.learning != null ? [{ text: `MAC learning: ${vxlan.learning ? 'on' : 'off'}` }] : [])
                 ];
                 facts.push({ label: 'VXLAN', value: items, provenance: 'observed' });
+            }
+            if (raw?.type === 'bond') {
+                // What kind of bond, and what the switch side has to match. An empty
+                // list is omitted, so a bond reporting no link-aggregation adds nothing.
+                facts.push({
+                    label: 'Bond',
+                    value: describeBond(raw).map((text) => ({ text })),
+                    provenance: 'observed',
+                    hint: 'link-aggregation in NodeNetworkState: the mode, the members and the options that mode '
+                        + 'reads. The Config tab lists every bonding option.'
+                });
             }
             // EVPN: which VTEP this device was created for, or which network it serves.
             facts.push(...evpnVtepFacts(raw, ctx), ...evpnNetworkFacts(raw, ctx));

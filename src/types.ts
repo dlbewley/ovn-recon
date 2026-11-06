@@ -47,6 +47,17 @@ export interface Interface {
         learning?: boolean;
     };
     ipv4?: { enabled?: boolean; address?: Ipv4AddressEntry[] };
+    /**
+     * A bond. `port` lists the member interfaces (`slaves` in older nmstate). `options`
+     * are the kernel bonding options as nmstate reports them, which may be strings,
+     * numbers or booleans, and may be absent altogether.
+     */
+    'link-aggregation'?: {
+        mode?: string;
+        port?: string[];
+        slaves?: string[];
+        options?: Record<string, string | number | boolean | null | undefined>;
+    };
     [key: string]: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
