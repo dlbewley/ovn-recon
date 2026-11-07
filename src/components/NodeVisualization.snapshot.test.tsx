@@ -4,7 +4,7 @@ import * as React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
-import { ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState, Vtep } from '../types';
+import { ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState, SriovNetworkNodeState, Vtep } from '../types';
 import NodeVisualization from './NodeVisualization';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
@@ -137,6 +137,20 @@ describe('NodeVisualization rendered structure', () => {
                 nns={fixture<NodeNetworkState>('nns', 'sriov.json')}
                 cudns={[]} udns={[]} nads={[]} routeAdvertisements={[]} />);
         });
+        expect(describeGraph()).toMatchSnapshot();
+    });
+
+    it('sriov, with its SriovNetworkNodeState and NAD, NADs shown', () => {
+        // The sriov NAD reaches the PF whose pool it draws from, by the operator's
+        // per-node record; the VFs it hands out are not nodes (ovn-recon-s3t.66).
+        act(() => {
+            root.render(<NodeVisualization
+                nns={fixture<NodeNetworkState>('nns', 'sriov.json')}
+                nads={fixture<NetworkAttachmentDefinition[]>('nad', 'sriov.json')}
+                sriovNodeState={fixture<SriovNetworkNodeState>('sriovnetworknodestate', 'sriov.json')}
+                cudns={[]} udns={[]} routeAdvertisements={[]} />);
+        });
+        act(() => container.querySelector<HTMLInputElement>('#show-nads-toggle')!.click());
         expect(describeGraph()).toMatchSnapshot();
     });
 

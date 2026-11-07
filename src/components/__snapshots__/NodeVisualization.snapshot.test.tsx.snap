@@ -1735,3 +1735,248 @@ exports[`NodeVisualization rendered structure sriov, default view 1`] = `
   ],
 }
 `;
+
+exports[`NodeVisualization rendered structure sriov, with its SriovNetworkNodeState and NAD, NADs shown 1`] = `
+{
+  "edges": [
+    "1080,130 -> 1140,130  dashed  observed  bridge-mapping  Bridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "1080,380 -> 1140,380  dashed  observed  bridge-mapping  Bridge mapping physnet-vmdata resolves to bridge br-vmdata: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.",
+    "200,180 -> 260,180  solid  observed  sriov-pf  enp1s0f1v2 is VF 2 of enp194s0f1np1: ethernet.sr-iov.vfs[2].iface-name on enp194s0f1np1 is enp1s0f1v2.",
+    "200,280 -> 920,280  solid  observed  controller  enp65s0f0 is a port of br-mirror: NodeNetworkState reports controller: br-mirror.",
+    "200,380 -> 260,380  solid  observed  sriov-pf  enp66s0f1v4 is VF 4 of enp65s0f1: ethernet.sr-iov.vfs[4].iface-name on enp65s0f1 is enp66s0f1v4.",
+    "200,380 -> 260,480  solid  observed  sriov-pf  enp66s0f1v5 is VF 5 of enp65s0f1: ethernet.sr-iov.vfs[5].iface-name on enp65s0f1 is enp66s0f1v5.",
+    "200,380 -> 260,580  solid  observed  sriov-pf  enp66s0f1v6 is VF 6 of enp65s0f1: ethernet.sr-iov.vfs[6].iface-name on enp65s0f1 is enp66s0f1v6.",
+    "200,80 -> 260,80  solid  observed  sriov-pf  enp1s0f0v2 is VF 2 of enp194s0f0np0: ethernet.sr-iov.vfs[2].iface-name on enp194s0f0np0 is enp1s0f0v2.",
+    "640,130 -> 700,130  solid  observed  base-iface  VLAN 50 bond0.50 is carried on bond0: vlan.base-iface is bond0.",
+    "640,130 -> 920,380  solid  observed  controller  bond0 is a port of br-vmdata: NodeNetworkState reports controller: br-vmdata.",
+    "860,130 -> 920,130  solid  observed  controller  bond0.50 is a port of br-ex: NodeNetworkState reports controller: br-ex.",
+    "arc M 1080 130 Q 1125 325 1080 520  solid  observed  patch-peer  br-int port patch-br-int-to-br-ex_sriov-worker-1 patches to patch-br-ex_sriov-worker-1-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.",
+    "arc M 200 180 Q 340 105 480 130  solid  observed  controller  enp194s0f1np1 is a port of bond0: NodeNetworkState reports controller: bond0.",
+    "arc M 200 380 Q 890 130 1580 380  dashed  declared  sriov-pool  NAD default/vm-igb attaches VFs from pool vm_igb (k8s.v1.cni.cncf.io/resourceName: openshift.io/vm_igb); SriovNetworkNodeState maps that pool to VFs 0-3 of enp65s0f1 as vfio-pci, per SriovNetworkNodePolicy vm-igb.",
+    "arc M 200 80 Q 340 155 480 130  solid  observed  controller  enp194s0f0np0 is a port of bond0: NodeNetworkState reports controller: bond0.",
+  ],
+  "laneHeaders": [
+    "Physical Interfaces",
+    "Virtual Functions",
+    "Bonds",
+    "VLAN Interfaces",
+    "Bridges",
+    "Integration",
+    "Bridge Mappings",
+    "Attachments",
+    "NADs",
+    "Other Interfaces",
+  ],
+  "nodes": [
+    {
+      "fill": "#666",
+      "labels": [
+        "lo",
+        "loopback",
+        "up",
+      ],
+      "title": "lo (loopback)",
+      "x": 0,
+      "y": 0,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "physnet-vmdata",
+        "OVN Bridge Mapping",
+        "Bridge: br-vmdata",
+      ],
+      "title": "physnet-vmdata (OVN Bridge Mapping)",
+      "x": 1140,
+      "y": 340,
+    },
+    {
+      "fill": "#009900",
+      "labels": [
+        "physnet",
+        "OVN Bridge Mapping",
+        "Bridge: br-ex",
+      ],
+      "title": "physnet (OVN Bridge Mapping)",
+      "x": 1140,
+      "y": 90,
+    },
+    {
+      "fill": "#CC9900",
+      "labels": [
+        "vm-igb",
+        "NAD",
+        "Type: sriov",
+      ],
+      "title": "vm-igb (NAD)",
+      "x": 1580,
+      "y": 340,
+    },
+    {
+      "fill": "#3E8635",
+      "labels": [
+        "enp1s0f1v2",
+        "VF",
+        "up",
+      ],
+      "title": "enp1s0f1v2 (VF)",
+      "x": 260,
+      "y": 140,
+    },
+    {
+      "fill": "#3E8635",
+      "labels": [
+        "enp66s0f1v4",
+        "VF",
+        "up",
+      ],
+      "title": "enp66s0f1v4 (VF)",
+      "x": 260,
+      "y": 340,
+    },
+    {
+      "fill": "#3E8635",
+      "labels": [
+        "enp1s0f0v2",
+        "VF",
+        "up",
+      ],
+      "title": "enp1s0f0v2 (VF)",
+      "x": 260,
+      "y": 40,
+    },
+    {
+      "fill": "#3E8635",
+      "labels": [
+        "enp66s0f1v5",
+        "VF",
+        "up",
+      ],
+      "title": "enp66s0f1v5 (VF)",
+      "x": 260,
+      "y": 440,
+    },
+    {
+      "fill": "#3E8635",
+      "labels": [
+        "enp66s0f1v6",
+        "VF",
+        "up",
+      ],
+      "title": "enp66s0f1v6 (VF)",
+      "x": 260,
+      "y": 540,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "enp194s0f1np1",
+        "ethernet",
+        "up",
+      ],
+      "title": "enp194s0f1np1 (ethernet)",
+      "x": 40,
+      "y": 140,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "enp65s0f0",
+        "ethernet",
+        "up",
+      ],
+      "title": "enp65s0f0 (ethernet)",
+      "x": 40,
+      "y": 240,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "enp65s0f1",
+        "ethernet",
+        "up",
+      ],
+      "title": "enp65s0f1 (ethernet)",
+      "x": 40,
+      "y": 340,
+    },
+    {
+      "fill": "#0066CC",
+      "labels": [
+        "enp194s0f0np0",
+        "ethernet",
+        "up",
+      ],
+      "title": "enp194s0f0np0 (ethernet)",
+      "x": 40,
+      "y": 40,
+    },
+    {
+      "fill": "#663399",
+      "labels": [
+        "bond0",
+        "bond",
+        "up",
+      ],
+      "title": "bond0 (bond)",
+      "x": 480,
+      "y": 90,
+    },
+    {
+      "fill": "#9933CC",
+      "labels": [
+        "bond0.50",
+        "vlan",
+        "up",
+      ],
+      "title": "bond0.50 (vlan)",
+      "x": 700,
+      "y": 90,
+    },
+    {
+      "fill": "#FF6600",
+      "labels": [
+        "br-mirror",
+        "linux-bridge",
+        "up",
+      ],
+      "title": "br-mirror (linux-bridge)",
+      "x": 920,
+      "y": 240,
+    },
+    {
+      "fill": "#FF6600",
+      "labels": [
+        "br-vmdata",
+        "ovs-bridge",
+        "up",
+      ],
+      "title": "br-vmdata (ovs-bridge)",
+      "x": 920,
+      "y": 340,
+    },
+    {
+      "fill": "#009596",
+      "labels": [
+        "br-int",
+        "OVN Integration",
+        "3 ports",
+      ],
+      "title": "br-int (OVN Integration)",
+      "x": 920,
+      "y": 480,
+    },
+    {
+      "fill": "#FF6600",
+      "labels": [
+        "br-ex",
+        "ovs-bridge",
+        "up",
+      ],
+      "title": "br-ex (ovs-bridge)",
+      "x": 920,
+      "y": 90,
+    },
+  ],
+}
+`;

@@ -3,7 +3,7 @@ import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, D
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 
 
-import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements, Vtep } from '../types';
+import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements, SriovNetworkNodeState, Vtep } from '../types';
 import { hasLldpNeighbors } from './nodeVisualizationSelectors';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import { buildGraphContext, GraphContext } from '../topology/context';
@@ -31,6 +31,8 @@ interface NodeVisualizationProps {
     vteps?: Vtep[];
     /** The raw k8s.ovn.org/vteps annotation off this node's Node object, when readable. */
     nodeVtepsAnnotation?: string;
+    /** This node's SriovNetworkNodeState, when the SR-IOV Network Operator is present. */
+    sriovNodeState?: SriovNetworkNodeState;
 }
 
 /** A stable default: a fresh `[]` per render would rebuild the graph context every time. */
@@ -40,7 +42,8 @@ const NO_VTEPS: Vtep[] = [];
 const PAN_DRAG_THRESHOLD_PX = 3;
 
 const NodeVisualization: React.FC<NodeVisualizationProps> = ({
-    nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [], vteps = NO_VTEPS, nodeVtepsAnnotation
+    nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [], vteps = NO_VTEPS, nodeVtepsAnnotation,
+    sriovNodeState
 }) => {
 
 
@@ -78,9 +81,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
 
     const ctx: GraphContext = React.useMemo(
         () => buildGraphContext({
-            nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation
+            nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation, sriovNodeState
         }),
-        [nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation]
+        [nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation, sriovNodeState]
     );
     const { interfaces } = ctx;
     const { lldpNeighbors } = ctx;

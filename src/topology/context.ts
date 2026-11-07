@@ -10,6 +10,7 @@ import {
     NodeNetworkState,
     OvnBridgeMapping,
     RouteAdvertisements,
+    SriovNetworkNodeState,
     UserDefinedNetwork,
     Vtep
 } from '../types';
@@ -53,6 +54,13 @@ export interface GraphContext {
      * these would produce.
      */
     vtepNames: string[];
+    /**
+     * This node's SriovNetworkNodeState (ovn-recon-s3t.66): which VFs of each PF are
+     * carved for which device-plugin resource, and what driver each VF is bound to.
+     * Undefined without the SR-IOV Network Operator, when the reader may not get it,
+     * and for an imported NNS; the SR-IOV picture then rests on NodeNetworkState alone.
+     */
+    sriovNodeState?: SriovNetworkNodeState;
     /**
      * Names of interfaces that are declared bridges. Needed to resolve the case where
      * an ovs-interface shares its name with the bridge it belongs to; without it the
@@ -114,6 +122,8 @@ export interface GraphContextInput {
     vteps?: Vtep[];
     /** The raw k8s.ovn.org/vteps annotation off this node's Node object. */
     nodeVtepsAnnotation?: string;
+    /** This node's SriovNetworkNodeState, when the SR-IOV Network Operator is present. */
+    sriovNodeState?: SriovNetworkNodeState;
 }
 
 const BRIDGE_TYPES = ['linux-bridge', 'ovs-bridge', 'openvswitch'];
@@ -135,7 +145,8 @@ export const buildGraphContext = ({
     routeAdvertisements = [],
     enactments = [],
     vteps = [],
-    nodeVtepsAnnotation
+    nodeVtepsAnnotation,
+    sriovNodeState
 }: GraphContextInput): GraphContext => {
     const interfaces: Interface[] = nns?.status?.currentState?.interfaces ?? [];
     const nodeVteps = parseNodeVteps(nodeVtepsAnnotation);
@@ -152,6 +163,7 @@ export const buildGraphContext = ({
         vteps,
         nodeVteps,
         vtepNames: getKnownVtepNames(vteps, cudns, nodeVteps),
+        sriovNodeState,
         explicitBridgeNames: new Set(
             interfaces.filter((i) => BRIDGE_TYPES.includes(i.type)).map((i) => i.name)
         ),

@@ -224,6 +224,76 @@ export interface Vtep extends K8sResourceCommon {
 }
 
 /**
+ * One VF group of a physical function in SriovNetworkNodeState.spec: the VFs in
+ * `vfRange` ("0-3") are carved for the device-plugin resource `resourceName` (without
+ * the `openshift.io/` prefix a NAD's annotation carries), bound to `deviceType`
+ * (`netdevice` or `vfio-pci`), at the direction of SriovNetworkNodePolicy `policyName`.
+ */
+export interface SriovVfGroup {
+    resourceName?: string;
+    policyName?: string;
+    deviceType?: string;
+    vfRange?: string;
+    mtu?: number;
+}
+
+/** A physical function as SriovNetworkNodeState.spec configures it. */
+export interface SriovNodeStateSpecInterface {
+    name?: string;
+    pciAddress?: string;
+    numVfs?: number;
+    mtu?: number;
+    externallyManaged?: boolean;
+    vfGroups?: SriovVfGroup[];
+}
+
+/**
+ * A VF as SriovNetworkNodeState.status reports it. `name` and `mac` are present only
+ * while the VF is a host netdevice; a vfio-pci VF has a driver and a PCI address.
+ */
+export interface SriovNodeStateVf {
+    vfID?: number;
+    driver?: string;
+    pciAddress?: string;
+    name?: string;
+    mac?: string;
+    mtu?: number;
+    vendor?: string;
+    deviceID?: string;
+}
+
+/** A physical function as SriovNetworkNodeState.status reports it. */
+export interface SriovNodeStateStatusInterface {
+    name?: string;
+    pciAddress?: string;
+    driver?: string;
+    mac?: string;
+    numVfs?: number;
+    totalvfs?: number;
+    linkSpeed?: string;
+    eSwitchMode?: string;
+    externallyManaged?: boolean;
+    Vfs?: SriovNodeStateVf[];
+}
+
+/**
+ * The SR-IOV Network Operator's per-node record (`sriovnetwork.openshift.io/v1`, in
+ * the operator's namespace, named for the node). Absent on clusters without the
+ * operator. spec is what the policies asked for on this node; status is what the
+ * config daemon found.
+ */
+export interface SriovNetworkNodeState extends K8sResourceCommon {
+    spec?: {
+        interfaces?: SriovNodeStateSpecInterface[];
+    };
+    status?: {
+        interfaces?: SriovNodeStateStatusInterface[];
+        syncStatus?: string;
+        lastSyncError?: string;
+    };
+}
+
+/**
  * The per-node record of an applied NodeNetworkConfigurationPolicy. Its
  * status.desiredState names exactly which interfaces and bridge mappings the
  * policy configured on this node -- an observation, not a name-matching guess.

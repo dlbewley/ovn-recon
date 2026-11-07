@@ -831,6 +831,82 @@ export const parseNadConfig = (config: string | Record<string, unknown> | undefi
     }
 };
 
+/**
+ * NAD annotation, set by the SR-IOV Network Operator on the NAD it generates from an
+ * SriovNetwork: `Kind.group/namespace/name` of that SriovNetwork.
+ */
+export const SRIOV_OWNER_REF_ANNOTATION = 'sriovnetwork.openshift.io/owner-ref';
+/**
+ * NAD annotation naming the extended resource (`openshift.io/<pool>`) a pod requests
+ * to be handed a VF from the pool this NAD attaches to.
+ */
+export const SRIOV_RESOURCE_NAME_ANNOTATION = 'k8s.v1.cni.cncf.io/resourceName';
+
+export interface SriovNetworkOwner {
+    apiVersion: string;
+    kind: string;
+    namespace: string;
+    name: string;
+}
+
+/**
+ * The SriovNetwork behind a generated NAD, from the owner-ref annotation. The
+ * annotation carries the group but not the version; `v1` is the only version the
+ * operator serves, and is what the console link needs.
+ */
+export const parseSriovOwnerRef = (value: unknown): SriovNetworkOwner | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const match = /^([A-Za-z]+)\.([a-z0-9.-]+)\/([a-z0-9-]+)\/([a-z0-9.-]+)$/.exec(value.trim());
+    if (!match) return undefined;
+    const [, kind, group, namespace, name] = match;
+    return { apiVersion: `${group}/v1`, kind, namespace, name };
+};
+
+export const getSriovNadOwner = (nad: NetworkAttachmentDefinition): SriovNetworkOwner | undefined =>
+    parseSriovOwnerRef(nad.metadata?.annotations?.[SRIOV_OWNER_REF_ANNOTATION]);
+
+export const getSriovNadResourceName = (nad: NetworkAttachmentDefinition): string | undefined => {
+    const value = nad.metadata?.annotations?.[SRIOV_RESOURCE_NAME_ANNOTATION];
+    return typeof value === 'string' && value ? value : undefined;
+};
+
+const onOff = (value: unknown): 'on' | 'off' | undefined => {
+    if (typeof value === 'boolean') return value ? 'on' : 'off';
+    if (value === 'on' || value === 'off') return value;
+    return undefined;
+};
+
+const positiveNumber = (value: unknown): number | undefined => {
+    const n = typeof value === 'string' ? Number(value) : value;
+    return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : undefined;
+};
+
+/**
+ * The settings an sriov CNI config asks the PF to put on the VF it hands out:
+ * `trust`, `spoofchk`, `vlan` (+ `vlanQoS`), `min_tx_rate` / `max_tx_rate`. Worded
+ * as describeSriovVfSettings words the PF's own report, so the two can be read
+ * against each other. The CNI writes `"on"`/`"off"` strings; booleans are tolerated.
+ */
+export const describeSriovNadSettings = (config: Record<string, unknown> | null): string[] => {
+    if (!config) return [];
+    const parts: string[] = [];
+    const trust = onOff(config.trust);
+    if (trust) parts.push(`trust ${trust}`);
+    const spoof = onOff(config.spoofchk);
+    if (spoof) parts.push(`spoof check ${spoof}`);
+    const vlan = positiveNumber(config.vlan);
+    if (vlan != null) {
+        const qos = positiveNumber(config.vlanQoS);
+        parts.push(`VLAN ${vlan}${qos != null ? ` qos ${qos}` : ''}`);
+    }
+    const min = positiveNumber(config.min_tx_rate);
+    const max = positiveNumber(config.max_tx_rate);
+    if (min != null || max != null) {
+        parts.push(`tx rate ${min != null ? `min ${min}` : ''}${min != null && max != null ? ' ' : ''}${max != null ? `max ${max}` : ''} Mb/s`);
+    }
+    return parts;
+};
+
 export const getNadNetworkName = (nad: NetworkAttachmentDefinition): string | undefined => {
     const config = parseNadConfig(nad.spec?.config);
     if (typeof config?.name === 'string') return config.name;
