@@ -1,0 +1,284 @@
+{
+  "apiVersion": "sriovnetwork.openshift.io/v1",
+  "kind": "SriovNetworkNodeState",
+  "metadata": {
+    "annotations": {
+      "sriovnetwork.openshift.io/current-state": "Idle",
+      "sriovnetwork.openshift.io/desired-state": "Idle"
+    },
+    "name": "sriov-worker-1",
+    "uid": "11111111-2222-3333-4444-777777777777",
+    "creationTimestamp": "2026-11-06T18:31:16Z",
+    "generation": 3,
+    "namespace": "openshift-sriov-network-operator",
+    "ownerReferences": [
+      {
+        "apiVersion": "sriovnetwork.openshift.io/v1",
+        "blockOwnerDeletion": true,
+        "controller": true,
+        "kind": "SriovOperatorConfig",
+        "name": "default",
+        "uid": "66666666-7777-8888-9999-000000000000"
+      }
+    ]
+  },
+  "spec": {
+    "bridges": {},
+    "interfaces": [
+      {
+        "externallyManaged": true,
+        "mtu": 9000,
+        "name": "enp65s0f1",
+        "numVfs": 7,
+        "pciAddress": "0000:42:00.1",
+        "vfGroups": [
+          {
+            "deviceType": "vfio-pci",
+            "mtu": 9000,
+            "policyName": "vm-igb",
+            "resourceName": "vm_igb",
+            "vfRange": "0-3"
+          },
+          {
+            "deviceType": "netdevice",
+            "mtu": 9000,
+            "policyName": "pod-igb",
+            "resourceName": "pod_igb",
+            "vfRange": "4-6"
+          }
+        ]
+      },
+      {
+        "externallyManaged": true,
+        "mtu": 9000,
+        "name": "enp194s0f0np0",
+        "numVfs": 3,
+        "pciAddress": "0000:01:00.0",
+        "vfGroups": [
+          {
+            "deviceType": "vfio-pci",
+            "mtu": 9000,
+            "policyName": "vm-pf0",
+            "resourceName": "vm_pf0",
+            "vfRange": "0-1"
+          },
+          {
+            "deviceType": "netdevice",
+            "mtu": 9000,
+            "policyName": "pod-pf0",
+            "resourceName": "pod_pf0",
+            "vfRange": "2-2"
+          }
+        ]
+      },
+      {
+        "externallyManaged": true,
+        "mtu": 9000,
+        "name": "enp194s0f1np1",
+        "numVfs": 3,
+        "pciAddress": "0000:01:00.1",
+        "vfGroups": [
+          {
+            "deviceType": "vfio-pci",
+            "mtu": 9000,
+            "policyName": "vm-pf1",
+            "resourceName": "vm_pf1",
+            "vfRange": "0-1"
+          },
+          {
+            "deviceType": "netdevice",
+            "mtu": 9000,
+            "policyName": "pod-pf1",
+            "resourceName": "pod_pf1",
+            "vfRange": "2-2"
+          }
+        ]
+      }
+    ],
+    "system": {}
+  },
+  "status": {
+    "interfaces": [
+      {
+        "Vfs": [
+          {
+            "deviceID": "1016",
+            "driver": "vfio-pci",
+            "pciAddress": "0000:01:00.2",
+            "vendor": "15b3",
+            "vfID": 0
+          },
+          {
+            "deviceID": "1016",
+            "driver": "vfio-pci",
+            "pciAddress": "0000:01:00.3",
+            "vendor": "15b3",
+            "vfID": 1
+          },
+          {
+            "driver": "mlx5_core",
+            "vendor": "15b3",
+            "guid": "00:00:00:00:00:00:00:00",
+            "name": "enp1s0f0v2",
+            "vfID": 2,
+            "mtu": 9000,
+            "mac": "1a:f9:0c:d8:c2:2b",
+            "deviceID": "1016",
+            "pciAddress": "0000:01:00.4"
+          }
+        ],
+        "externallyManaged": true,
+        "driver": "mlx5_core",
+        "vendor": "15b3",
+        "name": "enp194s0f0np0",
+        "linkSpeed": "25000 Mb/s",
+        "mtu": 9000,
+        "mac": "02:11:22:33:44:b6",
+        "deviceID": "1015",
+        "linkType": "ETH",
+        "eSwitchMode": "legacy",
+        "linkAdminState": "up",
+        "numVfs": 3,
+        "pciAddress": "0000:01:00.0",
+        "totalvfs": 8
+      },
+      {
+        "Vfs": [
+          {
+            "deviceID": "1016",
+            "driver": "vfio-pci",
+            "pciAddress": "0000:01:01.2",
+            "vendor": "15b3",
+            "vfID": 0
+          },
+          {
+            "deviceID": "1016",
+            "driver": "vfio-pci",
+            "pciAddress": "0000:01:01.3",
+            "vendor": "15b3",
+            "vfID": 1
+          },
+          {
+            "driver": "mlx5_core",
+            "vendor": "15b3",
+            "guid": "00:00:00:00:00:00:00:00",
+            "name": "enp1s0f1v2",
+            "vfID": 2,
+            "mtu": 9000,
+            "mac": "da:6e:9f:31:ff:af",
+            "deviceID": "1016",
+            "pciAddress": "0000:01:01.4"
+          }
+        ],
+        "externallyManaged": true,
+        "driver": "mlx5_core",
+        "vendor": "15b3",
+        "name": "enp194s0f1np1",
+        "linkSpeed": "25000 Mb/s",
+        "mtu": 9000,
+        "mac": "02:11:22:33:44:b6",
+        "deviceID": "1015",
+        "linkType": "ETH",
+        "eSwitchMode": "legacy",
+        "linkAdminState": "up",
+        "numVfs": 3,
+        "pciAddress": "0000:01:00.1",
+        "totalvfs": 8
+      },
+      {
+        "driver": "igb",
+        "vendor": "8086",
+        "name": "enp65s0f0",
+        "linkSpeed": "1000 Mb/s",
+        "mtu": 9000,
+        "mac": "02:55:66:77:88:99",
+        "deviceID": "1521",
+        "linkType": "ETH",
+        "eSwitchMode": "legacy",
+        "linkAdminState": "up",
+        "pciAddress": "0000:42:00.0",
+        "totalvfs": 7
+      },
+      {
+        "Vfs": [
+          {
+            "deviceID": "1520",
+            "driver": "vfio-pci",
+            "pciAddress": "0000:42:10.1",
+            "vendor": "8086",
+            "vfID": 0
+          },
+          {
+            "deviceID": "1520",
+            "driver": "vfio-pci",
+            "pciAddress": "0000:42:10.5",
+            "vendor": "8086",
+            "vfID": 1
+          },
+          {
+            "deviceID": "1520",
+            "driver": "vfio-pci",
+            "pciAddress": "0000:42:11.1",
+            "vendor": "8086",
+            "vfID": 2
+          },
+          {
+            "deviceID": "1520",
+            "driver": "vfio-pci",
+            "pciAddress": "0000:42:11.5",
+            "vendor": "8086",
+            "vfID": 3
+          },
+          {
+            "deviceID": "1520",
+            "driver": "igbvf",
+            "mac": "fa:2f:1e:8b:fa:23",
+            "mtu": 9000,
+            "name": "enp66s0f1v4",
+            "pciAddress": "0000:42:12.1",
+            "vendor": "8086",
+            "vfID": 4
+          },
+          {
+            "deviceID": "1520",
+            "driver": "igbvf",
+            "mac": "fa:c9:41:1f:35:0a",
+            "mtu": 9000,
+            "name": "enp66s0f1v5",
+            "pciAddress": "0000:42:12.5",
+            "vendor": "8086",
+            "vfID": 5
+          },
+          {
+            "deviceID": "1520",
+            "driver": "igbvf",
+            "mac": "32:0a:6d:21:8c:2f",
+            "mtu": 9000,
+            "name": "enp66s0f1v6",
+            "pciAddress": "0000:42:13.1",
+            "vendor": "8086",
+            "vfID": 6
+          }
+        ],
+        "externallyManaged": true,
+        "driver": "igb",
+        "vendor": "8086",
+        "name": "enp65s0f1",
+        "linkSpeed": "1000 Mb/s",
+        "mtu": 9000,
+        "mac": "02:55:66:77:88:9a",
+        "deviceID": "1521",
+        "linkType": "ETH",
+        "eSwitchMode": "legacy",
+        "linkAdminState": "up",
+        "numVfs": 7,
+        "pciAddress": "0000:42:00.1",
+        "totalvfs": 7
+      }
+    ],
+    "syncStatus": "Succeeded",
+    "system": {
+      "rdmaMode": "shared"
+    }
+  }
+}

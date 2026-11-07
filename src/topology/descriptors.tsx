@@ -13,6 +13,7 @@ import {
     findRouteAdvertisementForVrf,
     findSriovParent,
     findVtepForDevice,
+    getSriovNadResourceName,
     getCudnsSelectedByRouteAdvertisement,
     getCudnsUsingVtep,
     getNadUpstreamNodeIdsForEdges,
@@ -23,8 +24,10 @@ import {
     EVPN_NETWORK_DEVICES,
     LldpNeighborNode,
     NETWORK_ID_ANNOTATION,
-    NODE_VTEPS_ANNOTATION
+    NODE_VTEPS_ANNOTATION,
+    SRIOV_RESOURCE_NAME_ANNOTATION
 } from '../components/nodeVisualizationSelectors';
+import { describeVfIds, findSriovPoolsForResource } from './sriovNodeState';
 import {
     ClusterUserDefinedNetwork, Interface, NetworkAttachmentDefinition, OvnBridgeMapping,
     UserDefinedNetwork
@@ -666,6 +669,23 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
                     rationale: `NAD ${nadRef} and UDN ${nadRef} share namespace and name; a UDN creates a NAD of its own name.`
                 });
             }
+
+            // An sriov NAD draws VFs from a pool; SriovNetworkNodeState says which PFs
+            // carve that pool on this node (ovn-recon-s3t.66). The VFs themselves are
+            // not nodes -- one handed to a pod has left the host -- so the PF is the end.
+            const resource = getSriovNadResourceName(nad);
+            findSriovPoolsForResource(ctx.sriovNodeState, resource).forEach((pool) => {
+                const { group } = pool;
+                out.named('sriov-pool', id, pool.pfName, 'from', {
+                    kind: 'reference',
+                    provenance: 'declared',
+                    rationale: `NAD ${nadRef} attaches VFs from pool ${group.resourceName} `
+                        + `(${SRIOV_RESOURCE_NAME_ANNOTATION}: ${resource}); SriovNetworkNodeState maps that pool to `
+                        + `${describeVfIds(pool.vfIds)} of ${pool.pfName}`
+                        + `${group.deviceType ? ` as ${group.deviceType}` : ''}`
+                        + `${group.policyName ? `, per SriovNetworkNodePolicy ${group.policyName}` : ''}.`
+                });
+            });
 
             getNadUpstreamNodeIdsForEdges(nad, ctx.cudns).forEach((upstream) => {
                 // Localnet references already arrive canonical; bridges arrive as names.

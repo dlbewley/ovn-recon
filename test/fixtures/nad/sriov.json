@@ -1,0 +1,20 @@
+[
+  {
+    "apiVersion": "k8s.cni.cncf.io/v1",
+    "kind": "NetworkAttachmentDefinition",
+    "metadata": {
+      "name": "vm-igb",
+      "namespace": "default",
+      "annotations": {
+        "k8s.v1.cni.cncf.io/resourceName": "openshift.io/vm_igb",
+        "sriovnetwork.openshift.io/owner-ref": "SriovNetwork.sriovnetwork.openshift.io/openshift-sriov-network-operator/vm-igb"
+      },
+      "creationTimestamp": "2026-11-06T18:43:05Z",
+      "generation": 1,
+      "uid": "11111111-2222-3333-4444-666666666666"
+    },
+    "spec": {
+      "config": "{\n    \"cniVersion\": \"1.0.0\",\n    \"name\": \"vm-igb\",\n    \"type\": \"sriov\",\n    \"vlan\": 0,\n    \"spoofchk\": \"off\",\n    \"trust\": \"on\",\n    \"vlanQoS\": 0,\n    \"logLevel\": \"info\",\n    \"ipam\": {}\n}"
+    }
+  }
+]

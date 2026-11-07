@@ -20,3 +20,4 @@ Same as `../nns/README.md`. In addition:
 | Fixture | Covers |
 |---|---|
 | `evpn-vxlan.json` | the NAD a Layer2 `Primary` EVPN CUDN creates in its one namespace: network ID 9, network name `cluster_udn_<cudn>`, and an `evpn` config carrying the MAC-VRF VNI, route target and bridge VLAN id |
+| `sriov.json` | the NAD the SR-IOV Network Operator generates from an `SriovNetwork`: the `sriovnetwork.openshift.io/owner-ref` and `k8s.v1.cni.cncf.io/resourceName` annotations, and an `sriov` CNI config carrying the VF settings (`trust`, `spoofchk`, `vlan`). Pairs with `../nns/sriov.json`, whose igb PF `enp65s0f1` carves the `vm_igb` pool |

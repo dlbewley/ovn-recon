@@ -4,8 +4,11 @@ import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbI
 import { DocumentTitle, K8sResourceCommon, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import NodeVisualization from './NodeVisualization';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
-import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements, Vtep } from '../types';
+import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements, SriovNetworkNodeState, Vtep } from '../types';
 import { NODE_VTEPS_ANNOTATION } from './nodeVisualizationSelectors';
+
+/** Where the SR-IOV Network Operator keeps its per-node state. */
+const SRIOV_OPERATOR_NAMESPACE = 'openshift-sriov-network-operator';
 
 interface NodeNetworkStateDetailsProps {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -124,6 +127,22 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
     // and handing the whole object down would rebuild the graph on every heartbeat.
     const nodeVtepsAnnotation = node?.metadata?.annotations?.[NODE_VTEPS_ANNOTATION];
 
+    // SR-IOV (ovn-recon-s3t.66). The operator keeps one SriovNetworkNodeState per node,
+    // named for it, in its own namespace. On a cluster without the operator the kind
+    // does not exist and the watch yields nothing; a reader who may not get it gets the
+    // same. Either way the graph falls back to what NodeNetworkState alone says.
+    const sriovNodeStateWatchResource = React.useMemo(() => name ? {
+        groupVersionKind: {
+            group: 'sriovnetwork.openshift.io',
+            version: 'v1',
+            kind: 'SriovNetworkNodeState',
+        },
+        namespace: SRIOV_OPERATOR_NAMESPACE,
+        name: name,
+        isList: false,
+    } : null, [name]);
+    const [sriovNodeState] = useK8sWatchResource<SriovNetworkNodeState>(sriovNodeStateWatchResource);
+
     if (!name) {
         return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
     }
@@ -182,6 +201,7 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
                     nns={nns} cudns={cudns} udns={udns} nads={nads}
                     routeAdvertisements={routeAdvertisements} enactments={enactments}
                     vteps={vteps || undefined} nodeVtepsAnnotation={nodeVtepsAnnotation}
+                    sriovNodeState={sriovNodeState || undefined}
                 />
             </PageSection>
         </>

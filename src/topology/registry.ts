@@ -3,8 +3,13 @@ import {
     describeBond,
     EVPN_NETWORK_DEVICES,
     EVPN_VTEP_DEVICES,
+    describeSriovNadSettings,
     describeSriovVfSettings,
     extractLldpNeighbors,
+    getSriovNadOwner,
+    getSriovNadResourceName,
+    SRIOV_OWNER_REF_ANNOTATION,
+    SRIOV_RESOURCE_NAME_ANNOTATION,
     findSriovParent,
     getSriovConfig,
     getSriovVfs,
@@ -47,6 +52,9 @@ import {
 import { GraphContext } from './context';
 import { formatSubnets } from './subnets';
 import { baseFacts } from './facts';
+import {
+    describeVfIds, findSriovPoolForVf, findSriovPoolsForResource, getSriovVfPoolsForPf, getSriovVfState
+} from './sriovNodeState';
 import { getApiResourcePath, getNamespaceQueryPath, getProjectPath } from './links';
 import {
     AttachmentNode, Fact, FactItem, IntegrationBridgeNode, NodeKind, NodeKindDefinition,
@@ -169,7 +177,7 @@ const lldpFacts = (raw: Interface): Fact[] => {
  * it is a host interface: one that is not has gone somewhere nmstate cannot follow,
  * and that absence is the fact an operator is usually after.
  */
-const sriovPfFacts = (raw: Interface): Fact[] => {
+const sriovPfFacts = (raw: Interface, ctx: GraphContext): Fact[] => {
     const sriov = getSriovConfig(raw);
     if (!sriov) {
         return [];
@@ -180,24 +188,58 @@ const sriovPfFacts = (raw: Interface): Fact[] => {
     const capacity = total === 0
         ? `Capable, no VFs configured${max != null ? ` (max ${max})` : ''}`
         : `${total}${max != null ? ` of ${max}` : ''} VF${total === 1 ? '' : 's'} configured`;
+    const nodeState = ctx.sriovNodeState;
     const items: FactItem[] = [
         { text: capacity },
         ...(sriov['drivers-autoprobe'] === false ? [{ text: 'Driver autoprobe off: new VFs get no host driver' }] : []),
         ...vfs.map((vf) => {
             const name = vf['iface-name'];
+            // What the operator knows about this VF that nmstate does not: the driver
+            // it is bound to and the pool it was carved for.
+            const vfState = getSriovVfState(nodeState, raw.name, vf.id);
+            const pool = findSriovPoolForVf(nodeState, raw.name, vf.id);
             const where = name
                 ? name
-                : `no host interface${vf['mac-address'] ? ` (${vf['mac-address']})` : ''}`;
-            return { text: [`VF ${vf.id}: ${where}`, ...describeSriovVfSettings(vf)].join(' · ') };
+                : vfState?.driver
+                    ? `${vfState.driver}${vfState.pciAddress ? ` at ${vfState.pciAddress}` : ''}`
+                    : `no host interface${vf['mac-address'] ? ` (${vf['mac-address']})` : ''}`;
+            return {
+                text: [
+                    `VF ${vf.id}: ${where}`,
+                    ...(pool?.group.resourceName ? [`pool ${pool.group.resourceName}`] : []),
+                    ...describeSriovVfSettings(vf)
+                ].join(' · ')
+            };
         })
     ];
-    return [{
-        label: 'SR-IOV',
-        value: items,
-        provenance: 'observed',
-        hint: 'ethernet.sr-iov in NodeNetworkState. A VF with no host interface has been moved into a pod\'s '
-            + 'network namespace or bound to a userspace driver such as vfio-pci; nmstate sees only that it left.'
-    }];
+    const pools = getSriovVfPoolsForPf(nodeState, raw.name);
+    return [
+        {
+            label: 'SR-IOV',
+            value: items,
+            provenance: 'observed',
+            hint: nodeState
+                ? 'ethernet.sr-iov in NodeNetworkState, with each VF\'s driver and pool from SriovNetworkNodeState. '
+                    + 'A VF bound to vfio-pci is passed through to a VM or a userspace driver; a VF with no host '
+                    + 'interface and no driver has been moved into a pod\'s network namespace.'
+                : 'ethernet.sr-iov in NodeNetworkState. A VF with no host interface has been moved into a pod\'s '
+                    + 'network namespace or bound to a userspace driver such as vfio-pci; nmstate sees only that it left.'
+        },
+        ...(pools.length > 0
+            ? [{
+                label: 'VF Pools',
+                value: pools.map((pool) => ({
+                    text: `${pool.group.resourceName ?? 'unnamed'}: ${describeVfIds(pool.vfIds)}`
+                        + `${pool.group.deviceType ? `, ${pool.group.deviceType}` : ''}`
+                        + `${pool.group.policyName ? ` (policy ${pool.group.policyName})` : ''}`,
+                    ...(pool.group.policyName ? { ref: sriovPolicyRef(pool.group.policyName) } : {})
+                })),
+                provenance: 'declared' as const,
+                hint: 'spec.interfaces[].vfGroups in SriovNetworkNodeState: how the SR-IOV Network Operator split this '
+                    + 'PF\'s VFs into device-plugin resources, and which SriovNetworkNodePolicy asked for each.'
+            }]
+            : [])
+    ];
 };
 
 /** Which physical function this VF was carved out of, by that PF's own report. */
@@ -206,15 +248,23 @@ const sriovVfFacts = (raw: Interface, ctx: GraphContext): Fact[] => {
     if (!parent) {
         return [];
     }
+    const pool = findSriovPoolForVf(ctx.sriovNodeState, parent.pf.name, parent.vf.id);
     return [{
         label: 'SR-IOV VF',
         value: [
             { text: `VF ${parent.vf.id} of ${parent.pf.name}` },
+            ...(pool?.group.resourceName
+                ? [{
+                    text: `pool ${pool.group.resourceName}${pool.group.deviceType ? ` (${pool.group.deviceType})` : ''}`,
+                    ...(pool.group.policyName ? { ref: sriovPolicyRef(pool.group.policyName) } : {})
+                }]
+                : []),
             ...describeSriovVfSettings(parent.vf).map((text) => ({ text }))
         ],
         provenance: 'observed',
         hint: `ethernet.sr-iov.vfs[${parent.vf.id}].iface-name on ${parent.pf.name} is ${raw.name}. `
             + 'The settings are the PF\'s, which decide what the VF may do.'
+            + (pool ? ' The pool is from SriovNetworkNodeState.' : '')
     }];
 };
 
@@ -272,6 +322,13 @@ const raRef = (name: string): ResourceRef => ({
 
 const nadRef = (namespace: string, name: string): ResourceRef => ({
     apiVersion: 'k8s.cni.cncf.io/v1', kind: 'NetworkAttachmentDefinition', name, namespace
+});
+
+/** The operator's policies live in its own namespace. */
+const SRIOV_OPERATOR_NAMESPACE = 'openshift-sriov-network-operator';
+
+const sriovPolicyRef = (name: string): ResourceRef => ({
+    apiVersion: 'sriovnetwork.openshift.io/v1', kind: 'SriovNetworkNodePolicy', name, namespace: SRIOV_OPERATOR_NAMESPACE
 });
 
 /** Cluster-scoped, so no namespace. */
@@ -674,7 +731,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 if (typeof nic.driver === 'string' && nic.driver) {
                     facts.push({ label: 'Driver', value: nic.driver, provenance: 'observed' });
                 }
-                facts.push(...linkFacts(nic), ...sriovPfFacts(nic), ...sriovVfFacts(nic, ctx));
+                facts.push(...linkFacts(nic), ...sriovPfFacts(nic, ctx), ...sriovVfFacts(nic, ctx));
             }
             const macAddress = getMacAddress(raw);
             if (macAddress) {
@@ -905,7 +962,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
     },
     nad: {
         label: 'NAD',
-        facts: (node) => {
+        facts: (node, ctx) => {
             const nad = node.raw as NetworkAttachmentDefinition;
             const config = parseNadConfig(nad?.spec?.config);
             const nadType = typeof config?.type === 'string' ? config.type : 'Unknown';
@@ -922,12 +979,69 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 ? 'Pattern-extracted from a CNI config string that did not parse as JSON.'
                 : 'Named by the NAD\'s CNI config.';
 
+            // An sriov NAD is generated from an SriovNetwork, which its annotations
+            // name; its config carries the VF settings the CNI applies (ovn-recon-s3t.64).
+            const sriovOwner = nad ? getSriovNadOwner(nad) : undefined;
+            const sriovResource = nad ? getSriovNadResourceName(nad) : undefined;
+            const sriovSettings = nadType === 'sriov' ? describeSriovNadSettings(config) : [];
+            const sriovPools = findSriovPoolsForResource(ctx.sriovNodeState, sriovResource);
+            const sriovFacts: Fact[] = [
+                ...(sriovOwner
+                    ? [{
+                        label: 'SR-IOV Network',
+                        value: [{
+                            text: `${sriovOwner.namespace}/${sriovOwner.name}`,
+                            ref: { apiVersion: sriovOwner.apiVersion, kind: sriovOwner.kind, namespace: sriovOwner.namespace, name: sriovOwner.name }
+                        }],
+                        provenance: 'declared',
+                        hint: `The ${SRIOV_OWNER_REF_ANNOTATION} annotation, set by the SR-IOV Network Operator on the NAD `
+                            + 'it generates from this SriovNetwork.'
+                    } as Fact]
+                    : []),
+                ...(sriovResource
+                    ? [{
+                        label: 'Device Resource',
+                        value: sriovResource,
+                        provenance: 'declared',
+                        hint: `The ${SRIOV_RESOURCE_NAME_ANNOTATION} annotation: the extended resource a pod requests to be `
+                            + 'handed a VF from this pool.'
+                            + (ctx.sriovNodeState
+                                ? ''
+                                : ' Which PFs feed the pool is in SriovNetworkNodeState, which was not read on this cluster.')
+                    } as Fact]
+                    : []),
+                ...(sriovPools.length > 0
+                    ? [{
+                        label: 'VF Pool',
+                        value: sriovPools.map((pool) => ({
+                            text: `${describeVfIds(pool.vfIds)} of ${pool.pfName}`
+                                + `${pool.group.deviceType ? `, ${pool.group.deviceType}` : ''}`
+                                + `${pool.group.policyName ? ` (policy ${pool.group.policyName})` : ''}`,
+                            ...(pool.group.policyName ? { ref: sriovPolicyRef(pool.group.policyName) } : {})
+                        })),
+                        provenance: 'declared',
+                        hint: 'spec.interfaces[].vfGroups in this node\'s SriovNetworkNodeState, matched to the NAD\'s '
+                            + 'resource name without its prefix. A VF handed to a pod leaves the host, so the PF is the '
+                            + 'nearest thing on this node the attachment can be tied to.'
+                    } as Fact]
+                    : []),
+                ...(sriovSettings.length > 0
+                    ? [{
+                        label: 'VF Settings',
+                        value: sriovSettings.map((text) => ({ text })),
+                        provenance: 'declared',
+                        hint: 'From the NAD\'s CNI config: what the CNI asks the PF to set on the VF it hands out.'
+                    } as Fact]
+                    : [])
+            ];
+
             return [
                 { label: 'Type', value: [{ text: node.subtitle, href: NAD_API }], provenance: 'declared' },
                 { label: 'CNI Type', value: nadType, provenance: fromRegex ? 'inferred' : 'declared', hint: fromRegex ? upstreamHint : undefined },
                 ...(nadName
                     ? [{ label: 'Network Name', value: nadName, provenance: 'declared' } as Fact]
                     : []),
+                ...sriovFacts,
                 ...(bridges.length > 0
                     ? [{
                         label: 'Bridge',
