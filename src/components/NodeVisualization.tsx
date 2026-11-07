@@ -349,7 +349,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         // A lane-skipping edge must not run THROUGH a node in a lane it crosses:
         // aligned children sit exactly on their parent's sight-line, and a straight
         // segment behind one reads as a chain that does not exist (s3t.49).
+        //
+        // Only laned nodes are obstacles. The foot grid sits below every lane and
+        // draws no edges, and its nodes carry GRID-relative coordinates starting at
+        // 0,0 -- fed in as they are they read as boxes in the top-left of the canvas
+        // and bowed unrelated lane edges there (s3t.54).
         const obstacles = Array.from(placedNodeById.values())
+            .filter((node) => node.laneId !== 'other')
             .filter((node) => node.id !== edge.source && node.id !== edge.target)
             .map((node) => ({ x: node.x, y: node.y, width: itemWidth, height: node.height }));
         const bow = computeEdgeBow(from, to, obstacles);
