@@ -207,16 +207,16 @@ should state the OpenShift 4.22+ requirement plainly.
 > |---|---|---|
 > | `:stable` | stable releases only | current |
 > | `:latest` | every release, prereleases included | current |
-> | `:v4.20` | alias of `:latest` | **deprecated, will be deleted** (`ovn-recon-09z`) |
+> | `:v4.20` | nothing | **deleted** (`ovn-recon-09z`); move to `:stable` or `:latest` |
 >
 > `:latest` changed meaning — it used to be stable-only. A Subscription on the `stable` *channel* is
 > unaffected either way, since the channel decides what is offered, but a CatalogSource that wants
 > stable-only content should point at `:stable`.
 >
 > `:v4.20` stopped meaning anything after the FBC migration: one catalog serves every supported
-> OpenShift version, so the tag never selected a 4.20-specific catalog. When it is retired it will be
-> **deleted**, not merely left unpublished — a `CatalogSource` still pointing at it should fail
-> visibly rather than silently serve an ever-staler catalog. See
+> OpenShift version, so the tag never selected a 4.20-specific catalog. It was **deleted**, not
+> merely left unpublished, so a `CatalogSource` still pointing at it fails visibly rather than
+> silently serving an ever-staler catalog. See
 > [fbc-migration.md](docs/tasks/fbc-migration.md#catalog-image-tags).
 
 > [!NOTE]
@@ -338,7 +338,7 @@ are easy to get wrong:
    lightweight. `git push --dry-run --follow-tags` lists exactly which refs would go.
 
 > [!IMPORTANT]
-> The workflow triggers on `tags: ['v*']` with **no branch restriction**, and several outputs are branch-independent: the floating `:latest` image tags, the channel selection (`stable,latest`), and the hard-coded catalog tag `quay.io/dbewley/bewley-operator-catalog:v4.20`. Those outputs being branch-independent no longer matters for a maintenance branch, since the 4.22
+> The workflow triggers on `tags: ['v*']` with **no branch restriction**, and several outputs are branch-independent: the floating `:latest` image tags, the channel selection (`stable,latest`), and the floating catalog tags (`quay.io/dbewley/bewley-operator-catalog:latest` and `:stable`). Those outputs being branch-independent no longer matters for a maintenance branch, since the 4.22
 break means there will not be one, but it still means any tag pushed from any branch publishes as if
 it came from `main`.
 >

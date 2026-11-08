@@ -398,7 +398,7 @@ CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(VERSION)
 # Platforms for the multi-arch catalog image.
 CATALOG_PLATFORMS ?= linux/amd64,linux/arm64
 # Additional tags for the same manifest list, space separated
-# (e.g. ":latest :v4.20" on a prerelease, plus ":stable" on a stable release).
+# (CI passes ":stable" on a stable release and nothing on a prerelease).
 CATALOG_EXTRA_IMG ?=
 # Podman: "podman buildx build --push" is not supported, so the podman path
 # builds a local manifest list here and pushes it with "manifest push --all".

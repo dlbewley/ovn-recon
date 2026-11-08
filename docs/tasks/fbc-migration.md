@@ -159,7 +159,7 @@ installed?" Run it before every release and after any hand edit to `catalog.json
 cd operator
 make catalog-fbc-verify                 # integrity + additive-diff vs the published :latest
 make catalog-fbc-verify CATALOG_REF=    # integrity only, offline
-make catalog-fbc-verify CATALOG_REF=quay.io/dbewley/bewley-operator-catalog:v4.20
+make catalog-fbc-verify CATALOG_REF=quay.io/dbewley/bewley-operator-catalog:stable
 ```
 
 It runs two independent checks and exits non-zero on either.
@@ -240,7 +240,7 @@ from experimental content:
 |---|---|---|
 | `:stable` | stable releases only | was `:latest` |
 | `:latest` | every release, prereleases included | was `:v4.20` |
-| `:v4.20` | deprecated alias of `:latest` | **being retired** — see below |
+| `:v4.20` | nothing | **deleted** — see below |
 
 > [!WARNING]
 > **`:latest` changed meaning.** It used to be stable-only and now includes prereleases. A
@@ -249,24 +249,22 @@ from experimental content:
 > `:stable`. `manifests/catalogsource.yaml` currently points at `:latest` and is GitOps-managed.
 
 `:v4.20` never meant anything after the FBC migration: one catalog serves every supported OpenShift
-version. It is still published so existing CatalogSources keep resolving.
+version. It was kept for a while as an alias of `:latest` so existing CatalogSources kept resolving.
 
-**Retirement (`ovn-recon-09z`).** Every GitHub release carries a deprecation notice naming the
-replacement tags, added to the release body in `build-test.yaml`. Once the notice has ridden **two
-stable releases**, stop publishing `:v4.20` (drop it from `CATALOG_EXTRA_IMG` in
-`operator-release.yaml`), delete the tag from quay, and remove the notice block — all in the same
-change.
+**Retirement (`ovn-recon-09z`, done 2026-11).** Every GitHub release from v1.0.0 through v1.0.5
+carried a deprecation notice naming the replacement tags, added to the release body in
+`build-test.yaml`. Once the notice was more than 30 days old and several stable releases had carried
+it, `:v4.20` was dropped from `CATALOG_EXTRA_IMG` in `operator-release.yaml`, deleted from quay, and
+the notice block removed — all in the same change.
 
-Deleting rather than merely unpublishing is deliberate. A tag that stops being updated keeps
+Deleting rather than merely unpublishing was deliberate. A tag that stops being updated keeps
 resolving forever, so a consumer pinned to it silently installs an ageing catalog and misses fixes
 with no signal. A deleted tag fails at the `CatalogSource`, which the cluster surfaces immediately.
 
 > [!NOTE]
-> As of this writing `:stable` does not exist yet — the tag rename shipped in a PR but no release has
-> been tagged since, so only `:latest` (still the pre-migration sqlite catalog, from June) and
-> `:v4.20` (the current FBC catalog) are published. The first stable release creates `:stable` and
-> brings `:latest` current. Until then `:v4.20` is, confusingly, the *only* tag carrying current
-> content — which is itself an argument for getting a release out before retiring anything.
+> Historical: when the tag rename shipped, `:stable` did not exist yet and `:v4.20` was the only tag
+> carrying the current FBC catalog (`:latest` still served the pre-migration sqlite catalog). The
+> first stable release, v1.0.0, created `:stable` and brought `:latest` current.
 
 ### Channels
 
@@ -306,8 +304,9 @@ integrity check alone when the removal is intentional.
 
 ### Cutover risk
 
-`:latest` still serves the **sqlite** catalog — prereleases only push `:v4.20`. The first stable
-release publishes FBC to `:latest`, and that is the moment existing consumers switch format.
+Before v1.0.0, `:latest` still served the **sqlite** catalog — prereleases only pushed the (since
+deleted) `:v4.20`. The first stable release published FBC to `:latest`, and that was the moment
+existing consumers switched format.
 Rollback point for the sqlite image:
 
 ```
@@ -327,9 +326,10 @@ change in this repo.
 - **Prerelease entries are still carried** in the `latest` channel. Their images are pruned on a
   cron, so those references will eventually dangle. Pruning them is a behavior change for anyone
   subscribed to `latest` and is tracked separately.
-- **Catalog tag taxonomy is unchanged.** The image still publishes to `:v4.20` and `:latest` so
-  existing `CatalogSource` resources keep working. The `:v4.20` tag no longer implies an OpenShift
-  version — one FBC catalog serves every supported release. Decided in `ovn-recon-w35` / `ovn-recon-ych`.
+- **Catalog tag taxonomy was unchanged by the migration.** The image kept publishing to `:v4.20`
+  and `:latest` so existing `CatalogSource` resources kept working; `:v4.20` was later retired and
+  deleted (`ovn-recon-09z`), since one FBC catalog serves every supported release and the tag no
+  longer implied an OpenShift version. Decided in `ovn-recon-w35` / `ovn-recon-ych`.
 - ~~`catalog-push-pruned-index` / legacy package removal still uses `opm index rm`.~~ **Removed.**
   Under FBC, graph removal is a text edit to `catalog.json` plus `make catalog-fbc-verify
   CATALOG_REF=` — see [OLM-BUNDLE-GUIDE.md](../OLM-BUNDLE-GUIDE.md).

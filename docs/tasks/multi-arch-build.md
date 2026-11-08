@@ -234,7 +234,7 @@ lists in the release workflow via **`docker-buildx`** / **`bundle-buildx`**.
 
 | Image | Multi-arch required? | Notes |
 | --- | --- | --- |
-| `quay.io/dbewley/bewley-operator-catalog` | **Yes** | **Minimum bar.** Must be a manifest list with **linux/amd64** and **linux/arm64** for `v4.20`, `latest`, and any other tags used by `CatalogSource` (see [Why](#why)). |
+| `quay.io/dbewley/bewley-operator-catalog` | **Yes** | **Minimum bar.** Must be a manifest list with **linux/amd64** and **linux/arm64** for `latest`, `stable`, and any other tags used by `CatalogSource` (see [Why](#why)). |
 | `quay.io/dbewley/ovn-recon-operator` | **Strongly recommended** | OLM and direct installs on arm64 should pull native manager binaries; aligns with SDK multi-arch expectations for referenced operator images. |
 | `quay.io/dbewley/ovn-recon-operator-bundle` | **Strongly recommended** | Keeps bundle pulls architecture-correct alongside the catalog index; low overhead with buildx. |
 | `quay.io/dbewley/ovn-collector` | **Yes** | Console plugin pulls this image on arm64 clusters; single-arch amd64 manifests show missing or **unknown** platform rows in Quay for arm64 consumers. |
@@ -261,8 +261,8 @@ From `operator-release.yaml` today:
   `quay.io/dbewley/ovn-recon-operator:latest` (stable only).
 - **Bundle:** `quay.io/dbewley/ovn-recon-operator-bundle:$VERSION` and
   `:latest` (stable only).
-- **Catalog:** `quay.io/dbewley/bewley-operator-catalog:v4.20` always; plus
-  `quay.io/dbewley/bewley-operator-catalog:latest` for stable releases.
+- **Catalog:** `quay.io/dbewley/bewley-operator-catalog:latest` always; plus
+  `quay.io/dbewley/bewley-operator-catalog:stable` for stable releases.
 
 The plan assumes those tag names stay the same unless you intentionally
 version the catalog tag per operator release (today **catalog is not**
@@ -277,9 +277,9 @@ Early bundles used OLM package name **`operator`** (operator-sdk default). Incre
 ```bash
 cd operator
 make catalog-push-pruned-index \
-  FROM_INDEX=quay.io/dbewley/bewley-operator-catalog:v4.20 \
-  CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20 \
-  CATALOG_EXTRA_IMG=quay.io/dbewley/bewley-operator-catalog:latest
+  FROM_INDEX=quay.io/dbewley/bewley-operator-catalog:latest \
+  CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:latest \
+  CATALOG_EXTRA_IMG=quay.io/dbewley/bewley-operator-catalog:stable
 ```
 
 Catalog recipes use **`opm` from `operator/bin/opm`** (downloaded on first **`make opm`**). Do not rely on a global **`opm` on `PATH`**—some setups mistakenly symlink **`opm`** to **`oc`**, which produces `unknown command "index" for "oc"`.
@@ -315,7 +315,7 @@ Expect **ovn-recon-operator**; no **operator** row.
 Run (or enforce in CI immediately after push) for **every** tag you publish that
 clusters might use:
 
-- [ ] **`oc image info --show-multiarch quay.io/dbewley/bewley-operator-catalog:v4.20`** — must list **linux/amd64** and **linux/arm64** (and the same for **`latest`** when that tag is updated).
+- [ ] **`oc image info --show-multiarch quay.io/dbewley/bewley-operator-catalog:latest`** — must list **linux/amd64** and **linux/arm64** (and the same for **`stable`** when that tag is updated).
 - [ ] **`oc image info --show-multiarch`** on **`quay.io/dbewley/ovn-recon-operator:$VERSION`** (and **`bundle`** when multi-arch is implemented) for the same release.
 - [ ] **`oc image info --show-multiarch quay.io/dbewley/ovn-collector:$VERSION`** and **`quay.io/dbewley/ovn-recon:$VERSION`** after a release that touched collector or plugin paths.
 - [ ] **`skopeo inspect --raw docker://…`** + **`jq`** check that the top-level **`mediaType`** is a manifest list when multi-arch is intended (see [Verify](#verify)).
