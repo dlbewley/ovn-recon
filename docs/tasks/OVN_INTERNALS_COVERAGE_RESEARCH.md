@@ -78,11 +78,11 @@ UDN, and several Localnet CUDNs. One zone (one node's NB database):
 | Logical_Router_Static_Route | 65 | `route_table` always empty |
 | Logical_Router_Policy | 17 | all EgressIP-owned (`k8s.ovn.org/owner-type=EgressIP`), incl. per-UDN copies |
 | NAT | 24 | `external_port_range` always set (empty string), `match` on 2 |
-| Load_Balancer | 257 | one per Service and protocol, `k8s.ovn.org/kind=Service`, `k8s.ovn.org/owner=ns/name` |
-| Load_Balancer_Group | 12 | `clusterLBGroup` (235 LBs) attached to every workload switch and GR; per-UDN groups empty |
-| ACL | 561 | owner types: NetworkPolicy 291, NetpolNamespace 244, MulticastCluster 12, NetpolDefault 6, NetpolNode 3, UDNIsolation 5 |
-| Port_Group | 430 | owner types: NetworkPolicy 188, NetpolNamespace 122, Namespace 113, Cluster 6, UDNIsolation 1 |
-| Address_Set | 37 | owner types: PodSelector 31, EgressIP 3, ClusterNodeIPs, UDNEnabledService, EgressService |
+| Load_Balancer | 345 | one per Service and protocol (328 Services), `k8s.ovn.org/kind=Service`, `k8s.ovn.org/owner=ns/name`; 319 cluster-scoped rows identical in every zone plus 26 to 35 node-scoped rows (`_node_router+switch_<node>` and friends) |
+| Load_Balancer_Group | 12 | no `external_ids`; `clusterLBGroup` (319 LBs) attached to every node switch and GR; `clusterSwitchLBGroup`, `clusterRouterLBGroup` and the per-UDN triples empty |
+| ACL | 665 | identical in every zone; owner types: NetworkPolicy 368, NetpolNamespace 268, MulticastCluster 12, NetpolDefault 6, UDNIsolation 6, NetpolNode 3, AdvertisedNetwork 2; 660 attached via `Port_Group.acls`, 5 via `Logical_Switch.acls`, none orphaned |
+| Port_Group | 1296 | identical in every zone except `ports` (the zone's own LSPs); owner types: Namespace 933, NetworkPolicy 221, NetpolNamespace 134, Cluster 6, UDNIsolation 1, AdvertisedNetwork 1; 941 rows are empty Namespace groups (one per namespace per network controller) |
+| Address_Set | 65 | owner types: PodSelector 57, EgressIP 4, ClusterNodeIPs, UDNEnabledService, EgressService, AdvertisedNetwork; all `ip-family=v4` |
 | QoS | 3 | EgressIP reply-traffic marks, one per network |
 | Meter / Meter_Band | 10 / 2 | acl-logging, arp/icmp rate limiters |
 | Copp | 1 | referenced by every router |
@@ -93,6 +93,16 @@ UDN, and several Localnet CUDNs. One zone (one node's NB database):
 
 Whole-database dump: 39 tables, about 800 KB of JSON, 0.17 s wall time for
 one exec. ACL and Load_Balancer dominate the byte count.
+
+Recounted 2026-11-08 on two zones while refining tiers 2 and 3 (the five
+policy and service rows above carry the new figures; the cluster had grown
+to 133 namespaces, 221 NetworkPolicies, 381 Services and seven network
+controllers). ACL, Port_Group and Address_Set are cluster-wide objects and
+come out identical in every zone; a zone's `Port_Group.ports` holds only
+its own LSPs. One transact of the eight collected tables plus the five
+above is 1.80 MB of wire JSON on the largest zone (1.0 s wall from a
+workstation), of which ACL is 589 KB and Port_Group 656 KB. See the
+2026-11-08 decision for `.9` in section 11 for the projected sizes.
 
 The v2 fixture corpus (`collector/fixtures/snapshots/*.json`) reflects only
 the six collected tables; any expansion needs a corpus refresh
@@ -586,6 +596,61 @@ pod port (equal to `addresses`); `tag_request` on the VLAN localnet ports;
    it with a count chip; it stays as-is for now since the Ports tab is one
    click away and the list still answers "which pods" at a glance.
 
+### 2026-11-08: `ovn-recon-e2b.5`, `.6` and `.9` refined
+
+Design-only pass; verified read-only on the lab cluster (OVN 26.03, NB
+schema 7.18.0, interconnect, 10 zones) with one `ovsdb-client transact`
+per zone selecting the eight collected tables plus `ACL`, `Port_Group`,
+`Address_Set`, `Load_Balancer` and `Load_Balancer_Group`, on a
+virtualization node and a control-plane node. Full text is in the beads;
+the decisions that bind the other beads are recorded here.
+
+1. **Payload (`.9`): one collect, one cache entry, projection on the way
+   out.** The five tables join `nbTables` (still one exec, about 1.0 s per
+   zone against 0.34 s today). The disk cache keeps the full snapshot (about
+   1.5 MB per zone, 15 MB for ten against the 1Gi default PVC). Both
+   endpoints take `?include=policy,services`; without it the response is
+   today's. Sections not requested are omitted, so an absent key means "not
+   requested" and `[]` means "collected and empty". Measured per zone:
+   today's eight tables 189 KB projected; the policy tier adds 1.06 MB
+   (ACL 500 KB, Port_Group 518 KB, Address_Set 43 KB; 138 KB gzipped); the
+   service tier adds 201 KB (27 KB gzipped). `external_ids` is 44 % of ACL
+   and 57 % of Port_Group bytes, `match` only 8 % of ACL, so column
+   selection buys little; gzip buys 7 to 8x and the snapshot endpoints gain
+   it. A separate `/:node/policy` path was rejected (new route, a second
+   fetch helper and a client-side merge for the same bytes); table-granular
+   `tables=` was rejected in favour of the two sections the UI consumes.
+2. **The aggregate stays ladder-only.** Policy tables are identical in every
+   zone, so the cluster endpoint would carry ten copies of the same megabyte.
+   The cluster view loads sections from the representative zone's per-node
+   snapshot, the rule the Config tab already follows.
+3. **Policy plane (`.5`) is per-port and per-switch summary, not tables.**
+   660 of 665 ACLs attach through `Port_Group.acls` and 5 through
+   `Logical_Switch.acls`; `match` names groups as `@name` and address sets
+   as `$name`, all resolvable by name. Every vif port sits in 1 to 7 groups
+   with a few dozen applicable ACLs, which fits the Ports tab's expanded row
+   (filling the `.4` placeholder) and the switch Overview count; the
+   665-row table is `.8`'s. Ownership is read generically from the four
+   `k8s.ovn.org/*` keys; only NetworkPolicy, Namespace and NetpolNamespace
+   owners get console links. Empty Namespace port groups (941 of 1296, one
+   per namespace per network controller) are transcribed, not filtered.
+   AdminNetworkPolicy, BaselineAdminNetworkPolicy, EgressFirewall and
+   EgressIP ACLs do not exist on the lab and stay unverified.
+4. **Service plane (`.6`) attaches through groups, and gets a drawer tab.**
+   `clusterLBGroup` holds every cluster-scoped LB (319) and is referenced by
+   each node switch and gateway router alongside 22 node-scoped LBs set
+   directly; the per-UDN groups exist and are empty. A construct's VIP set
+   is the union of direct LBs and group members. `vips` stays the raw
+   `"vip:port" -> "backend,backend"` map (empty string = no endpoints, 47 of
+   576 on the lab); the Service link comes from `k8s.ovn.org/owner`. Unlike
+   ports, Service count per node is unbounded, so the Services tab renders
+   at most 200 filtered rows with a "narrow the filter" notice. Section 7's
+   "tier 3 does not fit the drawer" is softened to this capped tab; the
+   uncapped table remains `.8`'s.
+5. **Ordering.** `.9` first (the include mechanism with zero sections), then
+   `.5` and `.6` in either order; `.8` after `.5`. Dependencies recorded:
+   `.5` and `.6` after `.9`, `.5` after `.4`, `.8` after `.5`.
+
 ## Initial Beads Backlog Mapping
 
 | Bead | Title | Section |
@@ -603,14 +668,16 @@ pod port (equal to `addresses`); `tag_request` on the VLAN localnet ports;
 | `ovn-recon-e2b.10` | Revisit kck.1 decision 4: SB bindings and chassis | 6, tier 5 |
 
 Dependencies recorded in beads: `.5`, `.6`, `.7`, `.9` after `.1`; `.8`
-after `.4`. (`.4` after `.3` was removed on 2026-11-07, see section 11.)
+after `.4`; since 2026-11-08 also `.5` and `.6` after `.9`, `.5` after `.4`,
+and `.8` after `.5`. (`.4` after `.3` was removed on 2026-11-07, see
+section 11.)
 
 ## Appendix A: NB table inventory (schema 7.19.0) and disposition
 
 | Table | Root | Collected | Lab rows | Disposition |
 |---|---|---|---|---|
-| ACL | | no | 561 | tier 2 |
-| Address_Set | yes | no | 37 | tier 2 |
+| ACL | | no | 665 | tier 2 |
+| Address_Set | yes | no | 65 | tier 2 |
 | BFD | yes | no | 0 | collect if free |
 | Chassis_Template_Var | yes | no | 0 | never |
 | Connection | | no | | never |
@@ -621,7 +688,7 @@ after `.4`. (`.4` after `.3` was removed on 2026-11-07, see section 11.)
 | Forwarding_Group | | no | 0 | never |
 | Gateway_Chassis | | no | 4 | tier 1 |
 | HA_Chassis / HA_Chassis_Group | | no | 0 | collect if free |
-| Load_Balancer | yes | no | 257 | tier 3 |
+| Load_Balancer | yes | no | 345 | tier 3 |
 | Load_Balancer_Group | yes | no | 12 | tier 3 |
 | Load_Balancer_Health_Check | | no | 0 | tier 3 |
 | Logical_Router | yes | partial | 7 | tier 1 columns |
@@ -636,7 +703,7 @@ after `.4`. (`.4` after `.3` was removed on 2026-11-07, see section 11.)
 | NAT | | partial | 24 | tier 1 columns |
 | NB_Global | yes | no | 1 | status line |
 | Network_Function* | yes | no | 0 | never (7.19.0) |
-| Port_Group | yes | no | 430 | tier 2 |
+| Port_Group | yes | no | 1296 | tier 2 |
 | QoS | | no | 3 | tier 4 |
 | Sample / Sample_Collector / Sampling_App | | no | 0 | never |
 | SSL | | no | | never |
