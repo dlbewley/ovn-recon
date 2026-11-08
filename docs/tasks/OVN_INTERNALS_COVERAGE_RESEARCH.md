@@ -422,8 +422,35 @@ Config and, new, a `detailTabs` contribution for the page.
 
 ## 11. Decisions
 
-None yet. Record each as a dated entry here, as
-`OVN_LOGICAL_PERSPECTIVE_PLAN.md` does, rather than editing the analysis.
+Record each as a dated entry here, as `OVN_LOGICAL_PERSPECTIVE_PLAN.md`
+does, rather than editing the analysis.
+
+### 2026-11-07: `ovn-recon-e2b.4` refined and unblocked
+
+Made while refining the Ports tab bead; verified against a lab cluster
+(interconnect mode, 10 chassis).
+
+1. **The LSP column slice of tier 1 moves from `.3` to `.4`.** `ovn-nbctl list
+   Logical_Switch_Port` already returns every column, so `port_security`,
+   `up`, `enabled`, `dynamic_addresses`, `tag_request` and `parent_name` are
+   parser and contract work whose first consumer is the Ports tab. `.3` keeps
+   the LRP, LR, LS, NAT, static route, Gateway_Chassis and NB_Global columns.
+   The `.4` after `.3` dependency is removed; the two can run in parallel.
+   Section 9's ordering of `.3` before `.4` no longer applies.
+2. **`requested-chassis` resolves through the Node annotation, not the SB.**
+   The option's value is the SB `Chassis.name`, a UUID string, and it equals
+   the hosting Node's `k8s.ovn.org/node-chassis-id` annotation. The plugin
+   watches Nodes and maps chassis id to node name; the raw UUID is the
+   fallback. Collecting SB `Chassis` stays with `.10`.
+3. **Port selection is in-drawer.** The Ports tab is a PatternFly table with
+   expandable rows; the expanded row shows the port's raw NB row and a
+   placeholder for port groups until tier 2 lands. Ports do not become ladder
+   constructs and do not move the ladder selection.
+4. **The tab lists every LSP on the switch**, not only pod ports: vif, router,
+   localnet, management and remote, distinguished by a type column. Routers
+   do not get the tab; LRPs are not in scope.
+5. **No paging.** A node switch is bounded by pods per node (250 default, 500
+   cap) and transit switches by node count; a filtered table is enough.
 
 ## Initial Beads Backlog Mapping
 
@@ -441,8 +468,8 @@ None yet. Record each as a dated entry here, as
 | `ovn-recon-e2b.9` | Payload budgeting: table selection, endpoints, cache | 8 |
 | `ovn-recon-e2b.10` | Revisit kck.1 decision 4: SB bindings and chassis | 6, tier 5 |
 
-Dependencies recorded in beads: `.4` after `.3`; `.5`, `.6`, `.7`, `.9`
-after `.1`; `.8` after `.4`.
+Dependencies recorded in beads: `.5`, `.6`, `.7`, `.9` after `.1`; `.8`
+after `.4`. (`.4` after `.3` was removed on 2026-11-07, see section 11.)
 
 ## Appendix A: NB table inventory (schema 7.19.0) and disposition
 
