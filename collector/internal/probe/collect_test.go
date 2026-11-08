@@ -28,15 +28,97 @@ func (f *fakeRunner) Run(_ context.Context, command []string) (string, error) {
 	return "", errors.New("missing fixture for command: " + key)
 }
 
+// nbTransactOutput is what one ovsdb-client transact returns for the six NB
+// tables, in nbTables order: one result per select op, rows as objects.
+// Single-element sets arrive as bare values, exactly as ovn-nbctl emits them.
+const nbTransactOutput = `[` +
+	`{"rows":[{"_uuid":["uuid","lr-1"],"_version":["uuid","v-lr-1"],"name":"cluster-router","ports":["uuid","lrp-1"],"nat":["uuid","nat-1"],"static_routes":["uuid","sr-1"],"options":["map",[]],"external_ids":["map",[["k8s.ovn.org/topology","layer3"]]]}]},` +
+	`{"rows":[{"_uuid":["uuid","lrp-1"],"_version":["uuid","v-lrp-1"],"name":"rtos-red","mac":"0a:58:0a:f4:00:01","networks":"10.244.0.1/24","peer":["set",[]],"gateway_chassis":["set",[]],"options":["map",[]],"external_ids":["map",[]]}]},` +
+	`{"rows":[{"_uuid":["uuid","ls-1"],"_version":["uuid","v-ls-1"],"name":"red-net","ports":["set",[["uuid","lsp-r"],["uuid","lsp-pod"]]],"other_config":["map",[["subnet","10.244.0.0/24"]]],"external_ids":["map",[["k8s.ovn.org/network","red"]]]}]},` +
+	`{"rows":[{"_uuid":["uuid","lsp-r"],"_version":["uuid","v-lsp-r"],"name":"red-router-port","type":"router","addresses":"router","options":["map",[["router-port","rtos-red"]]],"external_ids":["map",[]]},{"_uuid":["uuid","lsp-pod"],"_version":["uuid","v-lsp-pod"],"name":"pod-a","type":"","addresses":"0a:58:0a:f4:00:05 10.244.0.5","options":["map",[]],"external_ids":["map",[]]}]},` +
+	`{"rows":[{"_uuid":["uuid","nat-1"],"_version":["uuid","v-nat-1"],"type":"snat","external_ip":"192.168.1.11","logical_ip":"10.244.0.0/24","logical_port":["set",[]],"external_mac":["set",[]],"options":["map",[]],"external_ids":["map",[]]}]},` +
+	`{"rows":[{"_uuid":["uuid","sr-1"],"_version":["uuid","v-sr-1"],"ip_prefix":"0.0.0.0/0","nexthop":"100.64.0.1","policy":["set",[]],"output_port":["set",[]],"options":["map",[]],"external_ids":["map",[]]}]}` +
+	`]`
+
+const chassisOutput = `{"headings":["other_config"],"data":[[["map",[["ovn-bridge-mappings","physnet-vmdata:br-vmdata,physnet:br-ex"],["ct-no-masked-label","true"]]]]]}`
+
 func healthyOutputs() map[string]string {
 	return map[string]string{
-		strings.Join(logicalRouterCommand, " "):     `{"headings":["_uuid","name","ports","nat","static_routes","options","external_ids"],"data":[[["uuid","lr-1"],"cluster-router",["set",[["uuid","lrp-1"]]],["set",[["uuid","nat-1"]]],["set",[["uuid","sr-1"]]],["map",[]],["map",[["k8s.ovn.org/topology","layer3"]]]]]}`,
-		strings.Join(logicalRouterPortCommand, " "): `{"headings":["_uuid","name","mac","networks","peer","gateway_chassis","options","external_ids"],"data":[[["uuid","lrp-1"],"rtos-red","0a:58:0a:f4:00:01",["set",["10.244.0.1/24"]],["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
-		strings.Join(logicalSwitchCommand, " "):     `{"headings":["_uuid","name","ports","other_config","external_ids"],"data":[[["uuid","ls-1"],"red-net",["set",[["uuid","lsp-r"],["uuid","lsp-pod"]]],["map",[["subnet","10.244.0.0/24"]]],["map",[["k8s.ovn.org/network","red"]]]]]}`,
-		strings.Join(logicalSwitchPortCommand, " "): `{"headings":["_uuid","name","type","addresses","options","external_ids"],"data":[[["uuid","lsp-r"],"red-router-port","router",["set",["router"]],["map",[["router-port","rtos-red"]]],["map",[]]],[["uuid","lsp-pod"],"pod-a","",["set",["0a:58:0a:f4:00:05 10.244.0.5"]],["map",[]],["map",[]]]]}`,
-		strings.Join(natCommand, " "):               `{"headings":["_uuid","type","external_ip","logical_ip","logical_port","external_mac","options","external_ids"],"data":[[["uuid","nat-1"],"snat","192.168.1.11","10.244.0.0/24",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
-		strings.Join(staticRouteCommand, " "):       `{"headings":["_uuid","ip_prefix","nexthop","policy","output_port","options","external_ids"],"data":[[["uuid","sr-1"],"0.0.0.0/0","100.64.0.1",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
-		strings.Join(chassisCommand, " "):           `{"headings":["other_config"],"data":[[["map",[["ovn-bridge-mappings","physnet-vmdata:br-vmdata,physnet:br-ex"],["ct-no-masked-label","true"]]]]]}`,
+		strings.Join(nbTransactCommand(nbTables), " "): nbTransactOutput,
+		strings.Join(chassisCommand, " "):              chassisOutput,
+	}
+}
+
+// legacyNBOutputs is the same database as nbTransactOutput read through the
+// per-table ovn-nbctl list fallback.
+func legacyNBOutputs() map[string]string {
+	return map[string]string{
+		strings.Join(nbListCommand("Logical_Router"), " "):              `{"headings":["_uuid","name","ports","nat","static_routes","options","external_ids"],"data":[[["uuid","lr-1"],"cluster-router",["set",[["uuid","lrp-1"]]],["set",[["uuid","nat-1"]]],["set",[["uuid","sr-1"]]],["map",[]],["map",[["k8s.ovn.org/topology","layer3"]]]]]}`,
+		strings.Join(nbListCommand("Logical_Router_Port"), " "):         `{"headings":["_uuid","name","mac","networks","peer","gateway_chassis","options","external_ids"],"data":[[["uuid","lrp-1"],"rtos-red","0a:58:0a:f4:00:01",["set",["10.244.0.1/24"]],["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
+		strings.Join(nbListCommand("Logical_Switch"), " "):              `{"headings":["_uuid","name","ports","other_config","external_ids"],"data":[[["uuid","ls-1"],"red-net",["set",[["uuid","lsp-r"],["uuid","lsp-pod"]]],["map",[["subnet","10.244.0.0/24"]]],["map",[["k8s.ovn.org/network","red"]]]]]}`,
+		strings.Join(nbListCommand("Logical_Switch_Port"), " "):         `{"headings":["_uuid","name","type","addresses","options","external_ids"],"data":[[["uuid","lsp-r"],"red-router-port","router",["set",["router"]],["map",[["router-port","rtos-red"]]],["map",[]]],[["uuid","lsp-pod"],"pod-a","",["set",["0a:58:0a:f4:00:05 10.244.0.5"]],["map",[]],["map",[]]]]}`,
+		strings.Join(nbListCommand("NAT"), " "):                         `{"headings":["_uuid","type","external_ip","logical_ip","logical_port","external_mac","options","external_ids"],"data":[[["uuid","nat-1"],"snat","192.168.1.11","10.244.0.0/24",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
+		strings.Join(nbListCommand("Logical_Router_Static_Route"), " "): `{"headings":["_uuid","ip_prefix","nexthop","policy","output_port","options","external_ids"],"data":[[["uuid","sr-1"],"0.0.0.0/0","100.64.0.1",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
+	}
+}
+
+// fallbackOutputs makes the transact exec fail so collection takes the
+// per-table path.
+func fallbackOutputs() (map[string]string, map[string]error) {
+	outputs := legacyNBOutputs()
+	outputs[strings.Join(chassisCommand, " ")] = chassisOutput
+	errs := map[string]error{
+		strings.Join(nbTransactCommand(nbTables), " "): errors.New(`exec failed: "ovsdb-client": executable file not found`),
+	}
+	return outputs, errs
+}
+
+func TestNBTransactCommandSelectsEveryTableInOrder(t *testing.T) {
+	command := nbTransactCommand([]string{"Logical_Router", "NAT"})
+	if command[0] != "ovsdb-client" || command[3] != "transact" || command[4] != nbSocket {
+		t.Fatalf("unexpected command shape: %#v", command)
+	}
+	want := `["OVN_Northbound",{"op":"select","table":"Logical_Router","where":[]},{"op":"select","table":"NAT","where":[]}]`
+	if command[5] != want {
+		t.Fatalf("unexpected transact body:\n got %s\nwant %s", command[5], want)
+	}
+}
+
+func TestDecodeNBTransactDecodesRowsAndReportsPerOpErrors(t *testing.T) {
+	raw := `[{"rows":[{"_uuid":["uuid","ls-1"],"_version":["uuid","v1"],"name":"red-net","ports":["set",[["uuid","a"],["uuid","b"]]],"other_config":["map",[["subnet","10.0.0.0/24"]]]}]},` +
+		`{"details":"No table named Bogus.","error":"syntax error"},` +
+		`null]`
+	rows, errs, err := decodeNBTransact(raw, []string{"Logical_Switch", "Bogus", "NAT"})
+	if err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	switches := logicalSwitchesFromRows(rows["Logical_Switch"])
+	if len(switches) != 1 || switches[0].UUID != "ls-1" || switches[0].Name != "red-net" {
+		t.Fatalf("unexpected switch rows: %#v", switches)
+	}
+	if got := switches[0].PortUUIDs; len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("set of uuids not decoded: %#v", got)
+	}
+	if switches[0].OtherConfig["subnet"] != "10.0.0.0/24" {
+		t.Fatalf("map not decoded: %#v", switches[0].OtherConfig)
+	}
+	if errs["Bogus"] == nil || !strings.Contains(errs["Bogus"].Error(), "No table named Bogus") {
+		t.Fatalf("expected per-op error for Bogus, got %v", errs["Bogus"])
+	}
+	if errs["NAT"] == nil || !strings.Contains(errs["NAT"].Error(), "aborted") {
+		t.Fatalf("expected aborted error for NAT (null result), got %v", errs["NAT"])
+	}
+	if _, present := rows["NAT"]; present {
+		t.Fatalf("aborted table should have no rows entry")
+	}
+}
+
+func TestDecodeNBTransactRejectsResultCountMismatch(t *testing.T) {
+	if _, _, err := decodeNBTransact(`[{"rows":[]}]`, []string{"A", "B"}); err == nil {
+		t.Fatalf("expected error when result count differs from table count")
+	}
+	if _, _, err := decodeNBTransact(`not json`, []string{"A"}); err == nil {
+		t.Fatalf("expected error for undecodable output")
 	}
 }
 
@@ -255,15 +337,37 @@ func TestCollectSnapshotBuildsExpectedTopology(t *testing.T) {
 	}
 }
 
-func TestCollectSnapshotDegradesOnCommandFailure(t *testing.T) {
-	outputs := healthyOutputs()
-	delete(outputs, strings.Join(logicalRouterCommand, " "))
-	runner := &fakeRunner{
-		outputs: outputs,
-		errs: map[string]error{
-			strings.Join(logicalRouterCommand, " "): errors.New("exec denied"),
-		},
+func TestCollectSnapshotFallsBackToPerTableListWhenTransactFails(t *testing.T) {
+	outputs, errs := fallbackOutputs()
+	runner := &fakeRunner{outputs: outputs, errs: errs}
+
+	snap, err := CollectSnapshot(context.Background(), runner, "worker-a", time.Now())
+	if err != nil {
+		t.Fatalf("collect snapshot failed unexpectedly: %v", err)
 	}
+
+	if snap.Metadata.SourceHealth != "degraded" {
+		t.Fatalf("fallback should flag the snapshot as degraded, got %q", snap.Metadata.SourceHealth)
+	}
+	if len(snap.Warnings) != 1 || snap.Warnings[0].Code != "NB_TRANSACT_FAILED" {
+		t.Fatalf("expected a single NB_TRANSACT_FAILED warning, got %#v", snap.Warnings)
+	}
+
+	db := snap.Database
+	if len(db.LogicalRouters) != 1 || len(db.LogicalRouterPorts) != 1 || len(db.LogicalSwitches) != 1 ||
+		len(db.LogicalSwitchPorts) != 2 || len(db.NATs) != 1 || len(db.StaticRoutes) != 1 || len(db.BridgeMappings) != 2 {
+		t.Fatalf("fallback should read every table: %#v", db)
+	}
+	if db.LogicalRouters[0].PortUUIDs[0] != "lrp-1" || db.LogicalRouterPorts[0].Networks[0] != "10.244.0.1/24" {
+		t.Fatalf("fallback rows should map identically to the transact rows: %#v %#v", db.LogicalRouters, db.LogicalRouterPorts)
+	}
+}
+
+func TestCollectSnapshotDegradesOnCommandFailure(t *testing.T) {
+	outputs, errs := fallbackOutputs()
+	delete(outputs, strings.Join(nbListCommand("Logical_Router"), " "))
+	errs[strings.Join(nbListCommand("Logical_Router"), " ")] = errors.New("exec denied")
+	runner := &fakeRunner{outputs: outputs, errs: errs}
 
 	snap, err := CollectSnapshot(context.Background(), runner, "worker-a", time.Now())
 	if err != nil {
@@ -273,11 +377,51 @@ func TestCollectSnapshotDegradesOnCommandFailure(t *testing.T) {
 	if snap.Metadata.SourceHealth != "degraded" {
 		t.Fatalf("expected degraded source health, got %q", snap.Metadata.SourceHealth)
 	}
-	if len(snap.Warnings) == 0 {
-		t.Fatalf("expected warnings for command failure")
+	codes := map[string]bool{}
+	for _, warning := range snap.Warnings {
+		codes[warning.Code] = true
 	}
-	if snap.Database == nil || len(snap.Database.LogicalSwitches) != 1 {
+	if !codes["NB_TRANSACT_FAILED"] || !codes["COMMAND_FAILED"] {
+		t.Fatalf("expected transact and command warnings, got %#v", snap.Warnings)
+	}
+	if snap.Database == nil || len(snap.Database.LogicalRouters) != 0 || len(snap.Database.LogicalSwitches) != 1 {
 		t.Fatalf("expected remaining tables to survive a single command failure: %#v", snap.Database)
+	}
+}
+
+func TestCollectSnapshotDegradesOnTransactOperationError(t *testing.T) {
+	// The NAT select fails in-band; ovsdb-server aborts the following op.
+	raw := `[` +
+		`{"rows":[{"_uuid":["uuid","lr-1"],"name":"cluster-router","ports":["set",[]],"nat":["set",[]],"static_routes":["set",[]],"options":["map",[]],"external_ids":["map",[]]}]},` +
+		`{"rows":[]},` +
+		`{"rows":[{"_uuid":["uuid","ls-1"],"name":"red-net","ports":["set",[]],"other_config":["map",[]],"external_ids":["map",[]]}]},` +
+		`{"rows":[]},` +
+		`{"details":"boom","error":"syntax error"},` +
+		`null]`
+	outputs := healthyOutputs()
+	outputs[strings.Join(nbTransactCommand(nbTables), " ")] = raw
+	runner := &fakeRunner{outputs: outputs}
+
+	snap, err := CollectSnapshot(context.Background(), runner, "worker-a", time.Now())
+	if err != nil {
+		t.Fatalf("collect snapshot failed unexpectedly: %v", err)
+	}
+	if snap.Metadata.SourceHealth != "degraded" {
+		t.Fatalf("expected degraded source health, got %q", snap.Metadata.SourceHealth)
+	}
+	if len(snap.Warnings) != 2 {
+		t.Fatalf("expected one warning per failed table, got %#v", snap.Warnings)
+	}
+	for _, warning := range snap.Warnings {
+		if warning.Code != "COMMAND_FAILED" {
+			t.Fatalf("expected COMMAND_FAILED warnings, got %#v", snap.Warnings)
+		}
+	}
+	if len(snap.Database.LogicalRouters) != 1 || len(snap.Database.LogicalSwitches) != 1 {
+		t.Fatalf("tables before the failed op should survive: %#v", snap.Database)
+	}
+	if len(snap.Database.NATs) != 0 || len(snap.Database.StaticRoutes) != 0 {
+		t.Fatalf("failed and aborted tables should be empty: %#v", snap.Database)
 	}
 }
 

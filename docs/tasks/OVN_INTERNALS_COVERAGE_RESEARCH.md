@@ -452,6 +452,32 @@ Made while refining the Ports tab bead; verified against a lab cluster
 5. **No paging.** A node switch is bounded by pods per node (250 default, 500
    cap) and transit switches by node count; a filtered table is enough.
 
+### 2026-11-08: `ovn-recon-e2b.1` implemented
+
+Re-verified on the lab cluster (OVN 26.03, ovsdb-client 3.5.2) before
+starting: one transact for the six tables took 0.34 s against 2.07 s for six
+`ovn-nbctl list` execs from the same workstation.
+
+1. **One exec for the NB, the SB chassis query stays separate.** The bead's
+   "seven" counted the `ovn-sbctl find Chassis` call, which reads a different
+   database through a different socket and container; it is unchanged.
+2. **All columns, no `columns` selection yet.** `ovn-nbctl list` already
+   returned every column, so selecting all keeps the payload identical and
+   lets `.3` and `.4` add fields without touching the command. Column
+   selection stays available for `.9`.
+3. **Per-op errors degrade one table; an exec failure falls back.**
+   `ovsdb-server` reports a failed `select` in-band (exit code 0, an error
+   object at that index, `null` for the aborted ops that follow), so the
+   collector inspects the body and emits `COMMAND_FAILED` per table. If the
+   transact exec itself fails it runs the old per-table `ovn-nbctl list`
+   commands and adds `NB_TRANSACT_FAILED`, so a cluster whose `nbdb`
+   container lacks `ovsdb-client` still gets a (non-atomic) snapshot.
+4. **Parsers split into row mappers.** Each `ParseX(raw)` is now a wrapper
+   over `xFromRows([]map[string]any)`; both probe paths feed the same mapper,
+   so the column work in `.3` and `.4` lands in one place. The `.4` design
+   note "no collector command changes" is superseded by this; its parser and
+   contract plan is unaffected.
+
 ## Initial Beads Backlog Mapping
 
 | Bead | Title | Section |

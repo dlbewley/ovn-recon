@@ -109,12 +109,19 @@ func decodeOVSValue(value any) any {
 	}
 }
 
+// ParseLogicalRouters decodes an ovn-nbctl --format=json list payload.
 func ParseLogicalRouters(raw string) ([]snapshot.LogicalRouterRow, bool, error) {
 	rows, normalized, err := parseTableRows(raw)
 	if err != nil {
 		return nil, false, err
 	}
+	return logicalRoutersFromRows(rows), normalized, nil
+}
 
+// logicalRoutersFromRows maps decoded NB rows (column name -> decoded value) to the
+// snapshot contract. Both probe paths feed it: the one-exec ovsdb-client
+// transact and the per-table ovn-nbctl fallback. New columns go here.
+func logicalRoutersFromRows(rows []map[string]any) []snapshot.LogicalRouterRow {
 	routers := make([]snapshot.LogicalRouterRow, 0, len(rows))
 	for _, row := range rows {
 		routers = append(routers, snapshot.LogicalRouterRow{
@@ -127,15 +134,22 @@ func ParseLogicalRouters(raw string) ([]snapshot.LogicalRouterRow, bool, error) 
 			ExternalIDs:      stringMapField(row, "external_ids"),
 		})
 	}
-	return routers, normalized, nil
+	return routers
 }
 
+// ParseLogicalRouterPorts decodes an ovn-nbctl --format=json list payload.
 func ParseLogicalRouterPorts(raw string) ([]snapshot.LogicalRouterPortRow, bool, error) {
 	rows, normalized, err := parseTableRows(raw)
 	if err != nil {
 		return nil, false, err
 	}
+	return logicalRouterPortsFromRows(rows), normalized, nil
+}
 
+// logicalRouterPortsFromRows maps decoded NB rows (column name -> decoded value) to the
+// snapshot contract. Both probe paths feed it: the one-exec ovsdb-client
+// transact and the per-table ovn-nbctl fallback. New columns go here.
+func logicalRouterPortsFromRows(rows []map[string]any) []snapshot.LogicalRouterPortRow {
 	ports := make([]snapshot.LogicalRouterPortRow, 0, len(rows))
 	for _, row := range rows {
 		ports = append(ports, snapshot.LogicalRouterPortRow{
@@ -149,15 +163,22 @@ func ParseLogicalRouterPorts(raw string) ([]snapshot.LogicalRouterPortRow, bool,
 			ExternalIDs:         stringMapField(row, "external_ids"),
 		})
 	}
-	return ports, normalized, nil
+	return ports
 }
 
+// ParseLogicalSwitches decodes an ovn-nbctl --format=json list payload.
 func ParseLogicalSwitches(raw string) ([]snapshot.LogicalSwitchRow, bool, error) {
 	rows, normalized, err := parseTableRows(raw)
 	if err != nil {
 		return nil, false, err
 	}
+	return logicalSwitchesFromRows(rows), normalized, nil
+}
 
+// logicalSwitchesFromRows maps decoded NB rows (column name -> decoded value) to the
+// snapshot contract. Both probe paths feed it: the one-exec ovsdb-client
+// transact and the per-table ovn-nbctl fallback. New columns go here.
+func logicalSwitchesFromRows(rows []map[string]any) []snapshot.LogicalSwitchRow {
 	switches := make([]snapshot.LogicalSwitchRow, 0, len(rows))
 	for _, row := range rows {
 		switches = append(switches, snapshot.LogicalSwitchRow{
@@ -168,15 +189,22 @@ func ParseLogicalSwitches(raw string) ([]snapshot.LogicalSwitchRow, bool, error)
 			ExternalIDs: stringMapField(row, "external_ids"),
 		})
 	}
-	return switches, normalized, nil
+	return switches
 }
 
+// ParseLogicalSwitchPorts decodes an ovn-nbctl --format=json list payload.
 func ParseLogicalSwitchPorts(raw string) ([]snapshot.LogicalSwitchPortRow, bool, error) {
 	rows, normalized, err := parseTableRows(raw)
 	if err != nil {
 		return nil, false, err
 	}
+	return logicalSwitchPortsFromRows(rows), normalized, nil
+}
 
+// logicalSwitchPortsFromRows maps decoded NB rows (column name -> decoded value) to the
+// snapshot contract. Both probe paths feed it: the one-exec ovsdb-client
+// transact and the per-table ovn-nbctl fallback. New columns go here.
+func logicalSwitchPortsFromRows(rows []map[string]any) []snapshot.LogicalSwitchPortRow {
 	ports := make([]snapshot.LogicalSwitchPortRow, 0, len(rows))
 	for _, row := range rows {
 		ports = append(ports, snapshot.LogicalSwitchPortRow{
@@ -189,15 +217,22 @@ func ParseLogicalSwitchPorts(raw string) ([]snapshot.LogicalSwitchPortRow, bool,
 			ExternalIDs: stringMapField(row, "external_ids"),
 		})
 	}
-	return ports, normalized, nil
+	return ports
 }
 
+// ParseNATs decodes an ovn-nbctl --format=json list payload.
 func ParseNATs(raw string) ([]snapshot.NATRow, bool, error) {
 	rows, normalized, err := parseTableRows(raw)
 	if err != nil {
 		return nil, false, err
 	}
+	return natsFromRows(rows), normalized, nil
+}
 
+// natsFromRows maps decoded NB rows (column name -> decoded value) to the
+// snapshot contract. Both probe paths feed it: the one-exec ovsdb-client
+// transact and the per-table ovn-nbctl fallback. New columns go here.
+func natsFromRows(rows []map[string]any) []snapshot.NATRow {
 	nats := make([]snapshot.NATRow, 0, len(rows))
 	for _, row := range rows {
 		nats = append(nats, snapshot.NATRow{
@@ -211,15 +246,22 @@ func ParseNATs(raw string) ([]snapshot.NATRow, bool, error) {
 			ExternalIDs: stringMapField(row, "external_ids"),
 		})
 	}
-	return nats, normalized, nil
+	return nats
 }
 
+// ParseStaticRoutes decodes an ovn-nbctl --format=json list payload.
 func ParseStaticRoutes(raw string) ([]snapshot.StaticRouteRow, bool, error) {
 	rows, normalized, err := parseTableRows(raw)
 	if err != nil {
 		return nil, false, err
 	}
+	return staticRoutesFromRows(rows), normalized, nil
+}
 
+// staticRoutesFromRows maps decoded NB rows (column name -> decoded value) to the
+// snapshot contract. Both probe paths feed it: the one-exec ovsdb-client
+// transact and the per-table ovn-nbctl fallback. New columns go here.
+func staticRoutesFromRows(rows []map[string]any) []snapshot.StaticRouteRow {
 	routes := make([]snapshot.StaticRouteRow, 0, len(rows))
 	for _, row := range rows {
 		routes = append(routes, snapshot.StaticRouteRow{
@@ -232,7 +274,7 @@ func ParseStaticRoutes(raw string) ([]snapshot.StaticRouteRow, bool, error) {
 			ExternalIDs: stringMapField(row, "external_ids"),
 		})
 	}
-	return routes, normalized, nil
+	return routes
 }
 
 // ParseChassisBridgeMappings extracts localnet-to-bridge mappings from the

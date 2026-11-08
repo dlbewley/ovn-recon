@@ -17,14 +17,31 @@ All NB tables are transcribed into `LogicalTopologySnapshot.database` (see
 degrades the snapshot with a `COMMAND_FAILED`/`PARSER_FAILED` warning rather
 than aborting collection.
 
-| Purpose | Namespace | Pod Selection | Container | Command | Parser/Builder Path | Required RBAC |
+Since `ovn-recon-e2b.1` the six NB tables are read in **one** pod exec, a
+multi-op `select` transaction against the NB socket in the `nbdb` container:
+
+```bash
+ovsdb-client -f json transact unix:/var/run/ovn/ovnnb_db.sock \
+  '["OVN_Northbound",{"op":"select","table":"Logical_Router","where":[]}, ...]'
+```
+
+The result is one consistent database state for every table (the per-table
+`ovn-nbctl list` calls each read a different state), and adding a table is
+one more entry in `nbTables` (`collector/internal/probe/nb_transact.go`). A
+per-op error degrades only that table (`COMMAND_FAILED`). If the transact
+exec itself fails (no `ovsdb-client` in the container, different socket) the
+collector falls back to the per-table `ovn-nbctl --format=json list <Table>`
+commands below and adds an `NB_TRANSACT_FAILED` warning. The SB chassis query
+for bridge mappings is a separate `ovn-sbctl` exec in the `sbdb` container.
+
+| Purpose | Namespace | Pod Selection | Container | Transact op (fallback command) | Parser/Builder Path | Required RBAC |
 |---|---|---|---|---|---|---|
-| Logical switches (`ports`, `other_config`, `external_ids`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` (or equivalent OVN DB container) | `ovn-nbctl --format=json list Logical_Switch` | `ParseLogicalSwitches` -> `database.logicalSwitches` | `pods get/list/watch`, `pods/exec create` |
-| Logical routers (`ports`, `nat`, `static_routes`, `options`, `external_ids`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `ovn-nbctl --format=json list Logical_Router` | `ParseLogicalRouters` -> `database.logicalRouters` | `pods get/list/watch`, `pods/exec create` |
-| Logical router ports (`mac`, `networks`, `peer`, `gateway_chassis`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `ovn-nbctl --format=json list Logical_Router_Port` | `ParseLogicalRouterPorts` -> `database.logicalRouterPorts` | `pods get/list/watch`, `pods/exec create` |
-| Logical switch ports (`type`, `addresses`, `options`, `external_ids`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `ovn-nbctl --format=json list Logical_Switch_Port` | `ParseLogicalSwitchPorts` -> `database.logicalSwitchPorts` | `pods get/list/watch`, `pods/exec create` |
-| NAT rules (UDN masquerade/SNAT disambiguation) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `ovn-nbctl --format=json list NAT` | `ParseNATs` -> `database.nats` | `pods get/list/watch`, `pods/exec create` |
-| Static routes (default routes, IC-learned routes) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `ovn-nbctl --format=json list Logical_Router_Static_Route` | `ParseStaticRoutes` -> `database.staticRoutes` | `pods get/list/watch`, `pods/exec create` |
+| Logical switches (`ports`, `other_config`, `external_ids`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` (or equivalent OVN DB container) | `select Logical_Switch` (`ovn-nbctl --format=json list Logical_Switch`) | `ParseLogicalSwitches` -> `database.logicalSwitches` | `pods get/list/watch`, `pods/exec create` |
+| Logical routers (`ports`, `nat`, `static_routes`, `options`, `external_ids`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Logical_Router` (`ovn-nbctl --format=json list Logical_Router`) | `ParseLogicalRouters` -> `database.logicalRouters` | `pods get/list/watch`, `pods/exec create` |
+| Logical router ports (`mac`, `networks`, `peer`, `gateway_chassis`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Logical_Router_Port` (`ovn-nbctl --format=json list Logical_Router_Port`) | `ParseLogicalRouterPorts` -> `database.logicalRouterPorts` | `pods get/list/watch`, `pods/exec create` |
+| Logical switch ports (`type`, `addresses`, `options`, `external_ids`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Logical_Switch_Port` (`ovn-nbctl --format=json list Logical_Switch_Port`) | `ParseLogicalSwitchPorts` -> `database.logicalSwitchPorts` | `pods get/list/watch`, `pods/exec create` |
+| NAT rules (UDN masquerade/SNAT disambiguation) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select NAT` (`ovn-nbctl --format=json list NAT`) | `ParseNATs` -> `database.nats` | `pods get/list/watch`, `pods/exec create` |
+| Static routes (default routes, IC-learned routes) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Logical_Router_Static_Route` (`ovn-nbctl --format=json list Logical_Router_Static_Route`) | `ParseStaticRoutes` -> `database.staticRoutes` | `pods get/list/watch`, `pods/exec create` |
 | Gateway/BGP adjunct context (optional in MVP payload) | `openshift-frr-k8s` | FRR pod associated with `:name` | FRR container | command TBD by FRR integration needs | warning/metadata enrichment (degraded if unavailable) | `pods get/list/watch`, `pods/exec create` |
 
 ## Node Selection Semantics

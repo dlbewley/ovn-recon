@@ -74,8 +74,11 @@ that contains runnable OVN probe pods. The default target namespace list is:
 `openshift-frr-k8s` is optional. Clusters only have that namespace when the
 OpenShift FRR stack is enabled. If the namespace is missing, forbidden, or has no
 running pods, the collector logs a warning and continues with other configured
-probe namespaces. Current logical topology collection uses OVN NB commands and
-can remain healthy when `openshift-ovn-kubernetes` is available.
+probe namespaces. Current logical topology collection reads the OVN NB
+database in one `ovsdb-client transact` exec against the `nbdb` container
+(falling back to per-table `ovn-nbctl list` with an `NB_TRANSACT_FAILED`
+warning) plus one `ovn-sbctl` exec for chassis bridge mappings, and can remain
+healthy when `openshift-ovn-kubernetes` is available.
 
 Namespace targets should remain configurable.
 
