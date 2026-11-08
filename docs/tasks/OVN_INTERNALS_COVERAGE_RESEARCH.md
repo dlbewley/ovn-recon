@@ -595,6 +595,7 @@ pod port (equal to `addresses`); `tag_request` on the VLAN localnet ports;
 7. **Overview keeps its capped workload list.** The design allowed replacing
    it with a count chip; it stays as-is for now since the Ports tab is one
    click away and the list still answers "which pods" at a glance.
+
 ### 2026-11-08: `ovn-recon-e2b.5`, `.6` and `.9` refined
 
 Design-only pass; verified read-only on the lab cluster (OVN 26.03, NB
