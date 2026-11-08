@@ -1,6 +1,13 @@
 import { LogicalTopologySnapshot, NATRow, StaticRouteRow } from '../types';
 import { DEFAULT_NETWORK } from './logicalClassification';
-import { buildLadderModel, LadderConstruct, LadderEdge, LadderModel } from './logicalLadderModel';
+import {
+    buildLadderModel,
+    LadderConstruct,
+    LadderEdge,
+    LadderModel,
+    LadderPort,
+    switchPortTypeLabel,
+} from './logicalLadderModel';
 
 /**
  * Semantic merge of per-node zone snapshots into one cluster ladder model.
@@ -15,6 +22,9 @@ import { buildLadderModel, LadderConstruct, LadderEdge, LadderModel } from './lo
  * - zones: every zone the construct appears in (provenance).
  * - podPortCount: summed — each zone's switch instance holds only that
  *   zone's local workload ports, so the sum is the cluster total.
+ * - podPorts/ports: union by port name; the first zone's row is kept (a
+ *   transit port tstor-<node> is a router port in its own zone and a remote
+ *   port elsewhere, so its type reflects whichever zone came first).
  * - remotePeers/localnetPorts: set union.
  * - natCount/staticRouteCount: max — per-zone instances of a distributed
  *   router carry near-identical rule sets; summing would multiply them.
@@ -63,6 +73,9 @@ const mergeBy = <T>(existing: T[], incoming: T[], keyOf: (item: T) => string): T
     return merged;
 };
 
+const compareMergedPorts = (a: LadderPort, b: LadderPort): number =>
+    switchPortTypeLabel(a.row).localeCompare(switchPortTypeLabel(b.row)) || a.name.localeCompare(b.name);
+
 const edgeKey = (kind: string, source: string, target: string): string => {
     const [first, second] = [source, target].sort();
     return `${kind}:${first}:${second}`;
@@ -104,6 +117,7 @@ export const mergeZones = (snapshots: LogicalTopologySnapshot[]): ClusterLadderM
             existing.zones.push(zone);
             existing.podPortCount += construct.podPortCount;
             existing.podPorts = mergeBy(existing.podPorts, construct.podPorts, (port) => port.name);
+            existing.ports = mergeBy(existing.ports, construct.ports, (port) => port.name).sort(compareMergedPorts);
             existing.remotePeers = [...new Set([...existing.remotePeers, ...construct.remotePeers])].sort();
             existing.localnetPorts = [...new Set([...existing.localnetPorts, ...construct.localnetPorts])].sort();
             existing.natRules = mergeBy(existing.natRules, construct.natRules, natRuleKey);

@@ -49,7 +49,7 @@ collector table command, one types row, and one entry here."
 | NB table | Columns collected | Columns skipped (upstream 7.19.0) |
 |---|---|---|
 | `Logical_Switch` | name, ports, acls, qos_rules, load_balancer, load_balancer_group (uuids), other_config, external_ids | dns_records, copp, forwarding_groups |
-| `Logical_Switch_Port` | name, type, addresses, tag, options, external_ids | **port_security**, **up**, **enabled**, dynamic_addresses, parent_name, tag_request (`ovn-recon-e2b.4`), peer, dhcpv4_options, dhcpv6_options, ha_chassis_group, mirror_rules, health_checks |
+| `Logical_Switch_Port` | name, type, addresses, tag, port_security, up, enabled, dynamic_addresses, tag_request, parent_name, options, external_ids | peer, dhcpv4_options, dhcpv6_options, ha_chassis_group, mirror_rules, health_checks |
 | `Logical_Router` | name, ports, nat, static_routes, enabled, policies, load_balancer, load_balancer_group, copp (uuids), options, external_ids | — |
 | `Logical_Router_Port` | name, mac, networks, peer, enabled, gateway_chassis (resolved by `Gateway_Chassis`), status (`hosting-chassis`), options, external_ids | ipv6_ra_configs, ipv6_prefix, ha_chassis_group, dhcp_relay |
 | `NAT` | type, external_ip, logical_ip, logical_port, external_mac, gateway_port, priority, match, external_port_range, options, external_ids | allowed_ext_ips, exempted_ext_ips |
@@ -58,9 +58,10 @@ collector table command, one types row, and one entry here."
 | `NB_Global` | name, nb_cfg, sb_cfg, hv_cfg, options (`northd_internal_version`), external_ids | connections, ssl, ipsec, *_timestamp |
 | SB `Chassis` | other_config:ovn-bridge-mappings (local chassis only) | everything else |
 
-Bold entries are the ones a user asking "what does OVN do to this port" hits
-first; they belong to `ovn-recon-e2b.4`. Of the 39 NB tables, eight are
-transcribed (tier 1 landed with `ovn-recon-e2b.3` on 2026-11-08).
+Of the 39 NB tables, eight are transcribed. Tier 1 is complete: the router,
+switch, NAT and route columns landed with `ovn-recon-e2b.3` and the
+`Logical_Switch_Port` slice (the columns a user asking "what does OVN do to
+this port" hits first) with `ovn-recon-e2b.4`, both on 2026-11-08.
 
 ### 2.3 What the fixtures and a live cluster say is actually populated
 
@@ -529,6 +530,62 @@ nodes.
    NAT and route counts do); gateway placements union by port name;
    `enabled` is false if any zone says so.
 
+### 2026-11-08: `ovn-recon-e2b.4` implemented
+
+Verified against the lab cluster (OVN 26.03.4, interconnect, 10 chassis) by
+running the collector out-of-cluster and capturing the three fixture nodes.
+Observed per node switch: `up` true on every VIF, router, remote and
+management port and false on every localnet port; `port_security` on every
+pod port (equal to `addresses`); `tag_request` on the VLAN localnet ports;
+`enabled`, `dynamic_addresses` and `parent_name` unset on every row.
+
+1. **LSP columns in the contract, same conventions as `.3`.** `portSecurity`
+   (string list), `up` and `enabled` (optional booleans, absent when the NB
+   set is empty, so northd's "not yet bound" and an explicit `false` are
+   distinguishable), `dynamicAddresses`, `tagRequest` and `parentName`
+   (strings, omitempty). They land in `logicalSwitchPortsFromRows`, which
+   both probe paths feed, so no collector command changed. The design's
+   "`up bool` omitted when empty" became `*bool`: a plain bool with omitempty
+   would have dropped `up=false`, the one value the tab needs to show.
+2. **Fixtures spliced by port name, again.** Live rows were matched to the
+   August captures by name; ports whose pod no longer exists got the values
+   every live row of their type showed (pod ports: `portSecurity` =
+   `addresses`, `up` true; localnet: `up` false, `tagRequest` = `tag`).
+   UUIDs and pod lists the tests reference are unchanged.
+3. **The model carries every LSP with its row.** `LadderConstruct.ports`
+   (type `LadderPort`: a `ClassifiedPort` plus its `LogicalSwitchPortRow`)
+   lists every port on the switch sorted by type then name; `podPorts` and
+   `podPortCount` are untouched so the Overview chip is unchanged. Carrying
+   the row is what lets the cluster view render per-port columns for ports
+   from zones other than the representative one. The cluster merge unions
+   `ports` by name and keeps the first zone's row, so `tstor-<node>` (a
+   router port in its own zone, remote elsewhere) appears once.
+4. **Ports tab, switches only, before Config.** `hasPortsTab` is a predicate
+   on `ovnKindFor(construct).table === 'Logical_Switch'`; a `detailTabs`
+   registry contribution waits for `.8`. The tab is a compact PatternFly
+   `Table` with expandable rows (name or Pod link, type with empty rendered
+   as `vif`, addresses, port security, Up/Down label plus a red Disabled
+   label when `enabled` is false, requested chassis), a text filter over
+   name, namespace/pod and addresses, and a native type select with counts.
+   No paging. The expanded row shows the port's raw NB row in the read-only
+   editor, taken from the representative node's database when it holds the
+   port (the Config tab's rule) and from the model's carried row otherwise,
+   plus a "Port groups: not collected yet" slot for `.5`.
+5. **`requested-chassis` reuses `nodeForChassis`.** The pages already pass
+   the resolver from `useChassisNodeNames` into the drawer for gateway
+   ports; the Ports tab's column takes the same prop and the same
+   `ChassisName` rendering (node name linking to the node's logical view,
+   full id in the tooltip, truncated id when no Node claims it). No second
+   Node watch.
+6. **Tab state.** The stored tab survives a hop between switches; the Ports
+   body is keyed by construct uuid so expanded rows and filters reset on
+   every hop. On a router the strip omits Ports and the drawer shows Overview
+   while keeping the stored choice, so hopping back to a switch returns to
+   Ports.
+7. **Overview keeps its capped workload list.** The design allowed replacing
+   it with a count chip; it stays as-is for now since the Ports tab is one
+   click away and the list still answers "which pods" at a glance.
+
 ## Initial Beads Backlog Mapping
 
 | Bead | Title | Section |
@@ -572,7 +629,7 @@ after `.4`. (`.4` after `.3` was removed on 2026-11-07, see section 11.)
 | Logical_Router_Port | | partial | 33 | tier 1 columns |
 | Logical_Router_Static_Route | | partial | 65 | tier 1 columns |
 | Logical_Switch | yes | partial | 15 | tier 1 columns |
-| Logical_Switch_Port | | partial | 59 | tier 1 columns |
+| Logical_Switch_Port | | partial | 59 | tier 1 landed (`.4`) |
 | Logical_Switch_Port_Health_Check | | no | 0 | never |
 | Meter / Meter_Band | yes | no | 10 / 2 | tier 4 |
 | Mirror / Mirror_Rule | yes | no | 0 | collect if free |

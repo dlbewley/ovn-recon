@@ -220,13 +220,19 @@ func logicalSwitchPortsFromRows(rows []map[string]any) []snapshot.LogicalSwitchP
 	ports := make([]snapshot.LogicalSwitchPortRow, 0, len(rows))
 	for _, row := range rows {
 		ports = append(ports, snapshot.LogicalSwitchPortRow{
-			UUID:        stringField(row, "_uuid"),
-			Name:        stringField(row, "name"),
-			Type:        stringField(row, "type"),
-			Addresses:   stringSliceField(row, "addresses"),
-			Tag:         optionalStringField(row, "tag"),
-			Options:     stringMapField(row, "options"),
-			ExternalIDs: stringMapField(row, "external_ids"),
+			UUID:             stringField(row, "_uuid"),
+			Name:             stringField(row, "name"),
+			Type:             stringField(row, "type"),
+			Addresses:        stringSliceField(row, "addresses"),
+			Tag:              optionalStringField(row, "tag"),
+			PortSecurity:     stringSliceField(row, "port_security"),
+			Up:               optionalBoolField(row, "up"),
+			Enabled:          optionalBoolField(row, "enabled"),
+			DynamicAddresses: optionalStringField(row, "dynamic_addresses"),
+			TagRequest:       optionalStringField(row, "tag_request"),
+			ParentName:       optionalStringField(row, "parent_name"),
+			Options:          stringMapField(row, "options"),
+			ExternalIDs:      stringMapField(row, "external_ids"),
 		})
 	}
 	return ports

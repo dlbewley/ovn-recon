@@ -1,4 +1,4 @@
-import { GatewayChassisRow, LogicalDatabase, NATRow, StaticRouteRow } from '../types';
+import { GatewayChassisRow, LogicalDatabase, LogicalSwitchPortRow, NATRow, StaticRouteRow } from '../types';
 import {
     ClassifiedConstruct,
     ClassifiedPort,
@@ -22,6 +22,13 @@ export interface LadderConstruct extends ClassifiedConstruct {
     podPortCount: number;
     /** The workload ports themselves, for the drawer's searchable list. */
     podPorts: ClassifiedPort[];
+    /**
+     * Every Logical_Switch_Port on the switch — workload, router, localnet,
+     * management and remote — sorted by type then name, for the drawer's
+     * Ports tab. Each carries its NB row so the tab can show per-port columns
+     * in the cluster view too, where only one zone's database is at hand.
+     */
+    ports: LadderPort[];
     /** Name of the k8s management port, when present. */
     managementPort?: string;
     /** Localnet port names: the seam to a physical bridge mapping. */
@@ -51,6 +58,17 @@ export interface LadderConstruct extends ClassifiedConstruct {
     gatewayPorts: GatewayPortPlacement[];
 }
 
+/** A classified switch port together with the NB row it was read from. */
+export interface LadderPort extends ClassifiedPort {
+    row: LogicalSwitchPortRow;
+}
+
+/** The NB type of a switch port as displayed: an empty type is a VIF. */
+export const switchPortTypeLabel = (row: LogicalSwitchPortRow): string => row.type || 'vif';
+
+const compareLadderPorts = (a: LadderPort, b: LadderPort): number =>
+    switchPortTypeLabel(a.row).localeCompare(switchPortTypeLabel(b.row)) || a.name.localeCompare(b.name);
+
 /**
  * A distributed gateway port's placement: the chassis northd reports as
  * hosting it (Logical_Router_Port.status:hosting-chassis) and the candidate
@@ -68,6 +86,7 @@ export interface GatewayPortPlacement {
 export const emptyLadderAggregates = (): Omit<LadderConstruct, keyof ClassifiedConstruct> => ({
     podPortCount: 0,
     podPorts: [],
+    ports: [],
     localnetPorts: [],
     remotePeers: [],
     natCount: 0,
@@ -221,6 +240,7 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
             const row = switchPortByUuid.get(portUuid);
             if (!row) continue;
             const port = classifySwitchPort(row);
+            construct.ports.push({ ...port, row });
 
             switch (port.role) {
                 case 'pod-port':
@@ -267,6 +287,7 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
         construct.remotePeers.sort();
         construct.localnetPorts.sort();
         construct.podPorts.sort((a, b) => a.name.localeCompare(b.name));
+        construct.ports.sort(compareLadderPorts);
     }
 
     // Northbound egress: each switch with a localnet port connects to a

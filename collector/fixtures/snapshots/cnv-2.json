@@ -878,7 +878,8 @@
         "name": "k8s-cnv-2",
         "addresses": [
           "0a:58:0a:80:02:02 10.128.2.2"
-        ]
+        ],
+        "up": true
       },
       {
         "uuid": "72759e40-978b-4410-8922-6d88f08fe893",
@@ -887,6 +888,7 @@
         "addresses": [
           "0a:58:64:58:00:09 100.88.0.9/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "5eba3edb-7328-4e36-9732-f4b6ead58f14",
           "requested-tnl-key": "9"
@@ -902,6 +904,7 @@
         "addresses": [
           "router"
         ],
+        "up": true,
         "options": {
           "router-port": "rtos-demo.mirror_example.l3.udn_cnv-2"
         }
@@ -912,6 +915,10 @@
         "addresses": [
           "0a:58:0a:80:02:0b 10.128.2.11"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:0b 10.128.2.11"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "47943764-7d76-43d2-896a-a2629df8e26f",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -928,6 +935,7 @@
         "addresses": [
           "router"
         ],
+        "up": true,
         "options": {
           "router-port": "trtos-cluster_udn_example.p.cudn_ovn_layer2_switch"
         },
@@ -942,6 +950,10 @@
         "addresses": [
           "0a:58:0a:80:03:ca 10.128.3.202"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:ca 10.128.3.202"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "52f12d5d-caee-4afe-b7f1-e488c7242401",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -957,6 +969,10 @@
         "addresses": [
           "0a:58:0a:80:02:cd 10.128.2.205"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:cd 10.128.2.205"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "74da5df2-1b72-4dad-8931-4ccd01688312",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -972,6 +988,10 @@
         "addresses": [
           "0a:58:0a:80:02:d1 10.128.2.209"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:d1 10.128.2.209"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "eecc0f20-5488-4611-837e-a5b62538602b",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -987,6 +1007,10 @@
         "addresses": [
           "0a:58:0a:80:03:17 10.128.3.23"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:17 10.128.3.23"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "cd45f5aa-0963-43fa-953b-7f623a8f1a17",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1003,6 +1027,7 @@
         "addresses": [
           "00:50:56:b4:37:2c"
         ],
+        "up": true,
         "options": {
           "exclude-lb-vips-from-garp": "true",
           "nat-addresses": "router",
@@ -1015,6 +1040,10 @@
         "addresses": [
           "0a:58:0a:80:02:14 10.128.2.20"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:14 10.128.2.20"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "2687a6ae-0436-4c50-8ec3-8d29efa6789d",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1031,6 +1060,7 @@
         "addresses": [
           "0a:58:64:58:00:0b 100.88.0.11/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "a1027a6f-76e5-4870-af42-9c437d5bbe10",
           "requested-tnl-key": "11"
@@ -1045,6 +1075,10 @@
         "addresses": [
           "0a:58:0a:80:02:10 10.128.2.16"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:10 10.128.2.16"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "7ec69878-c39c-4b36-8b7a-4347caf09a3d",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1060,6 +1094,10 @@
         "addresses": [
           "0a:58:0a:80:03:26 10.128.3.38"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:26 10.128.3.38"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "f1440995-8d52-4256-a706-0bbd26c83805",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1076,6 +1114,7 @@
         "addresses": [
           "unknown"
         ],
+        "up": false,
         "options": {
           "network_name": "physnet"
         },
@@ -1090,6 +1129,10 @@
         "addresses": [
           "0a:58:0a:80:02:9d 10.128.2.157"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:9d 10.128.2.157"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "1b7b6623-5bc5-481a-8be4-21303c1d7834",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1105,6 +1148,10 @@
         "addresses": [
           "0a:58:0a:80:03:82 10.128.3.130"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:82 10.128.3.130"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "695db827-6b3d-46e1-942b-043e15130a8b",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1120,6 +1167,10 @@
         "addresses": [
           "0a:58:0a:80:02:9c 10.128.2.156"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:9c 10.128.2.156"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "51d4a176-1342-46ee-9d41-6dde360cdd87",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1134,7 +1185,8 @@
         "name": "k8s-cluster_udn_example.p.cudn_cnv-2",
         "addresses": [
           "0a:58:0a:01:02:02 10.1.2.2"
-        ]
+        ],
+        "up": true
       },
       {
         "uuid": "08912d0d-c1d7-44e7-ac1e-e67320b5e388",
@@ -1142,6 +1194,10 @@
         "addresses": [
           "0a:58:0a:80:03:0c 10.128.3.12"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:0c 10.128.3.12"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "ca8a2e35-e5af-473c-a866-1ee140299a77",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1157,6 +1213,10 @@
         "addresses": [
           "0a:58:0a:80:03:2a 10.128.3.42"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:2a 10.128.3.42"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "adf8c2fc-ad8e-4d1d-9c2a-24a60a7b8efc",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1172,6 +1232,10 @@
         "addresses": [
           "0a:58:0a:80:03:d1 10.128.3.209"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:d1 10.128.3.209"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "b92e6249-6f93-4877-9a6a-575f4b2d6531",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1187,6 +1251,10 @@
         "addresses": [
           "0a:58:0a:80:02:24 10.128.2.36"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:24 10.128.2.36"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "46b80507-c2ef-4cf8-b2c6-9238b254b863",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1202,6 +1270,10 @@
         "addresses": [
           "0a:58:0a:80:02:cb 10.128.2.203"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:cb 10.128.2.203"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "1d6bb836-7879-485a-9a72-839cb2cb99a1",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1218,6 +1290,7 @@
         "addresses": [
           "0a:58:64:58:00:07 100.88.0.7/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "2a9ebcd3-1fa6-4524-8c26-b11b0f448df8",
           "requested-tnl-key": "7"
@@ -1232,6 +1305,10 @@
         "addresses": [
           "0a:58:0a:80:03:84 10.128.3.132"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:84 10.128.3.132"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "81f28eef-046e-400d-89cd-f89b3eb760e4",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1247,6 +1324,10 @@
         "addresses": [
           "0a:58:0a:80:03:13 10.128.3.19"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:13 10.128.3.19"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "494d885e-2b13-4f8f-a1a5-c5875ced9bdd",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1262,6 +1343,10 @@
         "addresses": [
           "0a:58:0a:80:02:20 10.128.2.32"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:5e 10.128.2.94"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "7cfb7d55-747c-46cb-8767-9c97f272b758",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1277,6 +1362,10 @@
         "addresses": [
           "0a:58:0a:80:03:0e 10.128.3.14"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:0e 10.128.3.14"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "cc94d131-019c-479b-ac81-e4cd09673816",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1292,6 +1381,10 @@
         "addresses": [
           "0a:58:0a:80:02:03 10.128.2.3"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:03 10.128.2.3"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "3ec6dad1-9db4-42ec-865b-df27c8656c26",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1308,6 +1401,7 @@
         "addresses": [
           "0a:58:64:58:00:02 100.88.0.2/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "1e193d2a-ad56-4753-bf9a-5e50939905d9",
           "requested-tnl-key": "2"
@@ -1322,6 +1416,10 @@
         "addresses": [
           "0a:58:0a:80:03:29 10.128.3.41"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:29 10.128.3.41"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "70e04bb8-af79-4504-b03f-4b86ce00bc86",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1338,6 +1436,7 @@
         "addresses": [
           "unknown"
         ],
+        "up": false,
         "options": {
           "network_name": "physnet"
         }
@@ -1349,6 +1448,7 @@
         "addresses": [
           "router"
         ],
+        "up": true,
         "options": {
           "arp_proxy": "0a:58:a9:fe:01:01 169.254.1.1 fe80::1 10.128.0.0/14",
           "router-port": "rtos-cnv-2"
@@ -1361,6 +1461,7 @@
         "addresses": [
           "0a:58:64:58:00:04 100.88.0.4/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "5a410d1d-cf3a-4746-a062-41ce39c6f569",
           "requested-tnl-key": "4"
@@ -1375,6 +1476,10 @@
         "addresses": [
           "0a:58:0a:80:03:0f 10.128.3.15"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:0f 10.128.3.15"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "21bfd6c8-9f49-4c6f-b0df-c698c353de30",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1390,6 +1495,10 @@
         "addresses": [
           "0a:58:0a:80:03:cc 10.128.3.204"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:cc 10.128.3.204"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "1cf2b383-496f-40df-accf-f3322e5c6b46",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1405,6 +1514,10 @@
         "addresses": [
           "0a:58:0a:80:03:11 10.128.3.17"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:11 10.128.3.17"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "f3344ad4-8f3e-4897-a694-a16c00eeabee",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1421,6 +1534,7 @@
         "addresses": [
           "0a:58:64:58:00:0a 100.88.0.10/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "a9a56a6e-6d88-4357-aa62-831263653f5e",
           "requested-tnl-key": "10"
@@ -1435,6 +1549,10 @@
         "addresses": [
           "0a:58:0a:80:02:9b 10.128.2.155"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:9b 10.128.2.155"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "ce6dc1dc-50fa-4143-bc57-1ac44f140471",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1451,6 +1569,7 @@
         "addresses": [
           "00:50:56:b4:37:2c"
         ],
+        "up": true,
         "options": {
           "exclude-lb-vips-from-garp": "true",
           "nat-addresses": "router",
@@ -1468,6 +1587,7 @@
         "addresses": [
           "0a:58:64:58:00:07 100.88.0.7/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "2a9ebcd3-1fa6-4524-8c26-b11b0f448df8",
           "requested-tnl-key": "7"
@@ -1483,6 +1603,7 @@
         "addresses": [
           "router"
         ],
+        "up": true,
         "options": {
           "requested-tnl-key": "6",
           "router-port": "rtots-cnv-2"
@@ -1498,6 +1619,7 @@
         "addresses": [
           "router"
         ],
+        "up": true,
         "options": {
           "router-port": "rtoj-GR_cnv-2"
         }
@@ -1508,6 +1630,10 @@
         "addresses": [
           "0a:58:0a:80:02:1d 10.128.2.29"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:1d 10.128.2.29"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "3a2c0a56-72f4-4196-a6c3-f1e263765576",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1524,6 +1650,7 @@
         "addresses": [
           "0a:58:64:58:00:04 100.88.0.4/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "5a410d1d-cf3a-4746-a062-41ce39c6f569",
           "requested-tnl-key": "4"
@@ -1538,6 +1665,10 @@
         "addresses": [
           "0a:58:0a:80:02:0a 10.128.2.10"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:0a 10.128.2.10"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "82552899-3b86-42fb-83a6-bb0d94942714",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1553,6 +1684,10 @@
         "addresses": [
           "0a:58:0a:80:02:d7 10.128.2.215"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:d7 10.128.2.215"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "5ec6838c-66b3-4631-8ba7-d43e3151475d",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1570,6 +1705,8 @@
           "unknown"
         ],
         "tag": "1924",
+        "up": false,
+        "tagRequest": "1924",
         "options": {
           "network_name": "physnet-vmdata"
         }
@@ -1580,6 +1717,10 @@
         "addresses": [
           "0a:58:0a:80:02:04 10.128.2.4"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:04 10.128.2.4"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "ac6b42e0-c53a-4cd7-8079-1a5028a75214",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1595,6 +1736,10 @@
         "addresses": [
           "0a:58:0a:80:02:99 10.128.2.153"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:99 10.128.2.153"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "e21fca28-86c5-4f4b-a4a3-91c7c612b422",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1611,6 +1756,7 @@
         "addresses": [
           "0a:58:64:58:00:05 100.88.0.5/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004",
           "requested-tnl-key": "5"
@@ -1625,6 +1771,10 @@
         "addresses": [
           "0a:58:0a:80:03:30 10.128.3.48"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:54 10.128.2.84"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "7fce6754-e2be-4b47-84e2-db2c979ec525",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1641,6 +1791,7 @@
         "addresses": [
           "unknown"
         ],
+        "up": false,
         "options": {
           "network_name": "physnet"
         }
@@ -1652,6 +1803,7 @@
         "addresses": [
           "0a:58:64:58:00:09 100.88.0.9/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "5eba3edb-7328-4e36-9732-f4b6ead58f14",
           "requested-tnl-key": "9"
@@ -1667,6 +1819,7 @@
         "addresses": [
           "0a:58:64:58:00:0a 100.88.0.10/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "a9a56a6e-6d88-4357-aa62-831263653f5e",
           "requested-tnl-key": "10"
@@ -1681,6 +1834,10 @@
         "addresses": [
           "0a:58:0a:80:02:cc 10.128.2.204"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:cc 10.128.2.204"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "a3102497-66ec-404d-a333-37968fe78bec",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1696,6 +1853,10 @@
         "addresses": [
           "0a:58:0a:80:03:24 10.128.3.36"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:24 10.128.3.36"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "c6041fde-4bb1-4f65-bfad-aec7b3a32449",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1711,6 +1872,10 @@
         "addresses": [
           "0a:58:0a:80:02:d0 10.128.2.208"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:d0 10.128.2.208"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "3fea7c70-4d52-4b20-b393-92f2439be2a4",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1726,6 +1891,10 @@
         "addresses": [
           "0a:58:0a:80:02:22 10.128.2.34"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:22 10.128.2.34"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "d9aedd43-7c66-4eab-b610-982a7d5b526b",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1741,6 +1910,10 @@
         "addresses": [
           "0a:58:0a:80:03:27 10.128.3.39"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:27 10.128.3.39"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "e17f1c8a-51c6-4935-a4dc-af5748610c07",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1756,6 +1929,10 @@
         "addresses": [
           "0a:58:0a:80:02:11 10.128.2.17"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:11 10.128.2.17"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "4beb2af7-a1e9-4e88-9c69-f2bc2d7bf279",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1772,6 +1949,7 @@
         "addresses": [
           "0a:58:64:58:00:02 100.88.0.2/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "1e193d2a-ad56-4753-bf9a-5e50939905d9",
           "requested-tnl-key": "2"
@@ -1786,6 +1964,10 @@
         "addresses": [
           "0a:58:0a:80:02:13 10.128.2.19"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:13 10.128.2.19"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "5197c908-33ff-4a11-b870-941b375e15a4",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1801,6 +1983,10 @@
         "addresses": [
           "0a:58:0a:80:03:28 10.128.3.40"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:28 10.128.3.40"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "6616fccd-849a-4531-9a56-bad691c47a9a",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1816,6 +2002,10 @@
         "addresses": [
           "0a:58:0a:80:02:d2 10.128.2.210"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:d2 10.128.2.210"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "603dda6a-44e7-4499-b002-f3888dfd8716",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1831,6 +2021,10 @@
         "addresses": [
           "0a:58:0a:80:03:19 10.128.3.25"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:19 10.128.3.25"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "a77ab88d-a703-4fc2-8c2a-67320d771ba0",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1846,6 +2040,10 @@
         "addresses": [
           "0a:58:0a:80:03:10 10.128.3.16"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:10 10.128.3.16"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "e1b84f93-479c-463b-a768-b06914de4365",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1861,6 +2059,10 @@
         "addresses": [
           "0a:58:0a:80:03:d0 10.128.3.208"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:d0 10.128.3.208"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "2c63d0d7-bd38-4416-a606-7fba56c0c343",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1876,6 +2078,10 @@
         "addresses": [
           "0a:58:0a:80:03:d2 10.128.3.210"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:d2 10.128.3.210"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "c476d581-14d9-4dd8-9330-b77edc66e349",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1891,6 +2097,10 @@
         "addresses": [
           "0a:58:0a:80:03:25 10.128.3.37"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:25 10.128.3.37"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "2ccee6b8-6fbe-4e6e-b215-3e5d1ffb0719",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1906,6 +2116,10 @@
         "addresses": [
           "0a:58:0a:80:03:ce 10.128.3.206"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:ce 10.128.3.206"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "07bf8b03-5c87-420f-a2de-36b5cc63644c",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1921,6 +2135,10 @@
         "addresses": [
           "0a:58:0a:80:03:2f 10.128.3.47"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:2f 10.128.3.47"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "7e4b9260-f819-434d-a1c4-fe8567cda866",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1937,6 +2155,7 @@
         "addresses": [
           "0a:58:64:58:00:0b 100.88.0.11/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "a1027a6f-76e5-4870-af42-9c437d5bbe10",
           "requested-tnl-key": "11"
@@ -1952,6 +2171,7 @@
         "addresses": [
           "0a:58:64:58:00:03 100.88.0.3/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "f0be1189-7efa-4e7c-bcc0-71590ea39bf6",
           "requested-tnl-key": "3"
@@ -1967,6 +2187,7 @@
         "addresses": [
           "0a:58:64:58:00:03 100.88.0.3/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "f0be1189-7efa-4e7c-bcc0-71590ea39bf6",
           "requested-tnl-key": "3"
@@ -1981,6 +2202,10 @@
         "addresses": [
           "0a:58:0a:80:02:18 10.128.2.24"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:18 10.128.2.24"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "68e4e321-4a24-4255-974b-5e5ee245bdde",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -1997,6 +2222,7 @@
         "addresses": [
           "router"
         ],
+        "up": true,
         "options": {
           "requested-tnl-key": "6",
           "router-port": "demo.mirror_example.l3.udn_rtots-cnv-2"
@@ -2012,6 +2238,7 @@
         "addresses": [
           "router"
         ],
+        "up": true,
         "options": {
           "router-port": "rtoj-ovn_cluster_router"
         }
@@ -2022,6 +2249,10 @@
         "addresses": [
           "0a:58:0a:80:02:05 10.128.2.5"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:05 10.128.2.5"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "c2000015-b278-4f33-bf86-307045c89c7f",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2037,6 +2268,10 @@
         "addresses": [
           "0a:58:0a:80:03:0d 10.128.3.13"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:0d 10.128.3.13"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "412492d9-b800-4350-ad2f-7fc260821a36",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2052,6 +2287,10 @@
         "addresses": [
           "0a:58:0a:80:03:36 10.128.3.54"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:36 10.128.3.54"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "e1696f8a-2bd4-4b27-872a-075d9586efc0",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2067,6 +2306,10 @@
         "addresses": [
           "0a:58:0a:80:02:1b 10.128.2.27"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:1b 10.128.2.27"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "0dbf587a-b2fe-4712-8402-580921c52aee",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2082,6 +2325,10 @@
         "addresses": [
           "0a:58:0a:80:02:9a 10.128.2.154"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:9a 10.128.2.154"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "065e9189-4425-46be-9420-c785836b1f05",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2097,6 +2344,10 @@
         "addresses": [
           "0a:58:0a:80:03:2b 10.128.3.43"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:71 10.128.2.113"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "bb44d679-c88f-467b-bd40-4be0d06f5420",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2112,6 +2363,10 @@
         "addresses": [
           "0a:58:0a:80:03:16 10.128.3.22"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:16 10.128.3.22"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "c3001cfa-85a7-4fd4-a363-e121dc97063c",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2127,6 +2382,10 @@
         "addresses": [
           "0a:58:0a:80:03:18 10.128.3.24"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:18 10.128.3.24"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "6100e900-0b2f-4426-9d54-a78614a4cab9",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2142,6 +2401,10 @@
         "addresses": [
           "0a:58:0a:80:02:1e 10.128.2.30"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:1e 10.128.2.30"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "621836f4-a1f2-4359-937b-daafd3d095cd",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2157,6 +2420,10 @@
         "addresses": [
           "0a:58:0a:80:02:06 10.128.2.6"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:06 10.128.2.6"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "9235eb5f-813a-4d13-9a07-322e261e3422",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2173,6 +2440,7 @@
         "addresses": [
           "0a:58:64:58:00:08 100.88.0.8/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "a8478d06-f1a7-478c-9c27-797ccb3f3bed",
           "requested-tnl-key": "8"
@@ -2187,6 +2455,10 @@
         "addresses": [
           "0a:58:0a:80:02:23 10.128.2.35"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:23 10.128.2.35"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "bb252186-3801-47a9-a6ee-b0ea02bb951e",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2203,6 +2475,7 @@
         "addresses": [
           "0a:58:64:58:00:08 100.88.0.8/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "a8478d06-f1a7-478c-9c27-797ccb3f3bed",
           "requested-tnl-key": "8"
@@ -2217,6 +2490,10 @@
         "addresses": [
           "0a:58:0a:80:03:23 10.128.3.35"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:23 10.128.3.35"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "9f6e283e-4197-42d1-a8e7-8cc9e1c386f8",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2232,6 +2509,10 @@
         "addresses": [
           "0a:58:0a:80:03:2d 10.128.3.45"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:2d 10.128.3.45"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "4fe86283-490f-410c-b275-df9729b4caff",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2248,6 +2529,7 @@
         "addresses": [
           "0a:58:64:58:00:05 100.88.0.5/16"
         ],
+        "up": true,
         "options": {
           "requested-chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004",
           "requested-tnl-key": "5"
@@ -2262,6 +2544,10 @@
         "addresses": [
           "0a:58:0a:80:02:d6 10.128.2.214"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:d6 10.128.2.214"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "2b1ac834-b256-4683-a551-6ef63411a5cc",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2277,6 +2563,10 @@
         "addresses": [
           "0a:58:0a:80:02:16 10.128.2.22"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:02:16 10.128.2.22"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "5d70c6bb-36d5-4a3e-87d8-94f417564f38",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2292,6 +2582,10 @@
         "addresses": [
           "0a:58:0a:80:03:22 10.128.3.34"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:22 10.128.3.34"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "1b54b995-3474-4cc1-ac89-1ff5daa14b6d",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"
@@ -2307,6 +2601,10 @@
         "addresses": [
           "0a:58:0a:80:03:cb 10.128.3.203"
         ],
+        "portSecurity": [
+          "0a:58:0a:80:03:cb 10.128.3.203"
+        ],
+        "up": true,
         "options": {
           "iface-id-ver": "da86d3c3-17c6-4082-a572-d28177a1ad6b",
           "requested-chassis": "e549f5d9-59cb-4b27-bca6-93d88afb6fb5"

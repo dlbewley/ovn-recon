@@ -35,7 +35,7 @@ const nbTransactOutput = `[` +
 	`{"rows":[{"_uuid":["uuid","lr-1"],"_version":["uuid","v-lr-1"],"name":"cluster-router","ports":["uuid","lrp-1"],"nat":["uuid","nat-1"],"static_routes":["uuid","sr-1"],"enabled":["set",[]],"policies":["set",[["uuid","pol-1"],["uuid","pol-2"]]],"load_balancer":["uuid","lb-1"],"load_balancer_group":["set",[]],"copp":["uuid","copp-1"],"options":["map",[]],"external_ids":["map",[["k8s.ovn.org/topology","layer3"]]]}]},` +
 	`{"rows":[{"_uuid":["uuid","lrp-1"],"_version":["uuid","v-lrp-1"],"name":"rtos-red","mac":"0a:58:0a:f4:00:01","networks":"10.244.0.1/24","peer":["set",[]],"enabled":["set",[]],"gateway_chassis":["uuid","gwc-1"],"status":["map",[["hosting-chassis","chassis-a"]]],"options":["map",[]],"external_ids":["map",[]]}]},` +
 	`{"rows":[{"_uuid":["uuid","ls-1"],"_version":["uuid","v-ls-1"],"name":"red-net","ports":["set",[["uuid","lsp-r"],["uuid","lsp-pod"]]],"acls":["uuid","acl-1"],"load_balancer":["set",[]],"load_balancer_group":["uuid","lbg-1"],"qos_rules":["set",[]],"other_config":["map",[["subnet","10.244.0.0/24"]]],"external_ids":["map",[["k8s.ovn.org/network","red"]]]}]},` +
-	`{"rows":[{"_uuid":["uuid","lsp-r"],"_version":["uuid","v-lsp-r"],"name":"red-router-port","type":"router","addresses":"router","options":["map",[["router-port","rtos-red"]]],"external_ids":["map",[]]},{"_uuid":["uuid","lsp-pod"],"_version":["uuid","v-lsp-pod"],"name":"pod-a","type":"","addresses":"0a:58:0a:f4:00:05 10.244.0.5","options":["map",[]],"external_ids":["map",[]]}]},` +
+	`{"rows":[{"_uuid":["uuid","lsp-r"],"_version":["uuid","v-lsp-r"],"name":"red-router-port","type":"router","addresses":"router","port_security":["set",[]],"up":true,"enabled":["set",[]],"dynamic_addresses":["set",[]],"tag_request":["set",[]],"parent_name":["set",[]],"options":["map",[["router-port","rtos-red"]]],"external_ids":["map",[]]},{"_uuid":["uuid","lsp-pod"],"_version":["uuid","v-lsp-pod"],"name":"pod-a","type":"","addresses":"0a:58:0a:f4:00:05 10.244.0.5","port_security":"0a:58:0a:f4:00:05 10.244.0.5","up":false,"enabled":false,"dynamic_addresses":["set",[]],"tag_request":7,"parent_name":"pod-parent","options":["map",[["requested-chassis","chassis-a"]]],"external_ids":["map",[]]}]},` +
 	`{"rows":[{"_uuid":["uuid","nat-1"],"_version":["uuid","v-nat-1"],"type":"snat","external_ip":"192.168.1.11","logical_ip":"10.244.0.0/24","logical_port":["set",[]],"external_mac":["set",[]],"gateway_port":["uuid","lrp-1"],"match":"ip4.dst == $a1","priority":10,"external_port_range":"32768-60999","options":["map",[]],"external_ids":["map",[]]}]},` +
 	`{"rows":[{"_uuid":["uuid","sr-1"],"_version":["uuid","v-sr-1"],"ip_prefix":"0.0.0.0/0","nexthop":"100.64.0.1","policy":["set",[]],"output_port":["set",[]],"route_table":"","bfd":["set",[]],"selection_fields":["set",["ip_src","ip_dst"]],"options":["map",[]],"external_ids":["map",[]]}]},` +
 	`{"rows":[{"_uuid":["uuid","gwc-1"],"_version":["uuid","v-gwc-1"],"name":"rtos-red-chassis-a","chassis_name":"chassis-a","priority":1,"options":["map",[]],"external_ids":["map",[]]}]},` +
@@ -58,7 +58,7 @@ func legacyNBOutputs() map[string]string {
 		strings.Join(nbListCommand("Logical_Router"), " "):              `{"headings":["_uuid","name","ports","nat","static_routes","options","external_ids"],"data":[[["uuid","lr-1"],"cluster-router",["set",[["uuid","lrp-1"]]],["set",[["uuid","nat-1"]]],["set",[["uuid","sr-1"]]],["map",[]],["map",[["k8s.ovn.org/topology","layer3"]]]]]}`,
 		strings.Join(nbListCommand("Logical_Router_Port"), " "):         `{"headings":["_uuid","name","mac","networks","peer","gateway_chassis","options","external_ids"],"data":[[["uuid","lrp-1"],"rtos-red","0a:58:0a:f4:00:01",["set",["10.244.0.1/24"]],["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
 		strings.Join(nbListCommand("Logical_Switch"), " "):              `{"headings":["_uuid","name","ports","other_config","external_ids"],"data":[[["uuid","ls-1"],"red-net",["set",[["uuid","lsp-r"],["uuid","lsp-pod"]]],["map",[["subnet","10.244.0.0/24"]]],["map",[["k8s.ovn.org/network","red"]]]]]}`,
-		strings.Join(nbListCommand("Logical_Switch_Port"), " "):         `{"headings":["_uuid","name","type","addresses","options","external_ids"],"data":[[["uuid","lsp-r"],"red-router-port","router",["set",["router"]],["map",[["router-port","rtos-red"]]],["map",[]]],[["uuid","lsp-pod"],"pod-a","",["set",["0a:58:0a:f4:00:05 10.244.0.5"]],["map",[]],["map",[]]]]}`,
+		strings.Join(nbListCommand("Logical_Switch_Port"), " "):         `{"headings":["_uuid","name","type","addresses","port_security","up","enabled","dynamic_addresses","tag_request","parent_name","options","external_ids"],"data":[[["uuid","lsp-r"],"red-router-port","router",["set",["router"]],["set",[]],true,["set",[]],["set",[]],["set",[]],["set",[]],["map",[["router-port","rtos-red"]]],["map",[]]],[["uuid","lsp-pod"],"pod-a","",["set",["0a:58:0a:f4:00:05 10.244.0.5"]],["set",["0a:58:0a:f4:00:05 10.244.0.5"]],false,false,["set",[]],7,"pod-parent",["map",[["requested-chassis","chassis-a"]]],["map",[]]]]}`,
 		strings.Join(nbListCommand("NAT"), " "):                         `{"headings":["_uuid","type","external_ip","logical_ip","logical_port","external_mac","options","external_ids"],"data":[[["uuid","nat-1"],"snat","192.168.1.11","10.244.0.0/24",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
 		strings.Join(nbListCommand("Logical_Router_Static_Route"), " "): `{"headings":["_uuid","ip_prefix","nexthop","policy","output_port","options","external_ids"],"data":[[["uuid","sr-1"],"0.0.0.0/0","100.64.0.1",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
 		strings.Join(nbListCommand("Gateway_Chassis"), " "):             `{"headings":["_uuid","name","chassis_name","priority","options","external_ids"],"data":[[["uuid","gwc-1"],"rtos-red-chassis-a","chassis-a",1,["map",[]],["map",[]]]]}`,
@@ -327,6 +327,29 @@ func TestCollectSnapshotBuildsExpectedTopology(t *testing.T) {
 	if len(db.LogicalSwitchPorts) != 2 {
 		t.Fatalf("unexpected switch ports: %#v", db.LogicalSwitchPorts)
 	}
+	// LSP columns (ovn-recon-e2b.4): a bound router port with the optional
+	// columns unset, and a pod port with port_security, up=false, an explicit
+	// enabled=false and a requested-chassis option.
+	routerLSP, podLSP := db.LogicalSwitchPorts[0], db.LogicalSwitchPorts[1]
+	if routerLSP.Name != "red-router-port" || podLSP.Name != "pod-a" {
+		t.Fatalf("unexpected switch port order: %q, %q", routerLSP.Name, podLSP.Name)
+	}
+	if routerLSP.Up == nil || !*routerLSP.Up || routerLSP.Enabled != nil || len(routerLSP.PortSecurity) != 0 ||
+		routerLSP.DynamicAddresses != "" || routerLSP.TagRequest != "" || routerLSP.ParentName != "" {
+		t.Fatalf("unexpected router LSP columns: %#v", routerLSP)
+	}
+	if len(podLSP.PortSecurity) != 1 || podLSP.PortSecurity[0] != "0a:58:0a:f4:00:05 10.244.0.5" {
+		t.Fatalf("unexpected pod LSP port_security: %#v", podLSP.PortSecurity)
+	}
+	if podLSP.Up == nil || *podLSP.Up || podLSP.Enabled == nil || *podLSP.Enabled {
+		t.Fatalf("pod LSP up/enabled should decode as explicit false: %#v", podLSP)
+	}
+	if podLSP.TagRequest != "7" || podLSP.ParentName != "pod-parent" || podLSP.DynamicAddresses != "" {
+		t.Fatalf("unexpected pod LSP scalar columns: %#v", podLSP)
+	}
+	if podLSP.Options["requested-chassis"] != "chassis-a" {
+		t.Fatalf("unexpected pod LSP options: %#v", podLSP.Options)
+	}
 	if len(db.NATs) != 1 || db.NATs[0].Type != "snat" {
 		t.Fatalf("unexpected NATs: %#v", db.NATs)
 	}
@@ -434,6 +457,10 @@ func TestCollectSnapshotFallsBackToPerTableListWhenTransactFails(t *testing.T) {
 	}
 	if db.LogicalRouters[0].PortUUIDs[0] != "lrp-1" || db.LogicalRouterPorts[0].Networks[0] != "10.244.0.1/24" {
 		t.Fatalf("fallback rows should map identically to the transact rows: %#v %#v", db.LogicalRouters, db.LogicalRouterPorts)
+	}
+	if podLSP := db.LogicalSwitchPorts[1]; podLSP.Up == nil || *podLSP.Up || len(podLSP.PortSecurity) != 1 ||
+		podLSP.TagRequest != "7" || podLSP.ParentName != "pod-parent" || podLSP.Options["requested-chassis"] != "chassis-a" {
+		t.Fatalf("fallback should read the LSP columns: %#v", podLSP)
 	}
 	if len(db.GatewayChassis) != 1 || db.GatewayChassis[0].ChassisName != "chassis-a" || db.GatewayChassis[0].Priority != 1 {
 		t.Fatalf("fallback should read Gateway_Chassis: %#v", db.GatewayChassis)
