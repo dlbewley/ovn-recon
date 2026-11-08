@@ -21,7 +21,7 @@ This document defines the Day-1 semantics for Phase 2 snapshot delivery from the
 
 ## Freshness Semantics
 - Snapshot freshness is computed from `metadata.generatedAt`.
-- UI thresholds (current implementation in `/Users/dale/src/ovn-recon/src/components/NodeLogicalTopologyDetails.tsx`):
+- UI thresholds (current implementation in `src/components/NodeLogicalTopologyDetails.tsx`):
   - `fresh`: age < 2 minutes
   - `warning`: age >= 2 minutes and < 10 minutes
   - `critical`: age >= 10 minutes

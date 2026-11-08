@@ -135,4 +135,4 @@ Namespace targets should remain configurable.
 ## Runtime Semantics
 
 Design notes for snapshot transport/freshness/degraded behavior and initial budgets:
-- `/Users/dale/src/ovn-recon/docs/tasks/OVN_COLLECTOR_RUNTIME_SEMANTICS.md`
+- `../docs/tasks/OVN_COLLECTOR_RUNTIME_SEMANTICS.md`

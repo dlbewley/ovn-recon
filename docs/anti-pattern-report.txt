@@ -1,6 +1,6 @@
 ========================================================================
   Operator Anti-Pattern Scanner v1.0.0
-  Scanning: /Users/dale/src/ovn-recon/operator
+  Scanning: operator
 ========================================================================
 
 [0;31m[HIGH]  AP-1: Predicate filters don't limit cache[0m
