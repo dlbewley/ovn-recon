@@ -493,6 +493,41 @@
             }
           },
           "additionalProperties": false
+        },
+        "acls": {
+          "description": "Optional section 'policy': ACL rows. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty. The row shape is a placeholder until ovn-recon-e2b.5 defines it.",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "portGroups": {
+          "description": "Optional section 'policy': Port_Group rows. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty. The row shape is a placeholder until ovn-recon-e2b.5 defines it.",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "addressSets": {
+          "description": "Optional section 'policy': Address_Set rows. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty. The row shape is a placeholder until ovn-recon-e2b.5 defines it.",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "loadBalancers": {
+          "description": "Optional section 'services': Load_Balancer rows. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty. The row shape is a placeholder until ovn-recon-e2b.6 defines it.",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "loadBalancerGroups": {
+          "description": "Optional section 'services': Load_Balancer_Group rows. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty. The row shape is a placeholder until ovn-recon-e2b.6 defines it.",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
         }
       },
       "additionalProperties": false

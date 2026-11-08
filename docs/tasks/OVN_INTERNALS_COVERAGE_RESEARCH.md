@@ -680,6 +680,69 @@ file and every editor had to match the style by hand.
    tool-formatted. The Go contract test is unchanged (Go cannot preserve
    key order without an ordered-map dependency; the Node check covers it).
 
+### 2026-11-08: `ovn-recon-e2b.9` implemented
+
+Verified by running the collector out-of-cluster against the lab cluster
+(interconnect, 10 zones) with a disk cache, and against the fixture corpus
+next to a build of the previous commit.
+
+1. **`.9` lands the mechanism; the tables and row shapes stay with `.5` and
+   `.6`.** The `.9` design had it append the five tables to `nbTables`, while
+   `.5` and `.6` each own the same append together with the row mappers, and
+   the refinement entry above orders "`.9` first (the include mechanism with
+   zero sections)". Appending without mappers would read and discard more than
+   a megabyte per zone on every collect, so this bead adds no table. The five
+   keys are declared in Go, TypeScript and the JSON schema as optional arrays
+   of a placeholder row (`SectionRow`: any object) that `.5` and `.6`
+   replace with typed rows when they append their tables, write their
+   mappers and splice their fixtures. Until then no collector populates a
+   section and a request with `include` returns the ladder payload. The
+   tests exercise delivery with placeholder rows injected into the fixture
+   corpus and into a counting collector.
+2. **One registry, one projection.** `snapshot.ParseSections` validates
+   `include` (comma-separated, repeatable, blanks ignored) against the
+   section registry and `snapshot.Project` returns a copy of the snapshot
+   without the sections that were not requested. Both handlers call it after
+   `collectZone`, so the live path, the cache, the stale fallback and the
+   file store all behave alike, and the cached or collected payload is never
+   mutated. An unknown name is a 400 whose body lists the valid sections.
+3. **Absent versus empty needed more than `omitempty`.** The design's "nil
+   slice + omitempty" cannot express "collected and empty": `omitempty` drops
+   a zero-length slice as well as a nil one. `LogicalDatabase.MarshalJSON`
+   re-declares the five fields as pointers so nil is omitted and an empty
+   table encodes as `[]`; a test proves every fixture still encodes to the
+   same bytes as the plain struct. The collector module is on Go 1.23; with
+   1.24 the method reduces to `omitzero` on the five fields.
+4. **Three states for the client, two on the wire.** A present array is the
+   table; an absent key is "not requested or not collected" and keeps the
+   drawer's existing not-collected rendering. A cache entry written before a
+   collector learned a section reads as not collected until its TTL lapses.
+5. **gzip on the two snapshot routes only.** 200 responses are compressed
+   when `Accept-Encoding` allows gzip (q-values and `*` honoured); errors
+   and the health probes stay plain; `Vary: Accept-Encoding` is set on every
+   snapshot response. Compressors are pooled. Measured on today's ladder
+   payload: 221 KB to 45 KB for the largest zone, 96 KB to 18 KB for a
+   control-plane zone, 1.38 MB to 267 KB for the ten-zone aggregate, about
+   5x; the 7 to 8x figure for the policy tables is from the refinement
+   capture. Whether the console's plugin proxy passes `Content-Encoding`
+   through was not checked in a browser: that needs a deployed image, and if
+   the proxy strips it the plugin still works with larger responses.
+6. **Plugin.** `fetchCollectorSnapshot(node, { include })` and
+   `fetchClusterTopology({ include })` append `?include=` with the sections
+   deduplicated and sorted; without the option the URL is unchanged, and no
+   page passes it. `useOptionalSections(nodeName, sections, refreshKey?)`
+   performs the second fetch for the views that will render a section,
+   fetches nothing for an empty list, keeps the last good database across a
+   refresh or a failure, and drops it when the node changes. The third
+   argument is an addition to the design so a drawer can refetch in step
+   with the ladder's polling.
+7. **Compatibility checked two ways.** A build of the previous commit and
+   this one served the fixture corpus side by side: every per-node body was
+   byte-identical, and the aggregate identical apart from its own
+   timestamp. Against the cluster, warm-up collected each zone once and the
+   requests that followed (with and without `include`, with and without
+   gzip, per node and aggregate) triggered no further collection.
+
 ## Initial Beads Backlog Mapping
 
 | Bead | Title | Section |
