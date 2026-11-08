@@ -7,13 +7,14 @@ import {
     DescriptionListTerm,
     DescriptionListDescription,
     DrawerPanelBody,
+    Label,
     TextInput,
 } from '@patternfly/react-core';
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
 
 import { LogicalDatabase, NATRow, StaticRouteRow } from '../types';
 import { networkResourceRef } from './logicalClassification';
-import { LadderConstruct, LadderModel } from './logicalLadderModel';
+import { GatewayPortPlacement, LadderConstruct, LadderModel } from './logicalLadderModel';
 import { edgeLabel, networkDisplayName, roleLabel } from './LogicalLadderView';
 import { configPayloadFor, ovnKindFor } from './ovnKindRegistry';
 import { useIsDarkTheme } from './useIsDarkTheme';
@@ -51,20 +52,119 @@ export interface ConstructDrawerBodyProps {
     database?: LogicalDatabase | null;
     /** The node `database` came from, shown as the Config tab's caption. */
     databaseNode?: string;
+    /**
+     * Resolve an SB chassis name (as NB rows carry it: a UUID string) to the
+     * node it belongs to, from the Node annotation k8s.ovn.org/node-chassis-id.
+     * Unresolved chassis render as their id.
+     */
+    nodeForChassis?: (chassisName: string) => string | undefined;
 }
 
 const SEAM_ROLES = new Set(['external-switch', 'localnet-switch']);
 
-const natRuleText = (nat: NATRow): string => {
+/** `gatewayPortName` resolves NAT.gateway_port (an LRP uuid) to the port's name. */
+export const natRuleText = (nat: NATRow, gatewayPortName?: (uuid: string) => string | undefined): string => {
     const target = nat.logicalPort ? `${nat.logicalIp} (${nat.logicalPort})` : nat.logicalIp ?? '';
-    return `${nat.type} ${nat.externalIp ?? ''} ⇄ ${target}`;
+    const parts = [`${nat.type} ${nat.externalIp ?? ''} ⇄ ${target}`];
+    if (nat.match) parts.push(`match ${nat.match}`);
+    if (nat.priority) parts.push(`priority ${nat.priority}`);
+    if (nat.gatewayPort) parts.push(`on ${gatewayPortName?.(nat.gatewayPort) ?? nat.gatewayPort}`);
+    return parts.join(', ');
 };
 
-const staticRouteText = (route: StaticRouteRow): string => {
+export const staticRouteText = (route: StaticRouteRow): string => {
     const parts = [`${route.ipPrefix} → ${route.nexthop ?? ''}`];
     if (route.policy) parts.push(`policy ${route.policy}`);
     if (route.outputPort) parts.push(`via ${route.outputPort}`);
+    if (route.routeTable) parts.push(`table ${route.routeTable}`);
+    if (route.bfd) parts.push('bfd');
+    if (route.selectionFields && route.selectionFields.length > 0) {
+        parts.push(`ecmp(${route.selectionFields.join(' ')})`);
+    }
     return parts.join(', ');
+};
+
+/** Short form of a chassis id for display when no Node claims it. */
+const shortChassis = (chassisName: string): string =>
+    chassisName.length > 12 ? `${chassisName.slice(0, 8)}…` : chassisName;
+
+const ChassisName: React.FC<{
+    chassisName: string;
+    nodeForChassis?: (chassisName: string) => string | undefined;
+    nodeHref?: (node: string) => string;
+}> = ({ chassisName, nodeForChassis, nodeHref }) => {
+    const node = nodeForChassis?.(chassisName);
+    if (!node) {
+        return <code title={chassisName}>{shortChassis(chassisName)}</code>;
+    }
+    return nodeHref ? (
+        <Link to={nodeHref(node)} title={chassisName}>{node}</Link>
+    ) : (
+        <span title={chassisName}>{node}</span>
+    );
+};
+
+/**
+ * Where a distributed gateway port lives: the chassis northd reports as
+ * hosting it, and the Gateway_Chassis candidates when there is more than
+ * one or the hosting chassis is not the preferred candidate.
+ */
+const GatewayPortList: React.FC<{
+    placements: GatewayPortPlacement[];
+    nodeForChassis?: (chassisName: string) => string | undefined;
+    nodeHref?: (node: string) => string;
+}> = ({ placements, nodeForChassis, nodeHref }) => (
+    <>
+        {placements.map((placement) => {
+            const preferred = placement.candidates[0]?.chassisName;
+            const showCandidates =
+                placement.candidates.length > 1 ||
+                (placement.hostingChassis != null && preferred != null && preferred !== placement.hostingChassis);
+            return (
+                <div key={placement.port} className="pf-u-mb-xs">
+                    <code>{placement.port}</code>{' '}
+                    {placement.hostingChassis ? (
+                        <>
+                            hosted on{' '}
+                            <ChassisName
+                                chassisName={placement.hostingChassis}
+                                nodeForChassis={nodeForChassis}
+                                nodeHref={nodeHref}
+                            />
+                        </>
+                    ) : (
+                        <Label isCompact color="yellow">Not hosted</Label>
+                    )}
+                    {showCandidates && (
+                        <div style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>
+                            candidates:{' '}
+                            {placement.candidates.map((candidate, index) => (
+                                <React.Fragment key={candidate.chassisName}>
+                                    {index > 0 ? ', ' : ''}
+                                    <ChassisName
+                                        chassisName={candidate.chassisName}
+                                        nodeForChassis={nodeForChassis}
+                                        nodeHref={nodeHref}
+                                    />
+                                    {` (priority ${candidate.priority})`}
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        })}
+    </>
+);
+
+const NOT_COLLECTED = 'rows not collected yet';
+
+/** "22 direct · 2 groups" for load balancer references on a router or switch. */
+const loadBalancerSummary = (direct: number, groups: number): string => {
+    const parts: string[] = [];
+    if (direct > 0) parts.push(`${direct} direct`);
+    if (groups > 0) parts.push(`${groups} group${groups === 1 ? '' : 's'}`);
+    return parts.join(' · ');
 };
 
 const RuleList: React.FC<{ items: string[] }> = ({ items }) => {
@@ -131,9 +231,17 @@ const OverviewBody: React.FC<ConstructDrawerBodyProps> = ({
     physicalHref,
     fallbackNode,
     totalNodes,
+    database,
+    nodeForChassis,
 }) => {
     const networkRef = networkResourceRef(construct.network);
     const seamNode = SEAM_ROLES.has(construct.role) ? construct.node ?? fallbackNode : undefined;
+    const routerPortNameByUuid = React.useMemo(
+        () => new Map((database?.logicalRouterPorts ?? []).map((port) => [port.uuid, port.name])),
+        [database],
+    );
+    const gatewayPortName = (uuid: string) => routerPortNameByUuid.get(uuid);
+    const hasLoadBalancers = construct.loadBalancerCount > 0 || construct.loadBalancerGroupCount > 0;
 
     return (
         <DescriptionList isCompact>
@@ -192,6 +300,28 @@ const OverviewBody: React.FC<ConstructDrawerBodyProps> = ({
                 <DescriptionListTerm>UUID</DescriptionListTerm>
                 <DescriptionListDescription><code>{construct.uuid}</code></DescriptionListDescription>
             </DescriptionListGroup>
+            {construct.enabled !== undefined && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Admin state</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        {construct.enabled
+                            ? <Label isCompact color="green">Enabled</Label>
+                            : <Label isCompact color="red">Disabled</Label>}
+                    </DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {construct.gatewayPorts.length > 0 && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Gateway ports</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        <GatewayPortList
+                            placements={construct.gatewayPorts}
+                            nodeForChassis={nodeForChassis}
+                            nodeHref={nodeHref}
+                        />
+                    </DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
             {construct.bridge && (
                 <DescriptionListGroup>
                     <DescriptionListTerm>OVS bridge</DescriptionListTerm>
@@ -236,7 +366,7 @@ const OverviewBody: React.FC<ConstructDrawerBodyProps> = ({
                 <DescriptionListGroup>
                     <DescriptionListTerm>NAT rules ({construct.natRules.length})</DescriptionListTerm>
                     <DescriptionListDescription>
-                        <RuleList items={construct.natRules.map(natRuleText)} />
+                        <RuleList items={construct.natRules.map((nat) => natRuleText(nat, gatewayPortName))} />
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
@@ -245,6 +375,42 @@ const OverviewBody: React.FC<ConstructDrawerBodyProps> = ({
                     <DescriptionListTerm>Static routes ({construct.staticRouteRules.length})</DescriptionListTerm>
                     <DescriptionListDescription>
                         <RuleList items={construct.staticRouteRules.map(staticRouteText)} />
+                    </DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {construct.policyCount > 0 && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Routing policies</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        {construct.policyCount}{' '}
+                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>({NOT_COLLECTED})</span>
+                    </DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {construct.aclCount > 0 && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>ACLs</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        {construct.aclCount}{' '}
+                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>({NOT_COLLECTED})</span>
+                    </DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {hasLoadBalancers && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>Load balancers</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        {loadBalancerSummary(construct.loadBalancerCount, construct.loadBalancerGroupCount)}{' '}
+                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>({NOT_COLLECTED})</span>
+                    </DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+            {construct.qosRuleCount > 0 && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>QoS rules</DescriptionListTerm>
+                    <DescriptionListDescription>
+                        {construct.qosRuleCount}{' '}
+                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>({NOT_COLLECTED})</span>
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}

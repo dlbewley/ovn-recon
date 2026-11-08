@@ -1,4 +1,4 @@
-import { LogicalDatabase, NATRow, StaticRouteRow } from '../types';
+import { GatewayChassisRow, LogicalDatabase, NATRow, StaticRouteRow } from '../types';
 import {
     ClassifiedConstruct,
     ClassifiedPort,
@@ -37,7 +37,50 @@ export interface LadderConstruct extends ClassifiedConstruct {
     /** The rules themselves, resolved from the router's uuid references. */
     natRules: NATRow[];
     staticRouteRules: StaticRouteRow[];
+    /** Administrative state (routers); undefined when the NB row leaves the
+     * optional column unset, which OVN treats as enabled. */
+    enabled?: boolean;
+    /** Reference counts for tables not yet collected: router policies,
+     * load balancers (direct and via groups), switch ACLs and QoS rules. */
+    policyCount: number;
+    loadBalancerCount: number;
+    loadBalancerGroupCount: number;
+    aclCount: number;
+    qosRuleCount: number;
+    /** Routers: distributed gateway ports and where they are hosted. */
+    gatewayPorts: GatewayPortPlacement[];
 }
+
+/**
+ * A distributed gateway port's placement: the chassis northd reports as
+ * hosting it (Logical_Router_Port.status:hosting-chassis) and the candidate
+ * Gateway_Chassis rows with their priorities. Chassis names are SB Chassis
+ * names (UUID strings); the Node's k8s.ovn.org/node-chassis-id annotation
+ * maps them to node names.
+ */
+export interface GatewayPortPlacement {
+    port: string;
+    hostingChassis?: string;
+    candidates: Array<{ chassisName: string; priority: number }>;
+}
+
+/** Empty aggregate fields for a fresh ladder construct. */
+export const emptyLadderAggregates = (): Omit<LadderConstruct, keyof ClassifiedConstruct> => ({
+    podPortCount: 0,
+    podPorts: [],
+    localnetPorts: [],
+    remotePeers: [],
+    natCount: 0,
+    staticRouteCount: 0,
+    natRules: [],
+    staticRouteRules: [],
+    policyCount: 0,
+    loadBalancerCount: 0,
+    loadBalancerGroupCount: 0,
+    aclCount: 0,
+    qosRuleCount: 0,
+    gatewayPorts: [],
+});
 
 export type LadderEdgeKind = 'router-link' | 'router-peer' | 'localnet-link';
 
@@ -101,14 +144,7 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
     for (const construct of classified.constructs) {
         const ladderConstruct: LadderConstruct = {
             ...construct,
-            podPortCount: 0,
-            podPorts: [],
-            localnetPorts: [],
-            remotePeers: [],
-            natCount: 0,
-            staticRouteCount: 0,
-            natRules: [],
-            staticRouteRules: [],
+            ...emptyLadderAggregates(),
         };
         constructs.push(ladderConstruct);
         constructByUuid.set(construct.uuid, ladderConstruct);
@@ -116,6 +152,10 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
 
     const natByUuid = new Map(database.nats.map((nat) => [nat.uuid, nat]));
     const routeByUuid = new Map(database.staticRoutes.map((route) => [route.uuid, route]));
+    const routerPortByUuid = new Map(database.logicalRouterPorts.map((port) => [port.uuid, port]));
+    const gatewayChassisByUuid = new Map(
+        (database.gatewayChassis ?? []).map((chassis) => [chassis.uuid, chassis]),
+    );
 
     for (const router of database.logicalRouters) {
         const construct = constructByUuid.get(router.uuid);
@@ -128,6 +168,26 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
             .filter((route): route is StaticRouteRow => route != null);
         construct.natCount = construct.natRules.length;
         construct.staticRouteCount = construct.staticRouteRules.length;
+        construct.enabled = router.enabled;
+        construct.policyCount = router.policies?.length ?? 0;
+        construct.loadBalancerCount = router.loadBalancer?.length ?? 0;
+        construct.loadBalancerGroupCount = router.loadBalancerGroup?.length ?? 0;
+
+        // Distributed gateway ports: a router port with Gateway_Chassis
+        // candidates or a northd-reported hosting chassis.
+        for (const portUuid of router.ports) {
+            const port = routerPortByUuid.get(portUuid);
+            if (!port) continue;
+            const hostingChassis = port.status?.['hosting-chassis'];
+            const candidates = (port.gatewayChassis ?? [])
+                .map((uuid) => gatewayChassisByUuid.get(uuid))
+                .filter((chassis): chassis is GatewayChassisRow => chassis != null)
+                .map((chassis) => ({ chassisName: chassis.chassisName, priority: chassis.priority }))
+                .sort((a, b) => b.priority - a.priority || a.chassisName.localeCompare(b.chassisName));
+            if (!hostingChassis && candidates.length === 0 && (port.gatewayChassis?.length ?? 0) === 0) continue;
+            construct.gatewayPorts.push({ port: port.name, hostingChassis, candidates });
+        }
+        construct.gatewayPorts.sort((a, b) => a.port.localeCompare(b.port));
     }
 
     const edges: LadderEdge[] = [];
@@ -152,6 +212,10 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
         if (!construct) continue;
 
         construct.subnet = logicalSwitch.otherConfig?.subnet;
+        construct.aclCount = logicalSwitch.acls?.length ?? 0;
+        construct.loadBalancerCount = logicalSwitch.loadBalancer?.length ?? 0;
+        construct.loadBalancerGroupCount = logicalSwitch.loadBalancerGroup?.length ?? 0;
+        construct.qosRuleCount = logicalSwitch.qosRules?.length ?? 0;
 
         for (const portUuid of logicalSwitch.ports) {
             const row = switchPortByUuid.get(portUuid);
@@ -228,14 +292,7 @@ export const buildLadderModel = (database: LogicalDatabase): LadderModel => {
                     tier: 'physical',
                     network: switchConstruct.network,
                     bridge: bridgeByLocalnet.get(ref.networkName),
-                    podPortCount: 0,
-                    podPorts: [],
-                    localnetPorts: [],
-                    remotePeers: [],
-                    natCount: 0,
-                    staticRouteCount: 0,
-                    natRules: [],
-                    staticRouteRules: [],
+                    ...emptyLadderAggregates(),
                 };
                 constructs.push(mapping);
                 constructByUuid.set(mappingUuid, mapping);

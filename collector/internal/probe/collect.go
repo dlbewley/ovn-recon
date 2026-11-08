@@ -195,6 +195,8 @@ func collectDatabase(ctx context.Context, runner Runner, opts CollectOptions) (*
 		NATs:               natsFromRows(nb["NAT"]),
 		StaticRoutes:       staticRoutesFromRows(nb["Logical_Router_Static_Route"]),
 		BridgeMappings:     collectTable(ctx, runner, opts, "Chassis", chassisCommand, ParseChassisBridgeMappings, sink),
+		GatewayChassis:     gatewayChassisFromRows(nb["Gateway_Chassis"]),
+		NBGlobal:           nbGlobalFromRows(nb["NB_Global"]),
 	}
 
 	warnings := sink.warnings

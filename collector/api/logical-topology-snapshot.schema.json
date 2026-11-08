@@ -39,6 +39,11 @@
               "ports": {"type": "array", "items": {"type": "string"}},
               "nat": {"type": "array", "items": {"type": "string"}},
               "staticRoutes": {"type": "array", "items": {"type": "string"}},
+              "enabled": {"type": "boolean", "description": "Administrative state; absent when unset, which OVN treats as enabled."},
+              "policies": {"type": "array", "items": {"type": "string"}, "description": "Logical_Router_Policy uuids (table not yet collected)."},
+              "loadBalancer": {"type": "array", "items": {"type": "string"}, "description": "Load_Balancer uuids (table not yet collected)."},
+              "loadBalancerGroup": {"type": "array", "items": {"type": "string"}, "description": "Load_Balancer_Group uuids (table not yet collected)."},
+              "copp": {"type": "string", "description": "Copp uuid when control-plane policing is attached."},
               "options": {"$ref": "#/$defs/stringMap"},
               "externalIds": {"$ref": "#/$defs/stringMap"}
             },
@@ -56,7 +61,9 @@
               "mac": {"type": "string"},
               "networks": {"type": "array", "items": {"type": "string"}},
               "peer": {"type": "string"},
-              "gatewayChassis": {"type": "array", "items": {"type": "string"}},
+              "enabled": {"type": "boolean", "description": "Administrative state; absent when unset (enabled)."},
+              "gatewayChassis": {"type": "array", "items": {"type": "string"}, "description": "Gateway_Chassis uuids, resolved by database.gatewayChassis."},
+              "status": {"$ref": "#/$defs/stringMap", "description": "northd-written status; hosting-chassis names the chassis hosting a distributed gateway port."},
               "options": {"$ref": "#/$defs/stringMap"},
               "externalIds": {"$ref": "#/$defs/stringMap"}
             },
@@ -72,6 +79,10 @@
               "uuid": {"type": "string"},
               "name": {"type": "string"},
               "ports": {"type": "array", "items": {"type": "string"}},
+              "acls": {"type": "array", "items": {"type": "string"}, "description": "ACL uuids (table not yet collected)."},
+              "loadBalancer": {"type": "array", "items": {"type": "string"}, "description": "Load_Balancer uuids (table not yet collected)."},
+              "loadBalancerGroup": {"type": "array", "items": {"type": "string"}, "description": "Load_Balancer_Group uuids (table not yet collected)."},
+              "qosRules": {"type": "array", "items": {"type": "string"}, "description": "QoS uuids (table not yet collected)."},
               "otherConfig": {"$ref": "#/$defs/stringMap"},
               "externalIds": {"$ref": "#/$defs/stringMap"}
             },
@@ -107,6 +118,10 @@
               "logicalIp": {"type": "string"},
               "logicalPort": {"type": "string"},
               "externalMac": {"type": "string"},
+              "gatewayPort": {"type": "string", "description": "Logical_Router_Port uuid the rule applies on."},
+              "match": {"type": "string", "description": "Packet match narrowing the rule; empty on classic NAT rows."},
+              "priority": {"type": "integer", "description": "Orders rules sharing a match; absent when zero."},
+              "externalPortRange": {"type": "string", "description": "L4 source port range for SNAT."},
               "options": {"$ref": "#/$defs/stringMap"},
               "externalIds": {"$ref": "#/$defs/stringMap"}
             },
@@ -124,6 +139,9 @@
               "nexthop": {"type": "string"},
               "policy": {"type": "string"},
               "outputPort": {"type": "string"},
+              "routeTable": {"type": "string", "description": "Named route table; empty for the main table."},
+              "bfd": {"type": "string", "description": "BFD uuid guarding the nexthop."},
+              "selectionFields": {"type": "array", "items": {"type": "string"}, "description": "ECMP hash fields when set."},
               "options": {"$ref": "#/$defs/stringMap"},
               "externalIds": {"$ref": "#/$defs/stringMap"}
             },
@@ -142,6 +160,38 @@
             },
             "additionalProperties": false
           }
+        },
+        "gatewayChassis": {
+          "description": "Gateway_Chassis rows referenced by logicalRouterPorts[].gatewayChassis: the chassis that may host a distributed gateway port, with priorities. Absent on snapshots from collectors older than the field.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uuid", "name", "chassisName", "priority"],
+            "properties": {
+              "uuid": {"type": "string"},
+              "name": {"type": "string"},
+              "chassisName": {"type": "string", "description": "SB Chassis name (a UUID string), equal to the Node's k8s.ovn.org/node-chassis-id annotation."},
+              "priority": {"type": "integer"},
+              "options": {"$ref": "#/$defs/stringMap"},
+              "externalIds": {"$ref": "#/$defs/stringMap"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "nbGlobal": {
+          "description": "The zone's single NB_Global row: zone name and configuration sequence numbers (nb_cfg is set by the CMS; sb_cfg and hv_cfg follow as northd and the chassis catch up). options carries northd_internal_version. Absent on snapshots from collectors older than the field.",
+          "type": "object",
+          "required": ["uuid", "nbCfg", "sbCfg", "hvCfg"],
+          "properties": {
+            "uuid": {"type": "string"},
+            "name": {"type": "string"},
+            "nbCfg": {"type": "integer"},
+            "sbCfg": {"type": "integer"},
+            "hvCfg": {"type": "integer"},
+            "options": {"$ref": "#/$defs/stringMap"},
+            "externalIds": {"$ref": "#/$defs/stringMap"}
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

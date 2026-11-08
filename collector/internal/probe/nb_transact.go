@@ -20,6 +20,8 @@ var nbTables = []string{
 	"Logical_Switch_Port",
 	"NAT",
 	"Logical_Router_Static_Route",
+	"Gateway_Chassis",
+	"NB_Global",
 }
 
 // nbTransactCommand builds the single ovsdb-client exec that reads every NB

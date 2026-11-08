@@ -34,7 +34,8 @@ import { buildLadderModel } from './logicalLadderModel';
 import ConstructDrawerBody from './ConstructDrawerBody';
 import SnapshotJsonControls from './SnapshotJsonControls';
 import LogicalLadderView, { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
-import SnapshotStatusLine from './SnapshotStatusLine';
+import SnapshotStatusLine, { summarizeOvnZones } from './SnapshotStatusLine';
+import { useChassisNodeNames } from './useChassisNodeNames';
 import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
 import { navigateToPath } from './navigateToPath';
 
@@ -89,6 +90,10 @@ const NodeLogicalTopologyDetails: React.FC = () => {
         if (name) names.add(name);
         return Array.from(names).sort((a, b) => a.localeCompare(b));
     }, [nodeNetworkStates, name]);
+
+    // Gateway port placement in the drawer names chassis by SB chassis id;
+    // Nodes carry the mapping back to node names.
+    const nodeForChassis = useChassisNodeNames();
 
     const [snapshot, setSnapshot] = React.useState<LogicalTopologySnapshot | null>(null);
     const [isLoading, setIsLoading] = React.useState<boolean>(false);
@@ -310,6 +315,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             onSelectConstruct={selectConstructFromDrawer}
                                             database={snapshot?.database ?? null}
                                             databaseNode={name}
+                                            nodeForChassis={nodeForChassis}
                                         />
                                     </>
                                 )}
@@ -422,6 +428,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                                 freshness={freshnessState}
                                                 ageMs={snapshotAgeMs}
                                                 sourceHealth={snapshot.metadata.sourceHealth}
+                                                ovn={summarizeOvnZones([snapshot.database?.nbGlobal])}
                                                 isLoading={isLoading}
                                             />
                                         </FlexItem>
