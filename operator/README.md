@@ -40,7 +40,7 @@ Install the CRDs into the cluster:
 
 ```sh
 # Ensure KUBECONFIG is set
-export KUBECONFIG=/Users/dale/.kube/ocp/hub/kubeconfig
+export KUBECONFIG=/path/to/kubeconfig
 make install
 ```
 
@@ -48,7 +48,7 @@ Deploy the manager to the cluster with the image specified by `IMG`:
 
 ```sh
 # Ensure KUBECONFIG is set
-export KUBECONFIG=/Users/dale/.kube/ocp/hub/kubeconfig
+export KUBECONFIG=/path/to/kubeconfig
 make deploy IMG=<some-registry>/operator:tag
 ```
 

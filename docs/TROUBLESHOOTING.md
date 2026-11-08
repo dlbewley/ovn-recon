@@ -39,7 +39,7 @@ oc get events -A \
   --field-selector involvedObject.kind=OvnRecon,involvedObject.name="$APP_NAME",reason=CollectorRBACReconcileFailed
 ```
 
-Reason meanings and compatibility policy are documented in `/Users/dale/src/ovn-recon/docs/EVENT_REASON_CATALOG.md`.
+Reason meanings and compatibility policy are documented in `docs/EVENT_REASON_CATALOG.md`.
 
 ## Logging Profiles
 

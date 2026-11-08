@@ -51,6 +51,6 @@ Any non-additive reason change must include:
 1. A release note entry listing old and new reason values.
 2. A migration note describing any alert or automation updates needed.
 3. A code/test update to the reason catalog regression check:
-   - `/Users/dale/src/ovn-recon/operator/internal/controller/reason_catalog_test.go`
+   - `operator/internal/controller/reason_catalog_test.go`
 
 When practical, provide a short compatibility window by emitting the old and new reason in adjacent releases or by documenting an equivalent mapping.

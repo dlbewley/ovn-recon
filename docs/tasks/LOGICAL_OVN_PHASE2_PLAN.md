@@ -8,37 +8,37 @@ Phase 2 introduces a new **logical topology** view that complements (not replace
 - The Phase 2 entry point must be linked from the initial node list screen.
 
 ## Assessment Update (2026-02-13)
-After reviewing the `ovn-explorer` spike copied into:
-- `/Users/dale/src/ovn-recon/collector/_spike/ovn-explorer-samples/src/ovn/models.py`
-- `/Users/dale/src/ovn-recon/collector/_spike/ovn-explorer-samples/src/ovn/connection.py`
+After reviewing the `ovn-explorer` spike (a local working copy under
+`collector/_spike/`, never committed to this repository), in particular its
+`src/ovn/models.py` and `src/ovn/connection.py`:
 
 The project direction is updated as follows:
 - The Python spike is a **good discovery artifact** for resource coverage, field mapping, and edge-case output handling.
 - The Python implementation should **not** be promoted directly to production collector runtime for ovn-recon.
-- Phase 2 should use a **Go collector service** in a separate container image under `/Users/dale/src/ovn-recon/collector/`.
+- Phase 2 should use a **Go collector service** in a separate container image under `collector/`.
 
 ### Why the direction changed
 - OVN command output normalization in the spike is intentionally defensive but regex-heavy and brittle for long-term server-side operation.
 - The spike architecture is desktop-oriented (kubeconfig/local cache assumptions) while Phase 2 requires in-cluster, ServiceAccount-based runtime.
-- The current repo already has significant Go operational surface (`/Users/dale/src/ovn-recon/operator/`), making Go a better fit for image build, deployment, and maintenance consistency.
+- The current repo already has significant Go operational surface (`operator/`), making Go a better fit for image build, deployment, and maintenance consistency.
 
 ## Implementation Update (2026-02-13)
 
 ### Completed so far
 - Collector scaffold exists and builds:
-  - `/Users/dale/src/ovn-recon/collector/go.mod`
-  - `/Users/dale/src/ovn-recon/collector/Makefile`
-  - `/Users/dale/src/ovn-recon/collector/Dockerfile`
-  - `/Users/dale/src/ovn-recon/collector/cmd/ovn-collector/main.go`
+  - `collector/go.mod`
+  - `collector/Makefile`
+  - `collector/Dockerfile`
+  - `collector/cmd/ovn-collector/main.go`
 - File-backed HTTP snapshot serving is implemented:
   - `GET /api/v1/snapshots/:nodeName`
   - fallback to `default.json` when node snapshot is absent
 - Canonical contract artifacts are in place:
-  - Go types in `/Users/dale/src/ovn-recon/collector/internal/snapshot/types.go`
-  - JSON schema in `/Users/dale/src/ovn-recon/collector/api/logical-topology-snapshot.schema.json`
-  - TypeScript types in `/Users/dale/src/ovn-recon/src/types.ts`
+  - Go types in `collector/internal/snapshot/types.go`
+  - JSON schema in `collector/api/logical-topology-snapshot.schema.json`
+  - TypeScript types in `src/types.ts`
 - Fixture corpus exists for baseline/dense/parser-edge scenarios under:
-  - `/Users/dale/src/ovn-recon/collector/fixtures/snapshots/`
+  - `collector/fixtures/snapshots/`
 - Node-scoped logical route and list entry are implemented and feature-gated:
   - route: `/ovn-recon/ovn/:name`
   - list column is conditional on `ovn-collector` gate
@@ -48,10 +48,10 @@ The project direction is updated as follows:
   - collector Deployment+Service reconciliation behind feature gate
   - collector tag/pullPolicy inheritance from plugin image defaults
 - Collector CI workflow is added:
-  - `/Users/dale/src/ovn-recon/.github/workflows/collector-release.yaml`
+  - `.github/workflows/collector-release.yaml`
   - follows existing `v*` tag semantics and prerelease expiry label pattern
 - Runtime semantics documentation is added:
-  - `/Users/dale/src/ovn-recon/docs/tasks/OVN_COLLECTOR_RUNTIME_SEMANTICS.md`
+  - `docs/tasks/OVN_COLLECTOR_RUNTIME_SEMANTICS.md`
   - defines snapshot transport headers, freshness thresholds, degraded-state rules, and initial performance budgets
 - Go parsing pipeline now covers core OVN logical resources:
   - `Logical_Router`
@@ -64,8 +64,11 @@ The project direction is updated as follows:
   - manual refresh action
   - stale/error alerts derived from snapshot metadata and warnings
 - Logical topology model/layout logic is now extracted and regression-tested:
-  - `/Users/dale/src/ovn-recon/src/components/logicalTopologyModel.ts`
-  - `/Users/dale/src/ovn-recon/src/components/logicalTopologyModel.test.ts`
+  - `src/components/logicalTopologyModel.ts`
+  - `src/components/logicalTopologyModel.test.ts`
+  - (both removed on 2026-08-28 when the ladder view replaced the placeholder
+    renderer; see `src/components/logicalLadderModel.ts` and
+    `src/components/logicalLadderLayout.ts`)
   - dense topology layout wraps same-kind nodes into sub-columns for improved usability
 
 ### Learned revisions
@@ -81,9 +84,9 @@ The project direction is updated as follows:
   - `ovn-recon-r8n`: NNS fixture corpus and selector/model coverage added.
 - In progress:
   - `ovn-recon-bz6`: community-operators submission handoff.
-    - Runbook added: `/Users/dale/src/ovn-recon/docs/COMMUNITY_OPERATORS_SUBMISSION.md`
-    - Release artifact prep added in `/Users/dale/src/ovn-recon/.github/workflows/operator-release.yaml`
-    - Local staging helper added: `/Users/dale/src/ovn-recon/scripts/prepare-community-operators-submission.sh`
+    - Runbook added: `docs/COMMUNITY_OPERATORS_SUBMISSION.md`
+    - Release artifact prep added in `.github/workflows/operator-release.yaml`
+    - Local staging helper added: `scripts/prepare-community-operators-submission.sh`
 
 ### Execution Update (2026-02-16)
 - Completed live OVN probe runtime wiring in collector:
@@ -139,8 +142,8 @@ Deliver in two increments:
 - Increment B: Real data assembly path from a Go collector image (API endpoint or CR-backed snapshot) feeding the same contract.
 
 Collector placement and boundaries:
-- Collector code root: `/Users/dale/src/ovn-recon/collector/`
-- Python spike remains in `/Users/dale/src/ovn-recon/collector/_spike/` for reference fixtures and parser edge-case examples only.
+- Collector code root: `collector/`
+- The Python spike stayed a local working copy under `collector/_spike/` (never committed to this repository), kept for reference fixtures and parser edge-case examples only.
 - Collector responsibilities:
   - probe OVN resources in-cluster using ServiceAccount credentials
   - normalize resource data into `LogicalTopologySnapshot`
@@ -150,9 +153,9 @@ Collector placement and boundaries:
   - avoid direct `ovn-*ctl` command execution/parsing
 
 ### 2.1 Collector Build and Release Requirements
-- Add collector build targets (`Makefile`) under `/Users/dale/src/ovn-recon/collector/`.
-- Add collector container build definition (`Dockerfile`) under `/Users/dale/src/ovn-recon/collector/`.
-- Add GitHub Actions workflow in `/Users/dale/src/ovn-recon/.github/workflows/` for collector image build/push.
+- Add collector build targets (`Makefile`) under `collector/`.
+- Add collector container build definition (`Dockerfile`) under `collector/`.
+- Add GitHub Actions workflow in `.github/workflows/` for collector image build/push.
 - Configure collector image destination to `quay.io/dbewley/ovn-collector` (repository to be created).
 
 ### 3. Rendering Stack
@@ -174,7 +177,7 @@ Collector placement and boundaries:
 Status: completed.
 
 ### Milestone 1: Collector Skeleton (Go)
-- Scaffold `/Users/dale/src/ovn-recon/collector/` module and container build.
+- Scaffold `collector/` module and container build.
 - Implement initial probe pipeline for a minimal OVN resource subset.
 - Emit snapshot contract from Go code path (file or API/CR producer).
 - Add collector `Makefile` and `Dockerfile` to support local and CI image builds.
@@ -185,7 +188,7 @@ Status: completed.
 - Update operator deployment flow so collector image is part of managed resources.
 - Start with collector as standalone Deployment and preserve path to optional DaemonSet mode for per-node OVN-IC collection.
 - Add `OvnRecon` feature gate to enable/disable Phase 2 logical topology features.
-- Update `/Users/dale/src/ovn-recon/OPERATOR.md` with collector image, deployment model, and operational notes.
+- Update `OPERATOR.md` with collector image, deployment model, and operational notes.
 - Ensure repository CI covers collector and operator integration paths.
 Status: mostly completed; follow-up controller/manifests work continues in remaining operator tasks.
 
@@ -308,7 +311,7 @@ This Phase 2 work runs in parallel with ongoing Phase 1 improvements:
   - output parser path
   - required RBAC verb/resource bindings
 - Implemented in:
-  - `/Users/dale/src/ovn-recon/docs/tasks/OVN_COLLECTOR_PROBE_MATRIX.md`
+  - `docs/tasks/OVN_COLLECTOR_PROBE_MATRIX.md`
 
 ## Initial Beads Backlog Mapping
 Current Phase 2 bead status:
