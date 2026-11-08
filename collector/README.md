@@ -17,19 +17,59 @@ This scaffold includes:
 
 - `GET /healthz`
 - `GET /readyz`
-- `GET /api/v1/snapshots/:nodeName`
+- `GET /api/v1/snapshots/:nodeName`: one node's zone snapshot
+- `GET /api/v1/snapshots`: every reachable node's zone snapshot in one
+  response (`ClusterLogicalTopology`)
 
 Example:
 
 ```bash
 curl -s http://localhost:8090/api/v1/snapshots/worker-a
+curl -s --compressed 'http://localhost:8090/api/v1/snapshots/worker-a?include=policy,services'
 ```
 
-Response headers:
+### Optional sections (`include`)
+
+Both snapshot endpoints take `?include=<section>[,<section>]` (the parameter
+may also repeat). Without it a response carries the ladder tables only, which
+is what the topology views fetch.
+
+| Section | Adds to `database` | NB tables |
+|---|---|---|
+| `policy` | `acls`, `portGroups`, `addressSets` | `ACL`, `Port_Group`, `Address_Set` |
+| `services` | `loadBalancers`, `loadBalancerGroups` | `Load_Balancer`, `Load_Balancer_Group` |
+
+An unknown section name is a `400` whose body lists the valid ones. In a
+response, an absent section key means the section was not requested or not
+collected; an empty array means it was collected and the table is empty.
+
+The sections exist because of their size. Measured on a ten-node cluster with
+a few hundred Services and NetworkPolicies, the ladder tables are 100 to
+200 KB per node, the policy tables add about 1 MB and the service tables
+about 200 KB, and both are nearly identical in every zone, so a polling
+topology view (and above all the aggregate, which would repeat them once per
+node) should not carry them. The collector still reads every table in one
+transaction and caches one full snapshot per node; `include` only selects
+what a response carries, so asking for a section never triggers a second
+collection. The aggregate endpoint honours `include` but a client that wants
+section data for a cluster-wide view should read it from one node's snapshot.
+
+The mechanism is ahead of the data: the collector does not populate the
+sections until the policy plane (`ovn-recon-e2b.5`) and the service plane
+(`ovn-recon-e2b.6`) add their tables and row types, so today a request with
+`include` returns the same payload as one without.
+
+### Response headers
+
 - `Cache-Control: no-store`
-- `X-OVN-Recon-Snapshot-Generated-At` (when metadata includes `generatedAt`)
+- `Vary: Accept-Encoding`
+- `Content-Encoding: gzip` when the request sends `Accept-Encoding: gzip`
+  (snapshot JSON compresses about five times, the policy tables seven to
+  eight); a request without it gets the uncompressed body
+- `X-OVN-Recon-Snapshot-Generated-At` (per-node endpoint, when metadata
+  includes `generatedAt`)
 - `X-OVN-Recon-Snapshot-Source-Health`
-- `X-OVN-Recon-Snapshot-Node-Name`
+- `X-OVN-Recon-Snapshot-Node-Name` (per-node endpoint)
 
 ## Snapshot Source
 

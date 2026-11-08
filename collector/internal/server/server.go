@@ -17,6 +17,9 @@ import (
 const snapshotsPrefix = "/api/v1/snapshots/"
 const snapshotsAggregatePath = "/api/v1/snapshots"
 
+// includeParam selects the optional sections a snapshot response carries.
+const includeParam = "include"
+
 // aggregateConcurrency bounds parallel zone collection so an aggregate
 // request cannot fan out unbounded pod execs.
 const aggregateConcurrency = 4
@@ -92,8 +95,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/readyz", s.handleReady)
-	mux.HandleFunc(snapshotsAggregatePath, s.handleSnapshotsAggregate)
-	mux.HandleFunc(snapshotsPrefix, s.handleSnapshotByNode)
+	mux.Handle(snapshotsAggregatePath, withGzip(http.HandlerFunc(s.handleSnapshotsAggregate)))
+	mux.Handle(snapshotsPrefix, withGzip(http.HandlerFunc(s.handleSnapshotByNode)))
 	return mux
 }
 
@@ -119,13 +122,30 @@ func (s *Server) handleSnapshotByNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing or invalid node name", http.StatusBadRequest)
 		return
 	}
+	sections, ok := requestedSections(w, r)
+	if !ok {
+		return
+	}
 
 	payload, err := s.collectZone(r.Context(), nodeName)
 	if err != nil {
 		s.writeStoreError(w, nodeName, err)
 		return
 	}
-	s.writeSnapshot(w, payload, nodeName)
+	s.writeSnapshot(w, snapshot.Project(payload, sections), nodeName)
+}
+
+// requestedSections reads ?include= and answers 400 itself, naming the valid
+// sections, when a name is unknown. collectZone always resolves the full
+// snapshot (one collect, one cache entry per node); the sections only decide
+// what a response carries, so asking for more never triggers a recollect.
+func requestedSections(w http.ResponseWriter, r *http.Request) (snapshot.SectionSet, bool) {
+	sections, err := snapshot.ParseSections(r.URL.Query()[includeParam])
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return nil, false
+	}
+	return sections, true
 }
 
 // collectZone resolves one node's zone snapshot: fresh cache first; a stale
@@ -279,6 +299,10 @@ func (s *Server) handleSnapshotsAggregate(w http.ResponseWriter, r *http.Request
 		http.Error(w, "aggregate endpoint is not enabled", http.StatusNotFound)
 		return
 	}
+	sections, ok := requestedSections(w, r)
+	if !ok {
+		return
+	}
 
 	nodes, err := s.nodeLister.ListNodes(r.Context())
 	if err != nil {
@@ -333,7 +357,7 @@ func (s *Server) handleSnapshotsAggregate(w http.ResponseWriter, r *http.Request
 		if result.payload.Metadata.SourceHealth != "" && result.payload.Metadata.SourceHealth != "healthy" {
 			aggregate.Metadata.SourceHealth = "degraded"
 		}
-		aggregate.Snapshots = append(aggregate.Snapshots, result.payload)
+		aggregate.Snapshots = append(aggregate.Snapshots, snapshot.Project(result.payload, sections))
 	}
 
 	w.Header().Set("Content-Type", "application/json")

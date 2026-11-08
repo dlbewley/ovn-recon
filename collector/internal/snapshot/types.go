@@ -227,7 +227,28 @@ type LogicalDatabase struct {
 	// NBGlobal is the zone's NB_Global row; absent on snapshots from
 	// collectors older than the field.
 	NBGlobal *NBGlobalRow `json:"nbGlobal,omitempty"`
+
+	// The optional sections (see Section). A response carries them only when
+	// the request names the section in ?include=. Nil means absent: not
+	// requested, or not collected. Non-nil with zero rows means collected and
+	// empty, and encodes as [] (LogicalDatabase.MarshalJSON; the omitempty
+	// here only documents that the keys are optional).
+	//
+	// Policy section.
+	ACLs        []SectionRow `json:"acls,omitempty"`
+	PortGroups  []SectionRow `json:"portGroups,omitempty"`
+	AddressSets []SectionRow `json:"addressSets,omitempty"`
+	// Services section.
+	LoadBalancers      []SectionRow `json:"loadBalancers,omitempty"`
+	LoadBalancerGroups []SectionRow `json:"loadBalancerGroups,omitempty"`
 }
+
+// SectionRow is the placeholder row type of the optional sections. The
+// section keys and their delivery are part of the contract; the row shapes
+// are not yet: ovn-recon-e2b.5 (policy) and ovn-recon-e2b.6 (services)
+// replace it with typed rows when they start collecting the tables. Until
+// then the collector never populates a section.
+type SectionRow map[string]any
 
 // ClusterMetadata describes an aggregate collection across zones.
 type ClusterMetadata struct {

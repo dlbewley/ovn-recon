@@ -529,7 +529,42 @@ export interface LogicalDatabase {
     gatewayChassis?: GatewayChassisRow[];
     /** Absent on snapshots from collectors older than the field. */
     nbGlobal?: NBGlobalRow;
+
+    // Optional sections: present only when the request names the section in
+    // ?include= (see SnapshotSection). An absent key means "not requested, or
+    // not collected"; an empty array means "collected, and the table is empty".
+    /** Section `policy`. */
+    acls?: SectionRow[];
+    /** Section `policy`. */
+    portGroups?: SectionRow[];
+    /** Section `policy`. */
+    addressSets?: SectionRow[];
+    /** Section `services`. */
+    loadBalancers?: SectionRow[];
+    /** Section `services`. */
+    loadBalancerGroups?: SectionRow[];
 }
+
+/**
+ * Optional groups of database tables the collector delivers on request:
+ * `GET /api/v1/snapshots[/:node]?include=policy,services`. Without the
+ * parameter a snapshot carries the ladder tables only.
+ */
+export type SnapshotSection = 'policy' | 'services';
+
+/** The database keys each section adds to a snapshot. */
+export const SNAPSHOT_SECTION_KEYS = {
+    policy: ['acls', 'portGroups', 'addressSets'],
+    services: ['loadBalancers', 'loadBalancerGroups'],
+} as const satisfies Record<SnapshotSection, readonly (keyof LogicalDatabase)[]>;
+
+/**
+ * Placeholder row type of the optional sections. The keys and their delivery
+ * are part of the contract; the row shapes arrive with the policy plane
+ * (ovn-recon-e2b.5) and the service plane (ovn-recon-e2b.6), which replace
+ * this with typed rows. Until then the collector never populates a section.
+ */
+export type SectionRow = Record<string, unknown>;
 
 export interface LogicalTopologySnapshot {
     metadata: LogicalTopologyMetadata;

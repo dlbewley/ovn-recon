@@ -1,4 +1,4 @@
-import { ClusterLogicalTopology, LogicalTopologySnapshot } from '../types';
+import { ClusterLogicalTopology, LogicalTopologySnapshot, SnapshotSection } from '../types';
 
 // The collector is reachable through several console proxy shapes depending
 // on console version and plugin proxy configuration; try each in order.
@@ -47,10 +47,43 @@ const fetchFirst = async <T>(buildUrl: (prefix: string) => string): Promise<T> =
     throw new Error(`Collector request failed. Attempts: ${attempts.join('; ')}`);
 };
 
-export const fetchCollectorSnapshot = (nodeName: string): Promise<LogicalTopologySnapshot> => {
-    const encodedNodeName = encodeURIComponent(nodeName);
-    return fetchFirst((prefix) => `${prefix}/${encodedNodeName}`);
+export interface SnapshotFetchOptions {
+    /**
+     * Optional sections to add to the response. Omitted or empty requests the
+     * ladder payload, which is what the topology pages fetch; the sections
+     * are megabytes on a real cluster, so only the views that render them ask.
+     */
+    include?: readonly SnapshotSection[];
+}
+
+/** Sections deduplicated and sorted, so equal requests are spelled the same. */
+export const normalizeSections = (include?: readonly SnapshotSection[]): SnapshotSection[] =>
+    Array.from(new Set(include ?? [])).sort();
+
+/**
+ * The include query string, or '' when no section is requested: the same
+ * request always produces the same URL.
+ */
+export const includeQuery = (include?: readonly SnapshotSection[]): string => {
+    const sections = normalizeSections(include);
+    return sections.length > 0 ? `?include=${sections.join(',')}` : '';
 };
 
-export const fetchClusterTopology = (): Promise<ClusterLogicalTopology> =>
-    fetchFirst((prefix) => prefix);
+export const fetchCollectorSnapshot = (
+    nodeName: string,
+    options: SnapshotFetchOptions = {},
+): Promise<LogicalTopologySnapshot> => {
+    const encodedNodeName = encodeURIComponent(nodeName);
+    const query = includeQuery(options.include);
+    return fetchFirst((prefix) => `${prefix}/${encodedNodeName}${query}`);
+};
+
+/**
+ * The aggregate carries one snapshot per zone, and the optional sections are
+ * near-identical in every zone, so the cluster views fetch it without
+ * `include` and read section data from one representative node's snapshot.
+ */
+export const fetchClusterTopology = (options: SnapshotFetchOptions = {}): Promise<ClusterLogicalTopology> => {
+    const query = includeQuery(options.include);
+    return fetchFirst((prefix) => `${prefix}${query}`);
+};

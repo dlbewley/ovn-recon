@@ -6,6 +6,13 @@ This document defines the Day-1 semantics for Phase 2 snapshot delivery from the
 ## Snapshot Transport
 - Endpoint: `GET /api/v1/snapshots/:nodeName`
 - Payload: `LogicalTopologySnapshot` JSON
+- Optional sections (ovn-recon-e2b.9): `?include=policy,services` on the
+  per-node and aggregate endpoints adds the policy and service tables to
+  `database`. The default response is the ladder tables only; an unknown
+  section is a `400`. The cache below always holds the full snapshot, so
+  `include` is a projection of the cached entry, never a second collection.
+- Compression: `Content-Encoding: gzip` when the request accepts it, with
+  `Vary: Accept-Encoding` on every snapshot response.
 - Caching: `Cache-Control: no-store`
 - Metadata headers:
   - `X-OVN-Recon-Snapshot-Generated-At`
