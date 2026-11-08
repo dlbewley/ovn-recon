@@ -4,30 +4,57 @@
   "title": "ClusterLogicalTopology",
   "description": "Aggregate payload from GET /api/v1/snapshots: every reachable node's zone snapshot in one response. The collector does not merge zones; semantic dedup happens in the frontend.",
   "type": "object",
-  "required": ["metadata", "snapshots", "warnings"],
+  "required": [
+    "metadata",
+    "snapshots",
+    "warnings"
+  ],
   "properties": {
     "metadata": {
       "type": "object",
-      "required": ["schemaVersion", "generatedAt", "sourceHealth"],
+      "required": [
+        "schemaVersion",
+        "generatedAt",
+        "sourceHealth"
+      ],
       "properties": {
-        "schemaVersion": {"type": "string", "enum": ["2"]},
-        "generatedAt": {"type": "string", "format": "date-time"},
-        "sourceHealth": {"type": "string"}
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "2"
+          ]
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sourceHealth": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
     "snapshots": {
       "type": "array",
-      "items": {"$ref": "logical-topology-snapshot.schema.json"}
+      "items": {
+        "$ref": "logical-topology-snapshot.schema.json"
+      }
     },
     "warnings": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["code", "message"],
+        "required": [
+          "code",
+          "message"
+        ],
         "properties": {
-          "code": {"type": "string"},
-          "message": {"type": "string"}
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
         },
         "additionalProperties": false
       }
