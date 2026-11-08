@@ -12,17 +12,9 @@ import (
 	"github.com/dlbewley/ovn-recon/collector/internal/snapshot"
 )
 
-var (
-	logicalRouterCommand     = []string{"ovn-nbctl", "--format=json", "list", "Logical_Router"}
-	logicalRouterPortCommand = []string{"ovn-nbctl", "--format=json", "list", "Logical_Router_Port"}
-	logicalSwitchCommand     = []string{"ovn-nbctl", "--format=json", "list", "Logical_Switch"}
-	logicalSwitchPortCommand = []string{"ovn-nbctl", "--format=json", "list", "Logical_Switch_Port"}
-	natCommand               = []string{"ovn-nbctl", "--format=json", "list", "NAT"}
-	staticRouteCommand       = []string{"ovn-nbctl", "--format=json", "list", "Logical_Router_Static_Route"}
-	// Bridge mappings live on the local chassis in the Southbound database;
-	// exec target resolution finds the container where ovn-sbctl works.
-	chassisCommand = []string{"ovn-sbctl", "--format=json", "--columns=other_config", "find", "Chassis", "other_config:is-remote=false"}
-)
+// Bridge mappings live on the local chassis in the Southbound database;
+// exec target resolution finds the container where ovn-sbctl works.
+var chassisCommand = []string{"ovn-sbctl", "--format=json", "--columns=other_config", "find", "Chassis", "other_config:is-remote=false"}
 
 var (
 	defaultCollectOptionsMu sync.RWMutex
@@ -151,16 +143,57 @@ func collectTable[T any](
 	return rows
 }
 
+// collectNBTables reads every Northbound table in one ovsdb-client
+// transact. When that exec fails outright it falls back to one ovn-nbctl
+// list per table, so a cluster whose nbdb container lacks ovsdb-client still
+// yields a snapshot (non-atomic, flagged by NB_TRANSACT_FAILED).
+func collectNBTables(ctx context.Context, runner Runner, opts CollectOptions, sink *warningSink) map[string][]map[string]any {
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	command := nbTransactCommand(nbTables)
+	logger.Debug("running OVN NB transact", "tables", strings.Join(nbTables, ","))
+	raw, err := runner.Run(ctx, command)
+	if err == nil {
+		logProbeOutput(logger, opts.IncludeProbeOutput, command, raw)
+		rowsByTable, errByTable, decodeErr := decodeNBTransact(raw, nbTables)
+		if decodeErr == nil {
+			for _, table := range nbTables {
+				if opErr, failed := errByTable[table]; failed {
+					logger.Warn("OVN NB transact operation failed", "resource", table, "error", opErr)
+					sink.append("COMMAND_FAILED", fmt.Sprintf("%s select failed: %v", table, opErr))
+					rowsByTable[table] = []map[string]any{}
+				}
+			}
+			return rowsByTable
+		}
+		logProbeParseContext(logger, opts.IncludeProbeOutput, raw)
+		err = decodeErr
+	}
+
+	logger.Warn("OVN NB transact failed; falling back to per-table ovn-nbctl list", "error", err)
+	sink.append("NB_TRANSACT_FAILED", fmt.Sprintf("NB transact failed, tables read separately: %v", err))
+
+	rowsByTable := make(map[string][]map[string]any, len(nbTables))
+	for _, table := range nbTables {
+		rowsByTable[table] = collectTable(ctx, runner, opts, table, nbListCommand(table), parseTableRows, sink)
+	}
+	return rowsByTable
+}
+
 func collectDatabase(ctx context.Context, runner Runner, opts CollectOptions) (*snapshot.LogicalDatabase, []snapshot.Warning) {
 	sink := &warningSink{}
 
+	nb := collectNBTables(ctx, runner, opts, sink)
 	database := &snapshot.LogicalDatabase{
-		LogicalRouters:     collectTable(ctx, runner, opts, "Logical_Router", logicalRouterCommand, ParseLogicalRouters, sink),
-		LogicalRouterPorts: collectTable(ctx, runner, opts, "Logical_Router_Port", logicalRouterPortCommand, ParseLogicalRouterPorts, sink),
-		LogicalSwitches:    collectTable(ctx, runner, opts, "Logical_Switch", logicalSwitchCommand, ParseLogicalSwitches, sink),
-		LogicalSwitchPorts: collectTable(ctx, runner, opts, "Logical_Switch_Port", logicalSwitchPortCommand, ParseLogicalSwitchPorts, sink),
-		NATs:               collectTable(ctx, runner, opts, "NAT", natCommand, ParseNATs, sink),
-		StaticRoutes:       collectTable(ctx, runner, opts, "Logical_Router_Static_Route", staticRouteCommand, ParseStaticRoutes, sink),
+		LogicalRouters:     logicalRoutersFromRows(nb["Logical_Router"]),
+		LogicalRouterPorts: logicalRouterPortsFromRows(nb["Logical_Router_Port"]),
+		LogicalSwitches:    logicalSwitchesFromRows(nb["Logical_Switch"]),
+		LogicalSwitchPorts: logicalSwitchPortsFromRows(nb["Logical_Switch_Port"]),
+		NATs:               natsFromRows(nb["NAT"]),
+		StaticRoutes:       staticRoutesFromRows(nb["Logical_Router_Static_Route"]),
 		BridgeMappings:     collectTable(ctx, runner, opts, "Chassis", chassisCommand, ParseChassisBridgeMappings, sink),
 	}
 

@@ -121,13 +121,15 @@ func TestKubernetesExecRunnerCollectsSnapshotWhenFRRNamespaceIsMissing(t *testin
 	})
 
 	outputs := map[string]string{
-		strings.Join(logicalRouterCommand, " "):     `{"headings":["_uuid","name","ports"],"data":[[["uuid","lr-1"],"cluster-router",["set",[["uuid","lrp-1"]]]]]}`,
-		strings.Join(logicalRouterPortCommand, " "): `{"headings":["_uuid","name"],"data":[[["uuid","lrp-1"],"rtos-red"]]}`,
-		strings.Join(logicalSwitchCommand, " "):     `{"headings":["_uuid","name","ports"],"data":[[["uuid","ls-1"],"red-net",["set",[["uuid","lsp-r"]]]]]}`,
-		strings.Join(logicalSwitchPortCommand, " "): `{"headings":["_uuid","name","type","options"],"data":[[["uuid","lsp-r"],"red-router-port","router",["map",[["router-port","rtos-red"]]]]]}`,
-		strings.Join(natCommand, " "):               `{"headings":["_uuid","type"],"data":[]}`,
-		strings.Join(staticRouteCommand, " "):       `{"headings":["_uuid","ip_prefix"],"data":[]}`,
-		strings.Join(chassisCommand, " "):           `{"headings":["other_config"],"data":[]}`,
+		strings.Join(nbTransactCommand(nbTables), " "): `[` +
+			`{"rows":[{"_uuid":["uuid","lr-1"],"name":"cluster-router","ports":["uuid","lrp-1"]}]},` +
+			`{"rows":[{"_uuid":["uuid","lrp-1"],"name":"rtos-red"}]},` +
+			`{"rows":[{"_uuid":["uuid","ls-1"],"name":"red-net","ports":["uuid","lsp-r"]}]},` +
+			`{"rows":[{"_uuid":["uuid","lsp-r"],"name":"red-router-port","type":"router","options":["map",[["router-port","rtos-red"]]]}]},` +
+			`{"rows":[]},` +
+			`{"rows":[]}` +
+			`]`,
+		strings.Join(chassisCommand, " "): `{"headings":["other_config"],"data":[]}`,
 	}
 
 	var buf bytes.Buffer

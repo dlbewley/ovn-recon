@@ -112,8 +112,9 @@ type KubernetesExecRunner struct {
 	execPod          podExecFunc
 
 	// cachedTargets memoizes exec target resolution for this runner's
-	// lifetime (one snapshot collection): seven commands share one pod
-	// listing instead of listing per command.
+	// lifetime (one snapshot collection): the NB transact, the SB chassis
+	// query and any fallback list share one pod listing instead of listing
+	// per command.
 	cachedTargets []execTarget
 }
 
@@ -130,7 +131,7 @@ func (r *KubernetesExecRunner) Run(ctx context.Context, command []string) (strin
 		}
 		r.cachedTargets = targets
 	}
-	targets := orderTargetsForCommand(r.cachedTargets, command[0])
+	targets := orderTargetsForCommand(r.cachedTargets, command)
 
 	var lastErr error
 	for _, target := range targets {
@@ -176,15 +177,31 @@ type execTarget struct {
 }
 
 // orderTargetsForCommand fronts the container the command's database lives
-// in (ovn-nbctl -> nbdb, ovn-sbctl -> sbdb), so the exec loop stops burning
-// failed attempts on the ovnkube-node pod's other containers.
-func orderTargetsForCommand(targets []execTarget, command string) []execTarget {
+// in (ovn-nbctl or the NB socket -> nbdb, ovn-sbctl or the SB socket ->
+// sbdb), so the exec loop stops burning failed attempts on the ovnkube-node
+// pod's other containers.
+func orderTargetsForCommand(targets []execTarget, command []string) []execTarget {
+	if len(command) == 0 {
+		return targets
+	}
 	var preferred string
-	switch command {
+	switch command[0] {
 	case "ovn-nbctl":
 		preferred = "nbdb"
 	case "ovn-sbctl":
 		preferred = "sbdb"
+	case "ovsdb-client":
+		for _, arg := range command[1:] {
+			switch {
+			case strings.Contains(arg, "ovnnb_db.sock"):
+				preferred = "nbdb"
+			case strings.Contains(arg, "ovnsb_db.sock"):
+				preferred = "sbdb"
+			}
+		}
+		if preferred == "" {
+			return targets
+		}
 	default:
 		return targets
 	}

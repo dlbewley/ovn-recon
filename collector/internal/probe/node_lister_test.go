@@ -70,13 +70,22 @@ func TestOrderTargetsForCommandFrontsDatabaseContainer(t *testing.T) {
 		{namespace: "ovn", podName: "p", containerName: "sbdb"},
 	}
 
-	if got := orderTargetsForCommand(targets, "ovn-nbctl"); got[0].containerName != "nbdb" {
+	if got := orderTargetsForCommand(targets, []string{"ovn-nbctl", "list", "NAT"}); got[0].containerName != "nbdb" {
 		t.Fatalf("ovn-nbctl should try nbdb first, got %q", got[0].containerName)
 	}
-	if got := orderTargetsForCommand(targets, "ovn-sbctl"); got[0].containerName != "sbdb" {
+	if got := orderTargetsForCommand(targets, []string{"ovn-sbctl", "list", "Chassis"}); got[0].containerName != "sbdb" {
 		t.Fatalf("ovn-sbctl should try sbdb first, got %q", got[0].containerName)
 	}
-	if got := orderTargetsForCommand(targets, "ip"); got[0].containerName != "ovn-controller" {
+	if got := orderTargetsForCommand(targets, nbTransactCommand(nbTables)); got[0].containerName != "nbdb" {
+		t.Fatalf("ovsdb-client on the NB socket should try nbdb first, got %q", got[0].containerName)
+	}
+	if got := orderTargetsForCommand(targets, []string{"ovsdb-client", "transact", "unix:/var/run/ovn/ovnsb_db.sock", "[]"}); got[0].containerName != "sbdb" {
+		t.Fatalf("ovsdb-client on the SB socket should try sbdb first, got %q", got[0].containerName)
+	}
+	if got := orderTargetsForCommand(targets, []string{"ovsdb-client", "list-dbs"}); got[0].containerName != "ovn-controller" {
+		t.Fatalf("ovsdb-client without a known socket keeps original order, got %q", got[0].containerName)
+	}
+	if got := orderTargetsForCommand(targets, []string{"ip", "link"}); got[0].containerName != "ovn-controller" {
 		t.Fatalf("unknown commands keep original order, got %q", got[0].containerName)
 	}
 }
