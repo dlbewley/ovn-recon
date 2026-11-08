@@ -27,11 +27,17 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// The placeholder is appended by hack/crdplaceholder during make manifests.
-// Running controller-gen by hand drops it silently; this test catches that
-// before a CRD without v1alpha1 reaches a bundle and stalls upgrades again.
-func TestGeneratedCRDCarriesRetiredPlaceholder(t *testing.T) {
-	path := filepath.Join("..", "..", "config", "crd", "bases", "recon.bewley.net_ovnrecons.yaml")
+const generatedCRD = "recon.bewley.net_ovnrecons.yaml"
+
+func generatedCRDPath() string {
+	return filepath.Join("..", "..", "config", "crd", "bases", generatedCRD)
+}
+
+// The CRD declares exactly one version. A retired version must not come back
+// (ovn-recon-5uj removed the last placeholder), and a new version must be
+// introduced deliberately, with conversion and a storedVersions plan.
+func TestGeneratedCRDDeclaresOnlyStorageVersion(t *testing.T) {
+	path := generatedCRDPath()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
@@ -43,39 +49,24 @@ func TestGeneratedCRDCarriesRetiredPlaceholder(t *testing.T) {
 	if crd.Name != CRDName {
 		t.Fatalf("CRD name = %q, want %q", crd.Name, CRDName)
 	}
-
-	var alpha *apiextensionsv1.CustomResourceDefinitionVersion
-	storage := ""
-	for i := range crd.Spec.Versions {
-		v := &crd.Spec.Versions[i]
-		if v.Storage {
-			storage = v.Name
+	if n := len(crd.Spec.Versions); n != 1 {
+		names := make([]string, 0, n)
+		for _, v := range crd.Spec.Versions {
+			names = append(names, v.Name)
 		}
-		if v.Name == RetiredV1alpha1 {
-			alpha = v
-		}
+		t.Fatalf("CRD declares %d versions %v, want only %s", n, names, StorageVersion)
 	}
-	if storage != "v1beta1" {
-		t.Fatalf("storage version = %q, want v1beta1", storage)
-	}
-	if alpha == nil {
-		t.Fatalf("%s is missing the %s placeholder; run make manifests", path, RetiredV1alpha1)
-	}
-	if alpha.Served || alpha.Storage {
-		t.Fatalf("%s placeholder must be unserved and non-storage, got served=%v storage=%v",
-			RetiredV1alpha1, alpha.Served, alpha.Storage)
-	}
-	if alpha.Schema == nil || alpha.Schema.OpenAPIV3Schema == nil ||
-		alpha.Schema.OpenAPIV3Schema.XPreserveUnknownFields == nil ||
-		!*alpha.Schema.OpenAPIV3Schema.XPreserveUnknownFields {
-		t.Fatalf("%s placeholder must preserve unknown fields so any historical object validates", RetiredV1alpha1)
+	v := crd.Spec.Versions[0]
+	if v.Name != StorageVersion || !v.Served || !v.Storage {
+		t.Fatalf("version = %s served=%v storage=%v, want %s served and storage",
+			v.Name, v.Served, v.Storage, StorageVersion)
 	}
 }
 
 // Defaults live in the controller (ovn-recon-n7t). A schema default would be
 // written into every object at creation and freeze there, so none may exist.
 func TestGeneratedCRDHasNoSchemaDefaults(t *testing.T) {
-	path := filepath.Join("..", "..", "config", "crd", "bases", "recon.bewley.net_ovnrecons.yaml")
+	path := generatedCRDPath()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
@@ -106,15 +97,5 @@ func walkDefaults(node interface{}, path string, found *[]string) {
 		for i, child := range v {
 			walkDefaults(child, fmt.Sprintf("%s[%d]", path, i), found)
 		}
-	}
-}
-
-func TestPlaceholderShape(t *testing.T) {
-	p := RetiredV1alpha1Placeholder()
-	if p.Name != RetiredV1alpha1 || p.Served || p.Storage {
-		t.Fatalf("unexpected placeholder: %+v", p)
-	}
-	if p.Schema.OpenAPIV3Schema.Type != "object" {
-		t.Fatalf("placeholder schema type = %q, want object (structural)", p.Schema.OpenAPIV3Schema.Type)
 	}
 }
