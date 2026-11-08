@@ -18,6 +18,10 @@ jobs:
     - uses: actions/checkout@v5
     - name: Lint shell in workflow run blocks
       run: python3 scripts/lint-workflows.py
+    # A path into someone's home directory resolves on one workstation only
+    # and can leak a personal layout into the repo. See beads ovn-recon-dlb.
+    - name: Check tracked files for workstation paths
+      run: python3 scripts/lint-workstation-paths.py
 
   build:
     runs-on: ubuntu-latest
