@@ -651,6 +651,35 @@ the decisions that bind the other beads are recorded here.
    `.5` and `.6` in either order; `.8` after `.5`. Dependencies recorded:
    `.5` and `.6` after `.9`, `.5` after `.4`, `.8` after `.5`.
 
+### 2026-11-08: `ovn-recon-e2b.11` contract JSON formatting
+
+Raised while reviewing `.3`: the JSON schema was hand-formatted in a compact
+style that nothing enforced, so a serializer round-trip rewrote the whole
+file and every editor had to match the style by hand.
+
+1. **Canonical serializer form, not a style-preserving formatter.** The two
+   schemas under `collector/api` and the fixture corpus under
+   `collector/fixtures/snapshots` are exactly `JSON.stringify(value, null,
+   2)` plus a trailing newline, keys in file order. Python's
+   `json.dumps(indent=2, ensure_ascii=False)` yields the same bytes, so the
+   splice scripts used for `.3` and `.4` fixtures are now churn-free by
+   construction. A prettier-style formatter was rejected because it
+   preserves the author's line breaks, so a scripted edit would still
+   reformat the file.
+2. **One formatter, two checks.** `scripts/format-contract-json.js`
+   rewrites (`npm run format:contract`) or checks (`npm run
+   check:contract`). The check runs as its own step in the Build and Test
+   workflow and again inside the Jest suite
+   (`src/contractJsonFormat.test.ts`), so a local `npm run test` catches a
+   hand-formatted edit before CI does.
+3. **One-time reformat.** The snapshot schema grew from 274 to 617 lines
+   and the cluster schema from 38 to 65; no semantic change. Fixtures were
+   already canonical.
+4. **Relationship to `.2`.** A generator for the three contract artifacts
+   would make the schemas tool-written outright; until then this keeps them
+   tool-formatted. The Go contract test is unchanged (Go cannot preserve
+   key order without an ordered-map dependency; the Node check covers it).
+
 ## Initial Beads Backlog Mapping
 
 | Bead | Title | Section |
@@ -666,6 +695,7 @@ the decisions that bind the other beads are recorded here.
 | `ovn-recon-e2b.8` | Construct detail page drill-down for switches and routers | 7 |
 | `ovn-recon-e2b.9` | Payload budgeting: table selection, endpoints, cache | 8 |
 | `ovn-recon-e2b.10` | Revisit kck.1 decision 4: SB bindings and chassis | 6, tier 5 |
+| `ovn-recon-e2b.11` | Contract: canonical JSON formatting for schemas and fixtures | 11 |
 
 Dependencies recorded in beads: `.5`, `.6`, `.7`, `.9` after `.1`; `.8`
 after `.4`; since 2026-11-08 also `.5` and `.6` after `.9`, `.5` after `.4`,

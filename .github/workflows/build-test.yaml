@@ -44,6 +44,13 @@ jobs:
     - name: Lint
       run: npm run lint
 
+    # The JSON schemas and fixture corpus under collector/ are kept in
+    # canonical serializer form (scripts/format-contract-json.js) so scripted
+    # edits round-trip without churn. The Jest suite checks the same thing;
+    # this step names the failure plainly.
+    - name: Check contract JSON formatting
+      run: npm run check:contract
+
     - name: Test
       run: npm run test
 

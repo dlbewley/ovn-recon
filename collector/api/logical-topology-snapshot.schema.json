@@ -4,16 +4,37 @@
   "title": "LogicalTopologySnapshot",
   "description": "v2 (metadata.schemaVersion == \"2\"): table-oriented transcription of OVN NB tables in `database`. The `nodes`/`edges`/`groups` graph fields are the deprecated v1 payload, retained only during the transition to the ladder renderer (ovn-recon-kck.7).",
   "type": "object",
-  "required": ["metadata", "database", "warnings"],
+  "required": [
+    "metadata",
+    "database",
+    "warnings"
+  ],
   "properties": {
     "metadata": {
       "type": "object",
-      "required": ["schemaVersion", "generatedAt", "sourceHealth", "nodeName"],
+      "required": [
+        "schemaVersion",
+        "generatedAt",
+        "sourceHealth",
+        "nodeName"
+      ],
       "properties": {
-        "schemaVersion": {"type": "string", "enum": ["2"]},
-        "generatedAt": {"type": "string", "format": "date-time"},
-        "sourceHealth": {"type": "string"},
-        "nodeName": {"type": "string"}
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "2"
+          ]
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sourceHealth": {
+          "type": "string"
+        },
+        "nodeName": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
@@ -32,20 +53,71 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["uuid", "name", "ports"],
+            "required": [
+              "uuid",
+              "name",
+              "ports"
+            ],
             "properties": {
-              "uuid": {"type": "string"},
-              "name": {"type": "string"},
-              "ports": {"type": "array", "items": {"type": "string"}},
-              "nat": {"type": "array", "items": {"type": "string"}},
-              "staticRoutes": {"type": "array", "items": {"type": "string"}},
-              "enabled": {"type": "boolean", "description": "Administrative state; absent when unset, which OVN treats as enabled."},
-              "policies": {"type": "array", "items": {"type": "string"}, "description": "Logical_Router_Policy uuids (table not yet collected)."},
-              "loadBalancer": {"type": "array", "items": {"type": "string"}, "description": "Load_Balancer uuids (table not yet collected)."},
-              "loadBalancerGroup": {"type": "array", "items": {"type": "string"}, "description": "Load_Balancer_Group uuids (table not yet collected)."},
-              "copp": {"type": "string", "description": "Copp uuid when control-plane policing is attached."},
-              "options": {"$ref": "#/$defs/stringMap"},
-              "externalIds": {"$ref": "#/$defs/stringMap"}
+              "uuid": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "nat": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "staticRoutes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "Administrative state; absent when unset, which OVN treats as enabled."
+              },
+              "policies": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Logical_Router_Policy uuids (table not yet collected)."
+              },
+              "loadBalancer": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Load_Balancer uuids (table not yet collected)."
+              },
+              "loadBalancerGroup": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Load_Balancer_Group uuids (table not yet collected)."
+              },
+              "copp": {
+                "type": "string",
+                "description": "Copp uuid when control-plane policing is attached."
+              },
+              "options": {
+                "$ref": "#/$defs/stringMap"
+              },
+              "externalIds": {
+                "$ref": "#/$defs/stringMap"
+              }
             },
             "additionalProperties": false
           }
@@ -54,18 +126,50 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["uuid", "name"],
+            "required": [
+              "uuid",
+              "name"
+            ],
             "properties": {
-              "uuid": {"type": "string"},
-              "name": {"type": "string"},
-              "mac": {"type": "string"},
-              "networks": {"type": "array", "items": {"type": "string"}},
-              "peer": {"type": "string"},
-              "enabled": {"type": "boolean", "description": "Administrative state; absent when unset (enabled)."},
-              "gatewayChassis": {"type": "array", "items": {"type": "string"}, "description": "Gateway_Chassis uuids, resolved by database.gatewayChassis."},
-              "status": {"$ref": "#/$defs/stringMap", "description": "northd-written status; hosting-chassis names the chassis hosting a distributed gateway port."},
-              "options": {"$ref": "#/$defs/stringMap"},
-              "externalIds": {"$ref": "#/$defs/stringMap"}
+              "uuid": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "mac": {
+                "type": "string"
+              },
+              "networks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "peer": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "Administrative state; absent when unset (enabled)."
+              },
+              "gatewayChassis": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Gateway_Chassis uuids, resolved by database.gatewayChassis."
+              },
+              "status": {
+                "$ref": "#/$defs/stringMap",
+                "description": "northd-written status; hosting-chassis names the chassis hosting a distributed gateway port."
+              },
+              "options": {
+                "$ref": "#/$defs/stringMap"
+              },
+              "externalIds": {
+                "$ref": "#/$defs/stringMap"
+              }
             },
             "additionalProperties": false
           }
@@ -74,17 +178,58 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["uuid", "name", "ports"],
+            "required": [
+              "uuid",
+              "name",
+              "ports"
+            ],
             "properties": {
-              "uuid": {"type": "string"},
-              "name": {"type": "string"},
-              "ports": {"type": "array", "items": {"type": "string"}},
-              "acls": {"type": "array", "items": {"type": "string"}, "description": "ACL uuids (table not yet collected)."},
-              "loadBalancer": {"type": "array", "items": {"type": "string"}, "description": "Load_Balancer uuids (table not yet collected)."},
-              "loadBalancerGroup": {"type": "array", "items": {"type": "string"}, "description": "Load_Balancer_Group uuids (table not yet collected)."},
-              "qosRules": {"type": "array", "items": {"type": "string"}, "description": "QoS uuids (table not yet collected)."},
-              "otherConfig": {"$ref": "#/$defs/stringMap"},
-              "externalIds": {"$ref": "#/$defs/stringMap"}
+              "uuid": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "acls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "ACL uuids (table not yet collected)."
+              },
+              "loadBalancer": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Load_Balancer uuids (table not yet collected)."
+              },
+              "loadBalancerGroup": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Load_Balancer_Group uuids (table not yet collected)."
+              },
+              "qosRules": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "QoS uuids (table not yet collected)."
+              },
+              "otherConfig": {
+                "$ref": "#/$defs/stringMap"
+              },
+              "externalIds": {
+                "$ref": "#/$defs/stringMap"
+              }
             },
             "additionalProperties": false
           }
@@ -93,21 +238,62 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["uuid", "name"],
+            "required": [
+              "uuid",
+              "name"
+            ],
             "properties": {
-              "uuid": {"type": "string"},
-              "name": {"type": "string"},
-              "type": {"type": "string"},
-              "addresses": {"type": "array", "items": {"type": "string"}},
-              "tag": {"type": "string"},
-              "portSecurity": {"type": "array", "items": {"type": "string"}, "description": "Allowed source MAC (and IP) addresses; set on every pod port."},
-              "up": {"type": "boolean", "description": "northd-reported binding state; absent when the column is unset."},
-              "enabled": {"type": "boolean", "description": "Administrative state; absent (unset) means enabled."},
-              "dynamicAddresses": {"type": "string", "description": "Address northd allocated for a port whose addresses hold \"dynamic\"."},
-              "tagRequest": {"type": "string", "description": "Requested VLAN tag; the allocated tag is in tag."},
-              "parentName": {"type": "string", "description": "Parent port of a nested (container) port."},
-              "options": {"$ref": "#/$defs/stringMap"},
-              "externalIds": {"$ref": "#/$defs/stringMap"}
+              "uuid": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "addresses": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tag": {
+                "type": "string"
+              },
+              "portSecurity": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Allowed source MAC (and IP) addresses; set on every pod port."
+              },
+              "up": {
+                "type": "boolean",
+                "description": "northd-reported binding state; absent when the column is unset."
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "Administrative state; absent (unset) means enabled."
+              },
+              "dynamicAddresses": {
+                "type": "string",
+                "description": "Address northd allocated for a port whose addresses hold \"dynamic\"."
+              },
+              "tagRequest": {
+                "type": "string",
+                "description": "Requested VLAN tag; the allocated tag is in tag."
+              },
+              "parentName": {
+                "type": "string",
+                "description": "Parent port of a nested (container) port."
+              },
+              "options": {
+                "$ref": "#/$defs/stringMap"
+              },
+              "externalIds": {
+                "$ref": "#/$defs/stringMap"
+              }
             },
             "additionalProperties": false
           }
@@ -116,20 +302,56 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["uuid", "type"],
+            "required": [
+              "uuid",
+              "type"
+            ],
             "properties": {
-              "uuid": {"type": "string"},
-              "type": {"type": "string", "enum": ["snat", "dnat", "dnat_and_snat"]},
-              "externalIp": {"type": "string"},
-              "logicalIp": {"type": "string"},
-              "logicalPort": {"type": "string"},
-              "externalMac": {"type": "string"},
-              "gatewayPort": {"type": "string", "description": "Logical_Router_Port uuid the rule applies on."},
-              "match": {"type": "string", "description": "Packet match narrowing the rule; empty on classic NAT rows."},
-              "priority": {"type": "integer", "description": "Orders rules sharing a match; absent when zero."},
-              "externalPortRange": {"type": "string", "description": "L4 source port range for SNAT."},
-              "options": {"$ref": "#/$defs/stringMap"},
-              "externalIds": {"$ref": "#/$defs/stringMap"}
+              "uuid": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "snat",
+                  "dnat",
+                  "dnat_and_snat"
+                ]
+              },
+              "externalIp": {
+                "type": "string"
+              },
+              "logicalIp": {
+                "type": "string"
+              },
+              "logicalPort": {
+                "type": "string"
+              },
+              "externalMac": {
+                "type": "string"
+              },
+              "gatewayPort": {
+                "type": "string",
+                "description": "Logical_Router_Port uuid the rule applies on."
+              },
+              "match": {
+                "type": "string",
+                "description": "Packet match narrowing the rule; empty on classic NAT rows."
+              },
+              "priority": {
+                "type": "integer",
+                "description": "Orders rules sharing a match; absent when zero."
+              },
+              "externalPortRange": {
+                "type": "string",
+                "description": "L4 source port range for SNAT."
+              },
+              "options": {
+                "$ref": "#/$defs/stringMap"
+              },
+              "externalIds": {
+                "$ref": "#/$defs/stringMap"
+              }
             },
             "additionalProperties": false
           }
@@ -138,18 +360,47 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["uuid", "ipPrefix"],
+            "required": [
+              "uuid",
+              "ipPrefix"
+            ],
             "properties": {
-              "uuid": {"type": "string"},
-              "ipPrefix": {"type": "string"},
-              "nexthop": {"type": "string"},
-              "policy": {"type": "string"},
-              "outputPort": {"type": "string"},
-              "routeTable": {"type": "string", "description": "Named route table; empty for the main table."},
-              "bfd": {"type": "string", "description": "BFD uuid guarding the nexthop."},
-              "selectionFields": {"type": "array", "items": {"type": "string"}, "description": "ECMP hash fields when set."},
-              "options": {"$ref": "#/$defs/stringMap"},
-              "externalIds": {"$ref": "#/$defs/stringMap"}
+              "uuid": {
+                "type": "string"
+              },
+              "ipPrefix": {
+                "type": "string"
+              },
+              "nexthop": {
+                "type": "string"
+              },
+              "policy": {
+                "type": "string"
+              },
+              "outputPort": {
+                "type": "string"
+              },
+              "routeTable": {
+                "type": "string",
+                "description": "Named route table; empty for the main table."
+              },
+              "bfd": {
+                "type": "string",
+                "description": "BFD uuid guarding the nexthop."
+              },
+              "selectionFields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "ECMP hash fields when set."
+              },
+              "options": {
+                "$ref": "#/$defs/stringMap"
+              },
+              "externalIds": {
+                "$ref": "#/$defs/stringMap"
+              }
             },
             "additionalProperties": false
           }
@@ -159,10 +410,17 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["localnet", "bridge"],
+            "required": [
+              "localnet",
+              "bridge"
+            ],
             "properties": {
-              "localnet": {"type": "string"},
-              "bridge": {"type": "string"}
+              "localnet": {
+                "type": "string"
+              },
+              "bridge": {
+                "type": "string"
+              }
             },
             "additionalProperties": false
           }
@@ -172,14 +430,32 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["uuid", "name", "chassisName", "priority"],
+            "required": [
+              "uuid",
+              "name",
+              "chassisName",
+              "priority"
+            ],
             "properties": {
-              "uuid": {"type": "string"},
-              "name": {"type": "string"},
-              "chassisName": {"type": "string", "description": "SB Chassis name (a UUID string), equal to the Node's k8s.ovn.org/node-chassis-id annotation."},
-              "priority": {"type": "integer"},
-              "options": {"$ref": "#/$defs/stringMap"},
-              "externalIds": {"$ref": "#/$defs/stringMap"}
+              "uuid": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "chassisName": {
+                "type": "string",
+                "description": "SB Chassis name (a UUID string), equal to the Node's k8s.ovn.org/node-chassis-id annotation."
+              },
+              "priority": {
+                "type": "integer"
+              },
+              "options": {
+                "$ref": "#/$defs/stringMap"
+              },
+              "externalIds": {
+                "$ref": "#/$defs/stringMap"
+              }
             },
             "additionalProperties": false
           }
@@ -187,15 +463,34 @@
         "nbGlobal": {
           "description": "The zone's single NB_Global row: zone name and configuration sequence numbers (nb_cfg is set by the CMS; sb_cfg and hv_cfg follow as northd and the chassis catch up). options carries northd_internal_version. Absent on snapshots from collectors older than the field.",
           "type": "object",
-          "required": ["uuid", "nbCfg", "sbCfg", "hvCfg"],
+          "required": [
+            "uuid",
+            "nbCfg",
+            "sbCfg",
+            "hvCfg"
+          ],
           "properties": {
-            "uuid": {"type": "string"},
-            "name": {"type": "string"},
-            "nbCfg": {"type": "integer"},
-            "sbCfg": {"type": "integer"},
-            "hvCfg": {"type": "integer"},
-            "options": {"$ref": "#/$defs/stringMap"},
-            "externalIds": {"$ref": "#/$defs/stringMap"}
+            "uuid": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "nbCfg": {
+              "type": "integer"
+            },
+            "sbCfg": {
+              "type": "integer"
+            },
+            "hvCfg": {
+              "type": "integer"
+            },
+            "options": {
+              "$ref": "#/$defs/stringMap"
+            },
+            "externalIds": {
+              "$ref": "#/$defs/stringMap"
+            }
           },
           "additionalProperties": false
         }
@@ -207,12 +502,25 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "kind", "label"],
+        "required": [
+          "id",
+          "kind",
+          "label"
+        ],
         "properties": {
-          "id": {"type": "string"},
-          "kind": {"type": "string"},
-          "label": {"type": "string"},
-          "data": {"type": "object", "additionalProperties": true}
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          }
         },
         "additionalProperties": false
       }
@@ -222,13 +530,29 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "source", "target", "kind"],
+        "required": [
+          "id",
+          "source",
+          "target",
+          "kind"
+        ],
         "properties": {
-          "id": {"type": "string"},
-          "source": {"type": "string"},
-          "target": {"type": "string"},
-          "kind": {"type": "string"},
-          "data": {"type": "object", "additionalProperties": true}
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          }
         },
         "additionalProperties": false
       }
@@ -238,13 +562,23 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "label", "nodeIds"],
+        "required": [
+          "id",
+          "label",
+          "nodeIds"
+        ],
         "properties": {
-          "id": {"type": "string"},
-          "label": {"type": "string"},
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
           "nodeIds": {
             "type": "array",
-            "items": {"type": "string"}
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false
@@ -254,10 +588,17 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["code", "message"],
+        "required": [
+          "code",
+          "message"
+        ],
         "properties": {
-          "code": {"type": "string"},
-          "message": {"type": "string"}
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
         },
         "additionalProperties": false
       }
@@ -267,7 +608,9 @@
   "$defs": {
     "stringMap": {
       "type": "object",
-      "additionalProperties": {"type": "string"}
+      "additionalProperties": {
+        "type": "string"
+      }
     }
   }
 }

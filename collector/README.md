@@ -46,8 +46,18 @@ Lookup order:
 ## Contract Artifacts
 
 - Go types: `internal/snapshot/types.go`
-- JSON schema: `api/logical-topology-snapshot.schema.json`
-- UI TypeScript types: `/Users/dale/src/ovn-recon/src/types.ts`
+- JSON schemas: `api/logical-topology-snapshot.schema.json`,
+  `api/cluster-logical-topology.schema.json`
+- UI TypeScript types: `../src/types.ts`
+- Fixture corpus: `fixtures/snapshots/*.json`
+
+The schemas and the fixture corpus are kept in canonical serializer form:
+exactly `JSON.stringify(value, null, 2)` plus a trailing newline (Python's
+`json.dumps(value, indent=2, ensure_ascii=False)` produces the same bytes).
+That lets a script in either language load, edit and dump a contract file
+without a formatting diff. After editing one by hand, run
+`npm run format:contract` from the repository root; `npm run check:contract`
+(also run by CI and by the Jest suite) fails when a file is not canonical.
 
 ## Build and Run
 
