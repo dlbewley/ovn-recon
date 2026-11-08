@@ -223,8 +223,9 @@ func main() {
 	// +kubebuilder:scaffold:builder
 
 	// One-shot, leader-only: clear retired API versions from the OvnRecon
-	// CRD's status.storedVersions so a later release can drop them. Reads go
-	// through the uncached API reader on purpose (see cache_policy.go).
+	// CRD's status.storedVersions. A no-op on clusters that upgraded through
+	// v1.0.4 or v1.0.5; kept one more release as a safety net (ovn-recon-5uj).
+	// Reads go through the uncached API reader on purpose (see cache_policy.go).
 	if err := mgr.Add(&storagemigration.StoredVersionMigrator{
 		Reader:  mgr.GetAPIReader(),
 		Writer:  mgr.GetClient(),

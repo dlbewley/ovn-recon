@@ -22,8 +22,14 @@ limitations under the License.
 // version), then declare that only the storage version remains stored. It has
 // to run from a release that still declares the retired version, because OLM
 // applies CRD updates before the CSV and rejects a CRD that removes a version
-// still listed as stored. See internal/apiversions for why v1alpha1 is still
-// declared and ovn-recon-5uj for its eventual removal.
+// still listed as stored.
+//
+// v1.0.4 and v1.0.5 declared v1alpha1 as an unserved placeholder for exactly
+// this purpose (ovn-recon-crv); ovn-recon-5uj dropped the placeholder, so the
+// CRD now declares v1beta1 alone and this migrator finds nothing to do on a
+// cluster that upgraded through either release. It stays for one more release
+// as a safety net (see internal/apiversions for the history) and can then be
+// removed together with its CRD RBAC.
 package storagemigration
 
 import (
@@ -81,8 +87,8 @@ func (m *StoredVersionMigrator) Start(ctx context.Context) error {
 	res, err := m.Migrate(ctx)
 	switch {
 	case err != nil:
-		log.Error(err, "stored version migration failed; the next release that "+
-			"removes a retired API version will be blocked by OLM until "+
+		log.Error(err, "stored version migration failed; a CRD update that "+
+			"removes a retired API version is blocked by OLM until "+
 			"status.storedVersions is cleaned manually (see OPERATOR.md)")
 	case len(res.Stale) == 0:
 		log.V(1).Info("stored versions already clean", "storageVersion", res.StorageVersion)

@@ -32,6 +32,12 @@ import (
 	"github.com/dlbewley/ovn-recon-operator/internal/storagemigration"
 )
 
+// retiredVersion stands in for v1alpha1, which v1.0.4 and v1.0.5 declared as
+// an unserved placeholder so this migration could clear it (ovn-recon-crv).
+// The shipped CRD no longer declares it (ovn-recon-5uj); the tests declare it
+// temporarily to exercise the migrator.
+const retiredVersion = "v1alpha1"
+
 // Lives in the controller suite to reuse its envtest environment; the
 // migrator itself is in internal/storagemigration.
 var _ = Describe("OvnRecon stored version migration", func() {
@@ -44,14 +50,48 @@ var _ = Describe("OvnRecon stored version migration", func() {
 		return crd
 	}
 
-	// Seed the state an upgraded early install carries: v1alpha1 still listed
-	// as stored. The apiserver only accepts this because the placeholder
-	// version is declared, which is the whole point of keeping it.
+	// Seed the state an install upgraded from before v1.0.4 carried: a
+	// retired version still listed as stored. The apiserver only accepts a
+	// stored version the spec declares, so the test declares one (unserved,
+	// non-storage, as the v1.0.4/v1.0.5 placeholder was) for its duration and
+	// removes it again on cleanup. The shipped CRD declares v1beta1 alone.
 	seedStale := func() {
+		preserve := true
 		crd := getCRD()
-		crd.Status.StoredVersions = []string{apiversions.RetiredV1alpha1, "v1beta1"}
+		crd.Spec.Versions = append(crd.Spec.Versions, apiextensionsv1.CustomResourceDefinitionVersion{
+			Name:    retiredVersion,
+			Served:  false,
+			Storage: false,
+			Schema: &apiextensionsv1.CustomResourceValidation{
+				OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+					Type:                   "object",
+					XPreserveUnknownFields: &preserve,
+				},
+			},
+		})
+		Expect(k8sClient.Update(ctx, crd)).To(Succeed())
+		DeferCleanup(func() {
+			// A declared version cannot be removed while still listed as
+			// stored, so clear the list first in case the spec failed.
+			crd := getCRD()
+			crd.Status.StoredVersions = []string{apiversions.StorageVersion}
+			Expect(k8sClient.Status().Update(ctx, crd)).To(Succeed())
+			crd = getCRD()
+			kept := crd.Spec.Versions[:0]
+			for _, v := range crd.Spec.Versions {
+				if v.Name != retiredVersion {
+					kept = append(kept, v)
+				}
+			}
+			crd.Spec.Versions = kept
+			Expect(k8sClient.Update(ctx, crd)).To(Succeed())
+			Expect(getCRD().Spec.Versions).To(HaveLen(1))
+		})
+
+		crd = getCRD()
+		crd.Status.StoredVersions = []string{retiredVersion, apiversions.StorageVersion}
 		Expect(k8sClient.Status().Update(ctx, crd)).To(Succeed())
-		Expect(getCRD().Status.StoredVersions).To(ConsistOf(apiversions.RetiredV1alpha1, "v1beta1"))
+		Expect(getCRD().Status.StoredVersions).To(ConsistOf(retiredVersion, apiversions.StorageVersion))
 	}
 
 	newMigrator := func() *storagemigration.StoredVersionMigrator {
@@ -62,21 +102,14 @@ var _ = Describe("OvnRecon stored version migration", func() {
 		}
 	}
 
-	It("declares the retired v1alpha1 placeholder alongside the v1beta1 storage version", func() {
+	It("declares v1beta1 as the only version, served and stored", func() {
 		crd := getCRD()
-		names := map[string]apiextensionsv1.CustomResourceDefinitionVersion{}
-		for _, v := range crd.Spec.Versions {
-			names[v.Name] = v
-		}
-		Expect(names).To(HaveKey("v1beta1"))
-		Expect(names["v1beta1"].Served).To(BeTrue())
-		Expect(names["v1beta1"].Storage).To(BeTrue())
-
-		Expect(names).To(HaveKey(apiversions.RetiredV1alpha1))
-		alpha := names[apiversions.RetiredV1alpha1]
-		Expect(alpha.Served).To(BeFalse())
-		Expect(alpha.Storage).To(BeFalse())
-		Expect(alpha.Schema.OpenAPIV3Schema.XPreserveUnknownFields).To(HaveValue(BeTrue()))
+		Expect(crd.Spec.Versions).To(HaveLen(1))
+		v := crd.Spec.Versions[0]
+		Expect(v.Name).To(Equal(apiversions.StorageVersion))
+		Expect(v.Served).To(BeTrue())
+		Expect(v.Storage).To(BeTrue())
+		Expect(crd.Status.StoredVersions).To(Equal([]string{apiversions.StorageVersion}))
 	})
 
 	It("rewrites every object and clears the stale stored version", func() {
@@ -92,11 +125,11 @@ var _ = Describe("OvnRecon stored version migration", func() {
 
 		res, err := newMigrator().Migrate(ctx)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(res.StorageVersion).To(Equal("v1beta1"))
-		Expect(res.Stale).To(ConsistOf(apiversions.RetiredV1alpha1))
+		Expect(res.StorageVersion).To(Equal(apiversions.StorageVersion))
+		Expect(res.Stale).To(ConsistOf(retiredVersion))
 		Expect(res.Rewritten).To(BeNumerically(">=", 1))
 
-		Expect(getCRD().Status.StoredVersions).To(Equal([]string{"v1beta1"}))
+		Expect(getCRD().Status.StoredVersions).To(Equal([]string{apiversions.StorageVersion}))
 
 		// The rewrite must be invisible to consumers of the object.
 		after := &reconv1beta1.OvnRecon{}
@@ -106,13 +139,13 @@ var _ = Describe("OvnRecon stored version migration", func() {
 	})
 
 	It("is a no-op when only the storage version is stored", func() {
-		Expect(getCRD().Status.StoredVersions).To(Equal([]string{"v1beta1"}))
+		Expect(getCRD().Status.StoredVersions).To(Equal([]string{apiversions.StorageVersion}))
 
 		res, err := newMigrator().Migrate(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(res.Stale).To(BeEmpty())
 		Expect(res.Rewritten).To(BeZero())
-		Expect(getCRD().Status.StoredVersions).To(Equal([]string{"v1beta1"}))
+		Expect(getCRD().Status.StoredVersions).To(Equal([]string{apiversions.StorageVersion}))
 	})
 
 	It("clears the stale stored version even with no objects present", func() {
@@ -120,8 +153,8 @@ var _ = Describe("OvnRecon stored version migration", func() {
 
 		res, err := newMigrator().Migrate(ctx)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(res.Stale).To(ConsistOf(apiversions.RetiredV1alpha1))
-		Expect(getCRD().Status.StoredVersions).To(Equal([]string{"v1beta1"}))
+		Expect(res.Stale).To(ConsistOf(retiredVersion))
+		Expect(getCRD().Status.StoredVersions).To(Equal([]string{apiversions.StorageVersion}))
 	})
 
 	It("treats a missing CRD as nothing to do", func() {

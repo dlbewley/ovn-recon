@@ -133,22 +133,22 @@ jobs:
       with:
         generate_release_notes: true
         prerelease: ${{ contains(github.ref_name, '-') }}
+        # Carried on every release while the storedVersions migrator is still
+        # in the operator; remove this block together with the migrator.
+        # Tracked in beads ovn-recon-0cl.
         body: |
           > [!WARNING]
-          > **`v1beta1` is the only served OvnRecon API version; `v1alpha1` remains declared only as an unserved placeholder.**
+          > **The retired `v1alpha1` OvnRecon API version is no longer declared on the CRD. Upgrade through v1.0.4 or v1.0.5 first.**
           >
-          > `v1alpha1` has been unserved (unusable) since v0.3.1-b2, and the schemas were
-          > identical, so update any manifests still declaring
-          > `apiVersion: recon.bewley.net/v1alpha1` to `v1beta1`. It stays declared on the CRD
-          > because clusters first installed at v0.2.2 or earlier still list it in the CRD's
-          > `status.storedVersions`, and OLM refuses to apply a CRD that drops a listed stored
-          > version. On startup this release rewrites every `OvnRecon` and clears the stale
-          > entry, which lets a later release remove `v1alpha1` for good.
-          >
-          > If an upgrade still stalls with `risk of data loss updating "ovnrecons.recon.bewley.net":
-          > new CRD removes version v1alpha1 that is listed as a stored version`, run the
-          > migration by hand, then delete the failed InstallPlan so OLM re-resolves (a failed
-          > plan is not retried on its own, even with automatic approval):
+          > `v1alpha1` has been unusable since v0.3.1-b2; v1.0.4 and v1.0.5 kept it declared
+          > only so they could clear it from the CRD's `status.storedVersions` on clusters
+          > installed at v0.2.2 or earlier. The normal OLM upgrade path passes through those
+          > releases, so no action is needed. Jumping from v1.0.3 or older straight to this
+          > release, bypassing the upgrade graph (for example by applying the CRD with
+          > `make install` or `oc apply`), fails with `risk of data loss updating
+          > "ovnrecons.recon.bewley.net": new CRD removes version v1alpha1 that is listed as a
+          > stored version`. Run the migration by hand and retry; under OLM also delete the
+          > failed InstallPlan so it re-resolves:
           >
           > ```
           > oc get ovnrecons.recon.bewley.net -A -o yaml | oc replace -f -
@@ -156,46 +156,4 @@ jobs:
           > oc delete installplan -n <operator-namespace> <failed-installplan>
           > ```
           >
-          > Carried in release notes through the next few releases; details in OPERATOR.md.
-
-          > [!IMPORTANT]
-          > **Images follow the release's `RELATED_IMAGE_*` again, and `OvnRecon` defaults now live in the operator instead of the CRD schema.**
-          >
-          > Earlier CRDs declared `consolePlugin.image.repository` and `collector.image.repository`
-          > as schema defaults, which the apiserver wrote into every object at creation. The
-          > operator only consults `RELATED_IMAGE_PLUGIN` / `RELATED_IMAGE_COLLECTOR` when the
-          > CR names no image, so that path was dead for every real object and mirrored
-          > (oc-mirror) installs pulled the hardcoded `quay.io` repository. Fixed: the CRD
-          > declares **no defaults at all**, and a repository equal to the built-in default is
-          > treated as unset, so existing objects follow the release images again without editing.
-          >
-          > Consequences: an `OvnRecon` is stored exactly as written (an empty `spec` is a full
-          > install), a changed default reaches existing objects on the next reconcile, and the
-          > values the operator actually resolved are published under **`status.effective`**
-          > (`oc get ovnrecon <name> -o jsonpath='{.status.effective}'`). Objects created under
-          > earlier releases still carry whatever the old schema wrote into them, for example
-          > `collector.enabled: false`, `managed: false` or `mode: EmptyDir`, and an explicit value
-          > is honored. Remove the fields you want to follow the defaults:
-          >
-          > ```
-          > oc patch ovnrecon <name> --type=json -p '[{"op":"remove","path":"/spec/collector/enabled"}]'
-          > ```
-
-          > [!IMPORTANT]
-          > **`OvnRecon` defaults changed: a bare resource is now a fully functional install.**
-          >
-          > `consolePlugin.enabled`, `collector.cache.storage.managed` (new default `true`) and
-          > `collector.cache.storage.mode` (new value and default `auto`: PVC with automatic
-          > EmptyDir fallback + Warning event) now default on. Explicit values are always
-          > honored — in particular `mode: EmptyDir` now **never** creates a PVC, even with
-          > `managed: true`. Note for pre-existing resources: the old CRD materialized
-          > `mode: EmptyDir` and `managed: false` into stored objects at creation, so existing
-          > CRs keep their previous behavior — delete those fields (or the whole `storage`
-          > block) to adopt the new defaults.
-          >
-          > All deprecated legacy alias fields have been **removed**: `spec.image.*` (use
-          > `consolePlugin.image.*`), `spec.collectorImage.*` (use `collector.image.*`),
-          > `spec.featureGates.ovn-collector` (use `collector.enabled`), and
-          > `spec.collectorProbeNamespaces` (use `collector.probeNamespaces`). A resource still
-          > setting only a removed field falls back to that setting's default — migrate any
-          > remaining manifests to the hierarchical spelling.
+          > Details in OPERATOR.md.
