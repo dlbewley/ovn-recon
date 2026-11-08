@@ -261,9 +261,9 @@ jobs:
         #   :latest  every release, prereleases included  <- was :v4.20
         #   :stable  stable releases only                 <- was :latest
         # The OpenShift dimension is carried by the OLM channel, not the image
-        # tag, so :v4.20 no longer means anything: one FBC catalog serves every
-        # supported release. It is still published as a deprecated alias of
-        # :latest so existing CatalogSources keep resolving.
+        # tag, so one FBC catalog serves every supported release. The old
+        # :v4.20 tag was retired and DELETED (ovn-recon-09z). Do not bring it
+        # back as an alias: a CatalogSource still naming it is meant to fail.
         #
         # NOTE :latest changes meaning here. It used to be stable-only; it now
         # includes prereleases. Consumers who want stable-only should point at
@@ -279,10 +279,9 @@ jobs:
         # itself must not.
         if [[ "$VERSION" != *"-"* ]]; then
           make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG \
-            CATALOG_EXTRA_IMG="$REPO:stable $REPO:v4.20"
+            CATALOG_EXTRA_IMG="$REPO:stable"
         else
-          make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG \
-            CATALOG_EXTRA_IMG="$REPO:v4.20"
+          make catalog-fbc-build-multiarch CATALOG_IMG=$CATALOG_IMG
         fi
 
     - name: Verify release images are multi-arch manifest lists
@@ -308,7 +307,6 @@ jobs:
         verify "quay.io/dbewley/ovn-recon-operator:${VERSION}"
         verify "quay.io/dbewley/ovn-recon-operator-bundle:${VERSION}"
         verify "quay.io/dbewley/bewley-operator-catalog:latest"
-        verify "quay.io/dbewley/bewley-operator-catalog:v4.20"
         if [[ "$VERSION" != *"-"* ]]; then
           verify "quay.io/dbewley/ovn-recon-operator:latest"
           verify "quay.io/dbewley/ovn-recon-operator-bundle:latest"

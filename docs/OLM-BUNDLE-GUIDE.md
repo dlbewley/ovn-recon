@@ -90,7 +90,7 @@ A catalog contains one or more bundles and is what OLM uses to discover operator
 cd operator
 
 # Set catalog image
-export CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
+export CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:latest
 
 # Add your bundle to the file-based catalog (edits operator/catalog/, commit it)
 make catalog-fbc-add BUNDLE_IMG=$BUNDLE_IMG
@@ -115,7 +115,7 @@ cd operator
 export VERSION=0.0.1
 export IMG=quay.io/dbewley/ovn-recon-operator:v${VERSION}
 export BUNDLE_IMG=quay.io/dbewley/ovn-recon-operator-bundle:v${VERSION}
-export CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
+export CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:latest
 
 # 2. Build and push operator
 make docker-build docker-push IMG=$IMG
@@ -395,7 +395,7 @@ To release a new version:
 
 3. **Update catalog** (append the new bundle to the file-based catalog):
    ```bash
-   export CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:v4.20
+   export CATALOG_IMG=quay.io/dbewley/bewley-operator-catalog:latest
    make catalog-fbc-add BUNDLE_IMG=$BUNDLE_IMG    # edits operator/catalog/ - commit it
    make catalog-fbc-verify
    make catalog-fbc-build catalog-push CATALOG_IMG=$CATALOG_IMG
@@ -411,7 +411,7 @@ The release workflow publishes bundles into:
 
 Stable releases are also added to **latest**, and **stable** is the default channel.
 
-4. **CatalogSource**: the workflow updates `quay.io/dbewley/bewley-operator-catalog:v4.20`, so no CatalogSource changes are required.
+4. **CatalogSource**: the workflow updates `quay.io/dbewley/bewley-operator-catalog:latest` (and `:stable` for stable releases), so no CatalogSource changes are required.
 
 ## Makefile Variables Reference
 
