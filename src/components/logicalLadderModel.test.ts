@@ -183,3 +183,39 @@ describe('buildLadderModel on the captured cnv-1 zone', () => {
         expect(vlanEdge?.networks).toEqual(['VLAN 1924']);
     });
 });
+
+describe('buildLadderModel switch ports (ovn-recon-e2b.4)', () => {
+    const model = buildLadderModel(database);
+    const byName = (name: string) => model.constructs.find((construct) => construct.name === name);
+    const switchRow = (name: string) => database.logicalSwitches.find((row) => row.name === name)!;
+
+    it('carries every LSP of a switch with its NB row, sorted by type then name', () => {
+        const nodeSwitch = byName('cnv-1')!;
+        expect(nodeSwitch.ports).toHaveLength(switchRow('cnv-1').ports.length);
+        expect(new Set(nodeSwitch.ports.map((port) => port.uuid))).toEqual(new Set(switchRow('cnv-1').ports));
+        expect(nodeSwitch.ports.length).toBeGreaterThan(nodeSwitch.podPorts.length);
+
+        const transit = byName('transit_switch')!;
+        const types = transit.ports.map((port) => port.row.type ?? '');
+        expect(types.slice(0, -1)).toEqual(Array(types.length - 1).fill('remote'));
+        expect(types[types.length - 1]).toBe('router');
+        const remoteNames = transit.ports.filter((port) => port.role === 'remote-port').map((port) => port.name);
+        expect(remoteNames).toEqual([...remoteNames].sort((a, b) => a.localeCompare(b)));
+    });
+
+    it('exposes the new LSP columns on the carried rows', () => {
+        const podPort = byName('cnv-1')!.ports.find((port) => port.role === 'pod-port')!;
+        expect(podPort.row.up).toBe(true);
+        expect(podPort.row.portSecurity).toEqual(podPort.row.addresses);
+        expect(podPort.row.options?.['requested-chassis']).toBeDefined();
+
+        const localnetPort = byName('ext_cnv-1')!.ports.find((port) => port.role === 'localnet-port')!;
+        expect(localnetPort.row.up).toBe(false);
+        expect(localnetPort.row.portSecurity).toBeUndefined();
+    });
+
+    it('leaves routers and bridge mappings without ports', () => {
+        expect(byName('GR_cnv-1')!.ports).toEqual([]);
+        expect(model.constructs.filter((construct) => construct.kind === 'physnet').every((c) => c.ports.length === 0)).toBe(true);
+    });
+});

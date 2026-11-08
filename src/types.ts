@@ -427,6 +427,18 @@ export interface LogicalSwitchPortRow {
     addresses?: string[];
     /** VLAN tag on localnet/l2gateway ports, when set. */
     tag?: string;
+    /** Allowed source MAC (and IP) addresses; ovn-kubernetes sets it on every pod port. */
+    portSecurity?: string[];
+    /** northd-reported binding state; absent when the optional column is unset. */
+    up?: boolean;
+    /** Administrative state; absent (unset) means enabled. */
+    enabled?: boolean;
+    /** Address northd allocated for a port whose addresses hold "dynamic". */
+    dynamicAddresses?: string;
+    /** Requested VLAN tag; the allocated tag is in `tag`. */
+    tagRequest?: string;
+    /** Parent port of a nested (container) port. */
+    parentName?: string;
     options?: Record<string, string>;
     externalIds?: Record<string, string>;
 }

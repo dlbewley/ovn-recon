@@ -7,14 +7,26 @@ import {
     DescriptionListTerm,
     DescriptionListDescription,
     DrawerPanelBody,
+    FormSelect,
+    FormSelectOption,
     Label,
     TextInput,
+    Toolbar,
+    ToolbarContent,
+    ToolbarItem,
 } from '@patternfly/react-core';
+import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
 
-import { LogicalDatabase, NATRow, StaticRouteRow } from '../types';
+import { LogicalDatabase, LogicalSwitchPortRow, NATRow, StaticRouteRow } from '../types';
 import { networkResourceRef } from './logicalClassification';
-import { GatewayPortPlacement, LadderConstruct, LadderModel } from './logicalLadderModel';
+import {
+    GatewayPortPlacement,
+    LadderConstruct,
+    LadderModel,
+    LadderPort,
+    switchPortTypeLabel,
+} from './logicalLadderModel';
 import { edgeLabel, networkDisplayName, roleLabel } from './LogicalLadderView';
 import { configPayloadFor, ovnKindFor } from './ovnKindRegistry';
 import { useIsDarkTheme } from './useIsDarkTheme';
@@ -507,13 +519,227 @@ const ConfigBody: React.FC<ConstructDrawerBodyProps> = ({ construct, database, d
     );
 };
 
-type ConstructTabId = 'overview' | 'relationships' | 'config';
+const ALL_PORT_TYPES = 'all';
+
+/** One `<code>` entry per line, or a dash when the set is empty. */
+const CodeLines: React.FC<{ items?: string[] }> = ({ items }) =>
+    items && items.length > 0 ? (
+        <>
+            {items.map((item, index) => <div key={`${index}:${item}`}><code>{item}</code></div>)}
+        </>
+    ) : (
+        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>—</span>
+    );
+
+const PortName: React.FC<{ port: LadderPort }> = ({ port }) =>
+    port.namespace && port.pod ? (
+        <Link
+            to={getResourcePath({ apiVersion: 'v1', kind: 'Pod', namespace: port.namespace, name: port.pod })}
+            title={port.name}
+        >
+            {port.namespace}/{port.pod}
+        </Link>
+    ) : (
+        <code>{port.name}</code>
+    );
+
+/** northd's binding state plus an explicit administrative disable. */
+const PortState: React.FC<{ row: LogicalSwitchPortRow }> = ({ row }) => (
+    <>
+        {row.up === true && <Label isCompact color="green">Up</Label>}
+        {row.up === false && <Label isCompact color="grey">Down</Label>}
+        {row.up === undefined && <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>—</span>}
+        {row.enabled === false && <> <Label isCompact color="red">Disabled</Label></>}
+    </>
+);
+
+const portMatches = (port: LadderPort, query: string): boolean => {
+    if (port.name.toLowerCase().includes(query)) return true;
+    if (port.namespace && port.pod && `${port.namespace}/${port.pod}`.toLowerCase().includes(query)) return true;
+    return (port.row.addresses ?? []).some((address) => address.toLowerCase().includes(query));
+};
+
+/**
+ * Every Logical_Switch_Port on a switch as a filterable table, each row
+ * expandable to the port's raw NB row. Ports stay in the drawer: they are
+ * not ladder constructs and do not move the ladder selection (e2b.4 decision
+ * 3). Keyed by construct uuid from the parent so expansion and filters reset
+ * when a different construct is selected.
+ */
+const PortsBody: React.FC<ConstructDrawerBodyProps> = ({
+    construct,
+    database,
+    databaseNode,
+    nodeForChassis,
+    nodeHref,
+}) => {
+    const isDarkTheme = useIsDarkTheme();
+    const [filter, setFilter] = React.useState('');
+    const [typeFilter, setTypeFilter] = React.useState(ALL_PORT_TYPES);
+    const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
+
+    const typeCounts = React.useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const port of construct.ports) {
+            const type = switchPortTypeLabel(port.row);
+            counts.set(type, (counts.get(type) ?? 0) + 1);
+        }
+        return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b));
+    }, [construct.ports]);
+
+    // Raw rows come from the representative node's database (cluster view:
+    // the first zone the construct appears in, the Config tab's rule), falling
+    // back to the row the model carried for ports that zone does not hold.
+    const rawRowFor = React.useMemo(() => {
+        const byUuid = new Map((database?.logicalSwitchPorts ?? []).map((row) => [row.uuid, row]));
+        const byName = new Map((database?.logicalSwitchPorts ?? []).map((row) => [row.name, row]));
+        return (port: LadderPort): LogicalSwitchPortRow =>
+            byUuid.get(port.uuid) ?? byName.get(port.name) ?? port.row;
+    }, [database]);
+
+    const query = filter.trim().toLowerCase();
+    const rows = construct.ports.filter(
+        (port) =>
+            (typeFilter === ALL_PORT_TYPES || switchPortTypeLabel(port.row) === typeFilter) &&
+            (query === '' || portMatches(port, query)),
+    );
+
+    const toggle = (uuid: string) =>
+        setExpanded((current) => {
+            const next = new Set(current);
+            if (next.has(uuid)) next.delete(uuid);
+            else next.add(uuid);
+            return next;
+        });
+
+    const columns = ['Name', 'Type', 'Addresses', 'Port security', 'Up', 'Requested chassis'];
+
+    return (
+        <>
+            <Toolbar inset={{ default: 'insetNone' }} className="pf-u-pb-sm">
+                <ToolbarContent>
+                    <ToolbarItem>
+                        <TextInput
+                            aria-label="Filter ports"
+                            type="search"
+                            placeholder={`Filter ${construct.ports.length} ports`}
+                            value={filter}
+                            onChange={(_event, value) => setFilter(value)}
+                        />
+                    </ToolbarItem>
+                    <ToolbarItem>
+                        <FormSelect
+                            aria-label="Filter by port type"
+                            value={typeFilter}
+                            onChange={(_event, value) => setTypeFilter(value)}
+                        >
+                            <FormSelectOption value={ALL_PORT_TYPES} label={`All types (${construct.ports.length})`} />
+                            {typeCounts.map(([type, count]) => (
+                                <FormSelectOption key={type} value={type} label={`${type} (${count})`} />
+                            ))}
+                        </FormSelect>
+                    </ToolbarItem>
+                </ToolbarContent>
+            </Toolbar>
+            {databaseNode && (
+                <div className="pf-u-mb-sm" style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>
+                    Logical_Switch_Port rows from node {databaseNode}
+                </div>
+            )}
+            <Table aria-label="Switch ports" variant="compact" isExpandable>
+                <Thead>
+                    <Tr>
+                        <Th screenReaderText="Row expansion" />
+                        {columns.map((column) => <Th key={column}>{column}</Th>)}
+                    </Tr>
+                </Thead>
+                {rows.map((port, rowIndex) => {
+                    const isExpanded = expanded.has(port.uuid);
+                    const row = port.row;
+                    const requestedChassis = row.options?.['requested-chassis'];
+                    const rawRow = rawRowFor(port);
+                    const rawJson = JSON.stringify(rawRow, null, 2);
+                    const editorHeight = `${Math.min(400, 24 + rawJson.split('\n').length * 19)}px`;
+                    return (
+                        <Tbody key={port.uuid} isExpanded={isExpanded}>
+                            <Tr data-testid={`port-row-${port.uuid}`}>
+                                <Td
+                                    expand={{
+                                        rowIndex,
+                                        isExpanded,
+                                        onToggle: () => toggle(port.uuid),
+                                        expandId: `port-${port.uuid}`,
+                                    }}
+                                />
+                                <Td dataLabel="Name"><PortName port={port} /></Td>
+                                <Td dataLabel="Type">{switchPortTypeLabel(row)}</Td>
+                                <Td dataLabel="Addresses"><CodeLines items={row.addresses} /></Td>
+                                <Td dataLabel="Port security"><CodeLines items={row.portSecurity} /></Td>
+                                <Td dataLabel="Up"><PortState row={row} /></Td>
+                                <Td dataLabel="Requested chassis">
+                                    {requestedChassis ? (
+                                        <ChassisName
+                                            chassisName={requestedChassis}
+                                            nodeForChassis={nodeForChassis}
+                                            nodeHref={nodeHref}
+                                        />
+                                    ) : (
+                                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>—</span>
+                                    )}
+                                </Td>
+                            </Tr>
+                            <Tr isExpanded={isExpanded}>
+                                <Td />
+                                <Td dataLabel="Details" colSpan={columns.length}>
+                                    <ExpandableRowContent>
+                                        {isExpanded && (
+                                            <CodeEditor
+                                                isDarkTheme={isDarkTheme}
+                                                isReadOnly
+                                                code={rawJson}
+                                                language={Language.json}
+                                                height={editorHeight}
+                                            />
+                                        )}
+                                        <div className="pf-u-mt-sm">
+                                            <strong>Port groups:</strong>{' '}
+                                            <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>
+                                                not collected yet
+                                            </span>
+                                        </div>
+                                    </ExpandableRowContent>
+                                </Td>
+                            </Tr>
+                        </Tbody>
+                    );
+                })}
+                {rows.length === 0 && (
+                    <Tbody>
+                        <Tr>
+                            <Td colSpan={columns.length + 1}>
+                                {construct.ports.length === 0 ? 'No ports on this switch.' : 'No ports match.'}
+                            </Td>
+                        </Tr>
+                    </Tbody>
+                )}
+            </Table>
+        </>
+    );
+};
+
+type ConstructTabId = 'overview' | 'relationships' | 'ports' | 'config';
 
 const CONSTRUCT_TABS: ReadonlyArray<{ id: ConstructTabId; title: string }> = [
     { id: 'overview', title: 'Overview' },
     { id: 'relationships', title: 'Relationships' },
+    { id: 'ports', title: 'Ports' },
     { id: 'config', title: 'Config' },
 ];
+
+/** Only switches carry Logical_Switch_Ports; routers keep three tabs (LRPs
+ * are out of scope for the Ports tab). */
+export const hasPortsTab = (construct: LadderConstruct): boolean =>
+    ovnKindFor(construct).table === 'Logical_Switch';
 
 /**
  * Rendered directly under the page's DrawerHead. The tab strip sits flush
@@ -527,19 +753,26 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = (props) => {
     // physical drawer. A freshly opened drawer starts at Overview because the
     // component mounts anew (the pages unmount it when nothing is selected).
     const [activeTab, setActiveTab] = React.useState<ConstructTabId>('overview');
+    // Hopping from a switch's Ports tab to a router (via Relationships) lands
+    // on Overview; the stored choice is kept so a hop back to a switch returns
+    // to Ports.
+    const showPorts = hasPortsTab(props.construct);
+    const tabs = showPorts ? CONSTRUCT_TABS : CONSTRUCT_TABS.filter((tab) => tab.id !== 'ports');
+    const effectiveTab: ConstructTabId = activeTab === 'ports' && !showPorts ? 'overview' : activeTab;
 
     return (
         <>
             <DrawerTabStrip<ConstructTabId>
-                tabs={CONSTRUCT_TABS}
-                activeKey={activeTab}
+                tabs={tabs}
+                activeKey={effectiveTab}
                 onSelect={setActiveTab}
                 aria-label="Construct details"
             />
             <DrawerPanelBody>
-                {activeTab === 'overview' && <OverviewBody {...props} />}
-                {activeTab === 'relationships' && <RelationshipsBody {...props} />}
-                {activeTab === 'config' && <ConfigBody {...props} />}
+                {effectiveTab === 'overview' && <OverviewBody {...props} />}
+                {effectiveTab === 'relationships' && <RelationshipsBody {...props} />}
+                {effectiveTab === 'ports' && <PortsBody key={props.construct.uuid} {...props} />}
+                {effectiveTab === 'config' && <ConfigBody {...props} />}
             </DrawerPanelBody>
         </>
     );

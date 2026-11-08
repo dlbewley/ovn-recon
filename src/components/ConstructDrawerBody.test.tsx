@@ -9,8 +9,8 @@ import ConstructDrawerBody, { natRuleText, staticRouteText } from './ConstructDr
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 
 jest.mock('react-router', () => ({
-    Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
-        <a href={String(to)}>{children}</a>
+    Link: ({ to, children, title }: { to: string; children: React.ReactNode; title?: string }) => (
+        <a href={String(to)} title={title}>{children}</a>
     ),
 }));
 
@@ -327,5 +327,207 @@ describe('ConstructDrawerBody', () => {
             input!.dispatchEvent(new Event('input', { bubbles: true }));
         });
         expect(container.textContent).toContain('No ports match.');
+    });
+});
+
+describe('ConstructDrawerBody Ports tab', () => {
+    let container: HTMLDivElement;
+    let root: Root;
+    const chassisId = '91bc7389-d1b9-4fef-9f4c-52e3eedab004';
+    const switchRow = (name: string) => database.logicalSwitches.find((row) => row.name === name)!;
+
+    beforeEach(() => {
+        container = document.createElement('div');
+        document.body.appendChild(container);
+        root = createRoot(container);
+    });
+
+    afterEach(() => {
+        act(() => root.unmount());
+        container.remove();
+    });
+
+    const renderConstruct = (
+        name: string,
+        props: Partial<React.ComponentProps<typeof ConstructDrawerBody>> = {},
+    ) => {
+        const construct = byName(name);
+        expect(construct).toBeDefined();
+        act(() => {
+            root.render(<ConstructDrawerBody construct={construct!} model={model} {...props} />);
+        });
+    };
+
+    const tabLabels = () =>
+        [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
+
+    const clickTab = (label: string) => {
+        const tab = [...container.querySelectorAll('button')].find((button) => button.textContent === label);
+        expect(tab).toBeDefined();
+        act(() => {
+            tab!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+    };
+
+    const selectedTab = () =>
+        [...container.querySelectorAll('button[aria-selected="true"]')].map((tab) => tab.textContent)[0];
+
+    const portRows = () => [...container.querySelectorAll('tr[data-testid^="port-row-"]')];
+
+    const setInputValue = (input: HTMLInputElement | HTMLSelectElement, value: string) => {
+        act(() => {
+            const prototype = input instanceof HTMLSelectElement
+                ? window.HTMLSelectElement.prototype
+                : window.HTMLInputElement.prototype;
+            const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+            setter?.call(input, value);
+            input.dispatchEvent(new Event(input instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
+        });
+    };
+
+    it('offers the Ports tab on switches only', () => {
+        renderConstruct('cnv-1');
+        expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Ports', 'Config']);
+
+        renderConstruct('GR_cnv-1');
+        expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Config']);
+
+        renderConstruct('cluster_udn_machinenet_ovn_localnet_switch');
+        expect(tabLabels()).toContain('Ports');
+    });
+
+    it('lists every port on the switch, one row per Logical_Switch_Port', () => {
+        renderConstruct('cnv-1');
+        clickTab('Ports');
+        expect(portRows()).toHaveLength(switchRow('cnv-1').ports.length);
+        expect(container.querySelector('input[aria-label="Filter ports"]')?.getAttribute('placeholder'))
+            .toBe(`Filter ${switchRow('cnv-1').ports.length} ports`);
+
+        renderConstruct('transit_switch');
+        expect(portRows()).toHaveLength(switchRow('transit_switch').ports.length);
+    });
+
+    it('renders pod ports as Pod links and other ports by OVN name', () => {
+        renderConstruct('cnv-1');
+        clickTab('Ports');
+        const podLink = [...container.querySelectorAll('tbody a')].find((anchor) =>
+            anchor.getAttribute('href')?.startsWith('/k8s/ns/openshift-storage/core~v1~Pod/'),
+        );
+        expect(podLink).toBeDefined();
+        expect(podLink?.textContent).toMatch(/^openshift-storage\//);
+        // The router port on the node switch has no Pod to link to.
+        expect(container.querySelector('tbody code')?.textContent).toBeDefined();
+        const text = container.textContent ?? '';
+        expect(text).toContain('stor-cnv-1');
+    });
+
+    it('resolves requested-chassis to a node name when a Node claims it, else the id', () => {
+        renderConstruct('cnv-1', {
+            nodeHref: (node) => `/ovn-recon/ovn/${node}`,
+            nodeForChassis: (chassis) => (chassis === chassisId ? 'cnv-1' : undefined),
+        });
+        clickTab('Ports');
+        const nodeLinks = container.querySelectorAll('tbody a[href="/ovn-recon/ovn/cnv-1"]');
+        expect(nodeLinks.length).toBeGreaterThan(0);
+        expect(nodeLinks[0].getAttribute('title')).toBe(chassisId);
+
+        renderConstruct('cnv-1');
+        expect(container.querySelector('tbody a[href="/ovn-recon/ovn/cnv-1"]')).toBeNull();
+        expect(container.textContent).toContain('91bc7389…');
+    });
+
+    it('shows addresses, port security and the binding state per row', () => {
+        renderConstruct('cnv-1');
+        clickTab('Ports');
+        const podRow = portRows().find((row) => row.textContent?.includes('openshift-storage/'));
+        expect(podRow).toBeDefined();
+        const codes = [...podRow!.querySelectorAll('code')].map((code) => code.textContent);
+        // The pod's address appears twice: addresses and port_security.
+        const macAndIp = codes.find((code) => /^0a:58:/.test(code ?? ''));
+        expect(macAndIp).toBeDefined();
+        expect(codes.filter((code) => code === macAndIp)).toHaveLength(2);
+        expect(podRow!.textContent).toContain('Up');
+
+        renderConstruct('ext_cnv-1');
+        const localnetRow = portRows().find((row) => row.textContent?.includes('localnet'));
+        expect(localnetRow?.textContent).toContain('Down');
+    });
+
+    it('filters by port type and by text', () => {
+        renderConstruct('transit_switch');
+        clickTab('Ports');
+        const total = switchRow('transit_switch').ports.length;
+        expect(portRows()).toHaveLength(total);
+
+        const select = container.querySelector<HTMLSelectElement>('select[aria-label="Filter by port type"]');
+        expect(select).not.toBeNull();
+        const options = [...select!.options].map((option) => option.textContent);
+        expect(options[0]).toBe(`All types (${total})`);
+        expect(options).toContain('remote (9)');
+        expect(options).toContain('router (1)');
+
+        setInputValue(select!, 'remote');
+        expect(portRows()).toHaveLength(9);
+        expect(portRows().every((row) => row.textContent?.includes('remote'))).toBe(true);
+
+        setInputValue(select!, 'router');
+        expect(portRows()).toHaveLength(1);
+
+        setInputValue(select!, 'all');
+        const input = container.querySelector<HTMLInputElement>('input[aria-label="Filter ports"]');
+        setInputValue(input!, 'tstor-cnv-3');
+        expect(portRows()).toHaveLength(1);
+        expect(portRows()[0].textContent).toContain('tstor-cnv-3');
+
+        setInputValue(input!, 'no-such-port');
+        expect(portRows()).toHaveLength(0);
+        expect(container.textContent).toContain('No ports match.');
+    });
+
+    it('expands a row to the raw NB row and a port-groups placeholder', () => {
+        renderConstruct('transit_switch', { database, databaseNode: 'cnv-1' });
+        clickTab('Ports');
+        expect(container.textContent).toContain('Logical_Switch_Port rows from node cnv-1');
+        expect(container.querySelector('[data-testid="code-editor"]')).toBeNull();
+
+        const row = portRows().find((candidate) => candidate.textContent?.includes('tstor-cnv-3'))!;
+        const toggle = row.querySelector('button');
+        expect(toggle).not.toBeNull();
+        act(() => {
+            toggle!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        const editor = container.querySelector('[data-testid="code-editor"]');
+        expect(editor).not.toBeNull();
+        const raw = JSON.parse(editor!.textContent ?? '{}') as { name: string; up?: boolean; type?: string };
+        expect(raw.name).toBe('tstor-cnv-3');
+        expect(raw.type).toBe('remote');
+        expect(raw.up).toBe(true);
+        expect(container.textContent).toContain('Port groups:');
+        expect(container.textContent).toContain('not collected yet');
+    });
+
+    it('resets expanded rows when the selection moves and keeps the tab between switches', () => {
+        renderConstruct('transit_switch', { onSelectConstruct: jest.fn() });
+        clickTab('Ports');
+        act(() => {
+            portRows()[0].querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        expect(container.querySelector('[data-testid="code-editor"]')).not.toBeNull();
+
+        // Hop to another switch: still on Ports, nothing expanded.
+        renderConstruct('join', { onSelectConstruct: jest.fn() });
+        expect(selectedTab()).toBe('Ports');
+        expect(portRows()).toHaveLength(switchRow('join').ports.length);
+        expect(container.querySelector('[data-testid="code-editor"]')).toBeNull();
+
+        // Hop to a router: no Ports tab, so Overview shows.
+        renderConstruct('ovn_cluster_router', { onSelectConstruct: jest.fn() });
+        expect(tabLabels()).not.toContain('Ports');
+        expect(selectedTab()).toBe('Overview');
+        expect(container.textContent).toContain('OVN name');
+
+        // And back to a switch returns to Ports.
+        renderConstruct('join', { onSelectConstruct: jest.fn() });
+        expect(selectedTab()).toBe('Ports');
     });
 });

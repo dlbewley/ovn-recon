@@ -12,6 +12,27 @@ describe('mergeZones over the captured corpus', () => {
     const merged = mergeZones(snapshots);
     const byName = new Map(merged.constructs.map((construct) => [construct.name, construct]));
 
+    it('unions switch ports by name across zones, keeping the type-then-name order', () => {
+        const transit = byName.get('transit_switch')!;
+        const perZone = snapshots.map((snapshot) =>
+            buildLadderModel(snapshot.database!).constructs.find((construct) => construct.name === 'transit_switch')!,
+        );
+        const unionNames = new Set(perZone.flatMap((zone) => zone.ports.map((port) => port.name)));
+        expect(transit.ports.map((port) => port.name).sort()).toEqual([...unionNames].sort());
+        // tstor-<node> is a router port in its own zone and a remote port in
+        // every other; the name-keyed union keeps one row per name (the first
+        // zone's), so each node's transit port appears exactly once.
+        const names = transit.ports.map((port) => port.name);
+        expect(new Set(names).size).toBe(names.length);
+        for (const node of ['cnv-1', 'cnv-2', 'ctrl-1']) {
+            expect(names).toContain(`tstor-${node}`);
+        }
+        const types = transit.ports.map((port) => port.row.type ?? '');
+        expect(types).toEqual([...types].sort((a, b) => a.localeCompare(b)));
+        // The NB row travels with the port, so per-port columns work in the cluster view.
+        expect(transit.ports.every((port) => port.row.uuid === port.uuid)).toBe(true);
+    });
+
     it('counts contributing zones', () => {
         expect(merged.zoneCount).toBe(3);
     });

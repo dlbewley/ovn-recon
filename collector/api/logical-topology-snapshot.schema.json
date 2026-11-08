@@ -100,6 +100,12 @@
               "type": {"type": "string"},
               "addresses": {"type": "array", "items": {"type": "string"}},
               "tag": {"type": "string"},
+              "portSecurity": {"type": "array", "items": {"type": "string"}, "description": "Allowed source MAC (and IP) addresses; set on every pod port."},
+              "up": {"type": "boolean", "description": "northd-reported binding state; absent when the column is unset."},
+              "enabled": {"type": "boolean", "description": "Administrative state; absent (unset) means enabled."},
+              "dynamicAddresses": {"type": "string", "description": "Address northd allocated for a port whose addresses hold \"dynamic\"."},
+              "tagRequest": {"type": "string", "description": "Requested VLAN tag; the allocated tag is in tag."},
+              "parentName": {"type": "string", "description": "Parent port of a nested (container) port."},
               "options": {"$ref": "#/$defs/stringMap"},
               "externalIds": {"$ref": "#/$defs/stringMap"}
             },

@@ -110,7 +110,23 @@ type LogicalSwitchPortRow struct {
 	Type      string   `json:"type,omitempty"`
 	Addresses []string `json:"addresses,omitempty"`
 	// Tag is the VLAN tag on localnet/l2gateway ports, when set.
-	Tag         string            `json:"tag,omitempty"`
+	Tag string `json:"tag,omitempty"`
+	// PortSecurity is the set of MAC (and optional IP) addresses the port may
+	// use as a source; ovn-kubernetes sets it on every pod port.
+	PortSecurity []string `json:"portSecurity,omitempty"`
+	// Up is written by ovn-northd: true when the port is bound to a chassis
+	// and its interface is claimed. Nil when the optional column is unset.
+	Up *bool `json:"up,omitempty"`
+	// Enabled is the administrative state; nil (unset) means enabled.
+	Enabled *bool `json:"enabled,omitempty"`
+	// DynamicAddresses is the address northd allocated when addresses holds
+	// "dynamic"; empty for statically addressed ports.
+	DynamicAddresses string `json:"dynamicAddresses,omitempty"`
+	// TagRequest is the requested VLAN tag (0 asks for allocation); the
+	// allocated tag lands in Tag.
+	TagRequest string `json:"tagRequest,omitempty"`
+	// ParentName names the parent port of a nested (container) port.
+	ParentName  string            `json:"parentName,omitempty"`
 	Options     map[string]string `json:"options,omitempty"`
 	ExternalIDs map[string]string `json:"externalIds,omitempty"`
 }
