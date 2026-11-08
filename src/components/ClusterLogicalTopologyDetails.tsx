@@ -35,7 +35,8 @@ import { aggregateId } from './logicalLadderLayout';
 import ConstructDrawerBody from './ConstructDrawerBody';
 import SnapshotJsonControls from './SnapshotJsonControls';
 import LogicalLadderView, { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
-import SnapshotStatusLine from './SnapshotStatusLine';
+import SnapshotStatusLine, { summarizeOvnZones } from './SnapshotStatusLine';
+import { useChassisNodeNames } from './useChassisNodeNames';
 import { freshnessFromAge, oldestSnapshotAgeMs } from './snapshotFreshness';
 
 // Aggregate collection probes every zone, so refresh less eagerly than the
@@ -112,6 +113,17 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
         () => (visibleSnapshots ? mergeZones(visibleSnapshots) : null),
         [visibleSnapshots],
     );
+
+    // OVN version and chassis catch-up across the zones on view, from each
+    // zone's NB_Global row.
+    const ovnSummary = React.useMemo(
+        () => summarizeOvnZones((visibleSnapshots ?? []).map((snapshot) => snapshot.database?.nbGlobal)),
+        [visibleSnapshots],
+    );
+
+    // Gateway port placement in the drawer names chassis by SB chassis id;
+    // Nodes carry the mapping back to node names.
+    const nodeForChassis = useChassisNodeNames();
 
     const selectHost = React.useCallback((host: string) => {
         setHostFilter(host);
@@ -305,6 +317,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                             onSelectConstruct={selectConstructFromDrawer}
                                             database={drawerDatabase?.database}
                                             databaseNode={drawerDatabase?.node}
+                                            nodeForChassis={nodeForChassis}
                                         />
                                     </>
                                 )}
@@ -401,6 +414,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                                 ageQualifier={(visibleSnapshots?.length ?? 0) > 1 ? 'oldest node ' : undefined}
                                                 zoneCount={model.zoneCount}
                                                 sourceHealth={topology.metadata.sourceHealth}
+                                                ovn={ovnSummary}
                                                 isLoading={isLoading}
                                             />
                                         </FlexItem>

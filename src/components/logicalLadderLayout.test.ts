@@ -1,6 +1,6 @@
 import { LogicalDatabase, LogicalTopologySnapshot } from '../types';
 import { ConstructRole, LogicalTier } from './logicalClassification';
-import { buildLadderModel, LadderConstruct, LadderModel } from './logicalLadderModel';
+import { buildLadderModel, emptyLadderAggregates, LadderConstruct, LadderModel } from './logicalLadderModel';
 import {
     layoutLadder,
     networkColorIndex,
@@ -26,14 +26,7 @@ const makeConstruct = (
     tier,
     network,
     node,
-    podPortCount: 0,
-    podPorts: [],
-    localnetPorts: [],
-    remotePeers: [],
-    natCount: 0,
-    staticRouteCount: 0,
-    natRules: [],
-    staticRouteRules: [],
+    ...emptyLadderAggregates(),
 });
 
 const syntheticModel = (constructs: LadderConstruct[]): LadderModel => ({

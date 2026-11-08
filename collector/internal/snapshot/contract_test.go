@@ -99,6 +99,10 @@ func TestDatabaseReferentialIntegrity(t *testing.T) {
 			for _, route := range db.StaticRoutes {
 				routeByUUID[route.UUID] = true
 			}
+			gatewayChassisByUUID := map[string]bool{}
+			for _, chassis := range db.GatewayChassis {
+				gatewayChassisByUUID[chassis.UUID] = true
+			}
 
 			for _, router := range db.LogicalRouters {
 				for _, uuid := range router.PortUUIDs {
@@ -115,6 +119,23 @@ func TestDatabaseReferentialIntegrity(t *testing.T) {
 					if !routeByUUID[uuid] {
 						t.Errorf("router %s references unknown static route %s", router.Name, uuid)
 					}
+				}
+			}
+
+			// Gateway_Chassis arrived with ovn-recon-e2b.3; a fixture that
+			// carries the table must resolve every router port's refs to it.
+			if len(db.GatewayChassis) > 0 {
+				for _, port := range db.LogicalRouterPorts {
+					for _, uuid := range port.GatewayChassisUUIDs {
+						if !gatewayChassisByUUID[uuid] {
+							t.Errorf("router port %s references unknown gateway chassis %s", port.Name, uuid)
+						}
+					}
+				}
+			}
+			for _, nat := range db.NATs {
+				if nat.GatewayPort != "" && !lrpByUUID[nat.GatewayPort] {
+					t.Errorf("NAT %s references unknown gateway port %s", nat.UUID, nat.GatewayPort)
 				}
 			}
 

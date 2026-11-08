@@ -28,16 +28,18 @@ func (f *fakeRunner) Run(_ context.Context, command []string) (string, error) {
 	return "", errors.New("missing fixture for command: " + key)
 }
 
-// nbTransactOutput is what one ovsdb-client transact returns for the six NB
+// nbTransactOutput is what one ovsdb-client transact returns for the NB
 // tables, in nbTables order: one result per select op, rows as objects.
 // Single-element sets arrive as bare values, exactly as ovn-nbctl emits them.
 const nbTransactOutput = `[` +
-	`{"rows":[{"_uuid":["uuid","lr-1"],"_version":["uuid","v-lr-1"],"name":"cluster-router","ports":["uuid","lrp-1"],"nat":["uuid","nat-1"],"static_routes":["uuid","sr-1"],"options":["map",[]],"external_ids":["map",[["k8s.ovn.org/topology","layer3"]]]}]},` +
-	`{"rows":[{"_uuid":["uuid","lrp-1"],"_version":["uuid","v-lrp-1"],"name":"rtos-red","mac":"0a:58:0a:f4:00:01","networks":"10.244.0.1/24","peer":["set",[]],"gateway_chassis":["set",[]],"options":["map",[]],"external_ids":["map",[]]}]},` +
-	`{"rows":[{"_uuid":["uuid","ls-1"],"_version":["uuid","v-ls-1"],"name":"red-net","ports":["set",[["uuid","lsp-r"],["uuid","lsp-pod"]]],"other_config":["map",[["subnet","10.244.0.0/24"]]],"external_ids":["map",[["k8s.ovn.org/network","red"]]]}]},` +
+	`{"rows":[{"_uuid":["uuid","lr-1"],"_version":["uuid","v-lr-1"],"name":"cluster-router","ports":["uuid","lrp-1"],"nat":["uuid","nat-1"],"static_routes":["uuid","sr-1"],"enabled":["set",[]],"policies":["set",[["uuid","pol-1"],["uuid","pol-2"]]],"load_balancer":["uuid","lb-1"],"load_balancer_group":["set",[]],"copp":["uuid","copp-1"],"options":["map",[]],"external_ids":["map",[["k8s.ovn.org/topology","layer3"]]]}]},` +
+	`{"rows":[{"_uuid":["uuid","lrp-1"],"_version":["uuid","v-lrp-1"],"name":"rtos-red","mac":"0a:58:0a:f4:00:01","networks":"10.244.0.1/24","peer":["set",[]],"enabled":["set",[]],"gateway_chassis":["uuid","gwc-1"],"status":["map",[["hosting-chassis","chassis-a"]]],"options":["map",[]],"external_ids":["map",[]]}]},` +
+	`{"rows":[{"_uuid":["uuid","ls-1"],"_version":["uuid","v-ls-1"],"name":"red-net","ports":["set",[["uuid","lsp-r"],["uuid","lsp-pod"]]],"acls":["uuid","acl-1"],"load_balancer":["set",[]],"load_balancer_group":["uuid","lbg-1"],"qos_rules":["set",[]],"other_config":["map",[["subnet","10.244.0.0/24"]]],"external_ids":["map",[["k8s.ovn.org/network","red"]]]}]},` +
 	`{"rows":[{"_uuid":["uuid","lsp-r"],"_version":["uuid","v-lsp-r"],"name":"red-router-port","type":"router","addresses":"router","options":["map",[["router-port","rtos-red"]]],"external_ids":["map",[]]},{"_uuid":["uuid","lsp-pod"],"_version":["uuid","v-lsp-pod"],"name":"pod-a","type":"","addresses":"0a:58:0a:f4:00:05 10.244.0.5","options":["map",[]],"external_ids":["map",[]]}]},` +
-	`{"rows":[{"_uuid":["uuid","nat-1"],"_version":["uuid","v-nat-1"],"type":"snat","external_ip":"192.168.1.11","logical_ip":"10.244.0.0/24","logical_port":["set",[]],"external_mac":["set",[]],"options":["map",[]],"external_ids":["map",[]]}]},` +
-	`{"rows":[{"_uuid":["uuid","sr-1"],"_version":["uuid","v-sr-1"],"ip_prefix":"0.0.0.0/0","nexthop":"100.64.0.1","policy":["set",[]],"output_port":["set",[]],"options":["map",[]],"external_ids":["map",[]]}]}` +
+	`{"rows":[{"_uuid":["uuid","nat-1"],"_version":["uuid","v-nat-1"],"type":"snat","external_ip":"192.168.1.11","logical_ip":"10.244.0.0/24","logical_port":["set",[]],"external_mac":["set",[]],"gateway_port":["uuid","lrp-1"],"match":"ip4.dst == $a1","priority":10,"external_port_range":"32768-60999","options":["map",[]],"external_ids":["map",[]]}]},` +
+	`{"rows":[{"_uuid":["uuid","sr-1"],"_version":["uuid","v-sr-1"],"ip_prefix":"0.0.0.0/0","nexthop":"100.64.0.1","policy":["set",[]],"output_port":["set",[]],"route_table":"","bfd":["set",[]],"selection_fields":["set",["ip_src","ip_dst"]],"options":["map",[]],"external_ids":["map",[]]}]},` +
+	`{"rows":[{"_uuid":["uuid","gwc-1"],"_version":["uuid","v-gwc-1"],"name":"rtos-red-chassis-a","chassis_name":"chassis-a","priority":1,"options":["map",[]],"external_ids":["map",[]]}]},` +
+	`{"rows":[{"_uuid":["uuid","nbg-1"],"_version":["uuid","v-nbg-1"],"name":"worker-a","nb_cfg":147,"nb_cfg_timestamp":1794168187186,"sb_cfg":147,"sb_cfg_timestamp":1794168187190,"hv_cfg":146,"hv_cfg_timestamp":1794168187191,"ipsec":false,"connections":["set",[]],"ssl":["set",[]],"options":["map",[["name","worker-a"],["northd_internal_version","26.03.4-57.el9fdp-21.8.0-82.14"]]],"external_ids":["map",[]]}]}` +
 	`]`
 
 const chassisOutput = `{"headings":["other_config"],"data":[[["map",[["ovn-bridge-mappings","physnet-vmdata:br-vmdata,physnet:br-ex"],["ct-no-masked-label","true"]]]]]}`
@@ -59,6 +61,8 @@ func legacyNBOutputs() map[string]string {
 		strings.Join(nbListCommand("Logical_Switch_Port"), " "):         `{"headings":["_uuid","name","type","addresses","options","external_ids"],"data":[[["uuid","lsp-r"],"red-router-port","router",["set",["router"]],["map",[["router-port","rtos-red"]]],["map",[]]],[["uuid","lsp-pod"],"pod-a","",["set",["0a:58:0a:f4:00:05 10.244.0.5"]],["map",[]],["map",[]]]]}`,
 		strings.Join(nbListCommand("NAT"), " "):                         `{"headings":["_uuid","type","external_ip","logical_ip","logical_port","external_mac","options","external_ids"],"data":[[["uuid","nat-1"],"snat","192.168.1.11","10.244.0.0/24",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
 		strings.Join(nbListCommand("Logical_Router_Static_Route"), " "): `{"headings":["_uuid","ip_prefix","nexthop","policy","output_port","options","external_ids"],"data":[[["uuid","sr-1"],"0.0.0.0/0","100.64.0.1",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
+		strings.Join(nbListCommand("Gateway_Chassis"), " "):             `{"headings":["_uuid","name","chassis_name","priority","options","external_ids"],"data":[[["uuid","gwc-1"],"rtos-red-chassis-a","chassis-a",1,["map",[]],["map",[]]]]}`,
+		strings.Join(nbListCommand("NB_Global"), " "):                   `{"headings":["_uuid","name","nb_cfg","sb_cfg","hv_cfg","options","external_ids"],"data":[[["uuid","nbg-1"],"worker-a",147,147,146,["map",[["northd_internal_version","26.03.4"]]],["map",[]]]]}`,
 	}
 }
 
@@ -256,6 +260,32 @@ func TestParseLogicalRouterPortsCarriesNetworks(t *testing.T) {
 	}
 }
 
+func TestOptionalBoolAndIntFields(t *testing.T) {
+	row := map[string]any{
+		"unset":    []any{},
+		"on":       true,
+		"off":      false,
+		"count":    float64(42),
+		"optCount": []any{float64(7)},
+		"text":     "9",
+	}
+	if optionalBoolField(row, "unset") != nil || optionalBoolField(row, "missing") != nil {
+		t.Fatal("empty set and missing column should read as nil")
+	}
+	if value := optionalBoolField(row, "on"); value == nil || !*value {
+		t.Fatalf("expected true, got %v", value)
+	}
+	if value := optionalBoolField(row, "off"); value == nil || *value {
+		t.Fatalf("expected false, got %v", value)
+	}
+	if intField(row, "count") != 42 || intField(row, "optCount") != 7 || intField(row, "text") != 9 {
+		t.Fatalf("unexpected integer decoding: %v %v %v", intField(row, "count"), intField(row, "optCount"), intField(row, "text"))
+	}
+	if intField(row, "unset") != 0 || intField(row, "missing") != 0 {
+		t.Fatal("empty set and missing column should read as zero")
+	}
+}
+
 func TestCollectSnapshotBuildsExpectedTopology(t *testing.T) {
 	now := time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC)
 	runner := &fakeRunner{outputs: healthyOutputs()}
@@ -305,6 +335,50 @@ func TestCollectSnapshotBuildsExpectedTopology(t *testing.T) {
 	}
 	if len(db.BridgeMappings) != 2 || db.BridgeMappings[0].Localnet != "physnet" || db.BridgeMappings[0].Bridge != "br-ex" {
 		t.Fatalf("unexpected bridge mappings: %#v", db.BridgeMappings)
+	}
+
+	// Tier-1 columns (ovn-recon-e2b.3).
+	router := db.LogicalRouters[0]
+	if router.Enabled != nil {
+		t.Fatalf("unset enabled should decode as nil, got %v", *router.Enabled)
+	}
+	if len(router.PolicyUUIDs) != 2 || router.PolicyUUIDs[1] != "pol-2" {
+		t.Fatalf("unexpected router policies: %#v", router.PolicyUUIDs)
+	}
+	if len(router.LoadBalancerUUIDs) != 1 || router.LoadBalancerUUIDs[0] != "lb-1" || len(router.LoadBalancerGroupUUIDs) != 0 {
+		t.Fatalf("unexpected router load balancer refs: %#v %#v", router.LoadBalancerUUIDs, router.LoadBalancerGroupUUIDs)
+	}
+	if router.Copp != "copp-1" {
+		t.Fatalf("optional copp ref not unwrapped: %q", router.Copp)
+	}
+	routerPort := db.LogicalRouterPorts[0]
+	if routerPort.Status["hosting-chassis"] != "chassis-a" {
+		t.Fatalf("unexpected router port status: %#v", routerPort.Status)
+	}
+	if len(routerPort.GatewayChassisUUIDs) != 1 || routerPort.GatewayChassisUUIDs[0] != "gwc-1" {
+		t.Fatalf("unexpected gateway chassis refs: %#v", routerPort.GatewayChassisUUIDs)
+	}
+	logicalSwitch := db.LogicalSwitches[0]
+	if len(logicalSwitch.ACLUUIDs) != 1 || logicalSwitch.ACLUUIDs[0] != "acl-1" {
+		t.Fatalf("unexpected switch acls: %#v", logicalSwitch.ACLUUIDs)
+	}
+	if len(logicalSwitch.LoadBalancerGroupUUIDs) != 1 || logicalSwitch.LoadBalancerGroupUUIDs[0] != "lbg-1" || len(logicalSwitch.QoSRuleUUIDs) != 0 {
+		t.Fatalf("unexpected switch lb group / qos refs: %#v %#v", logicalSwitch.LoadBalancerGroupUUIDs, logicalSwitch.QoSRuleUUIDs)
+	}
+	nat := db.NATs[0]
+	if nat.GatewayPort != "lrp-1" || nat.Match != "ip4.dst == $a1" || nat.Priority != 10 || nat.ExternalPortRange != "32768-60999" {
+		t.Fatalf("unexpected NAT extras: %#v", nat)
+	}
+	route := db.StaticRoutes[0]
+	if route.RouteTable != "" || route.BFD != "" || len(route.SelectionFields) != 2 || route.SelectionFields[0] != "ip_src" {
+		t.Fatalf("unexpected static route extras: %#v", route)
+	}
+	if len(db.GatewayChassis) != 1 || db.GatewayChassis[0].UUID != "gwc-1" || db.GatewayChassis[0].ChassisName != "chassis-a" || db.GatewayChassis[0].Priority != 1 {
+		t.Fatalf("unexpected gateway chassis rows: %#v", db.GatewayChassis)
+	}
+	if db.NBGlobal == nil || db.NBGlobal.Name != "worker-a" || db.NBGlobal.NBCfg != 147 || db.NBGlobal.HVCfg != 146 ||
+		db.NBGlobal.Options["northd_internal_version"] != "26.03.4-57.el9fdp-21.8.0-82.14" {
+		t.Fatalf("unexpected NB_Global row: %#v", db.NBGlobal)
 	}
 
 	nodeKinds := map[string]string{}
@@ -361,6 +435,12 @@ func TestCollectSnapshotFallsBackToPerTableListWhenTransactFails(t *testing.T) {
 	if db.LogicalRouters[0].PortUUIDs[0] != "lrp-1" || db.LogicalRouterPorts[0].Networks[0] != "10.244.0.1/24" {
 		t.Fatalf("fallback rows should map identically to the transact rows: %#v %#v", db.LogicalRouters, db.LogicalRouterPorts)
 	}
+	if len(db.GatewayChassis) != 1 || db.GatewayChassis[0].ChassisName != "chassis-a" || db.GatewayChassis[0].Priority != 1 {
+		t.Fatalf("fallback should read Gateway_Chassis: %#v", db.GatewayChassis)
+	}
+	if db.NBGlobal == nil || db.NBGlobal.NBCfg != 147 || db.NBGlobal.HVCfg != 146 || db.NBGlobal.Options["northd_internal_version"] != "26.03.4" {
+		t.Fatalf("fallback should read NB_Global: %#v", db.NBGlobal)
+	}
 }
 
 func TestCollectSnapshotDegradesOnCommandFailure(t *testing.T) {
@@ -397,7 +477,7 @@ func TestCollectSnapshotDegradesOnTransactOperationError(t *testing.T) {
 		`{"rows":[{"_uuid":["uuid","ls-1"],"name":"red-net","ports":["set",[]],"other_config":["map",[]],"external_ids":["map",[]]}]},` +
 		`{"rows":[]},` +
 		`{"details":"boom","error":"syntax error"},` +
-		`null]`
+		`null,null,null]`
 	outputs := healthyOutputs()
 	outputs[strings.Join(nbTransactCommand(nbTables), " ")] = raw
 	runner := &fakeRunner{outputs: outputs}
@@ -409,7 +489,7 @@ func TestCollectSnapshotDegradesOnTransactOperationError(t *testing.T) {
 	if snap.Metadata.SourceHealth != "degraded" {
 		t.Fatalf("expected degraded source health, got %q", snap.Metadata.SourceHealth)
 	}
-	if len(snap.Warnings) != 2 {
+	if len(snap.Warnings) != 4 {
 		t.Fatalf("expected one warning per failed table, got %#v", snap.Warnings)
 	}
 	for _, warning := range snap.Warnings {
@@ -420,7 +500,7 @@ func TestCollectSnapshotDegradesOnTransactOperationError(t *testing.T) {
 	if len(snap.Database.LogicalRouters) != 1 || len(snap.Database.LogicalSwitches) != 1 {
 		t.Fatalf("tables before the failed op should survive: %#v", snap.Database)
 	}
-	if len(snap.Database.NATs) != 0 || len(snap.Database.StaticRoutes) != 0 {
+	if len(snap.Database.NATs) != 0 || len(snap.Database.StaticRoutes) != 0 || len(snap.Database.GatewayChassis) != 0 || snap.Database.NBGlobal != nil {
 		t.Fatalf("failed and aborted tables should be empty: %#v", snap.Database)
 	}
 }

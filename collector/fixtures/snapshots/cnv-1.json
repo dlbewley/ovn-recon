@@ -41,6 +41,16 @@
           "e70b94d7-b99d-4bc8-ac19-7c2a911d7914",
           "f9255ff9-fea5-4660-aea3-e7d52840aae2"
         ],
+        "policies": [
+          "133a1c03-99ec-4932-a93d-07b03e8e2fca",
+          "46f818e5-8efa-459f-b9e3-339ec574100f",
+          "52fb8def-f491-4d1e-8a7b-566a61353e91",
+          "572a0661-5890-4c55-adbd-7360c3966f6c",
+          "6f8a126e-8c30-4267-b39e-8f5f0f962550",
+          "a55e449a-f322-47ca-8fb2-57fed16ce83d",
+          "e4d64b06-d131-4742-8f4f-e21aea9458e6"
+        ],
+        "copp": "84fd0208-2b42-4b57-ac1b-d27a3690af4f",
         "options": {
           "requested-tnl-key": "16715779"
         },
@@ -68,6 +78,7 @@
           "9f89fccf-d749-4821-ae46-cf901b8afab3",
           "b1297f68-da82-4bbc-b18d-fdddb0b2dad7"
         ],
+        "copp": "84fd0208-2b42-4b57-ac1b-d27a3690af4f",
         "options": {
           "always_learn_from_arp_request": "false"
         },
@@ -93,6 +104,11 @@
           "bfad4e41-9827-4168-a8d5-e92d3169c342",
           "ec2374bd-3319-4517-a58e-ac6a34ec7bab"
         ],
+        "loadBalancerGroup": [
+          "abc0a29d-7034-4cdf-8e81-c49ac2aeacc9",
+          "da3e4d9f-8c34-4901-8379-3a4fd39e261f"
+        ],
+        "copp": "84fd0208-2b42-4b57-ac1b-d27a3690af4f",
         "options": {
           "always_learn_from_arp_request": "false",
           "chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004",
@@ -196,6 +212,35 @@
           "9d4672e0-65e3-4222-aecd-ed0cd890e967",
           "d153b433-255a-44b4-ab8b-2d9c523c3104"
         ],
+        "loadBalancer": [
+          "03e2d3b7-8157-4f27-a944-9a1fe940dacd",
+          "2621ac00-d43d-4c82-9e17-ac0b270ac15e",
+          "2ca4ffdc-f8bf-4f63-abe8-e5a1ba3a2433",
+          "3bbaa651-e870-4f51-a4a4-241e6b9e4445",
+          "3beb9bc5-3a47-4212-ace3-4bb33f6fd4c0",
+          "43977cd6-5828-4b25-b441-8a2d608b87cd",
+          "4b70af1a-a3f7-4a74-ba1e-0f3f5a368bf8",
+          "59f1cc68-039f-425f-a558-f947d71200b7",
+          "6371000d-67ba-48e5-ae3d-1fff300fbe08",
+          "71f7c6d8-8902-4b0b-a64d-33bdc473f71a",
+          "7ded434b-90f4-4038-b99e-691d125cc623",
+          "7f3c7bfa-e52d-4c3b-9a4b-812b84b67499",
+          "86fe315f-497f-42c5-8786-36dbae1b44ac",
+          "8b0db6bf-b983-4420-9340-01929a53fb71",
+          "8ccd83e5-56e8-43a9-98cf-801f49bf9117",
+          "9e586c86-fef4-4133-9969-622f89a0a95e",
+          "ae626c74-e33a-4e3f-b1f2-a41ded6dd18f",
+          "afdc4576-31d7-4b26-bcba-f3c59bf8b20c",
+          "bd9f5d61-e6b9-42e9-a4a1-2dd369ac3413",
+          "cdb4d797-05de-4bd0-954e-d750d2f9bd3e",
+          "db8eaa84-47b6-40fd-898c-0014cbc2c26e",
+          "df14da89-8ec4-479c-815a-9a667e26516a"
+        ],
+        "loadBalancerGroup": [
+          "7c611932-106f-4307-b101-bb6cd3ebe657",
+          "bcf9661f-264c-4b64-9e9b-d9a5f55951bc"
+        ],
+        "copp": "84fd0208-2b42-4b57-ac1b-d27a3690af4f",
         "options": {
           "always_learn_from_arp_request": "false",
           "chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004",
@@ -240,6 +285,14 @@
           "f32a464c-2930-46dd-a30d-c43ff916dc06",
           "fcbb2461-1be4-474e-a24a-5755609e92d9"
         ],
+        "policies": [
+          "159b3fc3-6951-457f-a78b-6f12cbc320ce",
+          "568b54e5-e81e-4b3b-96ed-af7fab76b832",
+          "6a5d894a-c693-4c86-847a-021ed87b4fce",
+          "726d5384-734c-49ce-8f07-e82f1b33420a",
+          "9d609e2a-c8be-464c-8a13-c0834a62b373"
+        ],
+        "copp": "84fd0208-2b42-4b57-ac1b-d27a3690af4f",
         "options": {
           "always_learn_from_arp_request": "false",
           "mcast_relay": "true"
@@ -277,6 +330,9 @@
         "gatewayChassis": [
           "66abeb85-a886-46e2-ad7b-49b550a0860f"
         ],
+        "status": {
+          "hosting-chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004"
+        },
         "options": {
           "gateway_mtu": "1400"
         }
@@ -291,6 +347,9 @@
         "gatewayChassis": [
           "ac1d4207-2970-4432-9cd7-aee29cd93a32"
         ],
+        "status": {
+          "hosting-chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004"
+        },
         "options": {
           "gateway_mtu": "1400",
           "requested-tnl-key": "1"
@@ -512,6 +571,9 @@
         "gatewayChassis": [
           "5a6a8f89-8f25-4c30-9188-5954a6c9f998"
         ],
+        "status": {
+          "hosting-chassis": "91bc7389-d1b9-4fef-9f4c-52e3eedab004"
+        },
         "options": {
           "gateway_mtu": "1400"
         }
@@ -599,6 +661,16 @@
         "ports": [
           "6824cee2-cd1f-4585-a0cd-4a4508d4e2a8",
           "ca28ac07-c8a0-46b9-83da-f5b12f6b2080"
+        ],
+        "acls": [
+          "4af215a5-2a17-4376-985e-9a6b449b584f"
+        ],
+        "loadBalancerGroup": [
+          "760e1d61-663f-40ab-9242-a1e747e94925",
+          "abc0a29d-7034-4cdf-8e81-c49ac2aeacc9"
+        ],
+        "qosRules": [
+          "3df17dee-3a27-4f42-ac75-a4fcd41cb113"
         ],
         "otherConfig": {
           "interconn-ts": "cluster_udn_example.p.cudn_ovn_layer2_switch",
@@ -694,6 +766,40 @@
           "fa2e7a99-7bb1-4e68-a267-cf4959463ce2",
           "fdfea472-4849-4fa8-b809-cfafece75024"
         ],
+        "acls": [
+          "dcdef3e2-a317-4243-8b56-de8fc1768b3d"
+        ],
+        "loadBalancer": [
+          "03e2d3b7-8157-4f27-a944-9a1fe940dacd",
+          "2621ac00-d43d-4c82-9e17-ac0b270ac15e",
+          "2ca4ffdc-f8bf-4f63-abe8-e5a1ba3a2433",
+          "3bbaa651-e870-4f51-a4a4-241e6b9e4445",
+          "4b70af1a-a3f7-4a74-ba1e-0f3f5a368bf8",
+          "6371000d-67ba-48e5-ae3d-1fff300fbe08",
+          "71f7c6d8-8902-4b0b-a64d-33bdc473f71a",
+          "7ded434b-90f4-4038-b99e-691d125cc623",
+          "7f3c7bfa-e52d-4c3b-9a4b-812b84b67499",
+          "83b8267b-a191-4958-be59-2ac221450d9d",
+          "86fe315f-497f-42c5-8786-36dbae1b44ac",
+          "8b0db6bf-b983-4420-9340-01929a53fb71",
+          "8ccd83e5-56e8-43a9-98cf-801f49bf9117",
+          "9e586c86-fef4-4133-9969-622f89a0a95e",
+          "ae626c74-e33a-4e3f-b1f2-a41ded6dd18f",
+          "afdc4576-31d7-4b26-bcba-f3c59bf8b20c",
+          "bd9f5d61-e6b9-42e9-a4a1-2dd369ac3413",
+          "c9477c24-bfe6-408c-81c1-5c675c57d572",
+          "ccf2113c-6677-4e38-bf63-09ec46e11d94",
+          "db8eaa84-47b6-40fd-898c-0014cbc2c26e",
+          "de649cae-9e31-4f84-8be8-cd3f46f8da6b",
+          "df14da89-8ec4-479c-815a-9a667e26516a"
+        ],
+        "loadBalancerGroup": [
+          "5dd2d7c6-e18f-41de-bed0-c198c99c49f6",
+          "7c611932-106f-4307-b101-bb6cd3ebe657"
+        ],
+        "qosRules": [
+          "b0dbc8b5-6428-4b15-9dff-bc8ac74b14d9"
+        ],
         "otherConfig": {
           "mcast_eth_src": "0a:58:0a:83:00:01",
           "mcast_ip4_src": "10.131.0.1",
@@ -723,6 +829,10 @@
         "name": "demo.mirror_example.l3.udn_cnv-1",
         "ports": [
           "88f14da4-0705-4ae2-a090-d4897fdc9afd"
+        ],
+        "loadBalancerGroup": [
+          "2886c199-d39e-4c9a-8cb2-58dfc0a29891",
+          "58a6ffb9-9e57-459a-9436-e74aa7c33e08"
         ],
         "otherConfig": {
           "exclude_ips": "10.3.2.2",
@@ -2341,6 +2451,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.6",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2359,6 +2470,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.29",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2368,6 +2480,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.1.172",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2377,6 +2490,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.51",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2404,6 +2518,7 @@
         "type": "snat",
         "externalIp": "169.254.0.15",
         "logicalIp": "100.65.0.5",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         },
@@ -2417,6 +2532,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.34",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2435,6 +2551,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.30",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2444,6 +2561,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.19",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2462,6 +2580,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.9",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2471,6 +2590,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.13",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2489,6 +2609,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.14",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2507,6 +2628,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.21",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2516,6 +2638,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.52",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2525,6 +2648,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.27",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2543,6 +2667,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.26",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2570,6 +2695,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.7",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2588,6 +2714,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.49",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2633,6 +2760,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.1.184",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2642,6 +2770,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.53",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2669,6 +2798,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.15",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2732,6 +2862,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.70",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2741,6 +2872,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.31",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2777,6 +2909,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.10",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2813,6 +2946,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.119",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2876,6 +3010,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.208",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2885,6 +3020,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.17",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2912,6 +3048,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.20",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2931,6 +3068,8 @@
         "externalIp": "169.254.0.16",
         "logicalIp": "10.1.2.0/24",
         "logicalPort": "trtos-cluster_udn_example.p.cudn_ovn_layer2_switch",
+        "match": "eth.dst == 0a:58:0a:01:02:02",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         },
@@ -2980,6 +3119,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.24",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2989,6 +3129,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.8",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -2998,6 +3139,7 @@
         "type": "snat",
         "externalIp": "169.254.0.15",
         "logicalIp": "10.1.2.0/24",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         },
@@ -3011,6 +3153,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "100.64.0.5",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -3020,6 +3163,7 @@
         "type": "snat",
         "externalIp": "192.168.4.72",
         "logicalIp": "10.131.0.56",
+        "externalPortRange": "32768-60999",
         "options": {
           "stateless": "false"
         }
@@ -3486,7 +3630,47 @@
         "localnet": "physnet-vmdata",
         "bridge": "br-vmdata"
       }
-    ]
+    ],
+    "gatewayChassis": [
+      {
+        "uuid": "5a6a8f89-8f25-4c30-9188-5954a6c9f998",
+        "name": "rtos-cnv-1-91bc7389-d1b9-4fef-9f4c-52e3eedab004",
+        "chassisName": "91bc7389-d1b9-4fef-9f4c-52e3eedab004",
+        "priority": 1
+      },
+      {
+        "uuid": "66abeb85-a886-46e2-ad7b-49b550a0860f",
+        "name": "rtos-demo.mirror_example.l3.udn_cnv-1-91bc7389-d1b9-4fef-9f4c-52e3eedab004",
+        "chassisName": "91bc7389-d1b9-4fef-9f4c-52e3eedab004",
+        "priority": 1
+      },
+      {
+        "uuid": "ac1d4207-2970-4432-9cd7-aee29cd93a32",
+        "name": "trtos-cluster_udn_example.p.cudn_ovn_layer2_switch-91bc7389-d1b9-4fef-9f4c-52e3eedab004",
+        "chassisName": "91bc7389-d1b9-4fef-9f4c-52e3eedab004",
+        "priority": 1
+      }
+    ],
+    "nbGlobal": {
+      "uuid": "9710e55f-330a-4c59-a5de-d84fa8ffba59",
+      "name": "cnv-1",
+      "nbCfg": 1002,
+      "sbCfg": 1002,
+      "hvCfg": 1002,
+      "options": {
+        "e2e_timestamp": "1794176537",
+        "ipsec_encapsulation": "false",
+        "mac_prefix": "7e:39:12",
+        "max_tunid": "16711680",
+        "name": "cnv-1",
+        "northd-backoff-interval-ms": "300",
+        "northd_internal_version": "26.03.4-57.el9fdp-21.8.0-82.14",
+        "northd_probe_interval": "10000",
+        "svc_monitor_mac": "56:84:66:d6:20:a3",
+        "svc_monitor_mac_dst": "02:3a:a0:96:93:4c",
+        "use_ct_inv_match": "false"
+      }
+    }
   },
   "nodes": [
     {

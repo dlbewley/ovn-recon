@@ -376,6 +376,15 @@ export interface LogicalRouterRow {
     ports: string[];
     nat?: string[];
     staticRoutes?: string[];
+    /** Administrative state; absent when unset, which OVN treats as enabled. */
+    enabled?: boolean;
+    /** Logical_Router_Policy uuids (table not yet collected). */
+    policies?: string[];
+    /** Load_Balancer / Load_Balancer_Group uuids (tables not yet collected). */
+    loadBalancer?: string[];
+    loadBalancerGroup?: string[];
+    /** Copp uuid when control-plane policing is attached. */
+    copp?: string;
     options?: Record<string, string>;
     externalIds?: Record<string, string>;
 }
@@ -386,7 +395,13 @@ export interface LogicalRouterPortRow {
     mac?: string;
     networks?: string[];
     peer?: string;
+    /** Administrative state; absent when unset (enabled). */
+    enabled?: boolean;
+    /** Gateway_Chassis uuids, resolved by LogicalDatabase.gatewayChassis. */
     gatewayChassis?: string[];
+    /** northd-written status; `hosting-chassis` names the chassis hosting a
+     * distributed gateway port. */
+    status?: Record<string, string>;
     options?: Record<string, string>;
     externalIds?: Record<string, string>;
 }
@@ -395,6 +410,12 @@ export interface LogicalSwitchRow {
     uuid: string;
     name: string;
     ports: string[];
+    /** ACL, Load_Balancer, Load_Balancer_Group and QoS uuids (tables not
+     * yet collected); counts and refs for the policy and service planes. */
+    acls?: string[];
+    loadBalancer?: string[];
+    loadBalancerGroup?: string[];
+    qosRules?: string[];
     otherConfig?: Record<string, string>;
     externalIds?: Record<string, string>;
 }
@@ -425,6 +446,14 @@ export interface NATRow {
     logicalIp?: string;
     logicalPort?: string;
     externalMac?: string;
+    /** Logical_Router_Port uuid the rule applies on. */
+    gatewayPort?: string;
+    /** Packet match narrowing the rule; empty on classic NAT rows. */
+    match?: string;
+    /** Orders rules sharing a match; absent when zero. */
+    priority?: number;
+    /** L4 source port range for SNAT. */
+    externalPortRange?: string;
     options?: Record<string, string>;
     externalIds?: Record<string, string>;
 }
@@ -435,6 +464,41 @@ export interface StaticRouteRow {
     nexthop?: string;
     policy?: string;
     outputPort?: string;
+    /** Named route table; empty for the main table. */
+    routeTable?: string;
+    /** BFD uuid guarding the nexthop. */
+    bfd?: string;
+    /** ECMP hash fields when set. */
+    selectionFields?: string[];
+    options?: Record<string, string>;
+    externalIds?: Record<string, string>;
+}
+
+/** A chassis that may host a distributed gateway port, with its priority. */
+export interface GatewayChassisRow {
+    uuid: string;
+    name: string;
+    /** SB Chassis name (a UUID string), equal to the Node's
+     * k8s.ovn.org/node-chassis-id annotation. */
+    chassisName: string;
+    priority: number;
+    options?: Record<string, string>;
+    externalIds?: Record<string, string>;
+}
+
+/**
+ * The zone's single NB_Global row. nb_cfg is bumped by the CMS; sb_cfg and
+ * hv_cfg follow as northd and the chassis catch up, so equal values mean
+ * every chassis has applied the current configuration.
+ */
+export interface NBGlobalRow {
+    uuid: string;
+    /** Zone name under interconnect (also options.name). */
+    name?: string;
+    nbCfg: number;
+    sbCfg: number;
+    hvCfg: number;
+    /** Carries northd_internal_version among others. */
     options?: Record<string, string>;
     externalIds?: Record<string, string>;
 }
@@ -448,6 +512,11 @@ export interface LogicalDatabase {
     staticRoutes: StaticRouteRow[];
     /** Absent on snapshots from collectors older than the field. */
     bridgeMappings?: BridgeMappingRow[];
+    /** Resolves LogicalRouterPortRow.gatewayChassis; absent on snapshots from
+     * collectors older than the field. */
+    gatewayChassis?: GatewayChassisRow[];
+    /** Absent on snapshots from collectors older than the field. */
+    nbGlobal?: NBGlobalRow;
 }
 
 export interface LogicalTopologySnapshot {

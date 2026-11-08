@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dlbewley/ovn-recon/collector/internal/snapshot"
@@ -125,13 +126,18 @@ func logicalRoutersFromRows(rows []map[string]any) []snapshot.LogicalRouterRow {
 	routers := make([]snapshot.LogicalRouterRow, 0, len(rows))
 	for _, row := range rows {
 		routers = append(routers, snapshot.LogicalRouterRow{
-			UUID:             stringField(row, "_uuid"),
-			Name:             stringField(row, "name"),
-			PortUUIDs:        stringSliceField(row, "ports"),
-			NATUUIDs:         stringSliceField(row, "nat"),
-			StaticRouteUUIDs: stringSliceField(row, "static_routes"),
-			Options:          stringMapField(row, "options"),
-			ExternalIDs:      stringMapField(row, "external_ids"),
+			UUID:                   stringField(row, "_uuid"),
+			Name:                   stringField(row, "name"),
+			PortUUIDs:              stringSliceField(row, "ports"),
+			NATUUIDs:               stringSliceField(row, "nat"),
+			StaticRouteUUIDs:       stringSliceField(row, "static_routes"),
+			Enabled:                optionalBoolField(row, "enabled"),
+			PolicyUUIDs:            stringSliceField(row, "policies"),
+			LoadBalancerUUIDs:      stringSliceField(row, "load_balancer"),
+			LoadBalancerGroupUUIDs: stringSliceField(row, "load_balancer_group"),
+			Copp:                   optionalStringField(row, "copp"),
+			Options:                stringMapField(row, "options"),
+			ExternalIDs:            stringMapField(row, "external_ids"),
 		})
 	}
 	return routers
@@ -158,7 +164,9 @@ func logicalRouterPortsFromRows(rows []map[string]any) []snapshot.LogicalRouterP
 			MAC:                 stringField(row, "mac"),
 			Networks:            stringSliceField(row, "networks"),
 			Peer:                optionalStringField(row, "peer"),
+			Enabled:             optionalBoolField(row, "enabled"),
 			GatewayChassisUUIDs: stringSliceField(row, "gateway_chassis"),
+			Status:              stringMapField(row, "status"),
 			Options:             stringMapField(row, "options"),
 			ExternalIDs:         stringMapField(row, "external_ids"),
 		})
@@ -182,11 +190,15 @@ func logicalSwitchesFromRows(rows []map[string]any) []snapshot.LogicalSwitchRow 
 	switches := make([]snapshot.LogicalSwitchRow, 0, len(rows))
 	for _, row := range rows {
 		switches = append(switches, snapshot.LogicalSwitchRow{
-			UUID:        stringField(row, "_uuid"),
-			Name:        stringField(row, "name"),
-			PortUUIDs:   stringSliceField(row, "ports"),
-			OtherConfig: stringMapField(row, "other_config"),
-			ExternalIDs: stringMapField(row, "external_ids"),
+			UUID:                   stringField(row, "_uuid"),
+			Name:                   stringField(row, "name"),
+			PortUUIDs:              stringSliceField(row, "ports"),
+			ACLUUIDs:               stringSliceField(row, "acls"),
+			LoadBalancerUUIDs:      stringSliceField(row, "load_balancer"),
+			LoadBalancerGroupUUIDs: stringSliceField(row, "load_balancer_group"),
+			QoSRuleUUIDs:           stringSliceField(row, "qos_rules"),
+			OtherConfig:            stringMapField(row, "other_config"),
+			ExternalIDs:            stringMapField(row, "external_ids"),
 		})
 	}
 	return switches
@@ -236,14 +248,18 @@ func natsFromRows(rows []map[string]any) []snapshot.NATRow {
 	nats := make([]snapshot.NATRow, 0, len(rows))
 	for _, row := range rows {
 		nats = append(nats, snapshot.NATRow{
-			UUID:        stringField(row, "_uuid"),
-			Type:        stringField(row, "type"),
-			ExternalIP:  stringField(row, "external_ip"),
-			LogicalIP:   stringField(row, "logical_ip"),
-			LogicalPort: optionalStringField(row, "logical_port"),
-			ExternalMAC: optionalStringField(row, "external_mac"),
-			Options:     stringMapField(row, "options"),
-			ExternalIDs: stringMapField(row, "external_ids"),
+			UUID:              stringField(row, "_uuid"),
+			Type:              stringField(row, "type"),
+			ExternalIP:        stringField(row, "external_ip"),
+			LogicalIP:         stringField(row, "logical_ip"),
+			LogicalPort:       optionalStringField(row, "logical_port"),
+			ExternalMAC:       optionalStringField(row, "external_mac"),
+			GatewayPort:       optionalStringField(row, "gateway_port"),
+			Match:             stringField(row, "match"),
+			Priority:          int(intField(row, "priority")),
+			ExternalPortRange: stringField(row, "external_port_range"),
+			Options:           stringMapField(row, "options"),
+			ExternalIDs:       stringMapField(row, "external_ids"),
 		})
 	}
 	return nats
@@ -265,16 +281,54 @@ func staticRoutesFromRows(rows []map[string]any) []snapshot.StaticRouteRow {
 	routes := make([]snapshot.StaticRouteRow, 0, len(rows))
 	for _, row := range rows {
 		routes = append(routes, snapshot.StaticRouteRow{
+			UUID:            stringField(row, "_uuid"),
+			IPPrefix:        stringField(row, "ip_prefix"),
+			Nexthop:         stringField(row, "nexthop"),
+			Policy:          optionalStringField(row, "policy"),
+			OutputPort:      optionalStringField(row, "output_port"),
+			RouteTable:      stringField(row, "route_table"),
+			BFD:             optionalStringField(row, "bfd"),
+			SelectionFields: stringSliceField(row, "selection_fields"),
+			Options:         stringMapField(row, "options"),
+			ExternalIDs:     stringMapField(row, "external_ids"),
+		})
+	}
+	return routes
+}
+
+// gatewayChassisFromRows maps decoded NB Gateway_Chassis rows to the
+// snapshot contract. Both probe paths feed it.
+func gatewayChassisFromRows(rows []map[string]any) []snapshot.GatewayChassisRow {
+	chassis := make([]snapshot.GatewayChassisRow, 0, len(rows))
+	for _, row := range rows {
+		chassis = append(chassis, snapshot.GatewayChassisRow{
 			UUID:        stringField(row, "_uuid"),
-			IPPrefix:    stringField(row, "ip_prefix"),
-			Nexthop:     stringField(row, "nexthop"),
-			Policy:      optionalStringField(row, "policy"),
-			OutputPort:  optionalStringField(row, "output_port"),
+			Name:        stringField(row, "name"),
+			ChassisName: stringField(row, "chassis_name"),
+			Priority:    int(intField(row, "priority")),
 			Options:     stringMapField(row, "options"),
 			ExternalIDs: stringMapField(row, "external_ids"),
 		})
 	}
-	return routes
+	return chassis
+}
+
+// nbGlobalFromRows maps the decoded NB_Global row to the snapshot contract.
+// The table holds exactly one row; nil when it was not read.
+func nbGlobalFromRows(rows []map[string]any) *snapshot.NBGlobalRow {
+	if len(rows) == 0 {
+		return nil
+	}
+	row := rows[0]
+	return &snapshot.NBGlobalRow{
+		UUID:        stringField(row, "_uuid"),
+		Name:        stringField(row, "name"),
+		NBCfg:       intField(row, "nb_cfg"),
+		SBCfg:       intField(row, "sb_cfg"),
+		HVCfg:       intField(row, "hv_cfg"),
+		Options:     stringMapField(row, "options"),
+		ExternalIDs: stringMapField(row, "external_ids"),
+	}
 }
 
 // ParseChassisBridgeMappings extracts localnet-to-bridge mappings from the
@@ -334,6 +388,72 @@ func optionalStringField(row map[string]any, key string) string {
 		return asString(items[0])
 	}
 	return asString(raw)
+}
+
+// optionalBoolField reads an OVSDB optional boolean: a bare bool when set,
+// an empty set when not. nil means unset.
+func optionalBoolField(row map[string]any, key string) *bool {
+	raw, ok := row[key]
+	if !ok {
+		return nil
+	}
+	if items, isSlice := raw.([]any); isSlice {
+		if len(items) == 0 {
+			return nil
+		}
+		raw = items[0]
+	}
+	switch typed := raw.(type) {
+	case bool:
+		return &typed
+	case string:
+		switch strings.ToLower(typed) {
+		case "true":
+			value := true
+			return &value
+		case "false":
+			value := false
+			return &value
+		}
+	}
+	return nil
+}
+
+// intField reads an OVSDB integer, which JSON decoding delivers as float64
+// (or as a one-element set for optional integers). Missing or unparsable
+// values read as zero.
+func intField(row map[string]any, key string) int64 {
+	raw, ok := row[key]
+	if !ok {
+		return 0
+	}
+	if items, isSlice := raw.([]any); isSlice {
+		if len(items) == 0 {
+			return 0
+		}
+		raw = items[0]
+	}
+	switch typed := raw.(type) {
+	case float64:
+		return int64(typed)
+	case int:
+		return int64(typed)
+	case int64:
+		return typed
+	case json.Number:
+		value, err := typed.Int64()
+		if err != nil {
+			return 0
+		}
+		return value
+	case string:
+		value, err := strconv.ParseInt(typed, 10, 64)
+		if err != nil {
+			return 0
+		}
+		return value
+	}
+	return 0
 }
 
 func stringSliceField(row map[string]any, key string) []string {

@@ -51,6 +51,38 @@ describe('mergeZones over the captured corpus', () => {
         expect(byName.get(layer2Name)?.podPortCount).toBe(expected);
     });
 
+    it('unions gateway port placements of a distributed router across zones', () => {
+        const clusterRouter = byName.get('ovn_cluster_router');
+        const ports = clusterRouter?.gatewayPorts.map((placement) => placement.port).sort();
+        expect(ports).toEqual(['rtos-cnv-1', 'rtos-cnv-2', 'rtos-ctrl-1']);
+        // Each node's gateway port is hosted on that node's own chassis.
+        const hosts = new Set(clusterRouter?.gatewayPorts.map((placement) => placement.hostingChassis));
+        expect(hosts.size).toBe(3);
+    });
+
+    it('takes the maximum reference count across zones and keeps a disabled router disabled', () => {
+        const perZone = snapshots
+            .map((snapshot) => buildLadderModel(snapshot.database!))
+            .map((model) => model.constructs.find((construct) => construct.name === 'ovn_cluster_router')?.policyCount ?? 0);
+        expect(byName.get('ovn_cluster_router')?.policyCount).toBe(Math.max(...perZone));
+
+        const [first, second] = snapshots;
+        const disabledInOne = mergeZones([
+            {
+                ...first,
+                database: {
+                    ...first.database!,
+                    logicalRouters: first.database!.logicalRouters.map((router) =>
+                        router.name === 'ovn_cluster_router' ? { ...router, enabled: false } : router,
+                    ),
+                },
+            },
+            second,
+        ]);
+        const merged = disabledInOne.constructs.find((construct) => construct.name === 'ovn_cluster_router');
+        expect(merged?.enabled).toBe(false);
+    });
+
     it('unions transit tunnel peers across zones', () => {
         const transit = byName.get('transit_switch');
         // Every zone contributes its own remote peers; the union covers all

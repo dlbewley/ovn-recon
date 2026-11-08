@@ -18,6 +18,10 @@ import { buildLadderModel, LadderConstruct, LadderEdge, LadderModel } from './lo
  * - remotePeers/localnetPorts: set union.
  * - natCount/staticRouteCount: max — per-zone instances of a distributed
  *   router carry near-identical rule sets; summing would multiply them.
+ * - policy/load balancer/ACL/QoS reference counts: max, for the same reason.
+ * - gatewayPorts: union by port name — a distributed gateway port is one
+ *   port hosted on one chassis, replicated into every zone's database.
+ * - enabled: false if any zone says so, else the first value seen.
  * - subnet/managementPort/node: first non-empty wins.
  */
 
@@ -106,6 +110,14 @@ export const mergeZones = (snapshots: LogicalTopologySnapshot[]): ClusterLadderM
             existing.staticRouteRules = mergeBy(existing.staticRouteRules, construct.staticRouteRules, staticRouteKey);
             existing.natCount = existing.natRules.length;
             existing.staticRouteCount = existing.staticRouteRules.length;
+            existing.policyCount = Math.max(existing.policyCount, construct.policyCount);
+            existing.loadBalancerCount = Math.max(existing.loadBalancerCount, construct.loadBalancerCount);
+            existing.loadBalancerGroupCount = Math.max(existing.loadBalancerGroupCount, construct.loadBalancerGroupCount);
+            existing.aclCount = Math.max(existing.aclCount, construct.aclCount);
+            existing.qosRuleCount = Math.max(existing.qosRuleCount, construct.qosRuleCount);
+            existing.gatewayPorts = mergeBy(existing.gatewayPorts, construct.gatewayPorts, (placement) => placement.port);
+            existing.enabled =
+                existing.enabled === false || construct.enabled === false ? false : existing.enabled ?? construct.enabled;
             existing.subnet = existing.subnet ?? construct.subnet;
             existing.bridge = existing.bridge ?? construct.bridge;
             existing.managementPort = existing.managementPort ?? construct.managementPort;

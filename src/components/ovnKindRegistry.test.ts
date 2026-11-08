@@ -29,6 +29,21 @@ describe('ovnKindRegistry', () => {
         expect(rows.staticRoutes.length).toBeGreaterThan(0);
     });
 
+    it('includes the Gateway_Chassis rows a router\'s gateway ports reference', () => {
+        const construct = byName('ovn_cluster_router');
+        const rows = ovnKindFor(construct).rawRows(construct, database) as {
+            gatewayChassis?: Array<{ name: string; chassisName: string; priority: number }>;
+        };
+        expect(rows.gatewayChassis?.map((row) => row.name)).toContain(
+            'rtos-cnv-1-91bc7389-d1b9-4fef-9f4c-52e3eedab004',
+        );
+
+        // A router without gateway ports omits the key rather than emitting [].
+        const gateway = byName('GR_cnv-1');
+        const gatewayRows = ovnKindFor(gateway).rawRows(gateway, database) as Record<string, unknown>;
+        expect('gatewayChassis' in gatewayRows).toBe(false);
+    });
+
     it('assembles a switch and caps very long port lists', () => {
         const construct = byName('cnv-1');
         const rows = ovnKindFor(construct).rawRows(construct, database) as {

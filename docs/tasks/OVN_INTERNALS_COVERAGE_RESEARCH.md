@@ -48,16 +48,19 @@ collector table command, one types row, and one entry here."
 
 | NB table | Columns collected | Columns skipped (upstream 7.19.0) |
 |---|---|---|
-| `Logical_Switch` | name, ports, other_config, external_ids | acls, qos_rules, load_balancer, load_balancer_group, dns_records, copp, forwarding_groups |
-| `Logical_Switch_Port` | name, type, addresses, tag, options, external_ids | **port_security**, **up**, **enabled**, dynamic_addresses, parent_name, tag_request, peer, dhcpv4_options, dhcpv6_options, ha_chassis_group, mirror_rules, health_checks |
-| `Logical_Router` | name, ports, nat, static_routes, options, external_ids | **policies**, enabled, load_balancer, load_balancer_group, copp |
-| `Logical_Router_Port` | name, mac, networks, peer, gateway_chassis (uuids only), options, external_ids | **status** (`hosting-chassis`), enabled, ipv6_ra_configs, ipv6_prefix, ha_chassis_group, dhcp_relay |
-| `NAT` | type, external_ip, logical_ip, logical_port, external_mac, options, external_ids | gateway_port, priority, match, external_port_range, allowed_ext_ips, exempted_ext_ips |
-| `Logical_Router_Static_Route` | ip_prefix, nexthop, policy, output_port, options, external_ids | route_table, bfd, selection_fields |
+| `Logical_Switch` | name, ports, acls, qos_rules, load_balancer, load_balancer_group (uuids), other_config, external_ids | dns_records, copp, forwarding_groups |
+| `Logical_Switch_Port` | name, type, addresses, tag, options, external_ids | **port_security**, **up**, **enabled**, dynamic_addresses, parent_name, tag_request (`ovn-recon-e2b.4`), peer, dhcpv4_options, dhcpv6_options, ha_chassis_group, mirror_rules, health_checks |
+| `Logical_Router` | name, ports, nat, static_routes, enabled, policies, load_balancer, load_balancer_group, copp (uuids), options, external_ids | — |
+| `Logical_Router_Port` | name, mac, networks, peer, enabled, gateway_chassis (resolved by `Gateway_Chassis`), status (`hosting-chassis`), options, external_ids | ipv6_ra_configs, ipv6_prefix, ha_chassis_group, dhcp_relay |
+| `NAT` | type, external_ip, logical_ip, logical_port, external_mac, gateway_port, priority, match, external_port_range, options, external_ids | allowed_ext_ips, exempted_ext_ips |
+| `Logical_Router_Static_Route` | ip_prefix, nexthop, policy, output_port, route_table, bfd, selection_fields, options, external_ids | — |
+| `Gateway_Chassis` | name, chassis_name, priority, options, external_ids | — |
+| `NB_Global` | name, nb_cfg, sb_cfg, hv_cfg, options (`northd_internal_version`), external_ids | connections, ssl, ipsec, *_timestamp |
 | SB `Chassis` | other_config:ovn-bridge-mappings (local chassis only) | everything else |
 
 Bold entries are the ones a user asking "what does OVN do to this port" hits
-first. Of the 39 NB tables, six are transcribed.
+first; they belong to `ovn-recon-e2b.4`. Of the 39 NB tables, eight are
+transcribed (tier 1 landed with `ovn-recon-e2b.3` on 2026-11-08).
 
 ### 2.3 What the fixtures and a live cluster say is actually populated
 
@@ -273,6 +276,8 @@ No new UI surface; the drawer Overview and Config tabs grow.
 
 `ovn-recon-e2b.3`. This is the cheapest slice and the one Dale's LSP example
 points at. It should go first regardless of how the later tiers are decided.
+Done 2026-11-08 except the LSP row, which moved to `ovn-recon-e2b.4` (section
+11).
 
 ### Tier 2: the policy plane (ACL, Port_Group, Address_Set)
 
@@ -477,6 +482,52 @@ starting: one transact for the six tables took 0.34 s against 2.07 s for six
    so the column work in `.3` and `.4` lands in one place. The `.4` design
    note "no collector command changes" is superseded by this; its parser and
    contract plan is unaffected.
+
+### 2026-11-08: `ovn-recon-e2b.3` implemented
+
+Verified against the lab cluster (OVN 26.03.4, NB schema 7.1x, interconnect)
+by running the collector out-of-cluster and capturing all three fixture
+nodes.
+
+1. **Two more tables in the transact, no new exec.** `Gateway_Chassis` and
+   `NB_Global` are entries in `nbTables`; the per-table `ovn-nbctl list`
+   fallback covers them too. Gateway_Chassis rows are tiny (one per
+   distributed gateway port); NB_Global is one row.
+2. **Columns map 1:1 onto the contract, camelCase, omitempty.** Optional
+   booleans (`enabled`) become `*bool` / `boolean | undefined` so "unset"
+   (OVN's default, enabled) is distinguishable from an explicit `false`.
+   `NAT.priority` is an integer omitted when zero; `external_port_range` is
+   carried as a string. Reference columns (`policies`, `acls`,
+   `load_balancer`, `load_balancer_group`, `qos_rules`, `copp`, `bfd`) stay
+   uuid lists until their tables land in tiers 2 to 4; the drawer shows them
+   as counts labeled "rows not collected yet".
+3. **Chassis names resolve through the Node annotation, as decided for
+   `.4`.** `status:hosting-chassis` and `Gateway_Chassis.chassis_name` are SB
+   chassis ids; `useChassisNodeNames` (`src/components/useChassisNodeNames.ts`)
+   watches Nodes and maps `k8s.ovn.org/node-chassis-id` to node names. The
+   Ports tab's `requested-chassis` column should reuse it. Unresolved ids
+   render truncated with the full id in a tooltip.
+4. **Drawer, not new surfaces.** Routers gain Admin state (only when the NB
+   row sets `enabled`), Gateway ports (port, hosting node, candidates with
+   priorities when there is more than one or the host is not the preferred
+   candidate, "Not hosted" when northd has not placed it), Routing policies
+   and Load balancers counts; switches gain ACLs, Load balancers and QoS
+   rules counts. NAT rule text appends `match`, `priority` and the gateway
+   port name; static route text appends `table`, `bfd` and `ecmp(fields)`.
+   The Config tab includes the router's `Gateway_Chassis` rows.
+5. **NB_Global feeds the status line.** `SnapshotStatusLine` shows
+   `OVN <release> · zone <name>` (release = `northd_internal_version` up to
+   the first `-`), a "Mixed OVN versions" label when zones disagree, and
+   "Chassis behind NB config" when `hv_cfg < nb_cfg`. The cluster view
+   summarizes across the zones on view.
+6. **Fixtures were spliced, not recaptured.** The new columns and tables were
+   merged into `cnv-1`, `cnv-2` and `ctrl-1` by matching rows semantically
+   (names; NAT and route tuples), so existing UUIDs and pod lists that tests
+   reference are unchanged. Gateway_Chassis UUIDs proved stable since the
+   August capture. `default.json` stays empty.
+7. **Cluster merge rules.** Reference counts take the max across zones (as
+   NAT and route counts do); gateway placements union by port name;
+   `enabled` is false if any zone says so.
 
 ## Initial Beads Backlog Mapping
 

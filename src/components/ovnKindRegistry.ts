@@ -1,4 +1,5 @@
 import {
+    GatewayChassisRow,
     LogicalDatabase,
     LogicalRouterPortRow,
     LogicalSwitchPortRow,
@@ -53,15 +54,24 @@ const routerKind: OvnKindDefinition = {
         const portByUuid = new Map(database.logicalRouterPorts.map((port) => [port.uuid, port]));
         const natByUuid = new Map((database.nats ?? []).map((nat) => [nat.uuid, nat]));
         const routeByUuid = new Map((database.staticRoutes ?? []).map((route) => [route.uuid, route]));
+        const gatewayChassisByUuid = new Map(
+            (database.gatewayChassis ?? []).map((chassis) => [chassis.uuid, chassis]),
+        );
+        const ports = row.ports
+            .map((uuid) => portByUuid.get(uuid))
+            .filter((port): port is LogicalRouterPortRow => Boolean(port));
+        // Gateway_Chassis rows the router's ports reference; omitted when the
+        // snapshot predates the table or the router has no gateway port.
+        const gatewayChassis = ports
+            .flatMap((port) => port.gatewayChassis ?? [])
+            .map((uuid) => gatewayChassisByUuid.get(uuid))
+            .filter((chassis): chassis is GatewayChassisRow => Boolean(chassis));
         return {
             logicalRouter: row,
-            ...capPorts(
-                row.ports
-                    .map((uuid) => portByUuid.get(uuid))
-                    .filter((port): port is LogicalRouterPortRow => Boolean(port)),
-            ),
+            ...capPorts(ports),
             nat: (row.nat ?? []).map((uuid) => natByUuid.get(uuid)).filter(Boolean),
             staticRoutes: (row.staticRoutes ?? []).map((uuid) => routeByUuid.get(uuid)).filter(Boolean),
+            ...(gatewayChassis.length > 0 ? { gatewayChassis } : {}),
         };
     },
 };

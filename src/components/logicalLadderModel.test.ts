@@ -98,6 +98,52 @@ describe('buildLadderModel on the captured cnv-1 zone', () => {
         expect(byName('ovn_cluster_router')?.staticRouteCount).toBeGreaterThan(10);
     });
 
+    it('resolves distributed gateway ports to their hosting and candidate chassis', () => {
+        const clusterRouter = byName('ovn_cluster_router');
+        const placement = clusterRouter?.gatewayPorts.find((entry) => entry.port === 'rtos-cnv-1');
+        expect(placement).toBeDefined();
+        // The fixture's Gateway_Chassis rows name cnv-1's chassis id, which is
+        // also the hosting chassis northd reports.
+        expect(placement?.hostingChassis).toBe('91bc7389-d1b9-4fef-9f4c-52e3eedab004');
+        expect(placement?.candidates).toEqual([
+            { chassisName: '91bc7389-d1b9-4fef-9f4c-52e3eedab004', priority: 1 },
+        ]);
+        // Join and external ports are not gateway ports.
+        expect(byName('GR_cnv-1')?.gatewayPorts).toEqual([]);
+    });
+
+    it('counts references to tables not yet collected', () => {
+        const clusterRouter = byName('ovn_cluster_router');
+        expect(clusterRouter?.policyCount).toBeGreaterThan(0);
+        expect(clusterRouter?.enabled).toBeUndefined();
+
+        const gateway = byName('GR_cnv-1');
+        expect(gateway?.loadBalancerCount).toBeGreaterThan(0);
+        expect(gateway?.loadBalancerGroupCount).toBeGreaterThan(0);
+
+        const nodeSwitch = byName('cnv-1');
+        expect(nodeSwitch?.aclCount).toBeGreaterThan(0);
+        expect(nodeSwitch?.loadBalancerGroupCount).toBeGreaterThan(0);
+        expect(nodeSwitch?.qosRuleCount).toBeGreaterThan(0);
+
+        expect(byName('join')?.aclCount).toBe(0);
+        expect(byName('join')?.gatewayPorts).toEqual([]);
+    });
+
+    it('leaves gateway placement empty when the snapshot predates Gateway_Chassis', () => {
+        const legacy = buildLadderModel({
+            ...database,
+            gatewayChassis: undefined,
+            logicalRouterPorts: database.logicalRouterPorts.map((port) => ({
+                ...port,
+                gatewayChassis: undefined,
+                status: undefined,
+            })),
+        });
+        const clusterRouter = legacy.constructs.find((construct) => construct.name === 'ovn_cluster_router');
+        expect(clusterRouter?.gatewayPorts).toEqual([]);
+    });
+
     it('keeps the default network first in the network list', () => {
         expect(model.networks[0]).toBe('default');
     });
