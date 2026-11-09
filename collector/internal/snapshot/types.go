@@ -92,9 +92,12 @@ type LogicalSwitchRow struct {
 	UUID      string   `json:"uuid"`
 	Name      string   `json:"name"`
 	PortUUIDs []string `json:"ports"`
-	// ACLUUIDs and QoSRuleUUIDs reference ACL and QoS rows (not yet
-	// collected). LoadBalancerUUIDs and LoadBalancerGroupUUIDs reference the
-	// Load_Balancer and Load_Balancer_Group rows of the services section
+	// ACLUUIDs reference the ACL rows of the policy section
+	// (LogicalDatabase.ACLs): the ACLs set on the switch itself, next to the
+	// ones that reach its ports through a Port_Group. QoSRuleUUIDs reference
+	// QoS rows (not yet collected). LoadBalancerUUIDs and
+	// LoadBalancerGroupUUIDs reference the Load_Balancer and
+	// Load_Balancer_Group rows of the services section
 	// (LogicalDatabase.LoadBalancers, LoadBalancerGroups).
 	ACLUUIDs               []string          `json:"acls,omitempty"`
 	LoadBalancerUUIDs      []string          `json:"loadBalancer,omitempty"`
@@ -245,6 +248,65 @@ type LoadBalancerGroupRow struct {
 	LoadBalancerUUIDs []string `json:"loadBalancers"`
 }
 
+// ACLRow transcribes one NB ACL row. An ACL takes effect where it is
+// attached: on a Port_Group (PortGroupRow.ACLUUIDs, the usual case) or on a
+// Logical_Switch (LogicalSwitchRow.ACLUUIDs). ovn-kubernetes names the owner
+// in ExternalIDs ("k8s.ovn.org/owner-controller", "k8s.ovn.org/owner-type",
+// "k8s.ovn.org/name", "k8s.ovn.org/id").
+type ACLRow struct {
+	UUID string `json:"uuid"`
+	// Name is optional in the NB schema and unset on several owner types.
+	Name     string `json:"name,omitempty"`
+	Priority int    `json:"priority"`
+	// Direction is "from-lport" (traffic leaving a workload: egress policy)
+	// or "to-lport" (traffic towards it: ingress policy).
+	Direction string `json:"direction"`
+	// Action is allow, allow-related, allow-stateless, drop, reject or pass.
+	Action string `json:"action"`
+	// Match is the OVN match expression as stored. "@name" refers to a
+	// Port_Group and "$name" to an Address_Set, both by PortGroupRow.Name /
+	// AddressSetRow.Name.
+	Match string `json:"match"`
+	// Tier orders evaluation before priority: tier 0 is evaluated first.
+	Tier int `json:"tier"`
+	// Log, Severity and Meter are the ACL logging settings; Log is false
+	// (absent) unless logging is enabled for the owner.
+	Log      bool   `json:"log,omitempty"`
+	Severity string `json:"severity,omitempty"`
+	Meter    string `json:"meter,omitempty"`
+	// Label tags matching connections for ACL sampling; zero when unset.
+	Label       int64             `json:"label,omitempty"`
+	Options     map[string]string `json:"options,omitempty"`
+	ExternalIDs map[string]string `json:"externalIds,omitempty"`
+}
+
+// PortGroupRow transcribes one NB Port_Group row: a named set of logical
+// switch ports that ACLs apply to and that matches refer to as "@name".
+// ovn-kubernetes names groups by hash; the readable name and the owner are
+// in ExternalIDs.
+type PortGroupRow struct {
+	UUID string `json:"uuid"`
+	Name string `json:"name"`
+	// PortUUIDs reference LogicalSwitchPortRow.UUID. Under interconnect a
+	// zone's group lists only that zone's own ports; empty for a group with
+	// no local member.
+	PortUUIDs []string `json:"ports"`
+	// ACLUUIDs reference ACLRow.UUID: the ACLs applied to every member port.
+	ACLUUIDs    []string          `json:"acls"`
+	ExternalIDs map[string]string `json:"externalIds,omitempty"`
+}
+
+// AddressSetRow transcribes one NB Address_Set row: a named set of addresses
+// that matches refer to as "$name".
+type AddressSetRow struct {
+	UUID string `json:"uuid"`
+	Name string `json:"name"`
+	// Addresses are IPs, CIDRs or MACs as stored; empty for a set without
+	// members.
+	Addresses   []string          `json:"addresses"`
+	ExternalIDs map[string]string `json:"externalIds,omitempty"`
+}
+
 // LogicalDatabase is the v2 table-oriented payload: a faithful transcription
 // of the NB tables the logical view consumes. Semantic classification
 // (network/role/node) is the frontend's job, not the collector's.
@@ -273,20 +335,13 @@ type LogicalDatabase struct {
 	// here only documents that the keys are optional).
 	//
 	// Policy section.
-	ACLs        []SectionRow `json:"acls,omitempty"`
-	PortGroups  []SectionRow `json:"portGroups,omitempty"`
-	AddressSets []SectionRow `json:"addressSets,omitempty"`
+	ACLs        []ACLRow        `json:"acls,omitempty"`
+	PortGroups  []PortGroupRow  `json:"portGroups,omitempty"`
+	AddressSets []AddressSetRow `json:"addressSets,omitempty"`
 	// Services section.
 	LoadBalancers      []LoadBalancerRow      `json:"loadBalancers,omitempty"`
 	LoadBalancerGroups []LoadBalancerGroupRow `json:"loadBalancerGroups,omitempty"`
 }
-
-// SectionRow is the placeholder row type of the policy section. The section
-// keys and their delivery are part of the contract; the row shapes are not
-// yet: ovn-recon-e2b.5 replaces it with typed rows when it starts collecting
-// the tables. Until then the collector never populates the policy section.
-// The services section is typed (LoadBalancerRow, LoadBalancerGroupRow).
-type SectionRow map[string]any
 
 // ClusterMetadata describes an aggregate collection across zones.
 type ClusterMetadata struct {

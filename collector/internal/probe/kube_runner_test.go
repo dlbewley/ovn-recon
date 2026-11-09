@@ -131,6 +131,9 @@ func TestKubernetesExecRunnerCollectsSnapshotWhenFRRNamespaceIsMissing(t *testin
 			`{"rows":[]},` +
 			`{"rows":[]},` +
 			`{"rows":[]},` +
+			`{"rows":[]},` +
+			`{"rows":[]},` +
+			`{"rows":[]},` +
 			`{"rows":[]}` +
 			`]`,
 		strings.Join(chassisCommand, " "): `{"headings":["other_config"],"data":[]}`,

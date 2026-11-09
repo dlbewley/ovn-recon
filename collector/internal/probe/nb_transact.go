@@ -22,9 +22,15 @@ var nbTables = []string{
 	"Logical_Router_Static_Route",
 	"Gateway_Chassis",
 	"NB_Global",
-	// The services section (snapshot.SectionServices). Kept last: a table an
-	// older NB schema lacks then fails its own select without aborting the
-	// ladder tables before it.
+	// The optional sections follow the ladder tables: a table an older NB
+	// schema lacks then fails its own select without aborting the ladder
+	// tables before it.
+	//
+	// The policy section (snapshot.SectionPolicy).
+	"ACL",
+	"Port_Group",
+	"Address_Set",
+	// The services section (snapshot.SectionServices).
 	"Load_Balancer",
 	"Load_Balancer_Group",
 }

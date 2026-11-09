@@ -337,6 +337,76 @@ func nbGlobalFromRows(rows []map[string]any) *snapshot.NBGlobalRow {
 	}
 }
 
+// aclsFromRows maps decoded NB ACL rows to the snapshot contract. Both probe
+// paths feed it. The match is carried as stored: its @port_group and
+// $address_set references are resolved by name on the consumer side. The
+// sampling and network-function columns (sample_new, sample_est,
+// network_function_group) are not transcribed. A nil input (the table was
+// not read) stays nil so the section is absent rather than empty.
+func aclsFromRows(rows []map[string]any) []snapshot.ACLRow {
+	if rows == nil {
+		return nil
+	}
+	acls := make([]snapshot.ACLRow, 0, len(rows))
+	for _, row := range rows {
+		acls = append(acls, snapshot.ACLRow{
+			UUID:        stringField(row, "_uuid"),
+			Name:        optionalStringField(row, "name"),
+			Priority:    int(intField(row, "priority")),
+			Direction:   stringField(row, "direction"),
+			Action:      stringField(row, "action"),
+			Match:       stringField(row, "match"),
+			Tier:        int(intField(row, "tier")),
+			Log:         boolField(row, "log"),
+			Severity:    optionalStringField(row, "severity"),
+			Meter:       optionalStringField(row, "meter"),
+			Label:       intField(row, "label"),
+			Options:     stringMapField(row, "options"),
+			ExternalIDs: stringMapField(row, "external_ids"),
+		})
+	}
+	return acls
+}
+
+// portGroupsFromRows maps decoded NB Port_Group rows to the snapshot
+// contract. Both probe paths feed it. Every row is kept, including the
+// groups with neither ports nor ACLs (each network controller writes one per
+// namespace). Nil in, nil out, as above.
+func portGroupsFromRows(rows []map[string]any) []snapshot.PortGroupRow {
+	if rows == nil {
+		return nil
+	}
+	groups := make([]snapshot.PortGroupRow, 0, len(rows))
+	for _, row := range rows {
+		groups = append(groups, snapshot.PortGroupRow{
+			UUID:        stringField(row, "_uuid"),
+			Name:        stringField(row, "name"),
+			PortUUIDs:   stringSliceField(row, "ports"),
+			ACLUUIDs:    stringSliceField(row, "acls"),
+			ExternalIDs: stringMapField(row, "external_ids"),
+		})
+	}
+	return groups
+}
+
+// addressSetsFromRows maps decoded NB Address_Set rows to the snapshot
+// contract. Both probe paths feed it. Nil in, nil out, as above.
+func addressSetsFromRows(rows []map[string]any) []snapshot.AddressSetRow {
+	if rows == nil {
+		return nil
+	}
+	sets := make([]snapshot.AddressSetRow, 0, len(rows))
+	for _, row := range rows {
+		sets = append(sets, snapshot.AddressSetRow{
+			UUID:        stringField(row, "_uuid"),
+			Name:        stringField(row, "name"),
+			Addresses:   stringSliceField(row, "addresses"),
+			ExternalIDs: stringMapField(row, "external_ids"),
+		})
+	}
+	return sets
+}
+
 // loadBalancersFromRows maps decoded NB Load_Balancer rows to the snapshot
 // contract. Both probe paths feed it. vips is carried as stored: the value
 // is the comma-separated backend list and an empty string is a VIP without
@@ -466,6 +536,12 @@ func optionalBoolField(row map[string]any, key string) *bool {
 		}
 	}
 	return nil
+}
+
+// boolField reads a required OVSDB boolean; missing or unset reads as false.
+func boolField(row map[string]any, key string) bool {
+	value := optionalBoolField(row, key)
+	return value != nil && *value
 }
 
 // intField reads an OVSDB integer, which JSON decoding delivers as float64

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 
-import { LogicalDatabase, LogicalTopologySnapshot, SnapshotSection } from '../types';
+import { ACLRow, LogicalDatabase, LogicalTopologySnapshot, SnapshotSection } from '../types';
 
 const fetchCollectorSnapshot = jest.fn();
 
@@ -21,6 +21,15 @@ const database = (extra: Partial<LogicalDatabase> = {}): LogicalDatabase => ({
     nats: [],
     staticRoutes: [],
     ...extra,
+});
+
+const acl = (uuid: string): ACLRow => ({
+    uuid,
+    priority: 1001,
+    direction: 'to-lport',
+    action: 'allow-related',
+    match: 'ip4',
+    tier: 2,
 });
 
 const snapshotWith = (db: LogicalDatabase): LogicalTopologySnapshot => ({
@@ -74,7 +83,7 @@ describe('useOptionalSections', () => {
     });
 
     it('requests the sections sorted and returns the database that carries them', async () => {
-        const withPolicy = database({ acls: [{ uuid: 'acl-1' }], portGroups: [], addressSets: [] });
+        const withPolicy = database({ acls: [acl('acl-1')], portGroups: [], addressSets: [] });
         fetchCollectorSnapshot.mockResolvedValue(snapshotWith(withPolicy));
 
         await render({ nodeName: 'cnv-1', sections: ['services', 'policy'] });
@@ -123,7 +132,7 @@ describe('useOptionalSections', () => {
     });
 
     it('drops the previous node\'s rows when the node changes', async () => {
-        const first = database({ acls: [{ uuid: 'from-cnv-1' }] });
+        const first = database({ acls: [acl('from-cnv-1')] });
         fetchCollectorSnapshot.mockResolvedValueOnce(snapshotWith(first));
         await render({ nodeName: 'cnv-1', sections: ['policy'] });
         expect(latest.database).toBe(first);
@@ -134,7 +143,7 @@ describe('useOptionalSections', () => {
         expect(latest.database).toBeUndefined();
         expect(latest.loading).toBe(true);
 
-        const second = database({ acls: [{ uuid: 'from-cnv-2' }] });
+        const second = database({ acls: [acl('from-cnv-2')] });
         await act(async () => resolve(snapshotWith(second)));
         expect(latest.database).toBe(second);
     });

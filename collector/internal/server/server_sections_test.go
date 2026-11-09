@@ -26,17 +26,27 @@ var (
 )
 
 // withSections stands in for a collector that gathers every optional table.
-// The policy rows are still placeholders (their shapes land with
-// ovn-recon-e2b.5); the services rows are typed, and a payload that already
-// carries them (the fixture corpus does) keeps its own.
+// A payload that already carries a section (the fixture corpus does: the
+// services section everywhere, the policy section on cnv-1) keeps its own
+// rows.
 func withSections(payload snapshot.LogicalTopologySnapshot) snapshot.LogicalTopologySnapshot {
 	if payload.Database == nil {
 		return payload
 	}
 	db := *payload.Database
-	db.ACLs = []snapshot.SectionRow{{"uuid": "acl-1", "priority": float64(1001)}}
-	db.PortGroups = []snapshot.SectionRow{{"uuid": "pg-1", "name": "clusterPortGroup"}}
-	db.AddressSets = []snapshot.SectionRow{}
+	if db.ACLs == nil {
+		db.ACLs = []snapshot.ACLRow{{
+			UUID: "acl-1", Name: "NP:shop:allow-web:Ingress:0", Priority: 1001, Direction: "to-lport", Action: "allow-related",
+			Match: "ip4.src == {$a100} && outport == @a200", Tier: 2,
+			ExternalIDs: map[string]string{"k8s.ovn.org/owner-type": "NetworkPolicy", "k8s.ovn.org/name": "shop:allow-web"},
+		}}
+	}
+	if db.PortGroups == nil {
+		db.PortGroups = []snapshot.PortGroupRow{{UUID: "pg-1", Name: "a200", PortUUIDs: []string{}, ACLUUIDs: []string{"acl-1"}}}
+	}
+	if db.AddressSets == nil {
+		db.AddressSets = []snapshot.AddressSetRow{}
+	}
 	if db.LoadBalancers == nil {
 		db.LoadBalancers = []snapshot.LoadBalancerRow{
 			{UUID: "lb-1", Name: "Service_shop/web_TCP_cluster", Protocol: "tcp", VIPs: map[string]string{"172.30.80.5:443": "10.129.5.152:10443"}},
@@ -208,6 +218,58 @@ func TestFixtureServicesSectionIsServedOnlyOnRequest(t *testing.T) {
 	}
 	if checked < 2 {
 		t.Fatalf("expected at least two fixtures to carry the services section, got %d", checked)
+	}
+}
+
+// TestFixturePolicySectionIsServedOnlyOnRequest is the same check for the
+// policy rows a fixture carries (ovn-recon-e2b.5): complete with
+// include=policy, absent without it, and the ladder tables untouched.
+func TestFixturePolicySectionIsServedOnlyOnRequest(t *testing.T) {
+	srv := New(snapshot.NewFileStore(fixtureDir, ""))
+	checked := 0
+	for _, node := range []string{"cnv-1", "cnv-2", "ctrl-1"} {
+		raw, err := os.ReadFile(filepath.Join(fixtureDir, node+".json"))
+		if err != nil {
+			t.Fatalf("read fixture: %v", err)
+		}
+		var fixture snapshot.LogicalTopologySnapshot
+		if err := json.Unmarshal(raw, &fixture); err != nil {
+			t.Fatalf("decode fixture %s: %v", node, err)
+		}
+
+		var plain, detail snapshot.LogicalTopologySnapshot
+		if err := json.Unmarshal(get(t, srv, "/api/v1/snapshots/"+node, nil).Body.Bytes(), &plain); err != nil {
+			t.Fatalf("decode default response: %v", err)
+		}
+		if plain.Database.ACLs != nil || plain.Database.PortGroups != nil || plain.Database.AddressSets != nil {
+			t.Fatalf("%s: the default response must not carry the policy section", node)
+		}
+		if err := json.Unmarshal(get(t, srv, "/api/v1/sections/policy/snapshots/"+node, nil).Body.Bytes(), &detail); err != nil {
+			t.Fatalf("decode policy response: %v", err)
+		}
+		if !reflect.DeepEqual(detail.Database.ACLs, fixture.Database.ACLs) ||
+			!reflect.DeepEqual(detail.Database.PortGroups, fixture.Database.PortGroups) ||
+			!reflect.DeepEqual(detail.Database.AddressSets, fixture.Database.AddressSets) {
+			t.Fatalf("%s: the policy section must return the fixture's rows unchanged", node)
+		}
+		if fixture.Database.ACLs == nil {
+			// A fixture without the section answers without it either way.
+			continue
+		}
+		checked++
+		if len(detail.Database.ACLs) == 0 || len(detail.Database.PortGroups) == 0 || len(detail.Database.AddressSets) == 0 {
+			t.Fatalf("%s: expected policy rows in the fixture", node)
+		}
+		if detail.Database.LoadBalancers != nil {
+			t.Fatalf("%s: asking for policy must not deliver services", node)
+		}
+		detail.Database.ACLs, detail.Database.PortGroups, detail.Database.AddressSets = nil, nil, nil
+		if !reflect.DeepEqual(plain.Database, detail.Database) {
+			t.Fatalf("%s: the ladder tables must be identical with and without the section", node)
+		}
+	}
+	if checked < 1 {
+		t.Fatalf("expected at least one fixture to carry the policy section, got %d", checked)
 	}
 }
 

@@ -201,7 +201,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "ACL uuids (table not yet collected)."
+                "description": "ACL uuids set on the switch itself, resolved by the 'policy' section (acls). ACLs also reach the switch's ports through portGroups."
               },
               "loadBalancer": {
                 "type": "array",
@@ -495,24 +495,137 @@
           "additionalProperties": false
         },
         "acls": {
-          "description": "Optional section 'policy': ACL rows. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty. The row shape is a placeholder until ovn-recon-e2b.5 defines it.",
+          "description": "Optional section 'policy': ACL rows. Present only when the request names the section (the /sections/ path or ?include=). Absent means not requested or not collected; an empty array means collected and empty. An ACL applies where it is attached: portGroups[].acls or logicalSwitches[].acls reference these rows by uuid. externalIds name the owner (k8s.ovn.org/owner-controller, owner-type, name, id).",
           "type": "array",
           "items": {
-            "type": "object"
+            "type": "object",
+            "required": [
+              "uuid",
+              "priority",
+              "direction",
+              "action",
+              "match",
+              "tier"
+            ],
+            "properties": {
+              "uuid": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "description": "Optional in the NB schema; absent when unset."
+              },
+              "priority": {
+                "type": "integer"
+              },
+              "direction": {
+                "type": "string",
+                "description": "from-lport (traffic leaving a workload: egress policy) or to-lport (traffic towards it: ingress policy)."
+              },
+              "action": {
+                "type": "string",
+                "description": "allow, allow-related, allow-stateless, drop, reject or pass."
+              },
+              "match": {
+                "type": "string",
+                "description": "The OVN match expression as stored. @name refers to portGroups[].name and $name to addressSets[].name."
+              },
+              "tier": {
+                "type": "integer",
+                "description": "Evaluation tier; tier 0 is evaluated before tier 1 and so on, priority orders within a tier."
+              },
+              "log": {
+                "type": "boolean",
+                "description": "ACL logging; absent when false."
+              },
+              "severity": {
+                "type": "string"
+              },
+              "meter": {
+                "type": "string"
+              },
+              "label": {
+                "type": "integer",
+                "description": "Sampling label; absent when zero."
+              },
+              "options": {
+                "$ref": "#/$defs/stringMap"
+              },
+              "externalIds": {
+                "$ref": "#/$defs/stringMap"
+              }
+            },
+            "additionalProperties": false
           }
         },
         "portGroups": {
-          "description": "Optional section 'policy': Port_Group rows. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty. The row shape is a placeholder until ovn-recon-e2b.5 defines it.",
+          "description": "Optional section 'policy': Port_Group rows. Present only when the request names the section (the /sections/ path or ?include=). Absent means not requested or not collected; an empty array means collected and empty. Every row is delivered, including groups with neither ports nor ACLs. The readable name and the owner are in externalIds; name is what a match refers to as @name.",
           "type": "array",
           "items": {
-            "type": "object"
+            "type": "object",
+            "required": [
+              "uuid",
+              "name",
+              "ports",
+              "acls"
+            ],
+            "properties": {
+              "uuid": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "logicalSwitchPorts[].uuid of the member ports. Under interconnect a zone's group lists only that zone's own ports."
+              },
+              "acls": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "acls[].uuid applied to every member port."
+              },
+              "externalIds": {
+                "$ref": "#/$defs/stringMap"
+              }
+            },
+            "additionalProperties": false
           }
         },
         "addressSets": {
-          "description": "Optional section 'policy': Address_Set rows. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty. The row shape is a placeholder until ovn-recon-e2b.5 defines it.",
+          "description": "Optional section 'policy': Address_Set rows. Present only when the request names the section (the /sections/ path or ?include=). Absent means not requested or not collected; an empty array means collected and empty. name is what a match refers to as $name.",
           "type": "array",
           "items": {
-            "type": "object"
+            "type": "object",
+            "required": [
+              "uuid",
+              "name",
+              "addresses"
+            ],
+            "properties": {
+              "uuid": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "addresses": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "IPs, CIDRs or MACs as stored; empty for a set without members."
+              },
+              "externalIds": {
+                "$ref": "#/$defs/stringMap"
+              }
+            },
+            "additionalProperties": false
           }
         },
         "loadBalancers": {

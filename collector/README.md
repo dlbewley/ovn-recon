@@ -10,7 +10,8 @@ This scaffold includes:
 - `internal/probe` typed OVN parser + snapshot assembly pipeline
 - in-cluster pod exec runner for live OVN interrogation
 - HTTP endpoints for health/readiness and node-scoped snapshot retrieval
-- fixture corpus under `fixtures/snapshots`
+- fixture corpus under `fixtures/snapshots` (`cnv-1` carries the `policy`
+  section, all three node fixtures the `services` section)
 - collector-local `Makefile` and `Dockerfile`
 
 ## Endpoints
@@ -74,9 +75,22 @@ for a VIP without endpoints; `externalIds` name the owning Service) and
 `loadBalancerGroups` are the named sets that switches and routers attach by
 uuid (`logicalSwitches[].loadBalancerGroup`, `logicalRouters[].loadBalancerGroup`).
 A switch or router sees its own `loadBalancer` rows plus the members of each
-group it attaches. The `policy` section is still ahead of its data: the
-collector does not populate it until the policy plane (`ovn-recon-e2b.5`)
-adds its tables and row types, so asking for `policy` adds nothing yet.
+group it attaches.
+
+The `policy` section is populated too (`ovn-recon-e2b.5`). `acls` are the NB
+rows as stored: `priority`, `direction` (`from-lport` or `to-lport`),
+`action`, `match`, `tier`, the logging columns when set (`log`, `severity`,
+`meter`, `label`), `options` and `externalIds`. `portGroups` carry `name`,
+`ports` (switch port uuids) and `acls` (ACL uuids); every row is delivered,
+including the groups with neither. `addressSets` carry `name` and
+`addresses`. An ACL applies where it is attached: to the member ports of a
+port group that lists it, or to every port of a switch that lists it in
+`logicalSwitches[].acls`. Inside a `match`, `@name` is a port group and
+`$name` an address set, both by `name`; the collector does not resolve them.
+The owner of each row is in `externalIds` (`k8s.ovn.org/owner-controller`,
+`k8s.ovn.org/owner-type`, `k8s.ovn.org/name`, `k8s.ovn.org/id`). Under
+interconnect a zone's port groups list only that zone's own ports, so read a
+port's groups from its own node's snapshot.
 
 ### Response headers
 

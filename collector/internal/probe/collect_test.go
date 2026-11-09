@@ -40,9 +40,56 @@ const nbTransactOutput = `[` +
 	`{"rows":[{"_uuid":["uuid","sr-1"],"_version":["uuid","v-sr-1"],"ip_prefix":"0.0.0.0/0","nexthop":"100.64.0.1","policy":["set",[]],"output_port":["set",[]],"route_table":"","bfd":["set",[]],"selection_fields":["set",["ip_src","ip_dst"]],"options":["map",[]],"external_ids":["map",[]]}]},` +
 	`{"rows":[{"_uuid":["uuid","gwc-1"],"_version":["uuid","v-gwc-1"],"name":"rtos-red-chassis-a","chassis_name":"chassis-a","priority":1,"options":["map",[]],"external_ids":["map",[]]}]},` +
 	`{"rows":[{"_uuid":["uuid","nbg-1"],"_version":["uuid","v-nbg-1"],"name":"worker-a","nb_cfg":147,"nb_cfg_timestamp":1794168187186,"sb_cfg":147,"sb_cfg_timestamp":1794168187190,"hv_cfg":146,"hv_cfg_timestamp":1794168187191,"ipsec":false,"connections":["set",[]],"ssl":["set",[]],"options":["map",[["name","worker-a"],["northd_internal_version","26.03.4-57.el9fdp-21.8.0-82.14"]]],"external_ids":["map",[]]}]},` +
+	nbACLRows + `,` +
+	nbPortGroupRows + `,` +
+	nbAddressSetRows + `,` +
 	nbLoadBalancerRows + `,` +
 	nbLoadBalancerGroupRows +
 	`]`
+
+// nbACLRows is the ACL select result, in the shapes ovn-kubernetes writes: a
+// node ACL set on the switch itself (no name, no options), a NetworkPolicy
+// rule whose match names both a port group (@) and an address set ($), and a
+// cluster multicast rule without k8s.ovn.org/name, here with logging on. The
+// sampling and network-function columns are present and ignored.
+const nbACLRows = `{"rows":[` +
+	`{"_uuid":["uuid","acl-1"],"_version":["uuid","v-acl-1"],"name":["set",[]],"priority":1001,"direction":"to-lport","action":"allow-related",` +
+	`"match":"ip4.src==10.244.0.2","tier":2,"log":false,"severity":["set",[]],"meter":"acl-logging","label":0,` +
+	`"network_function_group":["set",[]],"sample_new":["set",[]],"sample_est":["set",[]],"options":["map",[]],` +
+	`"external_ids":["map",[["ip","10.244.0.2"],["k8s.ovn.org/id","default-network-controller:NetpolNode:red-net:10.244.0.2"],["k8s.ovn.org/name","red-net"],["k8s.ovn.org/owner-controller","default-network-controller"],["k8s.ovn.org/owner-type","NetpolNode"]]]},` +
+	`{"_uuid":["uuid","acl-2"],"_version":["uuid","v-acl-2"],"name":"NP:shop:allow-dns:Egress:0","priority":1001,"direction":"from-lport","action":"allow-related",` +
+	`"match":"ip4.dst == {$a100} && udp && udp.dst==5353 && inport == @a200","tier":2,"log":false,"severity":["set",[]],"meter":"acl-logging","label":0,` +
+	`"network_function_group":["set",[]],"sample_new":["set",[]],"sample_est":["set",[]],"options":["map",[["apply-after-lb","true"]]],` +
+	`"external_ids":["map",[["direction","Egress"],["gress-index","0"],["ip-block-index","-1"],["k8s.ovn.org/id","default-network-controller:NetworkPolicy:shop:allow-dns:Egress:0:udp:-1"],["k8s.ovn.org/name","shop:allow-dns"],["k8s.ovn.org/owner-controller","default-network-controller"],["k8s.ovn.org/owner-type","NetworkPolicy"],["port-policy-protocol","udp"]]]},` +
+	`{"_uuid":["uuid","acl-3"],"_version":["uuid","v-acl-3"],"name":["set",[]],"priority":1011,"direction":"from-lport","action":"drop",` +
+	`"match":"(ip4.mcast || mldv1 || mldv2)","tier":0,"log":true,"severity":"info","meter":"acl-logging","label":7,` +
+	`"network_function_group":["set",[]],"sample_new":["set",[]],"sample_est":["set",[]],"options":["map",[["apply-after-lb","true"]]],` +
+	`"external_ids":["map",[["direction","Egress"],["k8s.ovn.org/id","default-network-controller:MulticastCluster:DefaultDeny:Egress"],["k8s.ovn.org/owner-controller","default-network-controller"],["k8s.ovn.org/owner-type","MulticastCluster"],["type","DefaultDeny"]]]}` +
+	`]}`
+
+// nbPortGroupRows is the Port_Group select result: a NetworkPolicy group
+// with one port and one ACL (both bare uuids on the wire), the cluster group
+// with two ports, and a namespace group with neither ports nor ACLs.
+const nbPortGroupRows = `{"rows":[` +
+	`{"_uuid":["uuid","pg-1"],"_version":["uuid","v-pg-1"],"name":"a200","ports":["uuid","lsp-pod"],"acls":["uuid","acl-2"],` +
+	`"external_ids":["map",[["k8s.ovn.org/id","default-network-controller:NetworkPolicy:shop:allow-dns"],["k8s.ovn.org/name","shop:allow-dns"],["k8s.ovn.org/owner-controller","default-network-controller"],["k8s.ovn.org/owner-type","NetworkPolicy"]]]},` +
+	`{"_uuid":["uuid","pg-2"],"_version":["uuid","v-pg-2"],"name":"a300","ports":["set",[["uuid","lsp-r"],["uuid","lsp-pod"]]],"acls":["uuid","acl-3"],` +
+	`"external_ids":["map",[["k8s.ovn.org/id","default-network-controller:Cluster:clusterPortGroup"],["k8s.ovn.org/name","clusterPortGroup"],["k8s.ovn.org/owner-controller","default-network-controller"],["k8s.ovn.org/owner-type","Cluster"]]]},` +
+	`{"_uuid":["uuid","pg-3"],"_version":["uuid","v-pg-3"],"name":"a400","ports":["set",[]],"acls":["set",[]],` +
+	`"external_ids":["map",[["k8s.ovn.org/id","default-network-controller:Namespace:shop"],["k8s.ovn.org/name","shop"],["k8s.ovn.org/owner-controller","default-network-controller"],["k8s.ovn.org/owner-type","Namespace"]]]}` +
+	`]}`
+
+// nbAddressSetRows is the Address_Set select result: a pod selector set with
+// two addresses, one with a single address (a bare string on the wire), and
+// one with none.
+const nbAddressSetRows = `{"rows":[` +
+	`{"_uuid":["uuid","as-1"],"_version":["uuid","v-as-1"],"name":"a100","addresses":["set",["10.244.0.5","10.244.1.9"]],` +
+	`"external_ids":["map",[["ip-family","v4"],["k8s.ovn.org/id","default-network-controller:PodSelector:LS{ML:{app: dns,},}:v4"],["k8s.ovn.org/name","LS{ML:{app: dns,},}"],["k8s.ovn.org/owner-controller","default-network-controller"],["k8s.ovn.org/owner-type","PodSelector"]]]},` +
+	`{"_uuid":["uuid","as-2"],"_version":["uuid","v-as-2"],"name":"a101","addresses":"192.168.1.11",` +
+	`"external_ids":["map",[["ip-family","v4"],["k8s.ovn.org/name","node-ips"],["k8s.ovn.org/owner-controller","default-network-controller"],["k8s.ovn.org/owner-type","ClusterNodeIPs"]]]},` +
+	`{"_uuid":["uuid","as-3"],"_version":["uuid","v-as-3"],"name":"a102","addresses":["set",[]],` +
+	`"external_ids":["map",[["ip-family","v4"],["k8s.ovn.org/name","egressip-served-pods"],["k8s.ovn.org/owner-controller","default-network-controller"],["k8s.ovn.org/owner-type","EgressIP"],["network","default"]]]}` +
+	`]}`
 
 // nbLoadBalancerRows is the Load_Balancer select result: a multi-VIP
 // ClusterIP load balancer (an IPv4 VIP with two backends, an IPv6 VIP, and a
@@ -91,6 +138,9 @@ func legacyNBOutputs() map[string]string {
 		strings.Join(nbListCommand("Logical_Router_Static_Route"), " "): `{"headings":["_uuid","ip_prefix","nexthop","policy","output_port","options","external_ids"],"data":[[["uuid","sr-1"],"0.0.0.0/0","100.64.0.1",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
 		strings.Join(nbListCommand("Gateway_Chassis"), " "):             `{"headings":["_uuid","name","chassis_name","priority","options","external_ids"],"data":[[["uuid","gwc-1"],"rtos-red-chassis-a","chassis-a",1,["map",[]],["map",[]]]]}`,
 		strings.Join(nbListCommand("NB_Global"), " "):                   `{"headings":["_uuid","name","nb_cfg","sb_cfg","hv_cfg","options","external_ids"],"data":[[["uuid","nbg-1"],"worker-a",147,147,146,["map",[["northd_internal_version","26.03.4"]]],["map",[]]]]}`,
+		strings.Join(nbListCommand("ACL"), " "):                         `{"headings":["_uuid","name","priority","direction","action","match","tier","log","severity","meter","label","options","external_ids"],"data":[[["uuid","acl-2"],"NP:shop:allow-dns:Egress:0",1001,"from-lport","allow-related","inport == @a200",2,false,["set",[]],"acl-logging",0,["map",[["apply-after-lb","true"]]],["map",[["k8s.ovn.org/name","shop:allow-dns"],["k8s.ovn.org/owner-type","NetworkPolicy"]]]]]}`,
+		strings.Join(nbListCommand("Port_Group"), " "):                  `{"headings":["_uuid","name","ports","acls","external_ids"],"data":[[["uuid","pg-1"],"a200",["uuid","lsp-pod"],["uuid","acl-2"],["map",[["k8s.ovn.org/name","shop:allow-dns"],["k8s.ovn.org/owner-type","NetworkPolicy"]]]],[["uuid","pg-3"],"a400",["set",[]],["set",[]],["map",[["k8s.ovn.org/name","shop"],["k8s.ovn.org/owner-type","Namespace"]]]]]}`,
+		strings.Join(nbListCommand("Address_Set"), " "):                 `{"headings":["_uuid","name","addresses","external_ids"],"data":[[["uuid","as-3"],"a102",["set",[]],["map",[["k8s.ovn.org/name","egressip-served-pods"]]]]]}`,
 		strings.Join(nbListCommand("Load_Balancer"), " "):               `{"headings":["_uuid","name","protocol","vips","options","selection_fields","health_check","ip_port_mappings","external_ids"],"data":[[["uuid","lb-1"],"Service_shop/web_TCP_cluster","tcp",["map",[["172.30.80.5:443","10.129.5.152:10443,10.130.2.9:10443"],["172.30.80.5:8080",""]]],["map",[["reject","true"]]],["set",[]],["set",[]],["map",[]],["map",[["k8s.ovn.org/kind","Service"],["k8s.ovn.org/owner","shop/web"]]]]]}`,
 		strings.Join(nbListCommand("Load_Balancer_Group"), " "):         `{"headings":["_uuid","name","load_balancer"],"data":[[["uuid","lbg-1"],"clusterLBGroup",["set",[["uuid","lb-1"]]]],[["uuid","lbg-3"],"clusterRouterLBGroup",["set",[]]]]}`,
 	}
@@ -505,6 +555,16 @@ func TestCollectSnapshotFallsBackToPerTableListWhenTransactFails(t *testing.T) {
 	if len(db.LoadBalancerGroups) != 2 || len(db.LoadBalancerGroups[0].LoadBalancerUUIDs) != 1 || len(db.LoadBalancerGroups[1].LoadBalancerUUIDs) != 0 {
 		t.Fatalf("fallback should read Load_Balancer_Group: %#v", db.LoadBalancerGroups)
 	}
+	if len(db.ACLs) != 1 || db.ACLs[0].Name != "NP:shop:allow-dns:Egress:0" || db.ACLs[0].Priority != 1001 || db.ACLs[0].Tier != 2 ||
+		db.ACLs[0].Options["apply-after-lb"] != "true" || db.ACLs[0].ExternalIDs["k8s.ovn.org/owner-type"] != "NetworkPolicy" {
+		t.Fatalf("fallback should read ACL: %#v", db.ACLs)
+	}
+	if len(db.PortGroups) != 2 || len(db.PortGroups[0].PortUUIDs) != 1 || db.PortGroups[0].ACLUUIDs[0] != "acl-2" || len(db.PortGroups[1].PortUUIDs) != 0 {
+		t.Fatalf("fallback should read Port_Group: %#v", db.PortGroups)
+	}
+	if len(db.AddressSets) != 1 || db.AddressSets[0].Addresses == nil || len(db.AddressSets[0].Addresses) != 0 {
+		t.Fatalf("fallback should read Address_Set: %#v", db.AddressSets)
+	}
 }
 
 func TestCollectSnapshotLeavesSectionAbsentWhenItsTableCannotBeListed(t *testing.T) {
@@ -561,7 +621,7 @@ func TestCollectSnapshotDegradesOnTransactOperationError(t *testing.T) {
 		`{"rows":[{"_uuid":["uuid","ls-1"],"name":"red-net","ports":["set",[]],"other_config":["map",[]],"external_ids":["map",[]]}]},` +
 		`{"rows":[]},` +
 		`{"details":"boom","error":"syntax error"},` +
-		`null,null,null,null,null]`
+		`null,null,null,null,null,null,null,null]`
 	outputs := healthyOutputs()
 	outputs[strings.Join(nbTransactCommand(nbTables), " ")] = raw
 	runner := &fakeRunner{outputs: outputs}
@@ -573,7 +633,7 @@ func TestCollectSnapshotDegradesOnTransactOperationError(t *testing.T) {
 	if snap.Metadata.SourceHealth != "degraded" {
 		t.Fatalf("expected degraded source health, got %q", snap.Metadata.SourceHealth)
 	}
-	if len(snap.Warnings) != 6 {
+	if len(snap.Warnings) != 9 {
 		t.Fatalf("expected one warning per failed table, got %#v", snap.Warnings)
 	}
 	for _, warning := range snap.Warnings {
@@ -591,6 +651,9 @@ func TestCollectSnapshotDegradesOnTransactOperationError(t *testing.T) {
 	// then show "not collected" instead of "no load balancers".
 	if snap.Database.LoadBalancers != nil || snap.Database.LoadBalancerGroups != nil {
 		t.Fatalf("aborted section tables should be nil: %#v %#v", snap.Database.LoadBalancers, snap.Database.LoadBalancerGroups)
+	}
+	if snap.Database.ACLs != nil || snap.Database.PortGroups != nil || snap.Database.AddressSets != nil {
+		t.Fatalf("aborted policy tables should be nil: %#v %#v %#v", snap.Database.ACLs, snap.Database.PortGroups, snap.Database.AddressSets)
 	}
 	if snap.Database.NATs == nil || snap.Database.StaticRoutes == nil {
 		t.Fatalf("ladder tables must stay non-nil (required arrays) when their select fails")
@@ -663,6 +726,128 @@ func TestCollectSnapshotCarriesServicesSection(t *testing.T) {
 	// The refs e2b.3 put on routers and switches resolve against the section.
 	if db.LogicalRouters[0].LoadBalancerUUIDs[0] != cluster.UUID || db.LogicalSwitches[0].LoadBalancerGroupUUIDs[0] != many.UUID {
 		t.Fatalf("router and switch refs should resolve to the collected rows")
+	}
+}
+
+func TestCollectSnapshotCarriesPolicySection(t *testing.T) {
+	runner := &fakeRunner{outputs: healthyOutputs()}
+	snap, err := CollectSnapshot(context.Background(), runner, "worker-a", time.Now())
+	if err != nil {
+		t.Fatalf("collect snapshot failed: %v", err)
+	}
+	if len(snap.Warnings) != 0 {
+		t.Fatalf("expected no warnings, got %#v", snap.Warnings)
+	}
+	db := snap.Database
+
+	if len(db.ACLs) != 3 {
+		t.Fatalf("expected three ACLs, got %#v", db.ACLs)
+	}
+	node, policy, multicast := db.ACLs[0], db.ACLs[1], db.ACLs[2]
+
+	// An ACL with options and a match naming a port group and an address
+	// set: the match is carried as stored, references unresolved.
+	if policy.UUID != "acl-2" || policy.Name != "NP:shop:allow-dns:Egress:0" || policy.Priority != 1001 ||
+		policy.Direction != "from-lport" || policy.Action != "allow-related" || policy.Tier != 2 {
+		t.Fatalf("unexpected NetworkPolicy ACL: %#v", policy)
+	}
+	if policy.Match != "ip4.dst == {$a100} && udp && udp.dst==5353 && inport == @a200" {
+		t.Fatalf("match must be carried verbatim, got %q", policy.Match)
+	}
+	if len(policy.Options) != 1 || policy.Options["apply-after-lb"] != "true" {
+		t.Fatalf("unexpected ACL options: %#v", policy.Options)
+	}
+	if policy.Log || policy.Severity != "" || policy.Meter != "acl-logging" || policy.Label != 0 {
+		t.Fatalf("unexpected logging columns: %#v", policy)
+	}
+	if policy.ExternalIDs["k8s.ovn.org/owner-type"] != "NetworkPolicy" || policy.ExternalIDs["k8s.ovn.org/name"] != "shop:allow-dns" ||
+		policy.ExternalIDs["k8s.ovn.org/owner-controller"] != "default-network-controller" || policy.ExternalIDs["gress-index"] != "0" {
+		t.Fatalf("unexpected ACL external_ids: %#v", policy.ExternalIDs)
+	}
+
+	// name is an optional column: unset arrives as an empty set.
+	if node.Name != "" || node.Direction != "to-lport" || len(node.Options) != 0 || node.ExternalIDs["ip"] != "10.244.0.2" {
+		t.Fatalf("unexpected node ACL: %#v", node)
+	}
+	// Tier 0 is a real value, and logging columns decode when set.
+	if multicast.Name != "" || multicast.Tier != 0 || multicast.Action != "drop" || !multicast.Log ||
+		multicast.Severity != "info" || multicast.Label != 7 {
+		t.Fatalf("unexpected multicast ACL: %#v", multicast)
+	}
+	if _, named := multicast.ExternalIDs["k8s.ovn.org/name"]; named {
+		t.Fatalf("an owner without a name must stay without one: %#v", multicast.ExternalIDs)
+	}
+
+	if len(db.PortGroups) != 3 {
+		t.Fatalf("expected three port groups, got %#v", db.PortGroups)
+	}
+	single, cluster, empty := db.PortGroups[0], db.PortGroups[1], db.PortGroups[2]
+	if single.UUID != "pg-1" || single.Name != "a200" || len(single.PortUUIDs) != 1 || single.PortUUIDs[0] != "lsp-pod" ||
+		len(single.ACLUUIDs) != 1 || single.ACLUUIDs[0] != "acl-2" {
+		t.Fatalf("a single port and a single ACL arrive as bare uuids and must decode as one element each: %#v", single)
+	}
+	if len(cluster.PortUUIDs) != 2 || cluster.PortUUIDs[0] != "lsp-r" || cluster.ExternalIDs["k8s.ovn.org/name"] != "clusterPortGroup" {
+		t.Fatalf("unexpected cluster port group: %#v", cluster)
+	}
+	if empty.PortUUIDs == nil || len(empty.PortUUIDs) != 0 || empty.ACLUUIDs == nil || len(empty.ACLUUIDs) != 0 ||
+		empty.ExternalIDs["k8s.ovn.org/owner-type"] != "Namespace" {
+		t.Fatalf("an empty group is kept, with non-nil empty lists: %#v", empty)
+	}
+
+	if len(db.AddressSets) != 3 {
+		t.Fatalf("expected three address sets, got %#v", db.AddressSets)
+	}
+	selector, one, none := db.AddressSets[0], db.AddressSets[1], db.AddressSets[2]
+	if selector.Name != "a100" || len(selector.Addresses) != 2 || selector.Addresses[1] != "10.244.1.9" ||
+		selector.ExternalIDs["k8s.ovn.org/name"] != "LS{ML:{app: dns,},}" {
+		t.Fatalf("unexpected pod selector address set: %#v", selector)
+	}
+	if len(one.Addresses) != 1 || one.Addresses[0] != "192.168.1.11" {
+		t.Fatalf("a single address arrives as a bare string and must decode as one element: %#v", one)
+	}
+	if none.Addresses == nil || len(none.Addresses) != 0 || none.ExternalIDs["network"] != "default" {
+		t.Fatalf("an address set with zero addresses keeps a non-nil empty list: %#v", none)
+	}
+
+	// The apply side resolves inside the snapshot: the switch's own acls
+	// column and each group's ports and acls.
+	if db.LogicalSwitches[0].ACLUUIDs[0] != node.UUID || single.ACLUUIDs[0] != policy.UUID || cluster.ACLUUIDs[0] != multicast.UUID {
+		t.Fatalf("switch and port group ACL refs should resolve to the collected rows")
+	}
+}
+
+func TestPolicyMappersKeepAbsentAndEmptyApart(t *testing.T) {
+	if aclsFromRows(nil) != nil || portGroupsFromRows(nil) != nil || addressSetsFromRows(nil) != nil {
+		t.Fatal("a table that was not read should map to nil (absent section)")
+	}
+	if rows := aclsFromRows([]map[string]any{}); rows == nil || len(rows) != 0 {
+		t.Fatalf("an empty table should map to a non-nil empty slice, got %#v", rows)
+	}
+	if rows := portGroupsFromRows([]map[string]any{}); rows == nil || len(rows) != 0 {
+		t.Fatalf("an empty table should map to a non-nil empty slice, got %#v", rows)
+	}
+	if rows := addressSetsFromRows([]map[string]any{}); rows == nil || len(rows) != 0 {
+		t.Fatalf("an empty table should map to a non-nil empty slice, got %#v", rows)
+	}
+}
+
+func TestCollectSnapshotLeavesPolicyTableAbsentWhenItCannotBeListed(t *testing.T) {
+	// One policy table fails on the fallback path: the other two and the
+	// rest of the snapshot still arrive.
+	outputs, errs := fallbackOutputs()
+	delete(outputs, strings.Join(nbListCommand("Address_Set"), " "))
+	errs[strings.Join(nbListCommand("Address_Set"), " ")] = errors.New("ovn-nbctl: unknown table")
+	runner := &fakeRunner{outputs: outputs, errs: errs}
+
+	snap, err := CollectSnapshot(context.Background(), runner, "worker-a", time.Now())
+	if err != nil {
+		t.Fatalf("collect snapshot failed unexpectedly: %v", err)
+	}
+	if snap.Database.AddressSets != nil {
+		t.Fatalf("a table that failed to list should be absent, got %#v", snap.Database.AddressSets)
+	}
+	if len(snap.Database.ACLs) != 1 || len(snap.Database.PortGroups) != 2 || len(snap.Database.LoadBalancers) != 1 {
+		t.Fatalf("the remaining tables should survive: %#v", snap.Database)
 	}
 }
 

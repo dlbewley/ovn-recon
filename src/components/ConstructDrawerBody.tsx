@@ -19,7 +19,15 @@ import {
 import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
 
-import { LogicalDatabase, LogicalSwitchPortRow, NATRow, SnapshotSection, StaticRouteRow } from '../types';
+import {
+    ACLRow,
+    LogicalDatabase,
+    LogicalSwitchPortRow,
+    NATRow,
+    PortGroupRow,
+    SnapshotSection,
+    StaticRouteRow,
+} from '../types';
 import { networkResourceRef } from './logicalClassification';
 import {
     GatewayPortPlacement,
@@ -30,6 +38,25 @@ import {
 } from './logicalLadderModel';
 import { edgeLabel, networkDisplayName, roleLabel } from './LogicalLadderView';
 import { configPayloadFor, ovnKindFor } from './ovnKindRegistry';
+import {
+    describeOwner,
+    networkOfController,
+    networkRoleResolverFor,
+    NetworkRoleResolver,
+    OvnOwner,
+    ownerOf,
+    ownerText,
+} from './ovnOwner';
+import {
+    hasPolicySection,
+    PolicyIndex,
+    policyForPort,
+    policyIndexFor,
+    resolveMatchRefs,
+    summarizeSwitchAcls,
+    switchAclSummaryText,
+    zoneRowFor,
+} from './policyIndex';
 import {
     attachmentSummaryText,
     hasServicesSection,
@@ -51,6 +78,9 @@ const MAX_LISTED_PORTS = 15;
 /** Services tab render cap: unlike ports per switch, Services per node are
  * unbounded (hundreds on a lab, thousands on a large cluster). */
 export const MAX_SERVICE_ROWS = 200;
+/** ACLs listed for one port before a more-note: a pod under many
+ * NetworkPolicies collects one ACL per policy rule, protocol and peer block. */
+export const MAX_PORT_ACLS = 50;
 
 export interface ConstructDrawerBodyProps {
     construct: LadderConstruct & { zones?: string[] };
@@ -107,7 +137,20 @@ type ServicesState =
     | { status: 'absent'; error?: string }
     | { status: 'ready'; attachment: LoadBalancerAttachment; database: LogicalDatabase };
 
-type DrawerBodyProps = ConstructDrawerBodyProps & { services: ServicesState };
+/**
+ * The policy plane as the drawer sees it for the selected construct: `none`
+ * for anything but a switch (ACLs apply to switch ports), `loading` while the
+ * policy section is on its way, `absent` when the collector did not deliver
+ * it, and `ready` with the zone's indexes. `switchUuid` is the switch's uuid
+ * in that zone's database, undefined when the zone does not hold the switch.
+ */
+type PolicyState =
+    | { status: 'none' }
+    | { status: 'loading' }
+    | { status: 'absent'; error?: string }
+    | { status: 'ready'; index: PolicyIndex; database: LogicalDatabase; switchUuid?: string };
+
+type DrawerBodyProps = ConstructDrawerBodyProps & { services: ServicesState; policy: PolicyState };
 
 const SEAM_ROLES = new Set(['external-switch', 'localnet-switch']);
 
@@ -308,6 +351,40 @@ const LoadBalancerOverview: React.FC<{ construct: LadderConstruct; services: Ser
     );
 };
 
+/**
+ * The Overview's "ACLs" value on a switch. With the policy section at hand:
+ * the ACLs set on the switch itself and the ones that reach its ports through
+ * port groups. Without it the bare reference count of the switch's own acls
+ * column remains, with a spinner while the section loads and the error when
+ * the request failed.
+ */
+const AclOverview: React.FC<{ construct: LadderConstruct; policy: PolicyState }> = ({ construct, policy }) => {
+    // Ready without a switchUuid: the zone at hand does not hold this switch,
+    // so only the reference count is known.
+    if (policy.status === 'ready' && policy.switchUuid) {
+        const summary = summarizeSwitchAcls(policy.index.aclsBySwitch.get(policy.switchUuid));
+        return <>{switchAclSummaryText(summary)}</>;
+    }
+    return (
+        <>
+            {construct.aclCount}{' '}
+            <span style={SUBTLE_TEXT}>({NOT_COLLECTED})</span>
+            {policy.status === 'loading' && <> <Spinner size="sm" aria-label="Loading ACLs" /></>}
+            {policy.status === 'absent' && policy.error && (
+                <div style={SUBTLE_TEXT} data-testid="policy-error">Policy rows failed to load: {policy.error}</div>
+            )}
+        </>
+    );
+};
+
+/** Whether the Overview shows an ACLs line: the switch has ACLs of its own,
+ * or its ports collect some through port groups. */
+const hasAclLine = (construct: LadderConstruct, policy: PolicyState): boolean => {
+    if (construct.aclCount > 0) return true;
+    if (policy.status !== 'ready' || !policy.switchUuid) return false;
+    return (policy.index.aclsBySwitch.get(policy.switchUuid)?.all.length ?? 0) > 0;
+};
+
 const OverviewBody: React.FC<DrawerBodyProps> = ({
     construct,
     nodeHref,
@@ -317,6 +394,7 @@ const OverviewBody: React.FC<DrawerBodyProps> = ({
     database,
     nodeForChassis,
     services,
+    policy,
 }) => {
     const networkRef = networkResourceRef(construct.network);
     const seamNode = SEAM_ROLES.has(construct.role) ? construct.node ?? fallbackNode : undefined;
@@ -471,12 +549,11 @@ const OverviewBody: React.FC<DrawerBodyProps> = ({
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
-            {construct.aclCount > 0 && (
+            {hasAclLine(construct, policy) && (
                 <DescriptionListGroup>
                     <DescriptionListTerm>ACLs</DescriptionListTerm>
                     <DescriptionListDescription>
-                        {construct.aclCount}{' '}
-                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>({NOT_COLLECTED})</span>
+                        <AclOverview construct={construct} policy={policy} />
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
@@ -566,11 +643,17 @@ const RelationshipsBody: React.FC<ConstructDrawerBodyProps> = ({ construct, mode
  * database is at hand the model's own view of the construct is shown instead,
  * labeled as derived.
  */
-const ConfigBody: React.FC<DrawerBodyProps> = ({ construct, database, databaseNode, services }) => {
+const ConfigBody: React.FC<DrawerBodyProps> = ({ construct, database, databaseNode, services, policy }) => {
     const isDarkTheme = useIsDarkTheme();
-    // The same node's database with the services section, once it has
-    // arrived, so the raw rows include the load balancer rows referenced.
-    const configDatabase = services.status === 'ready' ? services.database : database ?? null;
+    // The same node's database with the optional sections, once they have
+    // arrived, so the raw rows include the load balancer and ACL rows the
+    // construct references.
+    const configDatabase =
+        services.status === 'ready'
+            ? services.database
+            : policy.status === 'ready'
+                ? policy.database
+                : database ?? null;
     const { source, payload } = configPayloadFor(construct, configDatabase);
     const caption =
         source === 'nb-rows'
@@ -594,6 +677,228 @@ const ConfigBody: React.FC<DrawerBodyProps> = ({ construct, database, databaseNo
 };
 
 const ALL_PORT_TYPES = 'all';
+
+const ACTION_COLORS: Record<string, 'green' | 'red' | 'grey'> = {
+    allow: 'green',
+    'allow-related': 'green',
+    'allow-stateless': 'green',
+    drop: 'red',
+    reject: 'red',
+};
+
+const DIRECTION_HINTS: Record<string, string> = {
+    'from-lport': 'Traffic leaving the port (egress from the workload)',
+    'to-lport': 'Traffic towards the port (ingress to the workload)',
+};
+
+/** The network a row's controller serves, linked to its UDN/CUDN when it has one. */
+const OwnerNetwork: React.FC<{ owner?: OvnOwner }> = ({ owner }) => {
+    const network = networkOfController(owner?.controller);
+    if (network === undefined) {
+        return owner?.controller ? <code>{owner.controller}</code> : <span style={SUBTLE_TEXT}>—</span>;
+    }
+    const ref = networkResourceRef(network);
+    return ref ? (
+        <Link to={getResourcePath(ref)}>{networkDisplayName(network)}</Link>
+    ) : (
+        <>{networkDisplayName(network)}</>
+    );
+};
+
+/**
+ * The owner of a port group or ACL: its name as a link when it stands for a
+ * Kubernetes object, as text otherwise. A NetworkPolicy-typed owner on a
+ * network whose role is unknown in this zone is named without a link, since
+ * it may be a MultiNetworkPolicy.
+ */
+const OwnerName: React.FC<{ owner?: OvnOwner; roleOf: NetworkRoleResolver }> = ({ owner, roleOf }) => {
+    const description = describeOwner(owner, roleOf);
+    if (!description.name) return <span style={SUBTLE_TEXT}>—</span>;
+    if (description.target) return <Link to={description.target.path}>{description.name}</Link>;
+    return (
+        <span title={description.kindUnresolved ? 'NetworkPolicy or MultiNetworkPolicy: the network role is unknown in this zone' : undefined}>
+            {description.name}
+        </span>
+    );
+};
+
+/** The per-type external_ids worth a glance next to an owner: the policy
+ * direction and the rule kind (defaultDeny, arpAllow, AllowInterNode, ...). */
+const ownerQualifiers = (owner?: OvnOwner): string =>
+    [owner?.extra.direction, owner?.extra.type].filter(Boolean).join(' · ');
+
+/** What an `@name` or `$name` in a match stands for, one line per reference. */
+const MatchReferences: React.FC<{ acl: ACLRow; index: PolicyIndex; roleOf: NetworkRoleResolver }> = ({
+    acl,
+    index,
+    roleOf,
+}) => {
+    const refs = resolveMatchRefs(index, acl);
+    if (refs.portGroups.length === 0 && refs.addressSets.length === 0) return null;
+    const label = (row: { externalIds?: Record<string, string> }) =>
+        ownerText(describeOwner(ownerOf(row.externalIds), roleOf));
+    return (
+        <div style={SUBTLE_TEXT}>
+            {refs.portGroups.map((ref) => (
+                <div key={`@${ref.name}`}>
+                    <code>@{ref.name}</code> {ref.row ? label(ref.row) : 'unresolved port group'}
+                </div>
+            ))}
+            {refs.addressSets.map((ref) => (
+                <div key={`$${ref.name}`}>
+                    <code>${ref.name}</code>{' '}
+                    {ref.row
+                        ? `${label(ref.row)} (${ref.row.addresses.length} address${ref.row.addresses.length === 1 ? '' : 'es'})`
+                        : 'unresolved address set'}
+                </div>
+            ))}
+        </div>
+    );
+};
+
+const PortGroupTable: React.FC<{ groups: PortGroupRow[]; index: PolicyIndex; roleOf: NetworkRoleResolver }> = ({
+    groups,
+    index,
+    roleOf,
+}) => (
+    <Table aria-label="Port groups" variant="compact" borders={false}>
+        <Thead>
+            <Tr>
+                <Th>Owner type</Th>
+                <Th>Owner</Th>
+                <Th>Network</Th>
+                <Th>ACLs</Th>
+            </Tr>
+        </Thead>
+        <Tbody>
+            {groups.map((group) => {
+                const owner = ownerOf(group.externalIds);
+                const qualifiers = ownerQualifiers(owner);
+                return (
+                    <Tr key={group.uuid} data-testid={`port-group-${group.uuid}`}>
+                        <Td dataLabel="Owner type">{describeOwner(owner, roleOf).kind}</Td>
+                        <Td dataLabel="Owner">
+                            <span title={`@${group.name}`}><OwnerName owner={owner} roleOf={roleOf} /></span>
+                            {qualifiers && <span style={SUBTLE_TEXT}> ({qualifiers})</span>}
+                        </Td>
+                        <Td dataLabel="Network"><OwnerNetwork owner={owner} /></Td>
+                        <Td dataLabel="ACLs">{index.aclsByPortGroup.get(group.uuid)?.length ?? 0}</Td>
+                    </Tr>
+                );
+            })}
+        </Tbody>
+    </Table>
+);
+
+/**
+ * The policy on one port, in the Ports tab's expanded row: the port groups it
+ * is a member of and the ACLs that apply to it (those of its groups plus the
+ * ones set on the switch), in evaluation order per direction. Bounded by the
+ * port, not by the cluster; the full tables belong to the construct detail
+ * page.
+ */
+const PortPolicy: React.FC<{ port: LadderPort; policy: PolicyState; databaseNode?: string }> = ({
+    port,
+    policy,
+    databaseNode,
+}) => {
+    if (policy.status === 'none') return null;
+    if (policy.status !== 'ready') {
+        return (
+            <div className="pf-u-mt-sm" data-testid="port-policy">
+                <strong>Port groups:</strong>{' '}
+                <span style={SUBTLE_TEXT}>not collected yet</span>
+                {policy.status === 'loading' && <> <Spinner size="sm" aria-label="Loading port groups" /></>}
+                {policy.status === 'absent' && policy.error && (
+                    <div style={SUBTLE_TEXT}>Policy rows failed to load: {policy.error}</div>
+                )}
+            </div>
+        );
+    }
+
+    const { index, database } = policy;
+    const zonePort = zoneRowFor(database.logicalSwitchPorts, port);
+    if (!zonePort) {
+        // Cluster view: the port lives in another node's zone, and a zone's
+        // port groups list only its own ports.
+        return (
+            <div className="pf-u-mt-sm" data-testid="port-policy">
+                <strong>Port groups:</strong>{' '}
+                <span style={SUBTLE_TEXT}>
+                    this port is not in {databaseNode ? `node ${databaseNode}'s` : 'this'} zone; open its
+                    node's view to see its port groups and ACLs
+                </span>
+            </div>
+        );
+    }
+
+    const roleOf = networkRoleResolverFor(database);
+    const { groups, acls } = policyForPort(index, zonePort.uuid);
+    const shown = acls.slice(0, MAX_PORT_ACLS);
+    const showTier = new Set(acls.map((applied) => applied.acl.tier)).size > 1;
+
+    return (
+        <div className="pf-u-mt-sm" data-testid="port-policy">
+            <div><strong>Port groups ({groups.length})</strong></div>
+            {groups.length === 0 ? (
+                <div style={SUBTLE_TEXT}>This port is in no port group.</div>
+            ) : (
+                <PortGroupTable groups={groups} index={index} roleOf={roleOf} />
+            )}
+            <div className="pf-u-mt-sm"><strong>ACLs that apply ({acls.length})</strong></div>
+            {acls.length === 0 ? (
+                <div style={SUBTLE_TEXT}>No ACL applies to this port.</div>
+            ) : (
+                <Table aria-label="ACLs that apply to the port" variant="compact" borders={false}>
+                    <Thead>
+                        <Tr>
+                            <Th>Priority</Th>
+                            <Th>Direction</Th>
+                            <Th>Action</Th>
+                            <Th>Owner</Th>
+                            <Th>Match</Th>
+                        </Tr>
+                    </Thead>
+                    <Tbody>
+                        {shown.map(({ acl, group }) => {
+                            const owner = ownerOf(acl.externalIds);
+                            const description = describeOwner(owner, roleOf);
+                            const qualifiers = ownerQualifiers(owner);
+                            return (
+                                <Tr key={acl.uuid} data-testid={`port-acl-${acl.uuid}`}>
+                                    <Td dataLabel="Priority">
+                                        {acl.priority}
+                                        {showTier && <div style={SUBTLE_TEXT}>tier {acl.tier}</div>}
+                                    </Td>
+                                    <Td dataLabel="Direction">
+                                        <span title={DIRECTION_HINTS[acl.direction]}>{acl.direction}</span>
+                                    </Td>
+                                    <Td dataLabel="Action">
+                                        <Label isCompact color={ACTION_COLORS[acl.action] ?? 'grey'}>{acl.action}</Label>
+                                    </Td>
+                                    <Td dataLabel="Owner">
+                                        <span title={acl.name}>
+                                            {description.kind} <OwnerName owner={owner} roleOf={roleOf} />
+                                        </span>
+                                        {qualifiers && <div style={SUBTLE_TEXT}>{qualifiers}</div>}
+                                        {!group && <div style={SUBTLE_TEXT}>set on the switch</div>}
+                                    </Td>
+                                    <Td dataLabel="Match">
+                                        <code style={{ overflowWrap: 'anywhere' }}>{acl.match}</code>
+                                        <MatchReferences acl={acl} index={index} roleOf={roleOf} />
+                                    </Td>
+                                </Tr>
+                            );
+                        })}
+                    </Tbody>
+                </Table>
+            )}
+            {acls.length > shown.length && (
+                <div data-testid="port-acl-cap">… and {acls.length - shown.length} more</div>
+            )}
+        </div>
+    );
+};
 
 /** One `<code>` entry per line, or a dash when the set is empty. */
 const CodeLines: React.FC<{ items?: string[] }> = ({ items }) =>
@@ -640,12 +945,13 @@ const portMatches = (port: LadderPort, query: string): boolean => {
  * 3). Keyed by construct uuid from the parent so expansion and filters reset
  * when a different construct is selected.
  */
-const PortsBody: React.FC<ConstructDrawerBodyProps> = ({
+const PortsBody: React.FC<DrawerBodyProps> = ({
     construct,
     database,
     databaseNode,
     nodeForChassis,
     nodeHref,
+    policy,
 }) => {
     const isDarkTheme = useIsDarkTheme();
     const [filter, setFilter] = React.useState('');
@@ -775,12 +1081,9 @@ const PortsBody: React.FC<ConstructDrawerBodyProps> = ({
                                                 height={editorHeight}
                                             />
                                         )}
-                                        <div className="pf-u-mt-sm">
-                                            <strong>Port groups:</strong>{' '}
-                                            <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>
-                                                not collected yet
-                                            </span>
-                                        </div>
+                                        {isExpanded && (
+                                            <PortPolicy port={port} policy={policy} databaseNode={databaseNode} />
+                                        )}
                                     </ExpandableRowContent>
                                 </Td>
                             </Tr>
@@ -999,40 +1302,64 @@ export const hasLoadBalancerAttachment = (construct: LadderConstruct): boolean =
     (construct.kind === 'router' || construct.kind === 'switch') &&
     construct.loadBalancerCount + construct.loadBalancerGroupCount > 0;
 
-/** The optional snapshot sections the drawer renders. The policy plane
- * (ovn-recon-e2b.5) adds its section here so both arrive in one request. */
-const SERVICES_SECTIONS: readonly SnapshotSection[] = ['services'];
+/** A switch: the construct whose ports port groups and ACLs apply to. */
+export const hasPolicyAttachment = (construct: LadderConstruct): boolean => hasPortsTab(construct);
+
+/** The optional snapshot sections the drawer renders. They travel in one
+ * request, so hopping between a switch and a router refetches nothing. */
+const DRAWER_SECTIONS: readonly SnapshotSection[] = ['policy', 'services'];
 const NO_SECTIONS: readonly SnapshotSection[] = [];
 
 /**
- * Resolve the construct's load balancers from the services section. The
- * ladder pages fetch without sections, so the section normally arrives
- * through a second request to the node `database` came from (the
- * representative zone on the cluster view); a database that already carries
- * it is used as is.
+ * Resolve the construct's load balancers from the services section and the
+ * zone's policy indexes from the policy section. The ladder pages fetch
+ * without sections, so they normally arrive through a second request to the
+ * node `database` came from (the representative zone on the cluster view),
+ * issued when a construct that needs one is selected; a database that already
+ * carries a section is used as is.
  */
-const useServices = ({
+const useDrawerSections = ({
     construct,
     database,
     databaseNode,
     sectionsRefreshKey,
-}: ConstructDrawerBodyProps): ServicesState => {
-    const wanted = hasLoadBalancerAttachment(construct);
-    const carried = hasServicesSection(database) ? database : undefined;
+}: ConstructDrawerBodyProps): { services: ServicesState; policy: PolicyState } => {
+    const wantsServices = hasLoadBalancerAttachment(construct);
+    const wantsPolicy = hasPolicyAttachment(construct);
+    const carriedServices = hasServicesSection(database) ? database : undefined;
+    const carriedPolicy = hasPolicySection(database) ? database : undefined;
+    const needsFetch = (wantsServices && !carriedServices) || (wantsPolicy && !carriedPolicy);
     const fetched = useOptionalSections(
-        wanted && !carried ? databaseNode : undefined,
-        wanted && !carried ? SERVICES_SECTIONS : NO_SECTIONS,
+        needsFetch ? databaseNode : undefined,
+        needsFetch ? DRAWER_SECTIONS : NO_SECTIONS,
         sectionsRefreshKey,
     );
-    const servicesDatabase = carried ?? fetched.database;
+    const servicesDatabase = carriedServices ?? fetched.database;
+    const policyDatabase = carriedPolicy ?? fetched.database;
 
-    return React.useMemo<ServicesState>(() => {
-        if (!wanted) return { status: 'none' };
+    const services = React.useMemo<ServicesState>(() => {
+        if (!wantsServices) return { status: 'none' };
         const attachment = loadBalancersFor(construct, servicesDatabase);
         if (attachment && servicesDatabase) return { status: 'ready', attachment, database: servicesDatabase };
         if (fetched.loading) return { status: 'loading' };
         return { status: 'absent', error: fetched.error };
-    }, [wanted, construct, servicesDatabase, fetched.loading, fetched.error]);
+    }, [wantsServices, construct, servicesDatabase, fetched.loading, fetched.error]);
+
+    const policy = React.useMemo<PolicyState>(() => {
+        if (!wantsPolicy) return { status: 'none' };
+        if (hasPolicySection(policyDatabase)) {
+            return {
+                status: 'ready',
+                index: policyIndexFor(policyDatabase),
+                database: policyDatabase,
+                switchUuid: zoneRowFor(policyDatabase.logicalSwitches, construct)?.uuid,
+            };
+        }
+        if (fetched.loading) return { status: 'loading' };
+        return { status: 'absent', error: fetched.error };
+    }, [wantsPolicy, construct, policyDatabase, fetched.loading, fetched.error]);
+
+    return { services, policy };
 };
 
 /**
@@ -1047,7 +1374,7 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = (props) => {
     // physical drawer. A freshly opened drawer starts at Overview because the
     // component mounts anew (the pages unmount it when nothing is selected).
     const [activeTab, setActiveTab] = React.useState<ConstructTabId>('overview');
-    const services = useServices(props);
+    const { services, policy } = useDrawerSections(props);
     // Hopping from a switch's Ports tab to a router (via Relationships) lands
     // on Overview; the stored choice is kept so a hop back to a switch returns
     // to Ports. The Services tab follows the same rule: it shows on a switch
@@ -1060,7 +1387,7 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = (props) => {
     );
     const effectiveTab: ConstructTabId =
         (activeTab === 'ports' && !showPorts) || (activeTab === 'services' && !showServices) ? 'overview' : activeTab;
-    const bodyProps: DrawerBodyProps = { ...props, services };
+    const bodyProps: DrawerBodyProps = { ...props, services, policy };
 
     return (
         <>
@@ -1073,7 +1400,7 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = (props) => {
             <DrawerPanelBody>
                 {effectiveTab === 'overview' && <OverviewBody {...bodyProps} />}
                 {effectiveTab === 'relationships' && <RelationshipsBody {...props} />}
-                {effectiveTab === 'ports' && <PortsBody key={props.construct.uuid} {...props} />}
+                {effectiveTab === 'ports' && <PortsBody key={props.construct.uuid} {...bodyProps} />}
                 {effectiveTab === 'services' && <ServicesBody key={props.construct.uuid} {...bodyProps} />}
                 {effectiveTab === 'config' && <ConfigBody {...bodyProps} />}
             </DrawerPanelBody>

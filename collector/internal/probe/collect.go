@@ -204,9 +204,12 @@ func collectDatabase(ctx context.Context, runner Runner, opts CollectOptions) (*
 		BridgeMappings:     bridgeMappings,
 		GatewayChassis:     gatewayChassisFromRows(nb["Gateway_Chassis"]),
 		NBGlobal:           nbGlobalFromRows(nb["NB_Global"]),
-		// Services section: a table that was read is a non-nil slice (an
+		// Optional sections: a table that was read is a non-nil slice (an
 		// empty table encodes as []); one that could not be read stays nil
 		// and the key is absent, which clients render as "not collected".
+		ACLs:               aclsFromRows(nb["ACL"]),
+		PortGroups:         portGroupsFromRows(nb["Port_Group"]),
+		AddressSets:        addressSetsFromRows(nb["Address_Set"]),
 		LoadBalancers:      loadBalancersFromRows(nb["Load_Balancer"]),
 		LoadBalancerGroups: loadBalancerGroupsFromRows(nb["Load_Balancer_Group"]),
 	}
