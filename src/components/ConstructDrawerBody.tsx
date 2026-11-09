@@ -10,6 +10,7 @@ import {
     FormSelect,
     FormSelectOption,
     Label,
+    Spinner,
     TextInput,
     Toolbar,
     ToolbarContent,
@@ -18,7 +19,7 @@ import {
 import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
 
-import { LogicalDatabase, LogicalSwitchPortRow, NATRow, StaticRouteRow } from '../types';
+import { LogicalDatabase, LogicalSwitchPortRow, NATRow, SnapshotSection, StaticRouteRow } from '../types';
 import { networkResourceRef } from './logicalClassification';
 import {
     GatewayPortPlacement,
@@ -29,12 +30,27 @@ import {
 } from './logicalLadderModel';
 import { edgeLabel, networkDisplayName, roleLabel } from './LogicalLadderView';
 import { configPayloadFor, ovnKindFor } from './ovnKindRegistry';
+import {
+    attachmentSummaryText,
+    hasServicesSection,
+    LoadBalancerAttachment,
+    loadBalancersFor,
+    serviceLabel,
+    ServiceVipRow,
+    serviceVipRowMatches,
+    serviceVipRows,
+    summarizeAttachment,
+} from './serviceIndex';
 import { useIsDarkTheme } from './useIsDarkTheme';
+import { useOptionalSections } from './useOptionalSections';
 import { getResourcePath } from '../topology/links';
 import DrawerTabStrip from './DrawerTabStrip';
 
 const MAX_LISTED_RULES = 10;
 const MAX_LISTED_PORTS = 15;
+/** Services tab render cap: unlike ports per switch, Services per node are
+ * unbounded (hundreds on a lab, thousands on a large cluster). */
+export const MAX_SERVICE_ROWS = 200;
 
 export interface ConstructDrawerBodyProps {
     construct: LadderConstruct & { zones?: string[] };
@@ -70,7 +86,28 @@ export interface ConstructDrawerBodyProps {
      * Unresolved chassis render as their id.
      */
     nodeForChassis?: (chassisName: string) => string | undefined;
+    /**
+     * Changes when `database` is replaced by a newer collection (the
+     * snapshot's generatedAt): the optional sections the drawer loads from
+     * `databaseNode` are refetched in step with it.
+     */
+    sectionsRefreshKey?: string | number;
 }
+
+/**
+ * The service plane as the drawer sees it for the selected construct:
+ * `none` when the construct attaches no load balancer, `loading` while the
+ * services section is on its way, `absent` when the collector did not
+ * deliver it (an older collector, a failed table, a failed request), and
+ * `ready` with the construct's load balancers resolved.
+ */
+type ServicesState =
+    | { status: 'none' }
+    | { status: 'loading' }
+    | { status: 'absent'; error?: string }
+    | { status: 'ready'; attachment: LoadBalancerAttachment; database: LogicalDatabase };
+
+type DrawerBodyProps = ConstructDrawerBodyProps & { services: ServicesState };
 
 const SEAM_ROLES = new Set(['external-switch', 'localnet-switch']);
 
@@ -237,7 +274,41 @@ const WorkloadPortList: React.FC<{ construct: LadderConstruct }> = ({ construct 
     );
 };
 
-const OverviewBody: React.FC<ConstructDrawerBodyProps> = ({
+const SUBTLE_TEXT: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
+
+/**
+ * The Overview's "Load balancers" value. With the services section at hand
+ * the references resolve to direct and per-group counts, plus the VIPs whose
+ * Service has no endpoints; without it the bare reference counts remain.
+ */
+const LoadBalancerOverview: React.FC<{ construct: LadderConstruct; services: ServicesState }> = ({
+    construct,
+    services,
+}) => {
+    if (services.status !== 'ready') {
+        return (
+            <>
+                {loadBalancerSummary(construct.loadBalancerCount, construct.loadBalancerGroupCount)}{' '}
+                <span style={SUBTLE_TEXT} title={services.status === 'absent' ? services.error : undefined}>
+                    ({services.status === 'loading' ? 'loading…' : NOT_COLLECTED})
+                </span>
+            </>
+        );
+    }
+    const summary = summarizeAttachment(services.attachment);
+    return (
+        <>
+            <div>{attachmentSummaryText(summary)}</div>
+            {summary.vipsWithoutEndpoints > 0 && (
+                <div style={SUBTLE_TEXT}>
+                    {summary.vipsWithoutEndpoints} VIP{summary.vipsWithoutEndpoints === 1 ? '' : 's'} without endpoints
+                </div>
+            )}
+        </>
+    );
+};
+
+const OverviewBody: React.FC<DrawerBodyProps> = ({
     construct,
     nodeHref,
     physicalHref,
@@ -245,6 +316,7 @@ const OverviewBody: React.FC<ConstructDrawerBodyProps> = ({
     totalNodes,
     database,
     nodeForChassis,
+    services,
 }) => {
     const networkRef = networkResourceRef(construct.network);
     const seamNode = SEAM_ROLES.has(construct.role) ? construct.node ?? fallbackNode : undefined;
@@ -412,8 +484,7 @@ const OverviewBody: React.FC<ConstructDrawerBodyProps> = ({
                 <DescriptionListGroup>
                     <DescriptionListTerm>Load balancers</DescriptionListTerm>
                     <DescriptionListDescription>
-                        {loadBalancerSummary(construct.loadBalancerCount, construct.loadBalancerGroupCount)}{' '}
-                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>({NOT_COLLECTED})</span>
+                        <LoadBalancerOverview construct={construct} services={services} />
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
@@ -495,9 +566,12 @@ const RelationshipsBody: React.FC<ConstructDrawerBodyProps> = ({ construct, mode
  * database is at hand the model's own view of the construct is shown instead,
  * labeled as derived.
  */
-const ConfigBody: React.FC<ConstructDrawerBodyProps> = ({ construct, database, databaseNode }) => {
+const ConfigBody: React.FC<DrawerBodyProps> = ({ construct, database, databaseNode, services }) => {
     const isDarkTheme = useIsDarkTheme();
-    const { source, payload } = configPayloadFor(construct, database ?? null);
+    // The same node's database with the services section, once it has
+    // arrived, so the raw rows include the load balancer rows referenced.
+    const configDatabase = services.status === 'ready' ? services.database : database ?? null;
+    const { source, payload } = configPayloadFor(construct, configDatabase);
     const caption =
         source === 'nb-rows'
             ? `${ovnKindFor(construct).table} rows${databaseNode ? ` from node ${databaseNode}` : ''}`
@@ -727,12 +801,190 @@ const PortsBody: React.FC<ConstructDrawerBodyProps> = ({
     );
 };
 
-type ConstructTabId = 'overview' | 'relationships' | 'ports' | 'config';
+/** "cluster", or "node-local" with the exact scope and node as a tooltip. */
+const ScopeCell: React.FC<{ row: ServiceVipRow }> = ({ row }) => {
+    if (row.scope === 'cluster' || row.scope === 'unknown') return <>{row.scope}</>;
+    return <span title={`${row.scope}${row.node ? ` on ${row.node}` : ''}`}>node-local</span>;
+};
+
+const ServiceName: React.FC<{ row: ServiceVipRow }> = ({ row }) =>
+    row.service && row.service.kind === 'Service' ? (
+        <Link
+            to={getResourcePath({
+                apiVersion: 'v1',
+                kind: 'Service',
+                namespace: row.service.namespace,
+                name: row.service.name,
+            })}
+            title={row.loadBalancer.name}
+        >
+            {serviceLabel(row)}
+        </Link>
+    ) : (
+        <code>{serviceLabel(row)}</code>
+    );
+
+/**
+ * The Service VIPs a switch or router sees: its direct load balancers plus
+ * the members of every load balancer group it attaches, one row per VIP.
+ * Rendering is capped after filtering because the row count follows the
+ * cluster's Service count, not the node's size. Keyed by construct uuid from
+ * the parent so expansion and the filter reset on a different construct.
+ */
+const ServicesBody: React.FC<DrawerBodyProps> = ({ services, databaseNode }) => {
+    const [filter, setFilter] = React.useState('');
+    const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
+    const attachment = services.status === 'ready' ? services.attachment : undefined;
+    const allRows = React.useMemo(() => (attachment ? serviceVipRows(attachment) : []), [attachment]);
+
+    if (!attachment) {
+        return services.status === 'loading' ? (
+            <div><Spinner size="md" aria-label="Loading services" /> Loading services…</div>
+        ) : (
+            <div style={SUBTLE_TEXT}>Load balancer rows were not collected for this node.</div>
+        );
+    }
+
+    const summary = summarizeAttachment(attachment);
+    if (allRows.length === 0) {
+        return (
+            <>
+                <div data-testid="services-empty">{attachmentSummaryText(summary)}.</div>
+                <div className="pf-u-mt-sm" style={SUBTLE_TEXT}>
+                    No Service VIP is programmed here, so workloads behind this construct do not reach
+                    ClusterIP Services through it.
+                </div>
+            </>
+        );
+    }
+
+    const query = filter.trim().toLowerCase();
+    const matches = query === '' ? allRows : allRows.filter((row) => serviceVipRowMatches(row, query));
+    const rows = matches.slice(0, MAX_SERVICE_ROWS);
+
+    const toggle = (key: string) =>
+        setExpanded((current) => {
+            const next = new Set(current);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+
+    const columns = ['Service', 'Protocol', 'VIP', 'Backends', 'Scope', 'Source'];
+
+    return (
+        <>
+            <Toolbar inset={{ default: 'insetNone' }} className="pf-u-pb-sm">
+                <ToolbarContent>
+                    <ToolbarItem>
+                        <TextInput
+                            aria-label="Filter services"
+                            type="search"
+                            placeholder={`Filter ${allRows.length} VIPs`}
+                            value={filter}
+                            onChange={(_event, value) => setFilter(value)}
+                        />
+                    </ToolbarItem>
+                </ToolbarContent>
+            </Toolbar>
+            <div className="pf-u-mb-sm" style={SUBTLE_TEXT}>
+                {attachmentSummaryText(summary)}
+                {databaseNode ? ` · Load_Balancer rows from node ${databaseNode}` : ''}
+            </div>
+            {matches.length > rows.length && (
+                <div className="pf-u-mb-sm" data-testid="services-cap">
+                    Showing {rows.length} of {matches.length} VIPs; narrow the filter to see the rest.
+                </div>
+            )}
+            <Table aria-label="Service load balancers" variant="compact" isExpandable>
+                <Thead>
+                    <Tr>
+                        <Th screenReaderText="Row expansion" />
+                        {columns.map((column) => <Th key={column}>{column}</Th>)}
+                    </Tr>
+                </Thead>
+                {rows.map((row, rowIndex) => {
+                    const isExpanded = expanded.has(row.key);
+                    const options = row.loadBalancer.options ?? {};
+                    const noEndpoints = row.vip !== '' && row.backends.length === 0;
+                    return (
+                        <Tbody key={row.key} isExpanded={isExpanded}>
+                            <Tr data-testid={`service-row-${row.key}`}>
+                                <Td
+                                    expand={{
+                                        rowIndex,
+                                        isExpanded,
+                                        onToggle: () => toggle(row.key),
+                                        expandId: `service-${rowIndex}`,
+                                    }}
+                                />
+                                <Td dataLabel="Service"><ServiceName row={row} /></Td>
+                                <Td dataLabel="Protocol">{row.protocol}</Td>
+                                <Td dataLabel="VIP">
+                                    {row.vip ? <code>{row.vip}</code> : <span style={SUBTLE_TEXT}>—</span>}
+                                </Td>
+                                <Td dataLabel="Backends">
+                                    {noEndpoints
+                                        ? <Label isCompact color="yellow">No endpoints</Label>
+                                        : row.backends.length}
+                                </Td>
+                                <Td dataLabel="Scope"><ScopeCell row={row} /></Td>
+                                <Td dataLabel="Source">{row.sources.join(', ')}</Td>
+                            </Tr>
+                            <Tr isExpanded={isExpanded}>
+                                <Td />
+                                <Td dataLabel="Details" colSpan={columns.length}>
+                                    <ExpandableRowContent>
+                                        {isExpanded && (
+                                            <>
+                                                <div><strong>Backends</strong></div>
+                                                {noEndpoints ? (
+                                                    <div style={SUBTLE_TEXT}>
+                                                        None: the Service has no ready endpoints
+                                                        {options.reject === 'true'
+                                                            ? ', and OVN rejects connections to this VIP.'
+                                                            : '.'}
+                                                    </div>
+                                                ) : (
+                                                    <CodeLines items={row.backends} />
+                                                )}
+                                                <div className="pf-u-mt-sm">
+                                                    <strong>Load balancer</strong>{' '}
+                                                    <code>{row.loadBalancer.name}</code>
+                                                </div>
+                                                {options.affinity_timeout && (
+                                                    <div>
+                                                        <strong>Session affinity</strong>{' '}
+                                                        {options.affinity_timeout}s
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </ExpandableRowContent>
+                                </Td>
+                            </Tr>
+                        </Tbody>
+                    );
+                })}
+                {rows.length === 0 && (
+                    <Tbody>
+                        <Tr>
+                            <Td colSpan={columns.length + 1}>No services match.</Td>
+                        </Tr>
+                    </Tbody>
+                )}
+            </Table>
+        </>
+    );
+};
+
+type ConstructTabId = 'overview' | 'relationships' | 'ports' | 'services' | 'config';
 
 const CONSTRUCT_TABS: ReadonlyArray<{ id: ConstructTabId; title: string }> = [
     { id: 'overview', title: 'Overview' },
     { id: 'relationships', title: 'Relationships' },
     { id: 'ports', title: 'Ports' },
+    { id: 'services', title: 'Services' },
     { id: 'config', title: 'Config' },
 ];
 
@@ -740,6 +992,48 @@ const CONSTRUCT_TABS: ReadonlyArray<{ id: ConstructTabId; title: string }> = [
  * are out of scope for the Ports tab). */
 export const hasPortsTab = (construct: LadderConstruct): boolean =>
     ovnKindFor(construct).table === 'Logical_Switch';
+
+/** A switch or router that attaches a load balancer or a load balancer
+ * group, even an empty one: the constructs the Services tab is about. */
+export const hasLoadBalancerAttachment = (construct: LadderConstruct): boolean =>
+    (construct.kind === 'router' || construct.kind === 'switch') &&
+    construct.loadBalancerCount + construct.loadBalancerGroupCount > 0;
+
+/** The optional snapshot sections the drawer renders. The policy plane
+ * (ovn-recon-e2b.5) adds its section here so both arrive in one request. */
+const SERVICES_SECTIONS: readonly SnapshotSection[] = ['services'];
+const NO_SECTIONS: readonly SnapshotSection[] = [];
+
+/**
+ * Resolve the construct's load balancers from the services section. The
+ * ladder pages fetch without sections, so the section normally arrives
+ * through a second request to the node `database` came from (the
+ * representative zone on the cluster view); a database that already carries
+ * it is used as is.
+ */
+const useServices = ({
+    construct,
+    database,
+    databaseNode,
+    sectionsRefreshKey,
+}: ConstructDrawerBodyProps): ServicesState => {
+    const wanted = hasLoadBalancerAttachment(construct);
+    const carried = hasServicesSection(database) ? database : undefined;
+    const fetched = useOptionalSections(
+        wanted && !carried ? databaseNode : undefined,
+        wanted && !carried ? SERVICES_SECTIONS : NO_SECTIONS,
+        sectionsRefreshKey,
+    );
+    const servicesDatabase = carried ?? fetched.database;
+
+    return React.useMemo<ServicesState>(() => {
+        if (!wanted) return { status: 'none' };
+        const attachment = loadBalancersFor(construct, servicesDatabase);
+        if (attachment && servicesDatabase) return { status: 'ready', attachment, database: servicesDatabase };
+        if (fetched.loading) return { status: 'loading' };
+        return { status: 'absent', error: fetched.error };
+    }, [wanted, construct, servicesDatabase, fetched.loading, fetched.error]);
+};
 
 /**
  * Rendered directly under the page's DrawerHead. The tab strip sits flush
@@ -753,12 +1047,20 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = (props) => {
     // physical drawer. A freshly opened drawer starts at Overview because the
     // component mounts anew (the pages unmount it when nothing is selected).
     const [activeTab, setActiveTab] = React.useState<ConstructTabId>('overview');
+    const services = useServices(props);
     // Hopping from a switch's Ports tab to a router (via Relationships) lands
     // on Overview; the stored choice is kept so a hop back to a switch returns
-    // to Ports.
+    // to Ports. The Services tab follows the same rule: it shows on a switch
+    // or router that attaches load balancers, once the services section is
+    // loading or loaded, and not at all when the collector did not deliver it.
     const showPorts = hasPortsTab(props.construct);
-    const tabs = showPorts ? CONSTRUCT_TABS : CONSTRUCT_TABS.filter((tab) => tab.id !== 'ports');
-    const effectiveTab: ConstructTabId = activeTab === 'ports' && !showPorts ? 'overview' : activeTab;
+    const showServices = services.status === 'ready' || services.status === 'loading';
+    const tabs = CONSTRUCT_TABS.filter(
+        (tab) => (tab.id !== 'ports' || showPorts) && (tab.id !== 'services' || showServices),
+    );
+    const effectiveTab: ConstructTabId =
+        (activeTab === 'ports' && !showPorts) || (activeTab === 'services' && !showServices) ? 'overview' : activeTab;
+    const bodyProps: DrawerBodyProps = { ...props, services };
 
     return (
         <>
@@ -769,10 +1071,11 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = (props) => {
                 aria-label="Construct details"
             />
             <DrawerPanelBody>
-                {effectiveTab === 'overview' && <OverviewBody {...props} />}
+                {effectiveTab === 'overview' && <OverviewBody {...bodyProps} />}
                 {effectiveTab === 'relationships' && <RelationshipsBody {...props} />}
                 {effectiveTab === 'ports' && <PortsBody key={props.construct.uuid} {...props} />}
-                {effectiveTab === 'config' && <ConfigBody {...props} />}
+                {effectiveTab === 'services' && <ServicesBody key={props.construct.uuid} {...bodyProps} />}
+                {effectiveTab === 'config' && <ConfigBody {...bodyProps} />}
             </DrawerPanelBody>
         </>
     );

@@ -4,7 +4,8 @@ import { act } from 'react';
 
 import { LogicalDatabase, LogicalTopologySnapshot } from '../types';
 import { buildLadderModel } from './logicalLadderModel';
-import ConstructDrawerBody, { natRuleText, staticRouteText } from './ConstructDrawerBody';
+import ConstructDrawerBody, { MAX_SERVICE_ROWS, natRuleText, staticRouteText } from './ConstructDrawerBody';
+import { fetchCollectorSnapshot } from './collectorApi';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 
@@ -19,6 +20,13 @@ jest.mock('@patternfly/react-code-editor', () => ({
     CodeEditor: ({ code }: { code: string }) => <pre data-testid="code-editor">{code}</pre>,
     Language: { json: 'json' },
 }));
+
+// The drawer loads the optional sections itself; only the request is faked.
+jest.mock('./collectorApi', () => ({
+    ...jest.requireActual('./collectorApi'),
+    fetchCollectorSnapshot: jest.fn(),
+}));
+const fetchSnapshot = fetchCollectorSnapshot as jest.MockedFunction<typeof fetchCollectorSnapshot>;
 
 const database = (cnv1 as unknown as LogicalTopologySnapshot).database as LogicalDatabase;
 const model = buildLadderModel(database);
@@ -529,5 +537,274 @@ describe('ConstructDrawerBody Ports tab', () => {
         // And back to a switch returns to Ports.
         renderConstruct('join', { onSelectConstruct: jest.fn() });
         expect(selectedTab()).toBe('Ports');
+    });
+});
+
+describe('ConstructDrawerBody Services tab', () => {
+    let container: HTMLDivElement;
+    let root: Root;
+
+    // What the ladder pages hold: the same database without the optional
+    // sections, which only a request with include=services returns.
+    const ladderDatabase: LogicalDatabase = { ...database };
+    delete ladderDatabase.loadBalancers;
+    delete ladderDatabase.loadBalancerGroups;
+    const udnSwitch = 'cluster_udn_example.p.cudn_ovn_layer2_switch';
+
+    beforeEach(() => {
+        fetchSnapshot.mockReset();
+        container = document.createElement('div');
+        document.body.appendChild(container);
+        root = createRoot(container);
+    });
+
+    afterEach(() => {
+        act(() => root.unmount());
+        container.remove();
+    });
+
+    const renderConstruct = (
+        name: string,
+        props: Partial<React.ComponentProps<typeof ConstructDrawerBody>> = { database, databaseNode: 'cnv-1' },
+    ) => {
+        const construct = byName(name);
+        expect(construct).toBeDefined();
+        act(() => {
+            root.render(<ConstructDrawerBody construct={construct!} model={model} {...props} />);
+        });
+    };
+
+    const tabLabels = () => [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
+    const selectedTab = () =>
+        [...container.querySelectorAll('button[aria-selected="true"]')].map((tab) => tab.textContent)[0];
+    const clickTab = (label: string) => {
+        const tab = [...container.querySelectorAll('button')].find((button) => button.textContent === label);
+        expect(tab).toBeDefined();
+        act(() => {
+            tab!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+    };
+    const serviceRows = () => [...container.querySelectorAll('tr[data-testid^="service-row-"]')];
+    const setFilter = (value: string) => {
+        const input = container.querySelector<HTMLInputElement>('input[aria-label="Filter services"]');
+        expect(input).not.toBeNull();
+        act(() => {
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            setter?.call(input, value);
+            input!.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+    };
+    const overviewValue = (term: string) => {
+        const group = [...container.querySelectorAll('dt')].find((candidate) => candidate.textContent === term);
+        return group?.parentElement?.querySelector('dd')?.textContent ?? '';
+    };
+
+    it('offers the tab on constructs that attach load balancers, and only those', () => {
+        renderConstruct('cnv-1');
+        expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Ports', 'Services', 'Config']);
+
+        renderConstruct('GR_cnv-1');
+        expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Services', 'Config']);
+
+        renderConstruct(udnSwitch);
+        expect(tabLabels()).toContain('Services');
+
+        renderConstruct('ovn_cluster_router');
+        expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Config']);
+
+        renderConstruct('join');
+        expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Ports', 'Config']);
+        expect(fetchSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('replaces the not-collected note on the Overview with direct and per-group counts', () => {
+        renderConstruct('cnv-1');
+        const value = overviewValue('Load balancers');
+        expect(value).toMatch(/^22 direct · \d+ via clusterLBGroup · 0 via clusterSwitchLBGroup/);
+        expect(value).toMatch(/\d+ VIPs without endpoints$/);
+        expect(value).not.toContain('not collected');
+
+        renderConstruct('GR_cnv-1');
+        expect(overviewValue('Load balancers')).toMatch(/^22 direct · \d+ via clusterLBGroup · 0 via clusterRouterLBGroup/);
+    });
+
+    it('says a UDN switch sees no load balancers because its groups are empty', () => {
+        renderConstruct(udnSwitch);
+        const expected =
+            '0 load balancers; groups cluster_udn_example.p.cudn_clusterLBGroup and ' +
+            'cluster_udn_example.p.cudn_clusterSwitchLBGroup are empty';
+        expect(overviewValue('Load balancers')).toBe(expected);
+
+        clickTab('Services');
+        expect(container.querySelector('[data-testid="services-empty"]')?.textContent).toBe(`${expected}.`);
+        expect(serviceRows()).toHaveLength(0);
+        expect(container.querySelector('table')).toBeNull();
+    });
+
+    it('caps the rendered rows and says how many matched', () => {
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        expect(serviceRows()).toHaveLength(MAX_SERVICE_ROWS);
+        const cap = container.querySelector('[data-testid="services-cap"]')?.textContent ?? '';
+        expect(cap).toMatch(new RegExp(`^Showing ${MAX_SERVICE_ROWS} of \\d+ VIPs; narrow the filter`));
+        expect(Number(/of (\d+) VIPs/.exec(cap)?.[1])).toBeGreaterThan(MAX_SERVICE_ROWS);
+        expect(container.textContent).toContain('Load_Balancer rows from node cnv-1');
+
+        // A filter that brings the matches under the cap drops the notice.
+        setFilter('openshift-dns/');
+        expect(container.querySelector('[data-testid="services-cap"]')).toBeNull();
+        expect(serviceRows().length).toBeGreaterThan(0);
+        expect(serviceRows().length).toBeLessThan(MAX_SERVICE_ROWS);
+    });
+
+    it('finds the Service behind a VIP and links to it', () => {
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        setFilter('172.30.0.1:443');
+        const rows = serviceRows();
+        expect(rows).toHaveLength(1);
+        const link = rows[0].querySelector('a');
+        expect(link?.textContent).toBe('default/kubernetes');
+        expect(link?.getAttribute('href')).toBe('/k8s/ns/default/core~v1~Service/kubernetes');
+        const cells = [...rows[0].querySelectorAll('td')].map((cell) => cell.textContent);
+        expect(cells.slice(2)).toEqual(['tcp', '172.30.0.1:443', '3', 'node-local', 'direct']);
+        expect(rows[0].querySelector('span[title]')?.getAttribute('title')).toBe('node_router+switch on cnv-1');
+
+        setFilter('no-such-service');
+        expect(serviceRows()).toHaveLength(0);
+        expect(container.textContent).toContain('No services match.');
+    });
+
+    it('filters by backend, and shows the node switch only its own variant of a per-node Service', () => {
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        setFilter('172.30.0.10:53');
+        // DNS is materialised per node: the switch sees node_switch rows
+        // (TCP and UDP), the gateway router the node_router ones.
+        expect(serviceRows().map((row) => row.querySelectorAll('td')[2].textContent).sort()).toEqual(['tcp', 'udp']);
+        const backend = database.loadBalancers!.find(
+            (row) => row.name === 'Service_openshift-dns/dns-default_UDP_node_switch_cnv-1',
+        )!.vips['172.30.0.10:53'];
+        setFilter(backend);
+        expect(serviceRows().some((row) => row.textContent?.includes('openshift-dns/dns-default'))).toBe(true);
+    });
+
+    it('expands a row to its backends and flags a VIP without endpoints', () => {
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        setFilter('ovn-recon-fixture/dual-stack-echo');
+        const rows = serviceRows();
+        expect(rows.map((row) => row.querySelectorAll('td')[3].textContent)).toEqual([
+            '[fd02::fa0a]:8080',
+            '172.30.250.10:8080',
+        ]);
+        expect(rows[0].querySelectorAll('td')[6].textContent).toBe('clusterLBGroup');
+        act(() => {
+            rows[0].querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        expect(container.textContent).toContain('[fd01:0:0:5::c8]:8080');
+        expect(container.textContent).toContain('Service_ovn-recon-fixture/dual-stack-echo_TCP_cluster');
+
+        const idle = database.loadBalancers!.find((row) => Object.values(row.vips).includes(''))!;
+        const idleVip = Object.entries(idle.vips).find(([, backends]) => backends === '')![0];
+        setFilter(idleVip);
+        const idleRow = serviceRows().find((row) => row.textContent?.includes('No endpoints'));
+        expect(idleRow).toBeDefined();
+        act(() => {
+            idleRow!.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        expect(container.textContent).toContain('the Service has no ready endpoints');
+        expect(container.textContent).toContain('OVN rejects connections to this VIP');
+    });
+
+    it('adds the referenced load balancer rows to the Config tab', () => {
+        renderConstruct('cnv-1');
+        clickTab('Config');
+        const payload = JSON.parse(container.querySelector('[data-testid="code-editor"]')!.textContent ?? '{}') as {
+            loadBalancers?: Array<{ name: string }>;
+            loadBalancerGroups?: Array<{ name: string }>;
+        };
+        expect(payload.loadBalancers).toHaveLength(22);
+        expect(payload.loadBalancerGroups?.map((group) => group.name)).toEqual(['clusterLBGroup', 'clusterSwitchLBGroup']);
+    });
+
+    it('keeps the stored tab across a hop to a construct without services', () => {
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        setFilter('kubernetes');
+
+        renderConstruct('ovn_cluster_router');
+        expect(selectedTab()).toBe('Overview');
+
+        renderConstruct('GR_cnv-1');
+        expect(selectedTab()).toBe('Services');
+        // A different construct starts with a clean filter.
+        expect(container.querySelector<HTMLInputElement>('input[aria-label="Filter services"]')?.value).toBe('');
+    });
+
+    it('keeps the not-collected rendering when no section is at hand', () => {
+        renderConstruct('cnv-1', { database: ladderDatabase });
+        expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Ports', 'Config']);
+        expect(overviewValue('Load balancers')).toBe('22 direct · 2 groups (rows not collected yet)');
+        expect(fetchSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('loads the section from the node the ladder database came from', async () => {
+        let resolve: (snapshot: LogicalTopologySnapshot) => void = () => undefined;
+        fetchSnapshot.mockReturnValue(new Promise((done) => { resolve = done; }));
+
+        renderConstruct('cnv-1', { database: ladderDatabase, databaseNode: 'cnv-1', sectionsRefreshKey: 't1' });
+        expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+        expect(fetchSnapshot).toHaveBeenCalledWith('cnv-1', { include: ['services'] });
+        // The tab is offered while the section is on its way.
+        expect(tabLabels()).toContain('Services');
+        expect(overviewValue('Load balancers')).toBe('22 direct · 2 groups (loading…)');
+        clickTab('Services');
+        expect(container.textContent).toContain('Loading services');
+
+        await act(async () => resolve(cnv1 as unknown as LogicalTopologySnapshot));
+        expect(serviceRows()).toHaveLength(MAX_SERVICE_ROWS);
+        clickTab('Overview');
+        expect(overviewValue('Load balancers')).toMatch(/^22 direct · \d+ via clusterLBGroup/);
+
+        // A construct without load balancers costs no request.
+        renderConstruct('join', { database: ladderDatabase, databaseNode: 'cnv-1', sectionsRefreshKey: 't1' });
+        expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+        // Back on a construct with load balancers on the same node: the rows
+        // already loaded show at once while the request is repeated.
+        renderConstruct('GR_cnv-1', { database: ladderDatabase, databaseNode: 'cnv-1', sectionsRefreshKey: 't1' });
+        expect(overviewValue('Load balancers')).toMatch(/^22 direct · \d+ via clusterLBGroup/);
+        await act(async () => undefined);
+        expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+
+        // The same snapshot does not refetch; a newer one does.
+        renderConstruct('GR_cnv-1', { database: ladderDatabase, databaseNode: 'cnv-1', sectionsRefreshKey: 't1' });
+        await act(async () => undefined);
+        expect(fetchSnapshot).toHaveBeenCalledTimes(2);
+        renderConstruct('GR_cnv-1', { database: ladderDatabase, databaseNode: 'cnv-1', sectionsRefreshKey: 't2' });
+        await act(async () => undefined);
+        expect(fetchSnapshot).toHaveBeenCalledTimes(3);
+    });
+
+    it('drops the tab when the collector does not deliver the section', async () => {
+        // An older collector ignores include= and answers with the ladder.
+        fetchSnapshot.mockResolvedValue({
+            ...(cnv1 as unknown as LogicalTopologySnapshot),
+            database: ladderDatabase,
+        });
+        renderConstruct('cnv-1', { database: ladderDatabase, databaseNode: 'cnv-1' });
+        clickTab('Services');
+        await act(async () => undefined);
+        expect(tabLabels()).not.toContain('Services');
+        expect(selectedTab()).toBe('Overview');
+        expect(overviewValue('Load balancers')).toBe('22 direct · 2 groups (rows not collected yet)');
+    });
+
+    it('falls back to the reference counts when the request fails', async () => {
+        fetchSnapshot.mockRejectedValue(new Error('Collector request failed'));
+        renderConstruct('GR_cnv-1', { database: ladderDatabase, databaseNode: 'cnv-1' });
+        await act(async () => undefined);
+        expect(tabLabels()).not.toContain('Services');
+        expect(overviewValue('Load balancers')).toBe('22 direct · 2 groups (rows not collected yet)');
     });
 });

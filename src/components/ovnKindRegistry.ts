@@ -5,6 +5,7 @@ import {
     LogicalSwitchPortRow,
 } from '../types';
 import { LadderConstruct } from './logicalLadderModel';
+import { loadBalancersFor } from './serviceIndex';
 
 /**
  * Per-OVN-kind drawer behavior as DATA (ovn-recon-jxh), mirroring the physical
@@ -46,6 +47,27 @@ const capPorts = <T,>(ports: T[]): { ports: T[]; portsOmitted?: number } =>
         ? { ports: ports.slice(0, MAX_RAW_PORT_ROWS), portsOmitted: ports.length - MAX_RAW_PORT_ROWS }
         : { ports };
 
+/**
+ * The Load_Balancer rows set directly on a switch or router and the
+ * Load_Balancer_Group rows it attaches, when the database carries the
+ * services section and the construct references any. Group members stay
+ * uuids: clusterLBGroup alone holds every cluster-scoped Service, which is
+ * the Services tab's table, not a Config payload.
+ */
+const loadBalancerRows = (
+    construct: LadderConstruct,
+    database: LogicalDatabase,
+): { loadBalancers?: unknown[]; loadBalancerGroups?: unknown[] } => {
+    const attachment = loadBalancersFor(construct, database);
+    if (!attachment) return {};
+    return {
+        ...(attachment.direct.length > 0 ? { loadBalancers: attachment.direct } : {}),
+        ...(attachment.viaGroups.length > 0
+            ? { loadBalancerGroups: attachment.viaGroups.map(({ group }) => group) }
+            : {}),
+    };
+};
+
 const routerKind: OvnKindDefinition = {
     table: 'Logical_Router',
     rawRows(construct, database) {
@@ -72,6 +94,7 @@ const routerKind: OvnKindDefinition = {
             nat: (row.nat ?? []).map((uuid) => natByUuid.get(uuid)).filter(Boolean),
             staticRoutes: (row.staticRoutes ?? []).map((uuid) => routeByUuid.get(uuid)).filter(Boolean),
             ...(gatewayChassis.length > 0 ? { gatewayChassis } : {}),
+            ...loadBalancerRows(construct, database),
         };
     },
 };
@@ -89,6 +112,7 @@ const switchKind: OvnKindDefinition = {
                     .map((uuid) => portByUuid.get(uuid))
                     .filter((port): port is LogicalSwitchPortRow => Boolean(port)),
             ),
+            ...loadBalancerRows(construct, database),
         };
     },
 };

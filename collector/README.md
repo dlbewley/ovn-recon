@@ -54,10 +54,15 @@ what a response carries, so asking for a section never triggers a second
 collection. The aggregate endpoint honours `include` but a client that wants
 section data for a cluster-wide view should read it from one node's snapshot.
 
-The mechanism is ahead of the data: the collector does not populate the
-sections until the policy plane (`ovn-recon-e2b.5`) and the service plane
-(`ovn-recon-e2b.6`) add their tables and row types, so today a request with
-`include` returns the same payload as one without.
+The `services` section is populated: `loadBalancers` are the NB rows as
+stored (`vips` maps `"vip:port"` to the comma-separated backend list, empty
+for a VIP without endpoints; `externalIds` name the owning Service) and
+`loadBalancerGroups` are the named sets that switches and routers attach by
+uuid (`logicalSwitches[].loadBalancerGroup`, `logicalRouters[].loadBalancerGroup`).
+A switch or router sees its own `loadBalancer` rows plus the members of each
+group it attaches. The `policy` section is still ahead of its data: the
+collector does not populate it until the policy plane (`ovn-recon-e2b.5`)
+adds its tables and row types, so `include=policy` adds nothing yet.
 
 ### Response headers
 

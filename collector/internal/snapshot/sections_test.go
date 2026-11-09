@@ -69,8 +69,8 @@ func fullDatabase() *LogicalDatabase {
 		ACLs:               row,
 		PortGroups:         row,
 		AddressSets:        row,
-		LoadBalancers:      row,
-		LoadBalancerGroups: row,
+		LoadBalancers:      []LoadBalancerRow{{UUID: "lb", Name: "lb", VIPs: map[string]string{}}},
+		LoadBalancerGroups: []LoadBalancerGroupRow{{UUID: "lbg", Name: "lbg", LoadBalancerUUIDs: []string{"lb"}}},
 	}
 }
 
@@ -167,7 +167,7 @@ func TestProjectDoesNotModifyItsInput(t *testing.T) {
 func TestSectionEncodingSeparatesAbsentFromEmpty(t *testing.T) {
 	db := &LogicalDatabase{
 		ACLs:          []SectionRow{},
-		LoadBalancers: []SectionRow{{"uuid": "lb"}},
+		LoadBalancers: []LoadBalancerRow{{UUID: "lb", Name: "n", VIPs: map[string]string{"172.30.0.1:443": ""}}},
 	}
 	raw, err := json.Marshal(LogicalTopologySnapshot{Database: db})
 	if err != nil {
@@ -183,7 +183,7 @@ func TestSectionEncodingSeparatesAbsentFromEmpty(t *testing.T) {
 	if got := string(decoded.Database["acls"]); got != "[]" {
 		t.Fatalf("a collected, empty section must encode as [], got %q", got)
 	}
-	if got := string(decoded.Database["loadBalancers"]); got != `[{"uuid":"lb"}]` {
+	if got := string(decoded.Database["loadBalancers"]); got != `[{"uuid":"lb","name":"n","vips":{"172.30.0.1:443":""}}]` {
 		t.Fatalf("unexpected loadBalancers encoding %q", got)
 	}
 	for _, key := range []string{"portGroups", "addressSets", "loadBalancerGroups"} {
@@ -242,6 +242,26 @@ func TestDatabaseEncodingIsUnchangedWithoutSections(t *testing.T) {
 			t.Fatalf("decode %s as plain: %v", entry.Name(), err)
 		}
 
+		// With every section requested the fixture (which carries the
+		// services section since ovn-recon-e2b.6) encodes as the plain
+		// struct does.
+		var full, wantFull bytes.Buffer
+		if err := json.NewEncoder(&full).Encode(Project(snap, SectionSet{SectionPolicy: true, SectionServices: true})); err != nil {
+			t.Fatalf("encode %s: %v", entry.Name(), err)
+		}
+		if err := json.NewEncoder(&wantFull).Encode(plain); err != nil {
+			t.Fatalf("encode %s as plain: %v", entry.Name(), err)
+		}
+		if !bytes.Equal(full.Bytes(), wantFull.Bytes()) {
+			t.Fatalf("%s: full encoding changed (%d bytes, want %d)", entry.Name(), full.Len(), wantFull.Len())
+		}
+
+		// The default response is the plain encoding of the ladder tables:
+		// the same struct with the section fields unset.
+		if plain.Database != nil {
+			plain.Database.ACLs, plain.Database.PortGroups, plain.Database.AddressSets = nil, nil, nil
+			plain.Database.LoadBalancers, plain.Database.LoadBalancerGroups = nil, nil
+		}
 		var got, want bytes.Buffer
 		if err := json.NewEncoder(&got).Encode(Project(snap, nil)); err != nil {
 			t.Fatalf("encode %s: %v", entry.Name(), err)

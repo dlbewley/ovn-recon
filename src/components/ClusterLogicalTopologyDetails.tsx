@@ -192,7 +192,9 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
         if (!selectedConstruct || !topology) return null;
         const zone = selectedConstruct.zones?.[0];
         const snapshot = topology.snapshots.find((candidate) => candidate.metadata.nodeName === zone);
-        return snapshot?.database ? { node: zone, database: snapshot.database } : null;
+        return snapshot?.database
+            ? { node: zone, database: snapshot.database, generatedAt: snapshot.metadata?.generatedAt }
+            : null;
     }, [selectedConstruct, topology]);
 
     const snapshotJson = React.useMemo(() => {
@@ -317,6 +319,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                             onSelectConstruct={selectConstructFromDrawer}
                                             database={drawerDatabase?.database}
                                             databaseNode={drawerDatabase?.node}
+                                            sectionsRefreshKey={drawerDatabase?.generatedAt}
                                             nodeForChassis={nodeForChassis}
                                         />
                                     </>

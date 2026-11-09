@@ -47,8 +47,9 @@ export interface LadderConstruct extends ClassifiedConstruct {
     /** Administrative state (routers); undefined when the NB row leaves the
      * optional column unset, which OVN treats as enabled. */
     enabled?: boolean;
-    /** Reference counts for tables not yet collected: router policies,
-     * load balancers (direct and via groups), switch ACLs and QoS rules. */
+    /** Reference counts: router policies, switch ACLs and QoS rules (tables
+     * not yet collected), and load balancers set directly or attached as
+     * groups, which serviceIndex.ts resolves against the services section. */
     policyCount: number;
     loadBalancerCount: number;
     loadBalancerGroupCount: number;

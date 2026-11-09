@@ -25,9 +25,10 @@ var (
 	serviceKeys = []string{"loadBalancerGroups", "loadBalancers"}
 )
 
-// withSections stands in for a collector that gathers the optional tables:
-// the row shapes land with ovn-recon-e2b.5 and ovn-recon-e2b.6, so these
-// tests exercise the delivery mechanism with placeholder rows.
+// withSections stands in for a collector that gathers every optional table.
+// The policy rows are still placeholders (their shapes land with
+// ovn-recon-e2b.5); the services rows are typed, and a payload that already
+// carries them (the fixture corpus does) keeps its own.
 func withSections(payload snapshot.LogicalTopologySnapshot) snapshot.LogicalTopologySnapshot {
 	if payload.Database == nil {
 		return payload
@@ -36,10 +37,33 @@ func withSections(payload snapshot.LogicalTopologySnapshot) snapshot.LogicalTopo
 	db.ACLs = []snapshot.SectionRow{{"uuid": "acl-1", "priority": float64(1001)}}
 	db.PortGroups = []snapshot.SectionRow{{"uuid": "pg-1", "name": "clusterPortGroup"}}
 	db.AddressSets = []snapshot.SectionRow{}
-	db.LoadBalancers = []snapshot.SectionRow{{"uuid": "lb-1"}, {"uuid": "lb-2"}}
-	db.LoadBalancerGroups = []snapshot.SectionRow{{"uuid": "lbg-1", "name": "clusterLBGroup"}}
+	if db.LoadBalancers == nil {
+		db.LoadBalancers = []snapshot.LoadBalancerRow{
+			{UUID: "lb-1", Name: "Service_shop/web_TCP_cluster", Protocol: "tcp", VIPs: map[string]string{"172.30.80.5:443": "10.129.5.152:10443"}},
+			{UUID: "lb-2", Name: "Service_shop/idle_TCP_cluster", Protocol: "tcp", VIPs: map[string]string{"172.30.80.6:80": ""}},
+		}
+	}
+	if db.LoadBalancerGroups == nil {
+		db.LoadBalancerGroups = []snapshot.LoadBalancerGroupRow{{UUID: "lbg-1", Name: "clusterLBGroup", LoadBalancerUUIDs: []string{"lb-1", "lb-2"}}}
+	}
 	payload.Database = &db
 	return payload
+}
+
+// withoutSectionKeys drops the optional section keys from a sorted key list:
+// what a response without include= carries.
+func withoutSectionKeys(keys []string) []string {
+	section := map[string]bool{}
+	for _, key := range sortedUnion(policyKeys, serviceKeys) {
+		section[key] = true
+	}
+	ladder := []string{}
+	for _, key := range keys {
+		if !section[key] {
+			ladder = append(ladder, key)
+		}
+	}
+	return ladder
 }
 
 func get(t *testing.T, srv *Server, target string, header http.Header) *httptest.ResponseRecorder {
@@ -103,7 +127,9 @@ func TestIncludeOverFixtureCorpus(t *testing.T) {
 			t.Fatalf("decode fixture %s: %v", entry.Name(), err)
 		}
 		node := strings.TrimSuffix(entry.Name(), ".json")
-		todaysKeys[node] = databaseKeysOf(t, raw)
+		// The fixtures carry the services section since ovn-recon-e2b.6;
+		// the default response is the fixture without any section key.
+		todaysKeys[node] = withoutSectionKeys(databaseKeysOf(t, raw))
 		writeFixture(t, filepath.Join(storeDir, entry.Name()), withSections(fixture))
 	}
 	if len(todaysKeys) == 0 {
@@ -134,6 +160,54 @@ func TestIncludeOverFixtureCorpus(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestFixtureServicesSectionIsServedOnlyOnRequest runs the real fixture
+// corpus (no test double) through the file store: the services rows the
+// fixtures carry come back complete with include=services and not at all
+// without it, and the ladder part of the response is the same either way.
+func TestFixtureServicesSectionIsServedOnlyOnRequest(t *testing.T) {
+	srv := New(snapshot.NewFileStore(fixtureDir, ""))
+	checked := 0
+	for _, node := range []string{"cnv-1", "cnv-2", "ctrl-1"} {
+		raw, err := os.ReadFile(filepath.Join(fixtureDir, node+".json"))
+		if err != nil {
+			t.Fatalf("read fixture: %v", err)
+		}
+		var fixture snapshot.LogicalTopologySnapshot
+		if err := json.Unmarshal(raw, &fixture); err != nil {
+			t.Fatalf("decode fixture %s: %v", node, err)
+		}
+		if fixture.Database.LoadBalancers == nil {
+			continue
+		}
+		checked++
+
+		var plain, detail snapshot.LogicalTopologySnapshot
+		if err := json.Unmarshal(get(t, srv, "/api/v1/snapshots/"+node, nil).Body.Bytes(), &plain); err != nil {
+			t.Fatalf("decode default response: %v", err)
+		}
+		if plain.Database.LoadBalancers != nil || plain.Database.LoadBalancerGroups != nil {
+			t.Fatalf("%s: the default response must not carry the services section", node)
+		}
+		if err := json.Unmarshal(get(t, srv, "/api/v1/snapshots/"+node+"?include=services", nil).Body.Bytes(), &detail); err != nil {
+			t.Fatalf("decode services response: %v", err)
+		}
+		if !reflect.DeepEqual(detail.Database.LoadBalancers, fixture.Database.LoadBalancers) ||
+			!reflect.DeepEqual(detail.Database.LoadBalancerGroups, fixture.Database.LoadBalancerGroups) {
+			t.Fatalf("%s: include=services must return the fixture's rows unchanged", node)
+		}
+		if len(detail.Database.LoadBalancers) == 0 || len(detail.Database.LoadBalancerGroups) == 0 {
+			t.Fatalf("%s: expected service rows in the fixture", node)
+		}
+		detail.Database.LoadBalancers, detail.Database.LoadBalancerGroups = nil, nil
+		if !reflect.DeepEqual(plain.Database, detail.Database) {
+			t.Fatalf("%s: the ladder tables must be identical with and without include", node)
+		}
+	}
+	if checked < 2 {
+		t.Fatalf("expected at least two fixtures to carry the services section, got %d", checked)
 	}
 }
 

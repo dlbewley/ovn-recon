@@ -105,7 +105,8 @@ func (s *warningSink) append(code, message string) {
 }
 
 // collectTable runs one probe command and parses its table, reporting
-// failures as warnings so one bad table degrades rather than aborts.
+// failures as warnings so one bad table degrades rather than aborts. The
+// second result is false when the table could not be read.
 func collectTable[T any](
 	ctx context.Context,
 	runner Runner,
@@ -114,7 +115,7 @@ func collectTable[T any](
 	command []string,
 	parse func(string) ([]T, bool, error),
 	sink *warningSink,
-) []T {
+) ([]T, bool) {
 	logger := opts.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -125,7 +126,7 @@ func collectTable[T any](
 	if err != nil {
 		logger.Warn("OVN probe command failed", "resource", resource, "error", err)
 		sink.append("COMMAND_FAILED", fmt.Sprintf("%s command failed: %v", resource, err))
-		return []T{}
+		return []T{}, false
 	}
 
 	logProbeOutput(logger, opts.IncludeProbeOutput, command, raw)
@@ -134,19 +135,20 @@ func collectTable[T any](
 		logger.Warn("OVN probe parser failed", "resource", resource, "error", parseErr)
 		logProbeParseContext(logger, opts.IncludeProbeOutput, raw)
 		sink.append("PARSER_FAILED", fmt.Sprintf("%s parse failed: %v", resource, parseErr))
-		return []T{}
+		return []T{}, false
 	}
 	if normalized {
 		logger.Debug("OVN probe parser normalized input", "resource", resource)
 		sink.append("PARSER_NORMALIZED", "Input required normalization due to inconsistent OVN command output")
 	}
-	return rows
+	return rows, true
 }
 
 // collectNBTables reads every Northbound table in one ovsdb-client
 // transact. When that exec fails outright it falls back to one ovn-nbctl
 // list per table, so a cluster whose nbdb container lacks ovsdb-client still
-// yields a snapshot (non-atomic, flagged by NB_TRANSACT_FAILED).
+// yields a snapshot (non-atomic, flagged by NB_TRANSACT_FAILED). A table
+// that could not be read has no entry in the result.
 func collectNBTables(ctx context.Context, runner Runner, opts CollectOptions, sink *warningSink) map[string][]map[string]any {
 	logger := opts.Logger
 	if logger == nil {
@@ -164,7 +166,9 @@ func collectNBTables(ctx context.Context, runner Runner, opts CollectOptions, si
 				if opErr, failed := errByTable[table]; failed {
 					logger.Warn("OVN NB transact operation failed", "resource", table, "error", opErr)
 					sink.append("COMMAND_FAILED", fmt.Sprintf("%s select failed: %v", table, opErr))
-					rowsByTable[table] = []map[string]any{}
+					// decodeNBTransact left no entry for the table: the
+					// ladder mappers turn nil rows into an empty table,
+					// the section mappers into an absent one.
 				}
 			}
 			return rowsByTable
@@ -178,7 +182,9 @@ func collectNBTables(ctx context.Context, runner Runner, opts CollectOptions, si
 
 	rowsByTable := make(map[string][]map[string]any, len(nbTables))
 	for _, table := range nbTables {
-		rowsByTable[table] = collectTable(ctx, runner, opts, table, nbListCommand(table), parseTableRows, sink)
+		if rows, ok := collectTable(ctx, runner, opts, table, nbListCommand(table), parseTableRows, sink); ok {
+			rowsByTable[table] = rows
+		}
 	}
 	return rowsByTable
 }
@@ -187,6 +193,7 @@ func collectDatabase(ctx context.Context, runner Runner, opts CollectOptions) (*
 	sink := &warningSink{}
 
 	nb := collectNBTables(ctx, runner, opts, sink)
+	bridgeMappings, _ := collectTable(ctx, runner, opts, "Chassis", chassisCommand, ParseChassisBridgeMappings, sink)
 	database := &snapshot.LogicalDatabase{
 		LogicalRouters:     logicalRoutersFromRows(nb["Logical_Router"]),
 		LogicalRouterPorts: logicalRouterPortsFromRows(nb["Logical_Router_Port"]),
@@ -194,9 +201,14 @@ func collectDatabase(ctx context.Context, runner Runner, opts CollectOptions) (*
 		LogicalSwitchPorts: logicalSwitchPortsFromRows(nb["Logical_Switch_Port"]),
 		NATs:               natsFromRows(nb["NAT"]),
 		StaticRoutes:       staticRoutesFromRows(nb["Logical_Router_Static_Route"]),
-		BridgeMappings:     collectTable(ctx, runner, opts, "Chassis", chassisCommand, ParseChassisBridgeMappings, sink),
+		BridgeMappings:     bridgeMappings,
 		GatewayChassis:     gatewayChassisFromRows(nb["Gateway_Chassis"]),
 		NBGlobal:           nbGlobalFromRows(nb["NB_Global"]),
+		// Services section: a table that was read is a non-nil slice (an
+		// empty table encodes as []); one that could not be read stays nil
+		// and the key is absent, which clients render as "not collected".
+		LoadBalancers:      loadBalancersFromRows(nb["Load_Balancer"]),
+		LoadBalancerGroups: loadBalancerGroupsFromRows(nb["Load_Balancer_Group"]),
 	}
 
 	warnings := sink.warnings
