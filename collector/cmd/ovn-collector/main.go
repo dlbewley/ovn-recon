@@ -50,7 +50,14 @@ func main() {
 		// The cache only makes sense in front of live probing; in
 		// store-only mode fixtures are already instant and authoritative.
 		if cacheDir != "" {
-			cache, cacheErr := snapshot.NewDiskCache(cacheDir)
+			// Entries are stamped with this binary's build marker, so a
+			// volume filled by another collector version is recollected
+			// instead of trusted for a TTL after an upgrade.
+			build, buildErr := snapshot.ExecutableBuildMarker()
+			if buildErr != nil {
+				logger.Warn("collector build not identified; cache entries from earlier runs will be recollected", "error", buildErr)
+			}
+			cache, cacheErr := snapshot.NewDiskCache(cacheDir, build)
 			if cacheErr != nil {
 				logger.Warn("snapshot cache disabled", "dir", cacheDir, "error", cacheErr)
 			} else {
@@ -59,11 +66,11 @@ func main() {
 					logger.Warn("snapshot cache TTL raised to runtime floor", "requested", cacheTTL.String(), "effective", effectiveTTL.String())
 				}
 				srv = srv.WithCache(cache, effectiveTTL)
-				logger.Info("snapshot cache enabled", "dir", cacheDir, "ttl", effectiveTTL.String())
+				logger.Info("snapshot cache enabled", "dir", cacheDir, "ttl", effectiveTTL.String(), "build", build)
 
 				// One startup sweep warms missing/stale entries so the first
 				// request serves from cache; a PVC-backed cache with fresh
-				// entries makes it a no-op. No recurring refresh cycle runs —
+				// entries from this build makes it a no-op. No recurring refresh cycle runs —
 				// after this, revalidation is demand-driven per request.
 				go srv.WarmCache(context.Background())
 			}

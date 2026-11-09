@@ -45,9 +45,12 @@ type NodeLister interface {
 	ListNodes(ctx context.Context) ([]string, error)
 }
 
-// SnapshotCache stores zone snapshots between requests.
+// SnapshotCache stores zone snapshots between requests. Get returns only
+// entries written by the running collector build; GetAnyBuild also returns
+// entries left by another build, which may lack data this build collects.
 type SnapshotCache interface {
 	Get(nodeName string) (snapshot.LogicalTopologySnapshot, bool)
+	GetAnyBuild(nodeName string) (snapshot.LogicalTopologySnapshot, bool)
 	Put(nodeName string, payload snapshot.LogicalTopologySnapshot) error
 }
 
@@ -199,6 +202,10 @@ func requestedSections(w http.ResponseWriter, r *http.Request) (snapshot.Section
 // watching, and nothing runs when nobody is); a missing entry falls through
 // to a synchronous live probe (cached on success), then stale cache, then
 // file store — each fallback annotated so degraded provenance stays visible.
+//
+// An entry written by another collector build counts as missing however
+// young it is: it may lack tables this build collects, so it is recollected
+// synchronously rather than served, and only used if that collection fails.
 func (s *Server) collectZone(ctx context.Context, nodeName string) (snapshot.LogicalTopologySnapshot, error) {
 	logger := s.logger.With("node", nodeName)
 
@@ -229,9 +236,9 @@ func (s *Server) collectZone(ctx context.Context, nodeName string) (snapshot.Log
 		}
 
 		// A stale cache entry is still real observed data — prefer it over
-		// the synthetic fixture fallback.
+		// the synthetic fixture fallback, even one another build wrote.
 		if s.cache != nil {
-			if cached, ok := s.cache.Get(nodeName); ok {
+			if cached, ok := s.cache.GetAnyBuild(nodeName); ok {
 				logger.Warn("live OVN probe failed; serving stale cached snapshot", "error", probeErr, "generatedAt", cached.Metadata.GeneratedAt)
 				cached = appendFallbackWarning(cached, nodeName, probeErr)
 				cached = appendWarning(cached, "SNAPSHOT_STALE", fmt.Sprintf(
@@ -293,10 +300,11 @@ func (s *Server) refreshZoneAsync(nodeName string) {
 	}()
 }
 
-// WarmCache collects zones whose cache entries are missing or stale, so the
-// first request after startup serves warm. A PVC-backed cache with fresh
-// entries makes this a no-op; there is no recurring refresh cycle — after
-// startup, revalidation only happens on request (stale-while-revalidate).
+// WarmCache collects zones whose cache entries are missing, stale, or
+// written by another collector build, so the first request after startup
+// serves warm. A PVC-backed cache with fresh entries from this build makes
+// this a no-op; there is no recurring refresh cycle — after startup,
+// revalidation only happens on request (stale-while-revalidate).
 func (s *Server) WarmCache(ctx context.Context) {
 	if s.cache == nil || s.liveCollector == nil || s.nodeLister == nil {
 		return

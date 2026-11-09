@@ -47,22 +47,44 @@ This document defines the Day-1 semantics for Phase 2 snapshot delivery from the
     Zero configuration; cache re-warms after rescheduling.
   - `PVC` with `storage.claimName`: survives rescheduling; the claim must
     already exist. PVC mode without a claimName falls back to EmptyDir.
+- Build marker (ovn-recon-ztu): every entry records which collector build
+  wrote it, as a `cacheWriterBuild` key beside the snapshot's own keys in the
+  cache file. It is cache bookkeeping, not part of the snapshot contract, and
+  never appears in a response. The marker is a digest of the collector's own
+  executable, so nothing is bumped by hand: any rebuild gets a new marker,
+  and restarting the same image keeps it. An entry is *current* only when its
+  marker equals the running collector's. An entry from any other build, or
+  with no marker (written before the marker existed), is not current however
+  young it is, because a newer collector may read tables or columns the
+  writer did not. If the executable cannot be read the collector logs a
+  warning and uses a marker unique to that process, so nothing left by an
+  earlier run is trusted.
 - Request semantics (`collectZone`, per-node and aggregate paths alike):
-  1. Cache entry younger than TTL (by its own `generatedAt`, so freshness is
-     meaningful across restarts) → served as-is, no probe.
-  2. Stale entry → served immediately, and a single-flight background
-     revalidation refreshes it (stale-while-revalidate). Staleness stays
-     bounded near the TTL while anyone is watching; the entry's own
-     `generatedAt` carries the staleness signal to the UI freshness chip.
-  3. No entry → synchronous live probe; on success the result is written
-     back atomically (temp file + rename — a torn write reads as a miss).
-  4. Synchronous probe failure with no entry → fixture fallback with
-     `LIVE_PROBE_FAILED`; failed background revalidations are logged and the
-     stale entry keeps serving — real observed data beats fixtures.
+  1. Current entry younger than TTL (by its own `generatedAt`, so freshness
+     is meaningful across restarts) → served as-is, no probe.
+  2. Current but stale entry → served immediately, and a single-flight
+     background revalidation refreshes it (stale-while-revalidate).
+     Staleness stays bounded near the TTL while anyone is watching; the
+     entry's own `generatedAt` carries the staleness signal to the UI
+     freshness chip.
+  3. No current entry (none at all, or one from another build) →
+     synchronous live probe; on success the result is written back
+     atomically (temp file + rename — a torn write reads as a miss) under
+     this build's marker. An entry from another build is never served while
+     it revalidates: after an upgrade the first request for a node already
+     carries everything the new collector reads.
+  4. Synchronous probe failure → an entry from another build, if there is
+     one, is served with `LIVE_PROBE_FAILED` and `SNAPSHOT_STALE` and
+     `sourceHealth: degraded`, and the next request tries again; with no
+     entry at all, fixture fallback with `LIVE_PROBE_FAILED`. Failed
+     background revalidations are logged and the stale entry keeps serving —
+     real observed data beats fixtures.
 - Warm-up and idle behavior: one background sweep at collector startup
-  collects zones whose entries are missing or stale (a PVC-backed cache with
-  fresh entries makes it a no-op). There is NO recurring refresh cycle — an
-  idle collector runs zero probes; revalidation is demand-driven per request.
+  collects zones whose entries are missing, stale, or from another build (a
+  PVC-backed cache with fresh entries from the same build makes it a no-op;
+  after an upgrade it recollects every node). There is NO recurring refresh
+  cycle — an idle collector runs zero probes; revalidation is demand-driven
+  per request.
 
 ## Degraded and Error Semantics
 - `metadata.sourceHealth`:
