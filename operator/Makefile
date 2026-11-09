@@ -287,13 +287,28 @@ controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessar
 $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
+# Tool downloads from release hosts. --fail turns an HTTP error into a non-zero
+# exit, so an error page is never saved as the tool and run later as a shell
+# script; --retry rides out a transient 5xx. A curl download lands under a
+# temporary name and is moved into place only once complete, so a failed one
+# cannot satisfy the "already present" check on the next run.
+DOWNLOAD_ATTEMPTS ?= 8
+DOWNLOAD_RETRY_DELAY ?= 10
+CURL_DOWNLOAD ?= curl --fail --silent --show-error --location \
+	--retry $(DOWNLOAD_ATTEMPTS) --retry-delay $(DOWNLOAD_RETRY_DELAY) --retry-all-errors
+
 .PHONY: setup-envtest
 setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
 	@echo "Setting up envtest binaries for Kubernetes version $(ENVTEST_K8S_VERSION)..."
-	@$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path || { \
-		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
-		exit 1; \
-	}
+	@n=0; until $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path; do \
+		n=$$((n+1)); \
+		if [ $$n -ge $(DOWNLOAD_ATTEMPTS) ]; then \
+			echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
+			exit 1; \
+		fi; \
+		echo "envtest download failed (attempt $$n of $(DOWNLOAD_ATTEMPTS)); retrying in $(DOWNLOAD_RETRY_DELAY)s..."; \
+		sleep $(DOWNLOAD_RETRY_DELAY); \
+	done
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
@@ -329,8 +344,9 @@ ifeq (,$(wildcard $(OPERATOR_SDK)))
 	set -e ;\
 	mkdir -p $(dir $(OPERATOR_SDK)) ;\
 	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
-	chmod +x $(OPERATOR_SDK) ;\
+	$(CURL_DOWNLOAD) -o $(OPERATOR_SDK).download https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
+	chmod +x $(OPERATOR_SDK).download ;\
+	mv $(OPERATOR_SDK).download $(OPERATOR_SDK) ;\
 	}
 endif
 
@@ -382,8 +398,9 @@ ifeq (,$(wildcard $(OPM)))
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
 	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.55.0/$${OS}-$${ARCH}-opm ;\
-	chmod +x $(OPM) ;\
+	$(CURL_DOWNLOAD) -o $(OPM).download https://github.com/operator-framework/operator-registry/releases/download/v1.55.0/$${OS}-$${ARCH}-opm ;\
+	chmod +x $(OPM).download ;\
+	mv $(OPM).download $(OPM) ;\
 	}
 endif
 
