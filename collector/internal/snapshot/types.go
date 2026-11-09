@@ -56,8 +56,9 @@ type LogicalRouterRow struct {
 	Enabled *bool `json:"enabled,omitempty"`
 	// PolicyUUIDs reference Logical_Router_Policy rows (not yet collected).
 	PolicyUUIDs []string `json:"policies,omitempty"`
-	// LoadBalancerUUIDs and LoadBalancerGroupUUIDs reference Load_Balancer
-	// and Load_Balancer_Group rows (not yet collected).
+	// LoadBalancerUUIDs and LoadBalancerGroupUUIDs reference the
+	// Load_Balancer and Load_Balancer_Group rows of the services section
+	// (LogicalDatabase.LoadBalancers, LoadBalancerGroups).
 	LoadBalancerUUIDs      []string `json:"loadBalancer,omitempty"`
 	LoadBalancerGroupUUIDs []string `json:"loadBalancerGroup,omitempty"`
 	// Copp references the Copp (control-plane policing) row, when attached.
@@ -91,10 +92,10 @@ type LogicalSwitchRow struct {
 	UUID      string   `json:"uuid"`
 	Name      string   `json:"name"`
 	PortUUIDs []string `json:"ports"`
-	// ACLUUIDs, LoadBalancerUUIDs, LoadBalancerGroupUUIDs and QoSRuleUUIDs
-	// reference ACL, Load_Balancer, Load_Balancer_Group and QoS rows (not
-	// yet collected); they carry counts and refs for the policy and service
-	// planes.
+	// ACLUUIDs and QoSRuleUUIDs reference ACL and QoS rows (not yet
+	// collected). LoadBalancerUUIDs and LoadBalancerGroupUUIDs reference the
+	// Load_Balancer and Load_Balancer_Group rows of the services section
+	// (LogicalDatabase.LoadBalancers, LoadBalancerGroups).
 	ACLUUIDs               []string          `json:"acls,omitempty"`
 	LoadBalancerUUIDs      []string          `json:"loadBalancer,omitempty"`
 	LoadBalancerGroupUUIDs []string          `json:"loadBalancerGroup,omitempty"`
@@ -208,6 +209,42 @@ type NBGlobalRow struct {
 	ExternalIDs map[string]string `json:"externalIds,omitempty"`
 }
 
+// LoadBalancerRow transcribes one NB Load_Balancer row. ovn-kubernetes
+// writes one per Service, protocol and scope, and names the owning Service
+// in ExternalIDs ("k8s.ovn.org/kind", "k8s.ovn.org/owner" = namespace/name).
+type LoadBalancerRow struct {
+	UUID string `json:"uuid"`
+	Name string `json:"name"`
+	// Protocol is tcp, udp or sctp; empty when the optional column is unset,
+	// which OVN treats as tcp.
+	Protocol string `json:"protocol,omitempty"`
+	// VIPs maps "vip:port" (IPv6 as "[addr]:port") to the comma-separated
+	// "backend:port" list, exactly as stored. An empty value is a VIP with
+	// no endpoints. Splitting the list is the consumer's job.
+	VIPs    map[string]string `json:"vips"`
+	Options map[string]string `json:"options,omitempty"`
+	// SelectionFields are the hash fields for backend selection when set.
+	SelectionFields []string `json:"selectionFields,omitempty"`
+	// HealthCheckUUIDs reference Load_Balancer_Health_Check rows (not
+	// collected).
+	HealthCheckUUIDs []string `json:"healthCheck,omitempty"`
+	// IPPortMappings maps a backend IP to "port_name:source_ip" for health
+	// checks.
+	IPPortMappings map[string]string `json:"ipPortMappings,omitempty"`
+	ExternalIDs    map[string]string `json:"externalIds,omitempty"`
+}
+
+// LoadBalancerGroupRow transcribes one NB Load_Balancer_Group row: a named
+// set of load balancers that switches and routers attach as a unit. The
+// table has no external_ids column.
+type LoadBalancerGroupRow struct {
+	UUID string `json:"uuid"`
+	Name string `json:"name"`
+	// LoadBalancerUUIDs reference LoadBalancerRow.UUID; empty for a group
+	// with no members.
+	LoadBalancerUUIDs []string `json:"loadBalancers"`
+}
+
 // LogicalDatabase is the v2 table-oriented payload: a faithful transcription
 // of the NB tables the logical view consumes. Semantic classification
 // (network/role/node) is the frontend's job, not the collector's.
@@ -239,15 +276,15 @@ type LogicalDatabase struct {
 	PortGroups  []SectionRow `json:"portGroups,omitempty"`
 	AddressSets []SectionRow `json:"addressSets,omitempty"`
 	// Services section.
-	LoadBalancers      []SectionRow `json:"loadBalancers,omitempty"`
-	LoadBalancerGroups []SectionRow `json:"loadBalancerGroups,omitempty"`
+	LoadBalancers      []LoadBalancerRow      `json:"loadBalancers,omitempty"`
+	LoadBalancerGroups []LoadBalancerGroupRow `json:"loadBalancerGroups,omitempty"`
 }
 
-// SectionRow is the placeholder row type of the optional sections. The
-// section keys and their delivery are part of the contract; the row shapes
-// are not yet: ovn-recon-e2b.5 (policy) and ovn-recon-e2b.6 (services)
-// replace it with typed rows when they start collecting the tables. Until
-// then the collector never populates a section.
+// SectionRow is the placeholder row type of the policy section. The section
+// keys and their delivery are part of the contract; the row shapes are not
+// yet: ovn-recon-e2b.5 replaces it with typed rows when it starts collecting
+// the tables. Until then the collector never populates the policy section.
+// The services section is typed (LoadBalancerRow, LoadBalancerGroupRow).
 type SectionRow map[string]any
 
 // ClusterMetadata describes an aggregate collection across zones.

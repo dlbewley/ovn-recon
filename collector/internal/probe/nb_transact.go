@@ -22,6 +22,11 @@ var nbTables = []string{
 	"Logical_Router_Static_Route",
 	"Gateway_Chassis",
 	"NB_Global",
+	// The services section (snapshot.SectionServices). Kept last: a table an
+	// older NB schema lacks then fails its own select without aborting the
+	// ladder tables before it.
+	"Load_Balancer",
+	"Load_Balancer_Group",
 }
 
 // nbTransactCommand builds the single ovsdb-client exec that reads every NB

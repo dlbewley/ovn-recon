@@ -380,7 +380,8 @@ export interface LogicalRouterRow {
     enabled?: boolean;
     /** Logical_Router_Policy uuids (table not yet collected). */
     policies?: string[];
-    /** Load_Balancer / Load_Balancer_Group uuids (tables not yet collected). */
+    /** Load_Balancer / Load_Balancer_Group uuids, resolved by the `services`
+     * section (LogicalDatabase.loadBalancers, loadBalancerGroups). */
     loadBalancer?: string[];
     loadBalancerGroup?: string[];
     /** Copp uuid when control-plane policing is attached. */
@@ -410,9 +411,10 @@ export interface LogicalSwitchRow {
     uuid: string;
     name: string;
     ports: string[];
-    /** ACL, Load_Balancer, Load_Balancer_Group and QoS uuids (tables not
-     * yet collected); counts and refs for the policy and service planes. */
+    /** ACL and QoS uuids (tables not yet collected). */
     acls?: string[];
+    /** Load_Balancer / Load_Balancer_Group uuids, resolved by the `services`
+     * section (LogicalDatabase.loadBalancers, loadBalancerGroups). */
     loadBalancer?: string[];
     loadBalancerGroup?: string[];
     qosRules?: string[];
@@ -515,6 +517,45 @@ export interface NBGlobalRow {
     externalIds?: Record<string, string>;
 }
 
+/**
+ * One NB Load_Balancer row. ovn-kubernetes writes one per Service, protocol
+ * and scope, encodes the scope in the name
+ * (`Service_<ns>/<name>_<PROTO>_cluster`, or `..._node_router+switch_<node>`,
+ * `..._node_router_<node>`, `..._node_switch_<node>`) and names the owner in
+ * externalIds (`k8s.ovn.org/kind`, `k8s.ovn.org/owner` = namespace/name).
+ */
+export interface LoadBalancerRow {
+    uuid: string;
+    name: string;
+    /** tcp, udp or sctp; absent when unset, which OVN treats as tcp. */
+    protocol?: string;
+    /**
+     * `"vip:port"` (IPv6 as `"[addr]:port"`) to the comma-separated
+     * `"backend:port"` list, as stored. An empty string is a VIP without
+     * endpoints; split with `splitBackends` (serviceIndex.ts).
+     */
+    vips: Record<string, string>;
+    options?: Record<string, string>;
+    /** Hash fields for backend selection, when set. */
+    selectionFields?: string[];
+    /** Load_Balancer_Health_Check uuids (table not collected). */
+    healthCheck?: string[];
+    /** Backend IP to `port_name:source_ip`, for health checks. */
+    ipPortMappings?: Record<string, string>;
+    externalIds?: Record<string, string>;
+}
+
+/**
+ * One NB Load_Balancer_Group row: a named set of load balancers a switch or
+ * router attaches as a unit. The table has no external_ids column.
+ */
+export interface LoadBalancerGroupRow {
+    uuid: string;
+    name: string;
+    /** Member LoadBalancerRow uuids; empty for a group without members. */
+    loadBalancers: string[];
+}
+
 export interface LogicalDatabase {
     logicalRouters: LogicalRouterRow[];
     logicalRouterPorts: LogicalRouterPortRow[];
@@ -540,9 +581,9 @@ export interface LogicalDatabase {
     /** Section `policy`. */
     addressSets?: SectionRow[];
     /** Section `services`. */
-    loadBalancers?: SectionRow[];
+    loadBalancers?: LoadBalancerRow[];
     /** Section `services`. */
-    loadBalancerGroups?: SectionRow[];
+    loadBalancerGroups?: LoadBalancerGroupRow[];
 }
 
 /**
@@ -559,10 +600,11 @@ export const SNAPSHOT_SECTION_KEYS = {
 } as const satisfies Record<SnapshotSection, readonly (keyof LogicalDatabase)[]>;
 
 /**
- * Placeholder row type of the optional sections. The keys and their delivery
+ * Placeholder row type of the `policy` section. The keys and their delivery
  * are part of the contract; the row shapes arrive with the policy plane
- * (ovn-recon-e2b.5) and the service plane (ovn-recon-e2b.6), which replace
- * this with typed rows. Until then the collector never populates a section.
+ * (ovn-recon-e2b.5), which replaces this with typed rows. Until then the
+ * collector never populates that section. The `services` section is typed
+ * (LoadBalancerRow, LoadBalancerGroupRow).
  */
 export type SectionRow = Record<string, unknown>;
 

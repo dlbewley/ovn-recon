@@ -99,14 +99,14 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Load_Balancer uuids (table not yet collected)."
+                "description": "Load_Balancer uuids, resolved by database.loadBalancers (section 'services')."
               },
               "loadBalancerGroup": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 },
-                "description": "Load_Balancer_Group uuids (table not yet collected)."
+                "description": "Load_Balancer_Group uuids, resolved by database.loadBalancerGroups (section 'services')."
               },
               "copp": {
                 "type": "string",
@@ -208,14 +208,14 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Load_Balancer uuids (table not yet collected)."
+                "description": "Load_Balancer uuids, resolved by database.loadBalancers (section 'services')."
               },
               "loadBalancerGroup": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 },
-                "description": "Load_Balancer_Group uuids (table not yet collected)."
+                "description": "Load_Balancer_Group uuids, resolved by database.loadBalancerGroups (section 'services')."
               },
               "qosRules": {
                 "type": "array",
@@ -516,17 +516,86 @@
           }
         },
         "loadBalancers": {
-          "description": "Optional section 'services': Load_Balancer rows. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty. The row shape is a placeholder until ovn-recon-e2b.6 defines it.",
+          "description": "Optional section 'services': Load_Balancer rows. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty. logicalSwitches[].loadBalancer and logicalRouters[].loadBalancer reference these rows by uuid, as do loadBalancerGroups[].loadBalancers.",
           "type": "array",
           "items": {
-            "type": "object"
+            "type": "object",
+            "required": [
+              "uuid",
+              "name",
+              "vips"
+            ],
+            "properties": {
+              "uuid": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "description": "ovn-kubernetes encodes the scope: Service_<namespace>/<name>_<PROTOCOL>_cluster, or ..._node_router+switch_<node>, ..._node_router_<node>, ..._node_switch_<node> for rows materialised per node."
+              },
+              "protocol": {
+                "type": "string",
+                "description": "tcp, udp or sctp; absent when the optional column is unset, which OVN treats as tcp."
+              },
+              "vips": {
+                "$ref": "#/$defs/stringMap",
+                "description": "Maps \"vip:port\" (IPv6 as \"[addr]:port\") to the comma-separated \"backend:port\" list, as stored. An empty string is a VIP without endpoints."
+              },
+              "options": {
+                "$ref": "#/$defs/stringMap"
+              },
+              "selectionFields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Hash fields for backend selection, when set."
+              },
+              "healthCheck": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Load_Balancer_Health_Check uuids (table not collected)."
+              },
+              "ipPortMappings": {
+                "$ref": "#/$defs/stringMap",
+                "description": "Backend IP to \"port_name:source_ip\" for health checks."
+              },
+              "externalIds": {
+                "$ref": "#/$defs/stringMap",
+                "description": "ovn-kubernetes names the owner: k8s.ovn.org/kind (Service) and k8s.ovn.org/owner (namespace/name)."
+              }
+            },
+            "additionalProperties": false
           }
         },
         "loadBalancerGroups": {
-          "description": "Optional section 'services': Load_Balancer_Group rows. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty. The row shape is a placeholder until ovn-recon-e2b.6 defines it.",
+          "description": "Optional section 'services': Load_Balancer_Group rows, the named sets of load balancers that logicalSwitches[].loadBalancerGroup and logicalRouters[].loadBalancerGroup attach by uuid. Present only when the request names the section in ?include=. Absent means not requested or not collected; an empty array means collected and empty.",
           "type": "array",
           "items": {
-            "type": "object"
+            "type": "object",
+            "required": [
+              "uuid",
+              "name",
+              "loadBalancers"
+            ],
+            "properties": {
+              "uuid": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "loadBalancers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Member loadBalancers[].uuid values; empty for a group without members."
+              }
+            },
+            "additionalProperties": false
           }
         }
       },

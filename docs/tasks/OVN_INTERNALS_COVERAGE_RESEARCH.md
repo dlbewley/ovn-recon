@@ -48,20 +48,25 @@ collector table command, one types row, and one entry here."
 
 | NB table | Columns collected | Columns skipped (upstream 7.19.0) |
 |---|---|---|
-| `Logical_Switch` | name, ports, acls, qos_rules, load_balancer, load_balancer_group (uuids), other_config, external_ids | dns_records, copp, forwarding_groups |
+| `Logical_Switch` | name, ports, acls, qos_rules (uuids), load_balancer, load_balancer_group (uuids, resolved by the `services` section), other_config, external_ids | dns_records, copp, forwarding_groups |
 | `Logical_Switch_Port` | name, type, addresses, tag, port_security, up, enabled, dynamic_addresses, tag_request, parent_name, options, external_ids | peer, dhcpv4_options, dhcpv6_options, ha_chassis_group, mirror_rules, health_checks |
-| `Logical_Router` | name, ports, nat, static_routes, enabled, policies, load_balancer, load_balancer_group, copp (uuids), options, external_ids | — |
+| `Logical_Router` | name, ports, nat, static_routes, enabled, policies, copp (uuids), load_balancer, load_balancer_group (uuids, resolved by the `services` section), options, external_ids | — |
 | `Logical_Router_Port` | name, mac, networks, peer, enabled, gateway_chassis (resolved by `Gateway_Chassis`), status (`hosting-chassis`), options, external_ids | ipv6_ra_configs, ipv6_prefix, ha_chassis_group, dhcp_relay |
 | `NAT` | type, external_ip, logical_ip, logical_port, external_mac, gateway_port, priority, match, external_port_range, options, external_ids | allowed_ext_ips, exempted_ext_ips |
 | `Logical_Router_Static_Route` | ip_prefix, nexthop, policy, output_port, route_table, bfd, selection_fields, options, external_ids | — |
 | `Gateway_Chassis` | name, chassis_name, priority, options, external_ids | — |
 | `NB_Global` | name, nb_cfg, sb_cfg, hv_cfg, options (`northd_internal_version`), external_ids | connections, ssl, ipsec, *_timestamp |
+| `Load_Balancer` (section `services`) | name, protocol, vips (as stored), options, selection_fields, health_check (uuids), ip_port_mappings, external_ids | — |
+| `Load_Balancer_Group` (section `services`) | name, load_balancer (uuids) | — (the table has no external_ids) |
 | SB `Chassis` | other_config:ovn-bridge-mappings (local chassis only) | everything else |
 
-Of the 39 NB tables, eight are transcribed. Tier 1 is complete: the router,
+Of the 39 NB tables, ten are transcribed. Tier 1 is complete: the router,
 switch, NAT and route columns landed with `ovn-recon-e2b.3` and the
 `Logical_Switch_Port` slice (the columns a user asking "what does OVN do to
-this port" hits first) with `ovn-recon-e2b.4`, both on 2026-11-08.
+this port" hits first) with `ovn-recon-e2b.4`, both on 2026-11-08. Tier 3
+(the service plane) landed the same day with `ovn-recon-e2b.6`; its two
+tables are collected on every pass and delivered only with
+`?include=services`.
 
 ### 2.3 What the fixtures and a live cluster say is actually populated
 
@@ -848,6 +853,93 @@ that bind other beads are recorded here.
     after the page adds its tables to it. `.8` to `.6`, `.8` to `.7` and
     `.7` to `.5` are recorded as related, not blocking.
 
+### 2026-11-08: `ovn-recon-e2b.6` implemented
+
+Verified by running the collector out-of-cluster against the lab cluster
+(OVN 26.03.4, interconnect, 10 zones) next to a build of the previous
+commit, on a virtualization node and a control-plane node, and against the
+fixture corpus.
+
+1. **Two tables appended to `nbTables`, last.** `Load_Balancer` and
+   `Load_Balancer_Group` ride the same transact (and the same per-table
+   fallback). They sit at the end so an NB schema that lacks one fails its
+   own select without aborting the ladder tables before it. The collector's
+   row counts equal `ovn-nbctl list` on both nodes (345 and 354
+   `Load_Balancer`, 12 `Load_Balancer_Group`).
+2. **Rows as stored.** `LoadBalancerRow` is uuid, name, protocol (optional),
+   vips, options, selectionFields, healthCheck, ipPortMappings, externalIds;
+   `LoadBalancerGroupRow` is uuid, name, loadBalancers. `vips` keeps the NB
+   map verbatim: `"vip:port"` to the comma-separated backend list, with an
+   empty string for a VIP without endpoints. The plugin splits it
+   (`splitBackends`).
+3. **A table that could not be read is absent, not empty.** The `.9` note
+   asked for non-nil slices so an empty table encodes as `[]`. That holds for
+   a table that was read; a section table whose select failed (or was aborted
+   behind another failure) now stays nil, so the key is absent and the drawer
+   says "not collected" instead of "0 load balancers". `collectTable` reports
+   whether it read the table and a failed transact op leaves no entry; the
+   ladder mappers still turn that into `[]` for their required arrays.
+4. **The plugin treats the section as present only with both tables.**
+   `serviceIndex.ts` (pure, cached per database object) builds `lbByUuid`,
+   `groupByUuid` and `vipIndex`, and resolves a switch or router's refs with
+   `loadBalancersFor` (by uuid, then by name for the merged cluster view).
+   `vipIndex` maps a vips key to a list, not to one entry as designed: the
+   cluster DNS VIP alone is carried by four rows on a node (TCP and UDP, each
+   in a `node_router` and a `node_switch` variant). `scopeOf` parses only the
+   name's suffix, so a network-prefixed name still resolves, and returns
+   `unknown` for anything else.
+5. **Services tab: one row per VIP, capped at 200.** Shown on a switch or
+   router that attaches a load balancer or a group (even an empty one) once
+   the section is loading or loaded, and not at all when the collector does
+   not deliver it. Columns: Service (a link when the owner kind is Service),
+   protocol, VIP, backends (a count, or a "No endpoints" label), scope
+   (cluster or node-local, the exact scope and node in a tooltip) and source
+   (direct or the group name). The expanded row lists the backends, the
+   load balancer's name and its session affinity timeout. A text filter
+   covers Service, VIP and backend; past 200 matches the tab says how many
+   matched and asks for a narrower filter. A construct whose groups are all
+   empty gets the sentence instead of a table.
+6. **Overview line.** "22 direct · 319 via clusterLBGroup · 0 via
+   clusterSwitchLBGroup": every attached group is listed, empty ones
+   included, then "N VIPs without endpoints" when there are any. With
+   nothing programmed it reads "0 load balancers; groups A and B are empty".
+   Without the section the `.3` counts and "rows not collected yet" remain.
+7. **The drawer fetches the section itself.** `ConstructDrawerBody` calls
+   `useOptionalSections(databaseNode, ['services'], generatedAt)` only while
+   the selected construct attaches load balancers and the database it was
+   given does not already carry the section; the ladder pages' own request
+   is unchanged. The section list is one constant, so `.5` adds `policy` to
+   the same request. On the cluster view the node is the representative zone
+   the Config tab already uses. The Config tab gains the direct
+   `Load_Balancer` rows and the attached `Load_Balancer_Group` rows (members
+   left as uuids).
+8. **Fixtures carry the whole section on all three nodes.** The existing
+   switch and router rows already reference 22 direct load balancers and the
+   cluster group, and every one of those uuids still resolved live, so the
+   two tables were added as captured without touching an existing row; a
+   subset would have meant editing those refs. Rows are sorted by name. The
+   three groups of a network the fixtures do not carry were dropped. Each
+   fixture grew by about 250 KB.
+9. **Two findings differ from the refinement capture.** No live row has an
+   IPv6 VIP (the lab's service network is IPv4 only; the refinement's count
+   of 35 could not be reproduced), so the fixtures carry one synthetic
+   dual-stack row, `Service_ovn-recon-fixture/dual-stack-echo_TCP_cluster`,
+   added to `clusterLBGroup`; it is the only row not captured. And 12 of 541
+   VIPs had no endpoints at capture, against 47 of 576 earlier the same day.
+10. **Measured.** Virtualization node: default response 216 KB (44 KB
+    gzipped), the same byte count as the previous commit's build;
+    `?include=services` 394 KB (70 KB gzipped). Control-plane node: 140 KB
+    (27 KB) and 322 KB (54 KB). The section therefore costs about 180 KB, or
+    26 KB gzipped, per request. The disk cache for ten zones grew from 1.4 MB
+    to 3.1 MB. Per-zone collect time during a ten-zone warm-up was 0.6 to
+    1.8 s against 0.6 to 1.4 s for the previous build warming at the same
+    moment. Served from the fixture corpus, the default response of each
+    node is byte-identical to the previous commit's.
+11. **Not verified in a browser.** The tab and the Overview line are covered
+    by jsdom tests over the fixtures; they have not been looked at in a
+    running console, and whether the console's plugin proxy passes
+    `Content-Encoding` through is still open from `.9`.
+
 ## Initial Beads Backlog Mapping
 
 | Bead | Title | Section |
@@ -887,8 +979,8 @@ section 11.) Related, not blocking, since the `.7` and `.8` refinement:
 | Forwarding_Group | | no | 0 | never |
 | Gateway_Chassis | | no | 4 | tier 1 |
 | HA_Chassis / HA_Chassis_Group | | no | 0 | collect if free |
-| Load_Balancer | yes | no | 345 | tier 3 |
-| Load_Balancer_Group | yes | no | 12 | tier 3 |
+| Load_Balancer | yes | yes | 345 | tier 3 landed (`.6`) |
+| Load_Balancer_Group | yes | yes | 12 | tier 3 landed (`.6`) |
 | Load_Balancer_Health_Check | | no | 0 | tier 3 |
 | Logical_Router | yes | partial | 7 | tier 1 columns |
 | Logical_Router_Policy | | no | 18 | tier 4 |

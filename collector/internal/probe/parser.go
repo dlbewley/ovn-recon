@@ -337,6 +337,49 @@ func nbGlobalFromRows(rows []map[string]any) *snapshot.NBGlobalRow {
 	}
 }
 
+// loadBalancersFromRows maps decoded NB Load_Balancer rows to the snapshot
+// contract. Both probe paths feed it. vips is carried as stored: the value
+// is the comma-separated backend list and an empty string is a VIP without
+// endpoints, so the map keeps its empty values. A nil input (the table was
+// not read) stays nil so the section is absent rather than empty.
+func loadBalancersFromRows(rows []map[string]any) []snapshot.LoadBalancerRow {
+	if rows == nil {
+		return nil
+	}
+	loadBalancers := make([]snapshot.LoadBalancerRow, 0, len(rows))
+	for _, row := range rows {
+		loadBalancers = append(loadBalancers, snapshot.LoadBalancerRow{
+			UUID:             stringField(row, "_uuid"),
+			Name:             stringField(row, "name"),
+			Protocol:         optionalStringField(row, "protocol"),
+			VIPs:             stringMapField(row, "vips"),
+			Options:          stringMapField(row, "options"),
+			SelectionFields:  stringSliceField(row, "selection_fields"),
+			HealthCheckUUIDs: stringSliceField(row, "health_check"),
+			IPPortMappings:   stringMapField(row, "ip_port_mappings"),
+			ExternalIDs:      stringMapField(row, "external_ids"),
+		})
+	}
+	return loadBalancers
+}
+
+// loadBalancerGroupsFromRows maps decoded NB Load_Balancer_Group rows to the
+// snapshot contract. Both probe paths feed it. Nil in, nil out, as above.
+func loadBalancerGroupsFromRows(rows []map[string]any) []snapshot.LoadBalancerGroupRow {
+	if rows == nil {
+		return nil
+	}
+	groups := make([]snapshot.LoadBalancerGroupRow, 0, len(rows))
+	for _, row := range rows {
+		groups = append(groups, snapshot.LoadBalancerGroupRow{
+			UUID:              stringField(row, "_uuid"),
+			Name:              stringField(row, "name"),
+			LoadBalancerUUIDs: stringSliceField(row, "load_balancer"),
+		})
+	}
+	return groups
+}
+
 // ParseChassisBridgeMappings extracts localnet-to-bridge mappings from the
 // local chassis rows' other_config:ovn-bridge-mappings, whose value is a
 // comma-separated list of "localnet:bridge" pairs.

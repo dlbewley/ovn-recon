@@ -39,8 +39,36 @@ const nbTransactOutput = `[` +
 	`{"rows":[{"_uuid":["uuid","nat-1"],"_version":["uuid","v-nat-1"],"type":"snat","external_ip":"192.168.1.11","logical_ip":"10.244.0.0/24","logical_port":["set",[]],"external_mac":["set",[]],"gateway_port":["uuid","lrp-1"],"match":"ip4.dst == $a1","priority":10,"external_port_range":"32768-60999","options":["map",[]],"external_ids":["map",[]]}]},` +
 	`{"rows":[{"_uuid":["uuid","sr-1"],"_version":["uuid","v-sr-1"],"ip_prefix":"0.0.0.0/0","nexthop":"100.64.0.1","policy":["set",[]],"output_port":["set",[]],"route_table":"","bfd":["set",[]],"selection_fields":["set",["ip_src","ip_dst"]],"options":["map",[]],"external_ids":["map",[]]}]},` +
 	`{"rows":[{"_uuid":["uuid","gwc-1"],"_version":["uuid","v-gwc-1"],"name":"rtos-red-chassis-a","chassis_name":"chassis-a","priority":1,"options":["map",[]],"external_ids":["map",[]]}]},` +
-	`{"rows":[{"_uuid":["uuid","nbg-1"],"_version":["uuid","v-nbg-1"],"name":"worker-a","nb_cfg":147,"nb_cfg_timestamp":1794168187186,"sb_cfg":147,"sb_cfg_timestamp":1794168187190,"hv_cfg":146,"hv_cfg_timestamp":1794168187191,"ipsec":false,"connections":["set",[]],"ssl":["set",[]],"options":["map",[["name","worker-a"],["northd_internal_version","26.03.4-57.el9fdp-21.8.0-82.14"]]],"external_ids":["map",[]]}]}` +
+	`{"rows":[{"_uuid":["uuid","nbg-1"],"_version":["uuid","v-nbg-1"],"name":"worker-a","nb_cfg":147,"nb_cfg_timestamp":1794168187186,"sb_cfg":147,"sb_cfg_timestamp":1794168187190,"hv_cfg":146,"hv_cfg_timestamp":1794168187191,"ipsec":false,"connections":["set",[]],"ssl":["set",[]],"options":["map",[["name","worker-a"],["northd_internal_version","26.03.4-57.el9fdp-21.8.0-82.14"]]],"external_ids":["map",[]]}]},` +
+	nbLoadBalancerRows + `,` +
+	nbLoadBalancerGroupRows +
 	`]`
+
+// nbLoadBalancerRows is the Load_Balancer select result: a multi-VIP
+// ClusterIP load balancer (an IPv4 VIP with two backends, an IPv6 VIP, and a
+// VIP whose Service has no endpoints) with session affinity, and a
+// node-scoped UDP one.
+const nbLoadBalancerRows = `{"rows":[` +
+	`{"_uuid":["uuid","lb-1"],"_version":["uuid","v-lb-1"],"name":"Service_shop/web_TCP_cluster","protocol":"tcp",` +
+	`"vips":["map",[["172.30.80.5:443","10.129.5.152:10443,10.130.2.9:10443"],["172.30.80.5:8080",""],["[fd02::5a3c]:443","[fd01:0:0:5::98]:10443"]]],` +
+	`"options":["map",[["affinity_timeout","10800"],["event","false"],["hairpin_snat_ip","169.254.0.5 fd69::5"],["neighbor_responder","none"],["reject","true"],["skip_snat","false"]]],` +
+	`"selection_fields":["set",[]],"health_check":["set",[]],"ip_port_mappings":["map",[]],` +
+	`"external_ids":["map",[["k8s.ovn.org/kind","Service"],["k8s.ovn.org/owner","shop/web"]]]},` +
+	`{"_uuid":["uuid","lb-2"],"_version":["uuid","v-lb-2"],"name":"Service_openshift-dns/dns-default_UDP_node_router+switch_worker-a","protocol":"udp",` +
+	`"vips":["map",[["172.30.0.10:53","10.128.0.5:5353"]]],` +
+	`"options":["map",[["reject","true"]]],` +
+	`"selection_fields":["set",["ip_src","ip_dst"]],"health_check":["uuid","lbhc-1"],"ip_port_mappings":["map",[["10.128.0.5","pod-a:10.128.0.2"]]],` +
+	`"external_ids":["map",[["k8s.ovn.org/kind","Service"],["k8s.ovn.org/owner","openshift-dns/dns-default"]]]}` +
+	`]}`
+
+// nbLoadBalancerGroupRows is the Load_Balancer_Group select result: a group
+// with two members, one with a single member (a bare uuid on the wire), and
+// an empty one. The table has no external_ids column.
+const nbLoadBalancerGroupRows = `{"rows":[` +
+	`{"_uuid":["uuid","lbg-1"],"_version":["uuid","v-lbg-1"],"name":"clusterLBGroup","load_balancer":["set",[["uuid","lb-1"],["uuid","lb-2"]]]},` +
+	`{"_uuid":["uuid","lbg-2"],"_version":["uuid","v-lbg-2"],"name":"clusterSwitchLBGroup","load_balancer":["uuid","lb-2"]},` +
+	`{"_uuid":["uuid","lbg-3"],"_version":["uuid","v-lbg-3"],"name":"clusterRouterLBGroup","load_balancer":["set",[]]}` +
+	`]}`
 
 const chassisOutput = `{"headings":["other_config"],"data":[[["map",[["ovn-bridge-mappings","physnet-vmdata:br-vmdata,physnet:br-ex"],["ct-no-masked-label","true"]]]]]}`
 
@@ -63,6 +91,8 @@ func legacyNBOutputs() map[string]string {
 		strings.Join(nbListCommand("Logical_Router_Static_Route"), " "): `{"headings":["_uuid","ip_prefix","nexthop","policy","output_port","options","external_ids"],"data":[[["uuid","sr-1"],"0.0.0.0/0","100.64.0.1",["set",[]],["set",[]],["map",[]],["map",[]]]]}`,
 		strings.Join(nbListCommand("Gateway_Chassis"), " "):             `{"headings":["_uuid","name","chassis_name","priority","options","external_ids"],"data":[[["uuid","gwc-1"],"rtos-red-chassis-a","chassis-a",1,["map",[]],["map",[]]]]}`,
 		strings.Join(nbListCommand("NB_Global"), " "):                   `{"headings":["_uuid","name","nb_cfg","sb_cfg","hv_cfg","options","external_ids"],"data":[[["uuid","nbg-1"],"worker-a",147,147,146,["map",[["northd_internal_version","26.03.4"]]],["map",[]]]]}`,
+		strings.Join(nbListCommand("Load_Balancer"), " "):               `{"headings":["_uuid","name","protocol","vips","options","selection_fields","health_check","ip_port_mappings","external_ids"],"data":[[["uuid","lb-1"],"Service_shop/web_TCP_cluster","tcp",["map",[["172.30.80.5:443","10.129.5.152:10443,10.130.2.9:10443"],["172.30.80.5:8080",""]]],["map",[["reject","true"]]],["set",[]],["set",[]],["map",[]],["map",[["k8s.ovn.org/kind","Service"],["k8s.ovn.org/owner","shop/web"]]]]]}`,
+		strings.Join(nbListCommand("Load_Balancer_Group"), " "):         `{"headings":["_uuid","name","load_balancer"],"data":[[["uuid","lbg-1"],"clusterLBGroup",["set",[["uuid","lb-1"]]]],[["uuid","lbg-3"],"clusterRouterLBGroup",["set",[]]]]}`,
 	}
 }
 
@@ -468,6 +498,33 @@ func TestCollectSnapshotFallsBackToPerTableListWhenTransactFails(t *testing.T) {
 	if db.NBGlobal == nil || db.NBGlobal.NBCfg != 147 || db.NBGlobal.HVCfg != 146 || db.NBGlobal.Options["northd_internal_version"] != "26.03.4" {
 		t.Fatalf("fallback should read NB_Global: %#v", db.NBGlobal)
 	}
+	if len(db.LoadBalancers) != 1 || db.LoadBalancers[0].VIPs["172.30.80.5:8080"] != "" || len(db.LoadBalancers[0].VIPs) != 2 ||
+		db.LoadBalancers[0].ExternalIDs["k8s.ovn.org/owner"] != "shop/web" {
+		t.Fatalf("fallback should read Load_Balancer: %#v", db.LoadBalancers)
+	}
+	if len(db.LoadBalancerGroups) != 2 || len(db.LoadBalancerGroups[0].LoadBalancerUUIDs) != 1 || len(db.LoadBalancerGroups[1].LoadBalancerUUIDs) != 0 {
+		t.Fatalf("fallback should read Load_Balancer_Group: %#v", db.LoadBalancerGroups)
+	}
+}
+
+func TestCollectSnapshotLeavesSectionAbsentWhenItsTableCannotBeListed(t *testing.T) {
+	// An NB schema without Load_Balancer_Group on the fallback path: the
+	// ladder and the other section table still arrive.
+	outputs, errs := fallbackOutputs()
+	delete(outputs, strings.Join(nbListCommand("Load_Balancer_Group"), " "))
+	errs[strings.Join(nbListCommand("Load_Balancer_Group"), " ")] = errors.New("ovn-nbctl: unknown table")
+	runner := &fakeRunner{outputs: outputs, errs: errs}
+
+	snap, err := CollectSnapshot(context.Background(), runner, "worker-a", time.Now())
+	if err != nil {
+		t.Fatalf("collect snapshot failed unexpectedly: %v", err)
+	}
+	if snap.Database.LoadBalancerGroups != nil {
+		t.Fatalf("a table that failed to list should be absent, got %#v", snap.Database.LoadBalancerGroups)
+	}
+	if len(snap.Database.LoadBalancers) != 1 || len(snap.Database.LogicalSwitches) != 1 {
+		t.Fatalf("the remaining tables should survive: %#v", snap.Database)
+	}
 }
 
 func TestCollectSnapshotDegradesOnCommandFailure(t *testing.T) {
@@ -504,7 +561,7 @@ func TestCollectSnapshotDegradesOnTransactOperationError(t *testing.T) {
 		`{"rows":[{"_uuid":["uuid","ls-1"],"name":"red-net","ports":["set",[]],"other_config":["map",[]],"external_ids":["map",[]]}]},` +
 		`{"rows":[]},` +
 		`{"details":"boom","error":"syntax error"},` +
-		`null,null,null]`
+		`null,null,null,null,null]`
 	outputs := healthyOutputs()
 	outputs[strings.Join(nbTransactCommand(nbTables), " ")] = raw
 	runner := &fakeRunner{outputs: outputs}
@@ -516,7 +573,7 @@ func TestCollectSnapshotDegradesOnTransactOperationError(t *testing.T) {
 	if snap.Metadata.SourceHealth != "degraded" {
 		t.Fatalf("expected degraded source health, got %q", snap.Metadata.SourceHealth)
 	}
-	if len(snap.Warnings) != 4 {
+	if len(snap.Warnings) != 6 {
 		t.Fatalf("expected one warning per failed table, got %#v", snap.Warnings)
 	}
 	for _, warning := range snap.Warnings {
@@ -529,6 +586,106 @@ func TestCollectSnapshotDegradesOnTransactOperationError(t *testing.T) {
 	}
 	if len(snap.Database.NATs) != 0 || len(snap.Database.StaticRoutes) != 0 || len(snap.Database.GatewayChassis) != 0 || snap.Database.NBGlobal != nil {
 		t.Fatalf("failed and aborted tables should be empty: %#v", snap.Database)
+	}
+	// A section table that was not read is absent (nil), not empty: clients
+	// then show "not collected" instead of "no load balancers".
+	if snap.Database.LoadBalancers != nil || snap.Database.LoadBalancerGroups != nil {
+		t.Fatalf("aborted section tables should be nil: %#v %#v", snap.Database.LoadBalancers, snap.Database.LoadBalancerGroups)
+	}
+	if snap.Database.NATs == nil || snap.Database.StaticRoutes == nil {
+		t.Fatalf("ladder tables must stay non-nil (required arrays) when their select fails")
+	}
+}
+
+func TestCollectSnapshotCarriesServicesSection(t *testing.T) {
+	runner := &fakeRunner{outputs: healthyOutputs()}
+	snap, err := CollectSnapshot(context.Background(), runner, "worker-a", time.Now())
+	if err != nil {
+		t.Fatalf("collect snapshot failed: %v", err)
+	}
+	db := snap.Database
+
+	if len(db.LoadBalancers) != 2 {
+		t.Fatalf("expected two load balancers, got %#v", db.LoadBalancers)
+	}
+	cluster := db.LoadBalancers[0]
+	if cluster.UUID != "lb-1" || cluster.Name != "Service_shop/web_TCP_cluster" || cluster.Protocol != "tcp" {
+		t.Fatalf("unexpected load balancer identity: %#v", cluster)
+	}
+	// vips is carried as stored: backends stay one comma-separated string and
+	// a VIP without endpoints keeps its key with an empty value.
+	if len(cluster.VIPs) != 3 {
+		t.Fatalf("expected three VIPs, got %#v", cluster.VIPs)
+	}
+	if got := cluster.VIPs["172.30.80.5:443"]; got != "10.129.5.152:10443,10.130.2.9:10443" {
+		t.Fatalf("backends should not be split by the collector, got %q", got)
+	}
+	if backends, present := cluster.VIPs["172.30.80.5:8080"]; !present || backends != "" {
+		t.Fatalf("VIP without endpoints should keep an empty value, got %q present=%v", backends, present)
+	}
+	if got := cluster.VIPs["[fd02::5a3c]:443"]; got != "[fd01:0:0:5::98]:10443" {
+		t.Fatalf("unexpected IPv6 VIP backends %q", got)
+	}
+	if cluster.Options["affinity_timeout"] != "10800" || cluster.Options["hairpin_snat_ip"] != "169.254.0.5 fd69::5" || cluster.Options["reject"] != "true" {
+		t.Fatalf("unexpected load balancer options: %#v", cluster.Options)
+	}
+	if cluster.ExternalIDs["k8s.ovn.org/kind"] != "Service" || cluster.ExternalIDs["k8s.ovn.org/owner"] != "shop/web" {
+		t.Fatalf("unexpected load balancer external_ids: %#v", cluster.ExternalIDs)
+	}
+	if len(cluster.SelectionFields) != 0 || len(cluster.HealthCheckUUIDs) != 0 || len(cluster.IPPortMappings) != 0 {
+		t.Fatalf("empty optional columns should decode as empty: %#v", cluster)
+	}
+
+	nodeScoped := db.LoadBalancers[1]
+	if nodeScoped.Protocol != "udp" || nodeScoped.Name != "Service_openshift-dns/dns-default_UDP_node_router+switch_worker-a" {
+		t.Fatalf("unexpected node-scoped load balancer: %#v", nodeScoped)
+	}
+	if len(nodeScoped.SelectionFields) != 2 || nodeScoped.SelectionFields[0] != "ip_src" ||
+		len(nodeScoped.HealthCheckUUIDs) != 1 || nodeScoped.HealthCheckUUIDs[0] != "lbhc-1" ||
+		nodeScoped.IPPortMappings["10.128.0.5"] != "pod-a:10.128.0.2" {
+		t.Fatalf("unexpected populated optional columns: %#v", nodeScoped)
+	}
+
+	if len(db.LoadBalancerGroups) != 3 {
+		t.Fatalf("expected three load balancer groups, got %#v", db.LoadBalancerGroups)
+	}
+	many, single, empty := db.LoadBalancerGroups[0], db.LoadBalancerGroups[1], db.LoadBalancerGroups[2]
+	if many.UUID != "lbg-1" || many.Name != "clusterLBGroup" || len(many.LoadBalancerUUIDs) != 2 || many.LoadBalancerUUIDs[1] != "lb-2" {
+		t.Fatalf("unexpected group with members: %#v", many)
+	}
+	if len(single.LoadBalancerUUIDs) != 1 || single.LoadBalancerUUIDs[0] != "lb-2" {
+		t.Fatalf("a single member arrives as a bare uuid and must decode as one element: %#v", single)
+	}
+	if empty.Name != "clusterRouterLBGroup" || empty.LoadBalancerUUIDs == nil || len(empty.LoadBalancerUUIDs) != 0 {
+		t.Fatalf("an empty group should carry a non-nil empty member list: %#v", empty)
+	}
+
+	// The refs e2b.3 put on routers and switches resolve against the section.
+	if db.LogicalRouters[0].LoadBalancerUUIDs[0] != cluster.UUID || db.LogicalSwitches[0].LoadBalancerGroupUUIDs[0] != many.UUID {
+		t.Fatalf("router and switch refs should resolve to the collected rows")
+	}
+}
+
+func TestLoadBalancerMappersKeepAbsentAndEmptyApart(t *testing.T) {
+	if loadBalancersFromRows(nil) != nil || loadBalancerGroupsFromRows(nil) != nil {
+		t.Fatal("a table that was not read should map to nil (absent section)")
+	}
+	if rows := loadBalancersFromRows([]map[string]any{}); rows == nil || len(rows) != 0 {
+		t.Fatalf("an empty table should map to a non-nil empty slice, got %#v", rows)
+	}
+	if rows := loadBalancerGroupsFromRows([]map[string]any{}); rows == nil || len(rows) != 0 {
+		t.Fatalf("an empty table should map to a non-nil empty slice, got %#v", rows)
+	}
+
+	// protocol is an optional column: unset arrives as an empty set.
+	rows := loadBalancersFromRows([]map[string]any{{
+		"_uuid":    "lb-x",
+		"name":     "unnamed",
+		"protocol": []any{},
+		"vips":     map[string]any{},
+	}})
+	if rows[0].Protocol != "" || rows[0].VIPs == nil || len(rows[0].VIPs) != 0 {
+		t.Fatalf("unset protocol and empty vips should decode as empty: %#v", rows[0])
 	}
 }
 

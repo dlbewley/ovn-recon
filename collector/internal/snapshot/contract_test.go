@@ -139,6 +139,52 @@ func TestDatabaseReferentialIntegrity(t *testing.T) {
 				}
 			}
 
+			// The services section arrived with ovn-recon-e2b.6; a fixture
+			// that carries it must resolve every switch, router and group
+			// reference into it.
+			if db.LoadBalancers != nil {
+				if db.LoadBalancerGroups == nil {
+					t.Errorf("fixture carries loadBalancers without loadBalancerGroups")
+				}
+				loadBalancerByUUID := map[string]bool{}
+				for _, loadBalancer := range db.LoadBalancers {
+					loadBalancerByUUID[loadBalancer.UUID] = true
+					if loadBalancer.VIPs == nil {
+						t.Errorf("load balancer %s has no vips map", loadBalancer.Name)
+					}
+				}
+				groupByUUID := map[string]bool{}
+				for _, group := range db.LoadBalancerGroups {
+					groupByUUID[group.UUID] = true
+					if group.LoadBalancerUUIDs == nil {
+						t.Errorf("load balancer group %s has no member list", group.Name)
+					}
+					for _, uuid := range group.LoadBalancerUUIDs {
+						if !loadBalancerByUUID[uuid] {
+							t.Errorf("load balancer group %s references unknown load balancer %s", group.Name, uuid)
+						}
+					}
+				}
+				checkRefs := func(owner string, direct, groups []string) {
+					for _, uuid := range direct {
+						if !loadBalancerByUUID[uuid] {
+							t.Errorf("%s references unknown load balancer %s", owner, uuid)
+						}
+					}
+					for _, uuid := range groups {
+						if !groupByUUID[uuid] {
+							t.Errorf("%s references unknown load balancer group %s", owner, uuid)
+						}
+					}
+				}
+				for _, router := range db.LogicalRouters {
+					checkRefs("router "+router.Name, router.LoadBalancerUUIDs, router.LoadBalancerGroupUUIDs)
+				}
+				for _, logicalSwitch := range db.LogicalSwitches {
+					checkRefs("switch "+logicalSwitch.Name, logicalSwitch.LoadBalancerUUIDs, logicalSwitch.LoadBalancerGroupUUIDs)
+				}
+			}
+
 			for _, logicalSwitch := range db.LogicalSwitches {
 				for _, uuid := range logicalSwitch.PortUUIDs {
 					if !lspByUUID[uuid] {

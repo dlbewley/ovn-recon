@@ -17,8 +17,9 @@ All NB tables are transcribed into `LogicalTopologySnapshot.database` (see
 degrades the snapshot with a `COMMAND_FAILED`/`PARSER_FAILED` warning rather
 than aborting collection.
 
-Since `ovn-recon-e2b.1` the six NB tables are read in **one** pod exec, a
-multi-op `select` transaction against the NB socket in the `nbdb` container:
+Since `ovn-recon-e2b.1` the NB tables (ten of them since `ovn-recon-e2b.6`)
+are read in **one** pod exec, a multi-op `select` transaction against the NB
+socket in the `nbdb` container:
 
 ```bash
 ovsdb-client -f json transact unix:/var/run/ovn/ovnnb_db.sock \
@@ -34,6 +35,12 @@ collector falls back to the per-table `ovn-nbctl --format=json list <Table>`
 commands below and adds an `NB_TRANSACT_FAILED` warning. The SB chassis query
 for bridge mappings is a separate `ovn-sbctl` exec in the `sbdb` container.
 
+The two `services` tables are collected and cached on every pass but leave
+the collector only in a response to `?include=services`. They are last in
+the transaction, so an NB schema without them fails those selects alone; a
+section table that could not be read is omitted from `database` (the key is
+absent) instead of being reported as an empty table.
+
 | Purpose | Namespace | Pod Selection | Container | Transact op (fallback command) | Parser/Builder Path | Required RBAC |
 |---|---|---|---|---|---|---|
 | Logical switches (`ports`, `acls`, `qos_rules`, `load_balancer[_group]` uuids, `other_config`, `external_ids`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` (or equivalent OVN DB container) | `select Logical_Switch` (`ovn-nbctl --format=json list Logical_Switch`) | `ParseLogicalSwitches` -> `database.logicalSwitches` | `pods get/list/watch`, `pods/exec create` |
@@ -44,6 +51,8 @@ for bridge mappings is a separate `ovn-sbctl` exec in the `sbdb` container.
 | Static routes (default routes, IC-learned routes; `route_table`, `bfd`, `selection_fields`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Logical_Router_Static_Route` (`ovn-nbctl --format=json list Logical_Router_Static_Route`) | `ParseStaticRoutes` -> `database.staticRoutes` | `pods get/list/watch`, `pods/exec create` |
 | Gateway chassis (which chassis may host a distributed gateway port, with priority) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Gateway_Chassis` (`ovn-nbctl --format=json list Gateway_Chassis`) | `gatewayChassisFromRows` -> `database.gatewayChassis` | `pods get/list/watch`, `pods/exec create` |
 | Zone identity and config sequence (`name`, `nb_cfg`/`sb_cfg`/`hv_cfg`, `options:northd_internal_version`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select NB_Global` (`ovn-nbctl --format=json list NB_Global`) | `nbGlobalFromRows` -> `database.nbGlobal` | `pods get/list/watch`, `pods/exec create` |
+| Service load balancers, section `services` (`name`, `protocol`, `vips` as stored, `options`, `selection_fields`, `health_check`, `ip_port_mappings`, `external_ids` naming the Service) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Load_Balancer` (`ovn-nbctl --format=json list Load_Balancer`) | `loadBalancersFromRows` -> `database.loadBalancers` | `pods get/list/watch`, `pods/exec create` |
+| Load balancer groups, section `services` (`name`, `load_balancer` uuids) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Load_Balancer_Group` (`ovn-nbctl --format=json list Load_Balancer_Group`) | `loadBalancerGroupsFromRows` -> `database.loadBalancerGroups` | `pods get/list/watch`, `pods/exec create` |
 | Gateway/BGP adjunct context (optional in MVP payload) | `openshift-frr-k8s` | FRR pod associated with `:name` | FRR container | command TBD by FRR integration needs | warning/metadata enrichment (degraded if unavailable) | `pods get/list/watch`, `pods/exec create` |
 
 ## Node Selection Semantics

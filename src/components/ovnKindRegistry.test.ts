@@ -59,6 +59,43 @@ describe('ovnKindRegistry', () => {
         }
     });
 
+    it('adds the load balancer rows a switch or router references when the section is present', () => {
+        type Rows = { loadBalancers?: Array<{ uuid: string }>; loadBalancerGroups?: Array<{ name: string }> };
+        const nodeSwitch = byName('cnv-1');
+        const switchRow = database.logicalSwitches.find((row) => row.name === 'cnv-1')!;
+        const rows = ovnKindFor(nodeSwitch).rawRows(nodeSwitch, database) as Rows;
+        // Direct rows in full; groups as their own rows, members left as uuids.
+        expect(rows.loadBalancers?.map((row) => row.uuid)).toEqual(switchRow.loadBalancer);
+        expect(rows.loadBalancerGroups?.map((group) => group.name)).toEqual(['clusterLBGroup', 'clusterSwitchLBGroup']);
+
+        const gateway = byName('GR_cnv-1');
+        const gatewayRows = ovnKindFor(gateway).rawRows(gateway, database) as Rows;
+        expect(gatewayRows.loadBalancers).toHaveLength(22);
+        expect(gatewayRows.loadBalancerGroups?.map((group) => group.name)).toEqual(['clusterLBGroup', 'clusterRouterLBGroup']);
+
+        // A UDN switch attaches groups only; a construct without references
+        // gets neither key.
+        const udn = byName('cluster_udn_example.p.cudn_ovn_layer2_switch');
+        const udnRows = ovnKindFor(udn).rawRows(udn, database) as Rows;
+        expect('loadBalancers' in udnRows).toBe(false);
+        expect(udnRows.loadBalancerGroups).toHaveLength(2);
+        const join = byName('join');
+        const joinRows = ovnKindFor(join).rawRows(join, database) as Rows;
+        expect('loadBalancers' in joinRows).toBe(false);
+        expect('loadBalancerGroups' in joinRows).toBe(false);
+    });
+
+    it('leaves the load balancer rows out when the section was not requested', () => {
+        const ladder: LogicalDatabase = { ...database };
+        delete ladder.loadBalancers;
+        delete ladder.loadBalancerGroups;
+        const nodeSwitch = byName('cnv-1');
+        const rows = ovnKindFor(nodeSwitch).rawRows(nodeSwitch, ladder) as Record<string, unknown>;
+        expect(rows.logicalSwitch).toBeDefined();
+        expect('loadBalancers' in rows).toBe(false);
+        expect('loadBalancerGroups' in rows).toBe(false);
+    });
+
     it('assembles a bridge mapping from chassis mappings and localnet ports', () => {
         const construct = model.constructs.find((candidate) => candidate.kind === 'physnet');
         expect(construct).toBeDefined();

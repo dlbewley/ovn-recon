@@ -315,6 +315,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             onSelectConstruct={selectConstructFromDrawer}
                                             database={snapshot?.database ?? null}
                                             databaseNode={name}
+                                            sectionsRefreshKey={snapshot?.metadata?.generatedAt}
                                             nodeForChassis={nodeForChassis}
                                         />
                                     </>
