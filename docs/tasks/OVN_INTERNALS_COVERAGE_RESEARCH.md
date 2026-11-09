@@ -78,22 +78,23 @@ UDN, and several Localnet CUDNs. One zone (one node's NB database):
 |---|---|---|
 | Logical_Switch | 15 | ladder as classified today |
 | Logical_Switch_Port | 59 | `port_security` set on 19 (every pod port); `up` set on all; `tag_request` on 4 localnet ports; `enabled`, `dynamic_addresses`, `dhcpv4_options`, `ha_chassis_group` empty |
-| Logical_Router | 7 | `policies` 5 on the cluster router, 6 on each UDN transit router; `copp` on all; `load_balancer` 18 on the GR |
+| Logical_Router | 7 | `policies` 5 on the cluster router, 6 and 7 on the two Layer2 UDN transit routers, none on gateway routers; `copp` on all (one shared row); `load_balancer` 18 on the GR |
 | Logical_Router_Port | 33 | `status.hosting-chassis` on the 4 distributed gateway ports; `gateway_chassis` refs resolve to `Gateway_Chassis` rows we do not fetch |
 | Logical_Router_Static_Route | 65 | `route_table` always empty |
-| Logical_Router_Policy | 17 | all EgressIP-owned (`k8s.ovn.org/owner-type=EgressIP`), incl. per-UDN copies |
+| Logical_Router_Policy | 18 | 14 EgressIP-owned "no reroute" rules at priority 102 (`k8s.ovn.org/owner-type=EgressIP`), incl. per-UDN copies; 4 node-IP reroutes at priority 1004 with no owner keys, zone-specific |
 | NAT | 24 | `external_port_range` always set (empty string), `match` on 2 |
 | Load_Balancer | 345 | one per Service and protocol (328 Services), `k8s.ovn.org/kind=Service`, `k8s.ovn.org/owner=ns/name`; 319 cluster-scoped rows identical in every zone plus 26 to 35 node-scoped rows (`_node_router+switch_<node>` and friends) |
 | Load_Balancer_Group | 12 | no `external_ids`; `clusterLBGroup` (319 LBs) attached to every node switch and GR; `clusterSwitchLBGroup`, `clusterRouterLBGroup` and the per-UDN triples empty |
 | ACL | 665 | identical in every zone; owner types: NetworkPolicy 368, NetpolNamespace 268, MulticastCluster 12, NetpolDefault 6, UDNIsolation 6, NetpolNode 3, AdvertisedNetwork 2; 660 attached via `Port_Group.acls`, 5 via `Logical_Switch.acls`, none orphaned |
 | Port_Group | 1296 | identical in every zone except `ports` (the zone's own LSPs); owner types: Namespace 933, NetworkPolicy 221, NetpolNamespace 134, Cluster 6, UDNIsolation 1, AdvertisedNetwork 1; 941 rows are empty Namespace groups (one per namespace per network controller) |
 | Address_Set | 65 | owner types: PodSelector 57, EgressIP 4, ClusterNodeIPs, UDNEnabledService, EgressService, AdvertisedNetwork; all `ip-family=v4` |
-| QoS | 3 | EgressIP reply-traffic marks, one per network |
-| Meter / Meter_Band | 10 / 2 | acl-logging, arp/icmp rate limiters |
-| Copp | 1 | referenced by every router |
+| QoS | 3 | EgressIP reply-traffic marks (`mark=42`), one per primary network, identical in every zone; referenced by the node switch and each Layer2 UDN switch |
+| Meter / Meter_Band | 10 / 2 | acl-logging plus nine CoPP rate limiters; the nine share one band (drop, 25 pktps); `external_ids` empty; identical in every zone |
+| Copp | 1 | `ovnkube-default`, nine protocols mapped to meters by name; referenced by every router and by no switch |
 | Gateway_Chassis | 4 | one per distributed gateway port |
-| Static_MAC_Binding | 5 | masquerade MAC pins on `rtoe-` ports |
-| DHCP_Options, HA_Chassis_Group, DNS, Mirror, BFD, Sample_* | 0 | DHCP_Options is populated only on CNV clusters with VM leases |
+| Static_MAC_Binding | 5 | masquerade MAC pins on `rtoe-` ports, 1 on the node's gateway router and 2 on each UDN gateway router; no `external_ids` column; zone-specific |
+| DHCP_Options | 0 or 1 | one row per VM whose launcher pod has an interface on a Layer2 primary UDN, only in the zone of the node running it (1 row for 3 running VMs); owner type `VirtualMachine` |
+| HA_Chassis_Group, DNS, Mirror, BFD, Sample_* | 0 | |
 | NB_Global | 1 | `options.name` = zone, `northd_internal_version`, `nb_cfg` |
 
 Whole-database dump: 39 tables, about 800 KB of JSON, 0.17 s wall time for
@@ -108,6 +109,13 @@ its own LSPs. One transact of the eight collected tables plus the five
 above is 1.80 MB of wire JSON on the largest zone (1.0 s wall from a
 workstation), of which ACL is 589 KB and Port_Group 656 KB. See the
 2026-11-08 decision for `.9` in section 11 for the projected sizes.
+
+Tier 4 was recounted the same day on three zones while refining `.7` (the
+router policy, QoS, meter, CoPP, MAC binding and DHCP rows above). The seven
+tables together are 15 KB per zone as the collector would emit them, 2.4 KB
+gzipped. `Logical_Router_Policy` and `Static_MAC_Binding` differ per zone;
+`QoS`, `Meter`, `Meter_Band` and `Copp` are identical in every zone;
+`DHCP_Options` exists only where a VM on a Layer2 primary UDN runs.
 
 The v2 fixture corpus (`collector/fixtures/snapshots/*.json`) reflects only
 the six collected tables; any expansion needs a corpus refresh
@@ -748,6 +756,103 @@ next to a build of the previous commit.
    requests that followed (with and without `include`, with and without
    gzip, per node and aggregate) triggered no further collection.
 
+### 2026-11-08: `ovn-recon-e2b.7` and `.8` refined
+
+Design-only pass. Tier 4 was verified read-only on the lab cluster (OVN
+26.03, NB schema 7.18.0, interconnect, 10 zones) with one `ovsdb-client
+transact` per zone on a control-plane node, a virtualization node running
+three VMs and the largest virtualization node. The detail page was decided
+from the code on main after `.9`. Full text is in the beads; the decisions
+that bind other beads are recorded here.
+
+1. **Tier 4 (`.7`) goes in the default response, not behind `include=`.**
+   Seven tables, 15.0 KB per zone decoded (15.6 KB on the VM zone), 2.2 to
+   2.4 KB gzipped, against 189 KB and 45 KB for today's ladder payload:
+   `Logical_Router_Policy` 18 rows 10.1 KB, `Static_MAC_Binding` 5 rows
+   0.9 KB, `DHCP_Options` 0 or 1 row 0.6 KB, `QoS` 3 rows 1.6 KB, `Meter`
+   10 rows 1.7 KB, `Meter_Band` 2 rows 0.2 KB, `Copp` 1 row 0.4 KB. They
+   render in the drawer Overview beside NAT and static routes, which are
+   default, and the cluster view merges router rules from every zone, which
+   the ladder-only aggregate could not do for a section. Sections stay for
+   megabyte tiers. Router policies grow with EgressIP-served pods and QoS
+   with EgressQoS and NetworkQoS rules, neither present on the lab; if a
+   production capture shows otherwise, moving keys behind a section is a
+   registry entry.
+2. **Ownership is uneven and the design does not paper over it.** 14 of 18
+   router policies and all 3 QoS rows carry the four `k8s.ovn.org/*` keys
+   (owner type `EgressIP`, installed per primary network with no EgressIP
+   object present) plus bare `ip-family`, `network` and `priority` keys. The
+   four node-IP reroutes at priority 1004 carry only `k8s.ovn.org/network`
+   and `k8s.ovn.org/topology` (UDN copies) or nothing at all (default
+   network), so they are labelled from a priority table with that single
+   verified entry. `DHCP_Options` carries the four keys with owner type
+   `VirtualMachine` and `k8s.ovn.org/name` = namespace/name of the VM.
+   `Meter`, `Meter_Band` and `Copp` have empty `external_ids` and
+   `Static_MAC_Binding` has no such column. `ownerOf` from `.5` is reused
+   and gains a `VirtualMachine` link; whichever of `.5` and `.7` lands first
+   creates the helper.
+3. **How the rows attach.** `Logical_Router.policies` resolves all 18
+   (5 on the cluster router, 6 and 7 on the Layer2 UDN transit routers,
+   none shared, none orphaned); 12 rules are the same in every zone and the
+   4 reroutes name the zone's own node, so the merged cluster router has 4
+   plus one per node. `Logical_Switch.qos_rules` puts one QoS row on the
+   node switch and on each Layer2 primary UDN switch. Every router's `copp`
+   points at one `Copp` row, which names nine meters by name; no switch
+   sets `copp`. `Static_MAC_Binding.logical_port` is the name of a gateway
+   router's `rtoe-` port. A VM's port references its `DHCP_Options` row
+   through `Logical_Switch_Port.dhcpv4_options`, a column the collector
+   skips today and `.7` adds (with `dhcpv6_options` and
+   `Logical_Switch.copp`). The row holds the subnet and options; the leased
+   address is the port's own `addresses`.
+4. **`DHCP_Options` is narrower than "CNV clusters".** One row for three
+   running VMs: only the VM whose launcher pod has an interface on a Layer2
+   primary UDN gets one, and only in the zone of the node running it. A VM
+   on the default pod network (masquerade binding) and one with only a
+   localnet secondary interface have none.
+5. **Where tier 4 renders.** Drawer: policies as a capped rule list on the
+   router Overview, highest priority first; static MAC bindings on gateway
+   routers; one control-plane policing line per router; QoS rules and a
+   DHCP-served port count on the switch; the DHCP options and VM link in
+   the port's expanded row. The uncapped, sortable tables are the detail
+   page's. `BFD`, `Mirror`, `DNS` and `HA_Chassis_Group` have no rows in
+   three zones and are not collected: there is nothing to write a mapper
+   or fixture from.
+6. **A diagnostic turned up.** Every zone holds a priority 1004 reroute on
+   a UDN transit router whose `inport` names a router port that no longer
+   exists (the pre-transit `rtos-` name beside the current `trtos-` one).
+   "Policy names an inport the router does not have" is recorded as a
+   candidate for the `s3t.15` family, not built here.
+7. **Detail page (`.8`): one route, zone in the path.**
+   `/ovn-recon/ovn/:node/:kind/:name` with `kind` = `switch` or `router`,
+   one `console.page/route` entry with `exact: true` and one exposed
+   module. This replaces section 7's `/ovn-recon/ovn/switch/:name` shape
+   and answers the first open question in section 10. The zone is a path
+   segment because the same construct name has different rows per zone
+   (4 of 18 policies, all MAC bindings, every `Port_Group.ports`) and
+   every link into the page already knows it. The existing node route
+   `/ovn-recon/ovn/:name` is registered without `exact` and would also
+   match the longer path, so it gains `exact: true` in the same change.
+8. **Detail page data.** The ladder request first (no `include`, same
+   cache entry), then `useOptionalSections` with the union of the sections
+   the opened tabs need: `policy` for Ports and Policy, `services` for
+   Services. No polling; a Refresh button. From the cluster view the link
+   targets the construct's own node when it is one of its zones, otherwise
+   the representative zone (`zones[0]`), the Config tab rule. The page
+   never requests the aggregate.
+9. **Drawer and page link both ways.** The drawer gets "Open details" and
+   its count lines link to the matching tab. Selection is React state
+   today, so both ladder pages learn `?select=kind:name` (read on load,
+   written with replace on selection) and the page's breadcrumbs carry it;
+   browser Back then reopens the drawer.
+10. **Scope against the other beads.** `.8` stays blocked on `.5`: the
+    Policy tab (ACLs, port groups, address sets with filter, sort and
+    pagination) is the reason the page exists. The shell, Ports, Routes
+    and NAT, Config and the links need nothing else. Services needs `.6`
+    and the policy, MAC binding, CoPP and QoS tables need `.7`; each tab
+    keys on its data being present, and whichever of those beads lands
+    after the page adds its tables to it. `.8` to `.6`, `.8` to `.7` and
+    `.7` to `.5` are recorded as related, not blocking.
+
 ### 2026-11-08: `ovn-recon-e2b.6` implemented
 
 Verified by running the collector out-of-cluster against the lab cluster
@@ -847,7 +952,7 @@ fixture corpus.
 | `ovn-recon-e2b.5` | Policy plane: ACL, Port_Group, Address_Set with K8s attribution | 6, tier 2 |
 | `ovn-recon-e2b.6` | Service plane: Load_Balancer and Load_Balancer_Group | 6, tier 3 |
 | `ovn-recon-e2b.7` | Routing plane extras: LR policy, static MAC binding, DHCP, QoS, meters | 6, tier 4 |
-| `ovn-recon-e2b.8` | Construct detail page drill-down for switches and routers | 7 |
+| `ovn-recon-e2b.8` | Construct detail page drill-down for switches and routers | 7, 11 |
 | `ovn-recon-e2b.9` | Payload budgeting: table selection, endpoints, cache | 8 |
 | `ovn-recon-e2b.10` | Revisit kck.1 decision 4: SB bindings and chassis | 6, tier 5 |
 | `ovn-recon-e2b.11` | Contract: canonical JSON formatting for schemas and fixtures | 11 |
@@ -855,7 +960,8 @@ fixture corpus.
 Dependencies recorded in beads: `.5`, `.6`, `.7`, `.9` after `.1`; `.8`
 after `.4`; since 2026-11-08 also `.5` and `.6` after `.9`, `.5` after `.4`,
 and `.8` after `.5`. (`.4` after `.3` was removed on 2026-11-07, see
-section 11.)
+section 11.) Related, not blocking, since the `.7` and `.8` refinement:
+`.8` with `.6` and `.7`, and `.7` with `.5`.
 
 ## Appendix A: NB table inventory (schema 7.19.0) and disposition
 
@@ -867,7 +973,7 @@ section 11.)
 | Chassis_Template_Var | yes | no | 0 | never |
 | Connection | | no | | never |
 | Copp | yes | no | 1 | tier 4 |
-| DHCP_Options | yes | no | 0 | tier 4 (CNV) |
+| DHCP_Options | yes | no | 0 or 1 | tier 4 (CNV) |
 | DHCP_Relay | yes | no | 0 | never |
 | DNS | yes | no | 0 | collect if free |
 | Forwarding_Group | | no | 0 | never |
@@ -877,7 +983,7 @@ section 11.)
 | Load_Balancer_Group | yes | yes | 12 | tier 3 landed (`.6`) |
 | Load_Balancer_Health_Check | | no | 0 | tier 3 |
 | Logical_Router | yes | partial | 7 | tier 1 columns |
-| Logical_Router_Policy | | no | 17 | tier 4 |
+| Logical_Router_Policy | | no | 18 | tier 4 |
 | Logical_Router_Port | | partial | 33 | tier 1 columns |
 | Logical_Router_Static_Route | | partial | 65 | tier 1 columns |
 | Logical_Switch | yes | partial | 15 | tier 1 columns |
