@@ -28,7 +28,11 @@ jobs:
         OPERATOR_SDK_VERSION=v1.42.0
         OS=$(go env GOOS)
         ARCH=$(go env GOARCH)
-        curl -sSLo operator-sdk https://github.com/operator-framework/operator-sdk/releases/download/${OPERATOR_SDK_VERSION}/operator-sdk_${OS}_${ARCH}
+        # --fail: an HTTP error must stop here, not be saved as the binary.
+        # --retry: ride out a transient 5xx from the release host.
+        curl --fail --silent --show-error --location \
+          --retry 8 --retry-delay 10 --retry-all-errors \
+          -o operator-sdk https://github.com/operator-framework/operator-sdk/releases/download/${OPERATOR_SDK_VERSION}/operator-sdk_${OS}_${ARCH}
         chmod +x operator-sdk
         sudo mv operator-sdk /usr/local/bin/
 
