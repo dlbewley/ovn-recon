@@ -35,10 +35,11 @@ collector falls back to the per-table `ovn-nbctl --format=json list <Table>`
 commands below and adds an `NB_TRANSACT_FAILED` warning. The SB chassis query
 for bridge mappings is a separate `ovn-sbctl` exec in the `sbdb` container.
 
-The two `services` tables are collected and cached on every pass but leave
-the collector only in a response that asks for the `services` section
-(`/api/v1/sections/services/snapshots/...` or `?include=services`). They are last in
-the transaction, so an NB schema without them fails those selects alone; a
+The three `policy` tables and the two `services` tables are collected and
+cached on every pass but leave the collector only in a response that asks
+for their section (`/api/v1/sections/policy,services/snapshots/...` or
+`?include=policy,services`). They follow the ladder tables in the
+transaction, so an NB schema without one fails that select alone; a
 section table that could not be read is omitted from `database` (the key is
 absent) instead of being reported as an empty table.
 
@@ -52,6 +53,9 @@ absent) instead of being reported as an empty table.
 | Static routes (default routes, IC-learned routes; `route_table`, `bfd`, `selection_fields`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Logical_Router_Static_Route` (`ovn-nbctl --format=json list Logical_Router_Static_Route`) | `ParseStaticRoutes` -> `database.staticRoutes` | `pods get/list/watch`, `pods/exec create` |
 | Gateway chassis (which chassis may host a distributed gateway port, with priority) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Gateway_Chassis` (`ovn-nbctl --format=json list Gateway_Chassis`) | `gatewayChassisFromRows` -> `database.gatewayChassis` | `pods get/list/watch`, `pods/exec create` |
 | Zone identity and config sequence (`name`, `nb_cfg`/`sb_cfg`/`hv_cfg`, `options:northd_internal_version`) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select NB_Global` (`ovn-nbctl --format=json list NB_Global`) | `nbGlobalFromRows` -> `database.nbGlobal` | `pods get/list/watch`, `pods/exec create` |
+| ACLs, section `policy` (`name`, `priority`, `direction`, `action`, `match` as stored, `tier`, `log`, `severity`, `meter`, `label`, `options`, `external_ids` naming the owner) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select ACL` (`ovn-nbctl --format=json list ACL`) | `aclsFromRows` -> `database.acls` | `pods get/list/watch`, `pods/exec create` |
+| Port groups, section `policy` (`name`, `ports` and `acls` uuids, `external_ids` naming the owner) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Port_Group` (`ovn-nbctl --format=json list Port_Group`) | `portGroupsFromRows` -> `database.portGroups` | `pods get/list/watch`, `pods/exec create` |
+| Address sets, section `policy` (`name`, `addresses`, `external_ids` naming the owner) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Address_Set` (`ovn-nbctl --format=json list Address_Set`) | `addressSetsFromRows` -> `database.addressSets` | `pods get/list/watch`, `pods/exec create` |
 | Service load balancers, section `services` (`name`, `protocol`, `vips` as stored, `options`, `selection_fields`, `health_check`, `ip_port_mappings`, `external_ids` naming the Service) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Load_Balancer` (`ovn-nbctl --format=json list Load_Balancer`) | `loadBalancersFromRows` -> `database.loadBalancers` | `pods get/list/watch`, `pods/exec create` |
 | Load balancer groups, section `services` (`name`, `load_balancer` uuids) | `openshift-ovn-kubernetes` | node-scoped OVN pod on `:name` | `nbdb` | `select Load_Balancer_Group` (`ovn-nbctl --format=json list Load_Balancer_Group`) | `loadBalancerGroupsFromRows` -> `database.loadBalancerGroups` | `pods get/list/watch`, `pods/exec create` |
 | Gateway/BGP adjunct context (optional in MVP payload) | `openshift-frr-k8s` | FRR pod associated with `:name` | FRR container | command TBD by FRR integration needs | warning/metadata enrichment (degraded if unavailable) | `pods get/list/watch`, `pods/exec create` |

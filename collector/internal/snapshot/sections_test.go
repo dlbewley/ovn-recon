@@ -55,7 +55,6 @@ func TestParseSectionsRejectsUnknownNamesListingTheValidOnes(t *testing.T) {
 }
 
 func fullDatabase() *LogicalDatabase {
-	row := []SectionRow{{"uuid": "u1", "name": "n1"}}
 	return &LogicalDatabase{
 		LogicalRouters:     []LogicalRouterRow{{UUID: "lr", Name: "lr", PortUUIDs: []string{}}},
 		LogicalRouterPorts: []LogicalRouterPortRow{},
@@ -66,9 +65,9 @@ func fullDatabase() *LogicalDatabase {
 		BridgeMappings:     []BridgeMappingRow{{Localnet: "physnet", Bridge: "br-ex"}},
 		GatewayChassis:     []GatewayChassisRow{{UUID: "gc", Name: "gc"}},
 		NBGlobal:           &NBGlobalRow{UUID: "nb"},
-		ACLs:               row,
-		PortGroups:         row,
-		AddressSets:        row,
+		ACLs:               []ACLRow{{UUID: "acl", Priority: 1001, Direction: "to-lport", Action: "allow", Match: "ip4"}},
+		PortGroups:         []PortGroupRow{{UUID: "pg", Name: "a1", PortUUIDs: []string{}, ACLUUIDs: []string{"acl"}}},
+		AddressSets:        []AddressSetRow{{UUID: "as", Name: "a2", Addresses: []string{}}},
 		LoadBalancers:      []LoadBalancerRow{{UUID: "lb", Name: "lb", VIPs: map[string]string{}}},
 		LoadBalancerGroups: []LoadBalancerGroupRow{{UUID: "lbg", Name: "lbg", LoadBalancerUUIDs: []string{"lb"}}},
 	}
@@ -166,7 +165,7 @@ func TestProjectDoesNotModifyItsInput(t *testing.T) {
 // key means "not requested or not collected", [] means "collected and empty".
 func TestSectionEncodingSeparatesAbsentFromEmpty(t *testing.T) {
 	db := &LogicalDatabase{
-		ACLs:          []SectionRow{},
+		ACLs:          []ACLRow{},
 		LoadBalancers: []LoadBalancerRow{{UUID: "lb", Name: "n", VIPs: map[string]string{"172.30.0.1:443": ""}}},
 	}
 	raw, err := json.Marshal(LogicalTopologySnapshot{Database: db})

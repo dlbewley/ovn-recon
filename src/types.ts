@@ -411,12 +411,15 @@ export interface LogicalSwitchRow {
     uuid: string;
     name: string;
     ports: string[];
-    /** ACL and QoS uuids (tables not yet collected). */
+    /** ACL uuids set on the switch itself, resolved by the `policy` section
+     * (LogicalDatabase.acls). ACLs also reach the switch's ports through
+     * port groups: see policyIndex.ts. */
     acls?: string[];
     /** Load_Balancer / Load_Balancer_Group uuids, resolved by the `services`
      * section (LogicalDatabase.loadBalancers, loadBalancerGroups). */
     loadBalancer?: string[];
     loadBalancerGroup?: string[];
+    /** QoS uuids (table not yet collected). */
     qosRules?: string[];
     otherConfig?: Record<string, string>;
     externalIds?: Record<string, string>;
@@ -556,6 +559,66 @@ export interface LoadBalancerGroupRow {
     loadBalancers: string[];
 }
 
+/**
+ * One NB ACL row. An ACL applies where it is attached: on a port group
+ * (PortGroupRow.acls, the usual case) or on a switch (LogicalSwitchRow.acls).
+ * ovn-kubernetes names the owner in externalIds (`k8s.ovn.org/owner-controller`,
+ * `k8s.ovn.org/owner-type`, `k8s.ovn.org/name`, `k8s.ovn.org/id`); read it
+ * with `ownerOf` (ovnOwner.ts).
+ */
+export interface ACLRow {
+    uuid: string;
+    /** Optional in the NB schema; absent on several owner types. */
+    name?: string;
+    priority: number;
+    /** `from-lport` (traffic leaving a workload: egress policy) or `to-lport`
+     * (traffic towards it: ingress policy). */
+    direction: string;
+    /** allow, allow-related, allow-stateless, drop, reject or pass. */
+    action: string;
+    /**
+     * The OVN match expression as stored. `@name` refers to a port group and
+     * `$name` to an address set, both by their `name`; parse with `matchRefs`
+     * (policyIndex.ts).
+     */
+    match: string;
+    /** Evaluation tier: tier 0 is evaluated first, priority orders within a tier. */
+    tier: number;
+    /** ACL logging; absent when false. */
+    log?: boolean;
+    severity?: string;
+    meter?: string;
+    /** Sampling label; absent when zero. */
+    label?: number;
+    options?: Record<string, string>;
+    externalIds?: Record<string, string>;
+}
+
+/**
+ * One NB Port_Group row: a named set of switch ports that ACLs apply to and
+ * that a match names as `@name`. ovn-kubernetes names groups by hash; the
+ * readable name and the owner are in externalIds.
+ */
+export interface PortGroupRow {
+    uuid: string;
+    name: string;
+    /** Member LogicalSwitchPortRow uuids. Under interconnect a zone's group
+     * lists only that zone's own ports; empty for a group with no local member. */
+    ports: string[];
+    /** ACLRow uuids applied to every member port. */
+    acls: string[];
+    externalIds?: Record<string, string>;
+}
+
+/** One NB Address_Set row: a named set of addresses a match names as `$name`. */
+export interface AddressSetRow {
+    uuid: string;
+    name: string;
+    /** IPs, CIDRs or MACs as stored; empty for a set without members. */
+    addresses: string[];
+    externalIds?: Record<string, string>;
+}
+
 export interface LogicalDatabase {
     logicalRouters: LogicalRouterRow[];
     logicalRouterPorts: LogicalRouterPortRow[];
@@ -575,11 +638,11 @@ export interface LogicalDatabase {
     // (see SnapshotSection). An absent key means "not requested, or
     // not collected"; an empty array means "collected, and the table is empty".
     /** Section `policy`. */
-    acls?: SectionRow[];
+    acls?: ACLRow[];
     /** Section `policy`. */
-    portGroups?: SectionRow[];
+    portGroups?: PortGroupRow[];
     /** Section `policy`. */
-    addressSets?: SectionRow[];
+    addressSets?: AddressSetRow[];
     /** Section `services`. */
     loadBalancers?: LoadBalancerRow[];
     /** Section `services`. */
@@ -600,15 +663,6 @@ export const SNAPSHOT_SECTION_KEYS = {
     policy: ['acls', 'portGroups', 'addressSets'],
     services: ['loadBalancers', 'loadBalancerGroups'],
 } as const satisfies Record<SnapshotSection, readonly (keyof LogicalDatabase)[]>;
-
-/**
- * Placeholder row type of the `policy` section. The keys and their delivery
- * are part of the contract; the row shapes arrive with the policy plane
- * (ovn-recon-e2b.5), which replaces this with typed rows. Until then the
- * collector never populates that section. The `services` section is typed
- * (LoadBalancerRow, LoadBalancerGroupRow).
- */
-export type SectionRow = Record<string, unknown>;
 
 export interface LogicalTopologySnapshot {
     metadata: LogicalTopologyMetadata;

@@ -48,7 +48,7 @@ collector table command, one types row, and one entry here."
 
 | NB table | Columns collected | Columns skipped (upstream 7.19.0) |
 |---|---|---|
-| `Logical_Switch` | name, ports, acls, qos_rules (uuids), load_balancer, load_balancer_group (uuids, resolved by the `services` section), other_config, external_ids | dns_records, copp, forwarding_groups |
+| `Logical_Switch` | name, ports, acls (uuids, resolved by the `policy` section), qos_rules (uuids), load_balancer, load_balancer_group (uuids, resolved by the `services` section), other_config, external_ids | dns_records, copp, forwarding_groups |
 | `Logical_Switch_Port` | name, type, addresses, tag, port_security, up, enabled, dynamic_addresses, tag_request, parent_name, options, external_ids | peer, dhcpv4_options, dhcpv6_options, ha_chassis_group, mirror_rules, health_checks |
 | `Logical_Router` | name, ports, nat, static_routes, enabled, policies, copp (uuids), load_balancer, load_balancer_group (uuids, resolved by the `services` section), options, external_ids | — |
 | `Logical_Router_Port` | name, mac, networks, peer, enabled, gateway_chassis (resolved by `Gateway_Chassis`), status (`hosting-chassis`), options, external_ids | ipv6_ra_configs, ipv6_prefix, ha_chassis_group, dhcp_relay |
@@ -56,17 +56,22 @@ collector table command, one types row, and one entry here."
 | `Logical_Router_Static_Route` | ip_prefix, nexthop, policy, output_port, route_table, bfd, selection_fields, options, external_ids | — |
 | `Gateway_Chassis` | name, chassis_name, priority, options, external_ids | — |
 | `NB_Global` | name, nb_cfg, sb_cfg, hv_cfg, options (`northd_internal_version`), external_ids | connections, ssl, ipsec, *_timestamp |
+| `ACL` (section `policy`) | name, priority, direction, action, match (as stored), tier, log, severity, meter, label, options, external_ids | sample_new, sample_est, network_function_group |
+| `Port_Group` (section `policy`) | name, ports (uuids), acls (uuids), external_ids | — |
+| `Address_Set` (section `policy`) | name, addresses, external_ids | — |
 | `Load_Balancer` (section `services`) | name, protocol, vips (as stored), options, selection_fields, health_check (uuids), ip_port_mappings, external_ids | — |
 | `Load_Balancer_Group` (section `services`) | name, load_balancer (uuids) | — (the table has no external_ids) |
 | SB `Chassis` | other_config:ovn-bridge-mappings (local chassis only) | everything else |
 
-Of the 39 NB tables, ten are transcribed. Tier 1 is complete: the router,
+Of the 39 NB tables, thirteen are transcribed. Tier 1 is complete: the router,
 switch, NAT and route columns landed with `ovn-recon-e2b.3` and the
 `Logical_Switch_Port` slice (the columns a user asking "what does OVN do to
 this port" hits first) with `ovn-recon-e2b.4`, both on 2026-11-08. Tier 3
 (the service plane) landed the same day with `ovn-recon-e2b.6`; its two
 tables are collected on every pass and delivered only with
-`?include=services`.
+`?include=services`. Tier 2 (the policy plane) followed on 2026-11-09 with
+`ovn-recon-e2b.5`: `ACL`, `Port_Group` and `Address_Set` are collected on
+every pass and delivered only in the `policy` section (section 11).
 
 ### 2.3 What the fixtures and a live cluster say is actually populated
 
@@ -317,7 +322,9 @@ Scale is the problem: 561 ACLs and 430 port groups on a small cluster, and
 port groups per namespace on a large one. This tier cannot live in the
 drawer; it needs tables with filter and sort (section 7). The frontend
 model needs an index `LSP uuid -> [Port_Group]` and `Port_Group name ->
-[ACL]` built once per snapshot. `ovn-recon-e2b.5`.
+[ACL]` built once per snapshot. `ovn-recon-e2b.5`. Collected and indexed
+since 2026-11-09, with a per-port and per-switch summary in the drawer; the
+tables themselves wait for the detail page (`ovn-recon-e2b.8`).
 
 ### Tier 3: the service plane (Load_Balancer, Load_Balancer_Group)
 
@@ -975,6 +982,111 @@ and "rows not collected yet", although the collector held the rows.
    version stays trusted for one TTL, so a new section can be missing from
    the first responses after an upgrade.
 
+### 2026-11-09: `ovn-recon-e2b.5` implemented
+
+Verified by running the collector out-of-cluster against the lab cluster
+(OVN 26.03.4, interconnect, 10 zones) on a virtualization node and a
+control-plane node, against a build of the previous commit over the fixture
+corpus, and with jsdom tests over the fixtures.
+
+1. **Three tables appended to `nbTables`, after the ladder tables.** `ACL`,
+   `Port_Group` and `Address_Set` ride the same transact and the same
+   per-table fallback, ahead of the two services tables. Still one exec and
+   no new RBAC. The endpoint's row counts equal `ovn-nbctl list` (665, 1296
+   and 65 on both nodes); without the section the three keys are absent and
+   the default response of every fixture node is byte-identical to the
+   previous commit's.
+2. **Rows as stored.** `ACLRow` is uuid, name (optional), priority,
+   direction, action, match, tier, log, severity, meter, label, options,
+   externalIds; `log` and `label` are omitted when false or zero, `tier` is
+   always present because tier 0 is a value. `sample_new`, `sample_est` and
+   `network_function_group` are not transcribed. `PortGroupRow` is uuid,
+   name, ports, acls, externalIds; `AddressSetRow` is uuid, name, addresses,
+   externalIds. Every row is kept, the empty namespace groups included. A
+   table that could not be read stays absent rather than empty, per table,
+   as `.6` established.
+3. **Ownership is read generically, the Kubernetes kind from the network
+   role.** `ovnOwner.ts` reads the four `k8s.ovn.org` keys into
+   `{controller, type, name, id, extra}` for any owner type and maps a
+   controller to its network identity (`default`, `cluster_udn_<name>`,
+   `<namespace>_<name>`). Links exist for `NetworkPolicy` (name
+   `namespace:policy`) and for `Namespace` / `NetpolNamespace` (the
+   namespace); every other type renders as "type name". The kind of a
+   `NetworkPolicy`-typed owner is not in the owner type: ovn-kubernetes
+   writes a MultiNetworkPolicy with the same type and name format, under the
+   secondary network's controller. So the default network and primary
+   networks resolve to `NetworkPolicy` (`networking.k8s.io/v1`), secondary
+   networks to `MultiNetworkPolicy` (`k8s.cni.cncf.io/v1beta1`), and a
+   network whose role is unknown gets no link rather than a guess. The role
+   comes from `k8s.ovn.org/role` on the zone's switches and gateway routers
+   through a resolver the caller can replace with a Kubernetes-side one.
+4. **`policyIndex.ts` holds the apply side and parses the peer side.** Built
+   once per database object: rows by uuid and by name, port to groups, group
+   to ACLs, and per switch the ACLs set on it plus those of every group with
+   a port there, each once. `matchRefs` extracts `@port_group` and
+   `$address_set` names (quoted strings skipped). Without the section every
+   index is empty and `present` is false. The section counts as present with
+   `acls` and `portGroups`; missing `addressSets` only leaves `$` names
+   unresolved.
+5. **Per-port and per-switch summary, no Policy tab.** The Ports tab's
+   expanded row lists the port's groups (owner type, owner as a link where
+   it has one, network, ACL count) and the ACLs that apply to it: those of
+   its groups plus the ones set on the switch, ordered by direction, tier
+   and descending priority, each with priority, direction, action, owner and
+   the match, with the hashed `@`/`$` names spelled out beneath. The list is
+   capped at 50 per port. The switch Overview line reads "1 direct · 157 via
+   68 port groups" and now also appears on a switch with no ACL of its own
+   whose ports collect some. The Config tab gains the ACL rows set on the
+   switch. Routers are unchanged.
+6. **One request carries both sections.** The drawer asks for `policy` and
+   `services` together, when the selected construct is a switch or attaches
+   load balancers and the database it was given lacks what it needs, so a
+   hop between a switch and a router on the same node refetches nothing. The
+   cost is that a router with load balancers also downloads the policy rows.
+   While loading the "not collected yet" text shows with a spinner; a failed
+   request is reported inline and the ladder stays usable.
+7. **A zone only knows its own ports.** On the cluster view a port that
+   lives in another node's zone has no row in the representative database,
+   and the expanded row says so instead of showing "no groups".
+8. **Findings that differ from the refinement.** Pod ports are not in
+   `clusterPortGroup`: it holds the node's management port (and
+   `clusterRtrPortGroup` the switch's router port), which is where the
+   multicast and hairpin ACLs hang. Of the 124 ports that are in any group,
+   77 pods are in their namespace's group alone and carry no group ACL. The
+   node switch therefore sees 157 of the 660 group-attached ACLs, through
+   the 68 groups that have a member on it, not all of them; the busiest port
+   has 18 group ACLs. Row uuids differ between
+   zones, since every zone has its own NB database; the content is the same.
+   The only isolation ACL set directly on a switch is
+   `DenyOnMACVRF-GatewayARP` on an EVPN layer2 switch; the other isolation
+   rules hang on the default network's `SecondaryPods` group, in tier 0.
+   An ipBlock rule carries `ip-block-index` -2 and `ACL.name` is cut at 63
+   characters.
+9. **Fixture: `cnv-1` carries the section, the other nodes do not.** The
+   rows are a later capture of the same zone (667 ACLs, 900 port groups, 63
+   address sets, about 1.1 MB): rows of the four networks the fixture does
+   not model are left out, `Port_Group.ports` is remapped to the fixture's
+   ports by name, and a pod that no longer exists takes the groups of a pod
+   of the same workload, or its namespace's group alone. The two existing
+   `Logical_Switch.acls` references still resolved. Synthetic, because the
+   cluster had none: the MultiNetworkPolicy row sets for two secondary
+   networks (`demo-mirror:ovn-recon-fixture-mnp`, in the shape verified with
+   a short-lived policy on 2026-11-09) and one isolation ACL added to the
+   layer2 switch's `acls`, shaped after the EVPN one.
+10. **Measured.** Virtualization node: default response 217 KB (44 KB
+    gzipped), with the policy section 1.22 MB (176 KB), so the section costs
+    about 1.0 MB or 132 KB gzipped. Control-plane node: 138 KB (27 KB) and
+    1.14 MB (158 KB). A zone collects in 0.8 to 1.0 s.
+11. **Not verified.** Nothing has been looked at in a running console: that
+    needs a released build and is owed after the next pre-release, from a
+    signed-in console tab. A NetworkPolicy in a namespace served by a
+    primary UDN is expected under that network's controller and resolves to
+    `NetworkPolicy` here, but the lab has none. AdminNetworkPolicy,
+    BaselineAdminNetworkPolicy, EgressFirewall, EgressQoS, NetworkQoS and
+    namespace multicast rows do not exist on the lab; they render through
+    the generic path. Whether a secondary Layer2 network with no pod on a
+    node still has a switch there (and so a known role) was not checked.
+
 ## Initial Beads Backlog Mapping
 
 | Bead | Title | Section |
@@ -1003,8 +1115,8 @@ section 11.) Related, not blocking, since the `.7` and `.8` refinement:
 
 | Table | Root | Collected | Lab rows | Disposition |
 |---|---|---|---|---|
-| ACL | | no | 665 | tier 2 |
-| Address_Set | yes | no | 65 | tier 2 |
+| ACL | | yes | 665 | tier 2 landed (`.5`) |
+| Address_Set | yes | yes | 65 | tier 2 landed (`.5`) |
 | BFD | yes | no | 0 | collect if free |
 | Chassis_Template_Var | yes | no | 0 | never |
 | Connection | | no | | never |
@@ -1030,7 +1142,7 @@ section 11.) Related, not blocking, since the `.7` and `.8` refinement:
 | NAT | | partial | 24 | tier 1 columns |
 | NB_Global | yes | no | 1 | status line |
 | Network_Function* | yes | no | 0 | never (7.19.0) |
-| Port_Group | yes | no | 1296 | tier 2 |
+| Port_Group | yes | yes | 1296 | tier 2 landed (`.5`) |
 | QoS | | no | 3 | tier 4 |
 | Sample / Sample_Collector / Sampling_App | | no | 0 | never |
 | SSL | | no | | never |

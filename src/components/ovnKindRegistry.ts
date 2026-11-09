@@ -5,14 +5,16 @@ import {
     LogicalSwitchPortRow,
 } from '../types';
 import { LadderConstruct } from './logicalLadderModel';
+import { policyIndexFor } from './policyIndex';
 import { loadBalancersFor } from './serviceIndex';
 
 /**
  * Per-OVN-kind drawer behavior as DATA (ovn-recon-jxh), mirroring the physical
  * view's nodeKindRegistry. Today OVN Recon models three kinds — routers,
  * switches, and the synthesized bridge-mapping constructs — but OVN defines
- * many more (Load_Balancer, ACL, Port_Group, ...) that the collector does not
- * yet gather. The registry is the seam they plug into: adding a kind is one
+ * many more (Load_Balancer, ACL, Port_Group, ...) that are collected as rows
+ * without being constructs of their own. The registry is the seam a new
+ * construct kind plugs into: adding a kind is one
  * collector table command, one types row, and one entry here — the drawer
  * shell never changes, and unknown kinds fall back to a generic entry rather
  * than breaking.
@@ -68,6 +70,16 @@ const loadBalancerRows = (
     };
 };
 
+/**
+ * The ACL rows set on the switch's own acls column, when the database carries
+ * the policy section and the switch references any. The ACLs that reach its
+ * ports through port groups are the Ports tab's business, per port.
+ */
+const directAclRows = (switchUuid: string, database: LogicalDatabase): { acls?: unknown[] } => {
+    const direct = policyIndexFor(database).aclsBySwitch.get(switchUuid)?.direct ?? [];
+    return direct.length > 0 ? { acls: direct } : {};
+};
+
 const routerKind: OvnKindDefinition = {
     table: 'Logical_Router',
     rawRows(construct, database) {
@@ -112,6 +124,7 @@ const switchKind: OvnKindDefinition = {
                     .map((uuid) => portByUuid.get(uuid))
                     .filter((port): port is LogicalSwitchPortRow => Boolean(port)),
             ),
+            ...directAclRows(row.uuid, database),
             ...loadBalancerRows(construct, database),
         };
     },

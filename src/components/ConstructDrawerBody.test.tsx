@@ -4,7 +4,13 @@ import { act } from 'react';
 
 import { LogicalDatabase, LogicalTopologySnapshot } from '../types';
 import { buildLadderModel } from './logicalLadderModel';
-import ConstructDrawerBody, { MAX_SERVICE_ROWS, natRuleText, staticRouteText } from './ConstructDrawerBody';
+import ConstructDrawerBody, {
+    MAX_PORT_ACLS,
+    MAX_SERVICE_ROWS,
+    natRuleText,
+    staticRouteText,
+} from './ConstructDrawerBody';
+import { policyForPort, policyIndexFor } from './policyIndex';
 import { fetchCollectorSnapshot } from './collectorApi';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
@@ -493,9 +499,13 @@ describe('ConstructDrawerBody Ports tab', () => {
     });
 
     it('expands a row to the raw NB row and a port-groups placeholder', () => {
-        renderConstruct('transit_switch', { database, databaseNode: 'cnv-1' });
+        // The ladder database: no policy section, and no node to load it from.
+        const ladderDatabase: LogicalDatabase = { ...database };
+        delete ladderDatabase.acls;
+        delete ladderDatabase.portGroups;
+        delete ladderDatabase.addressSets;
+        renderConstruct('transit_switch', { database: ladderDatabase });
         clickTab('Ports');
-        expect(container.textContent).toContain('Logical_Switch_Port rows from node cnv-1');
         expect(container.querySelector('[data-testid="code-editor"]')).toBeNull();
 
         const row = portRows().find((candidate) => candidate.textContent?.includes('tstor-cnv-3'))!;
@@ -545,10 +555,13 @@ describe('ConstructDrawerBody Services tab', () => {
     let root: Root;
 
     // What the ladder pages hold: the same database without the optional
-    // sections, which only a request with include=services returns.
+    // sections, which only a request that names them returns.
     const ladderDatabase: LogicalDatabase = { ...database };
     delete ladderDatabase.loadBalancers;
     delete ladderDatabase.loadBalancerGroups;
+    delete ladderDatabase.acls;
+    delete ladderDatabase.portGroups;
+    delete ladderDatabase.addressSets;
     const udnSwitch = 'cluster_udn_example.p.cudn_ovn_layer2_switch';
 
     beforeEach(() => {
@@ -755,7 +768,8 @@ describe('ConstructDrawerBody Services tab', () => {
 
         renderConstruct('cnv-1', { database: ladderDatabase, databaseNode: 'cnv-1', sectionsRefreshKey: 't1' });
         expect(fetchSnapshot).toHaveBeenCalledTimes(1);
-        expect(fetchSnapshot).toHaveBeenCalledWith('cnv-1', { include: ['services'] });
+        // Both optional sections travel in one request.
+        expect(fetchSnapshot).toHaveBeenCalledWith('cnv-1', { include: ['policy', 'services'] });
         // The tab is offered while the section is on its way.
         expect(tabLabels()).toContain('Services');
         expect(overviewValue('Load balancers')).toBe('22 direct · 2 groups (loading…)');
@@ -767,8 +781,9 @@ describe('ConstructDrawerBody Services tab', () => {
         clickTab('Overview');
         expect(overviewValue('Load balancers')).toMatch(/^22 direct · \d+ via clusterLBGroup/);
 
-        // A construct without load balancers costs no request.
-        renderConstruct('join', { database: ladderDatabase, databaseNode: 'cnv-1', sectionsRefreshKey: 't1' });
+        // A construct that needs neither section (a router without load
+        // balancers) costs no request.
+        renderConstruct('ovn_cluster_router', { database: ladderDatabase, databaseNode: 'cnv-1', sectionsRefreshKey: 't1' });
         expect(fetchSnapshot).toHaveBeenCalledTimes(1);
         // Back on a construct with load balancers on the same node: the rows
         // already loaded show at once while the request is repeated.
@@ -807,5 +822,377 @@ describe('ConstructDrawerBody Services tab', () => {
         await act(async () => undefined);
         expect(tabLabels()).not.toContain('Services');
         expect(overviewValue('Load balancers')).toBe('22 direct · 2 groups (rows not collected yet)');
+    });
+});
+
+describe('ConstructDrawerBody policy plane', () => {
+    let container: HTMLDivElement;
+    let root: Root;
+
+    // What the ladder pages hold: no optional section.
+    const ladderDatabase: LogicalDatabase = { ...database };
+    delete ladderDatabase.loadBalancers;
+    delete ladderDatabase.loadBalancerGroups;
+    delete ladderDatabase.acls;
+    delete ladderDatabase.portGroups;
+    delete ladderDatabase.addressSets;
+    const udnSwitch = 'cluster_udn_example.p.cudn_ovn_layer2_switch';
+    const policyPod = 'openshift-monitoring_alertmanager-main-1';
+
+    beforeEach(() => {
+        fetchSnapshot.mockReset();
+        container = document.createElement('div');
+        document.body.appendChild(container);
+        root = createRoot(container);
+    });
+
+    afterEach(() => {
+        act(() => root.unmount());
+        container.remove();
+    });
+
+    const renderConstruct = (
+        name: string,
+        props: Partial<React.ComponentProps<typeof ConstructDrawerBody>> = { database, databaseNode: 'cnv-1' },
+        ladder = model,
+    ) => {
+        const construct = ladder.constructs.find((candidate) => candidate.name === name);
+        expect(construct).toBeDefined();
+        act(() => {
+            root.render(<ConstructDrawerBody construct={construct!} model={ladder} {...props} />);
+        });
+    };
+
+    const tabLabels = () => [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
+    const clickTab = (label: string) => {
+        const tab = [...container.querySelectorAll('button')].find((button) => button.textContent === label);
+        expect(tab).toBeDefined();
+        act(() => {
+            tab!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+    };
+    const overviewValue = (term: string) => {
+        const group = [...container.querySelectorAll('dt')].find((candidate) => candidate.textContent === term);
+        return group?.parentElement?.querySelector('dd')?.textContent;
+    };
+    const portRows = () => [...container.querySelectorAll('tr[data-testid^="port-row-"]')];
+    const expandPort = (text: string) => {
+        const row = portRows().find((candidate) => candidate.textContent?.includes(text));
+        expect(row).toBeDefined();
+        act(() => {
+            row!.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+    };
+    const portPolicy = () => container.querySelector('[data-testid="port-policy"]');
+    const groupRows = () => [...container.querySelectorAll('tr[data-testid^="port-group-"]')];
+    const aclRows = () => [...container.querySelectorAll('tr[data-testid^="port-acl-"]')];
+    const hrefs = (scope: Element | null) =>
+        [...(scope?.querySelectorAll('a') ?? [])].map((anchor) => anchor.getAttribute('href') ?? '');
+
+    it('shows a switch its direct and via-port-group ACL counts on the Overview', () => {
+        renderConstruct('cnv-1');
+        expect(overviewValue('ACLs')).toMatch(/^1 direct · \d+ via \d+ port groups$/);
+        expect(overviewValue('ACLs')).not.toContain('not collected');
+
+        // The layer2 UDN switch: its own node and isolation ACLs, plus the
+        // cluster port group its management port is in.
+        renderConstruct(udnSwitch);
+        expect(overviewValue('ACLs')).toBe('2 direct · 4 via 1 port group');
+        expect(fetchSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('leaves switches without ACLs and every router without the line', () => {
+        renderConstruct('transit_switch');
+        expect(overviewValue('ACLs')).toBeUndefined();
+        renderConstruct('GR_cnv-1');
+        expect(overviewValue('ACLs')).toBeUndefined();
+        renderConstruct('ovn_cluster_router');
+        expect(overviewValue('ACLs')).toBeUndefined();
+        // And no Policy tab anywhere: the full tables belong to the detail page.
+        expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Config']);
+        renderConstruct('cnv-1');
+        expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Ports', 'Services', 'Config']);
+    });
+
+    it('lists a pod port\'s groups with owner links and the ACLs that apply to it', () => {
+        renderConstruct('cnv-1');
+        clickTab('Ports');
+        expandPort('openshift-monitoring/alertmanager-main-1');
+
+        const port = database.logicalSwitchPorts.find((row) => row.name === policyPod)!;
+        const expected = policyForPort(policyIndexFor(database), port.uuid);
+        expect(portPolicy()?.textContent).toContain(`Port groups (${expected.groups.length})`);
+        expect(portPolicy()?.textContent).toContain(`ACLs that apply (${expected.acls.length})`);
+        expect(portPolicy()?.textContent).not.toContain('not collected');
+        expect(groupRows()).toHaveLength(expected.groups.length);
+        expect(aclRows()).toHaveLength(expected.acls.length);
+
+        // The NetworkPolicy that selects the pod is a link, and so is its namespace.
+        const policyGroup = groupRows().find((row) => row.textContent?.startsWith('NetworkPolicy'))!;
+        expect(policyGroup.textContent).toContain('openshift-monitoring/');
+        expect(hrefs(policyGroup).some((href) =>
+            href.startsWith('/k8s/ns/openshift-monitoring/networking.k8s.io~v1~NetworkPolicy/'),
+        )).toBe(true);
+        expect(policyGroup.textContent).toContain('Default cluster network');
+        const namespaceGroup = groupRows().find((row) => row.textContent?.startsWith('Namespace'))!;
+        expect(hrefs(namespaceGroup)).toContain('/k8s/cluster/projects/openshift-monitoring');
+        const denyGroup = groupRows().find((row) => row.textContent?.startsWith('NetpolNamespace'))!;
+        expect(denyGroup.textContent).toMatch(/\((Ingress|Egress)\)/);
+
+        // ACL rows in display order: from-lport first, priority descending within.
+        const rendered = aclRows().map((row) => row.getAttribute('data-testid')!.slice('port-acl-'.length));
+        expect(rendered).toEqual(expected.acls.map((applied) => applied.acl.uuid));
+        const first = expected.acls[0].acl;
+        expect(aclRows()[0].textContent).toContain(String(first.priority));
+        expect(aclRows()[0].textContent).toContain(first.direction);
+        expect(aclRows()[0].textContent).toContain(first.action);
+        expect(aclRows()[0].querySelector('code')?.textContent).toBe(first.match);
+        // The node ACL set on the switch itself applies to the port too.
+        expect(aclRows().some((row) => row.textContent?.includes('set on the switch'))).toBe(true);
+        // A NetworkPolicy ACL names its policy as a link.
+        const policyAcl = aclRows().find((row) => row.textContent?.includes('NetworkPolicy openshift-monitoring/'))!;
+        expect(hrefs(policyAcl).some((href) => href.includes('networking.k8s.io~v1~NetworkPolicy'))).toBe(true);
+        // Hashed names in a match are spelled out.
+        expect(portPolicy()?.textContent).toMatch(/@a\d+ (NetworkPolicy|NetpolNamespace|Namespace) /);
+    });
+
+    it('shows a port in a single group, and one in none', () => {
+        renderConstruct('cnv-1');
+        clickTab('Ports');
+        expandPort('k8s-cnv-1');
+        expect(groupRows()).toHaveLength(1);
+        expect(groupRows()[0].textContent).toContain('ClusterclusterPortGroup');
+        expect(aclRows().some((row) => row.textContent?.includes('MulticastCluster'))).toBe(true);
+
+        renderConstruct('transit_switch');
+        expandPort('tstor-cnv-3');
+        expect(portPolicy()?.textContent).toContain('This port is in no port group.');
+        expect(portPolicy()?.textContent).toContain('No ACL applies to this port.');
+    });
+
+    it('loads the policy section when a switch is selected, and says so meanwhile', async () => {
+        let resolve: (snapshot: LogicalTopologySnapshot) => void = () => undefined;
+        fetchSnapshot.mockReturnValue(new Promise((done) => { resolve = done; }));
+
+        renderConstruct('cnv-1', { database: ladderDatabase, databaseNode: 'cnv-1', sectionsRefreshKey: 't1' });
+        expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+        expect(fetchSnapshot).toHaveBeenCalledWith('cnv-1', { include: ['policy', 'services'] });
+        expect(overviewValue('ACLs')).toBe('1 (rows not collected yet) ');
+        expect(container.querySelector('[aria-label="Loading ACLs"]')).not.toBeNull();
+
+        clickTab('Ports');
+        expandPort('openshift-monitoring/alertmanager-main-1');
+        expect(portPolicy()?.textContent).toContain('Port groups: not collected yet');
+        expect(container.querySelector('[aria-label="Loading port groups"]')).not.toBeNull();
+
+        await act(async () => resolve(cnv1 as unknown as LogicalTopologySnapshot));
+        expect(portPolicy()?.textContent).toContain('Port groups (');
+        expect(groupRows().length).toBeGreaterThan(1);
+        clickTab('Overview');
+        expect(overviewValue('ACLs')).toMatch(/^1 direct · \d+ via \d+ port groups$/);
+
+        // Another switch on the same node reuses the rows: no second request.
+        renderConstruct('join', { database: ladderDatabase, databaseNode: 'cnv-1', sectionsRefreshKey: 't1' });
+        await act(async () => undefined);
+        expect(fetchSnapshot).toHaveBeenCalledTimes(1);
+    });
+
+    it('requests the section for a switch that attaches no load balancer', async () => {
+        fetchSnapshot.mockResolvedValue(cnv1 as unknown as LogicalTopologySnapshot);
+        renderConstruct('join', { database: ladderDatabase, databaseNode: 'cnv-1' });
+        await act(async () => undefined);
+        expect(fetchSnapshot).toHaveBeenCalledWith('cnv-1', { include: ['policy', 'services'] });
+    });
+
+    it('keeps the not-collected rendering when the collector does not deliver the section', async () => {
+        fetchSnapshot.mockResolvedValue({
+            ...(cnv1 as unknown as LogicalTopologySnapshot),
+            database: ladderDatabase,
+        });
+        renderConstruct('cnv-1', { database: ladderDatabase, databaseNode: 'cnv-1' });
+        await act(async () => undefined);
+        expect(overviewValue('ACLs')).toBe('1 (rows not collected yet)');
+        expect(container.querySelector('[aria-label="Loading ACLs"]')).toBeNull();
+        clickTab('Ports');
+        expandPort('openshift-monitoring/alertmanager-main-1');
+        expect(portPolicy()?.textContent).toBe('Port groups: not collected yet');
+    });
+
+    it('shows a failed request inline and keeps the drawer usable', async () => {
+        fetchSnapshot.mockRejectedValue(new Error('Collector request failed'));
+        renderConstruct('cnv-1', { database: ladderDatabase, databaseNode: 'cnv-1' });
+        await act(async () => undefined);
+        expect(overviewValue('ACLs')).toBe('1 (rows not collected yet)Policy rows failed to load: Collector request failed');
+        expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Ports', 'Config']);
+        clickTab('Ports');
+        expect(portRows().length).toBeGreaterThan(50);
+        expandPort('openshift-monitoring/alertmanager-main-1');
+        expect(portPolicy()?.textContent).toContain('Port groups: not collected yet');
+        expect(portPolicy()?.textContent).toContain('Policy rows failed to load: Collector request failed');
+    });
+
+    it('says a port from another zone has no groups here (cluster view)', () => {
+        const nodeSwitch = byName('cnv-1')!;
+        const foreign = {
+            ...nodeSwitch.ports.find((port) => port.name === policyPod)!,
+            uuid: 'port-in-another-zone',
+            name: 'shop_web-on-cnv-2',
+            namespace: 'shop',
+            pod: 'web-on-cnv-2',
+        };
+        act(() => {
+            root.render(
+                <ConstructDrawerBody
+                    construct={{ ...nodeSwitch, ports: [foreign] }}
+                    model={model}
+                    database={database}
+                    databaseNode="cnv-1"
+                />,
+            );
+        });
+        clickTab('Ports');
+        expandPort('shop/web-on-cnv-2');
+        expect(portPolicy()?.textContent).toContain("this port is not in node cnv-1's zone");
+        expect(groupRows()).toHaveLength(0);
+    });
+
+    it('adds the ACL rows set on the switch to the Config tab', () => {
+        renderConstruct(udnSwitch);
+        clickTab('Config');
+        const payload = JSON.parse(container.querySelector('[data-testid="code-editor"]')!.textContent ?? '{}') as {
+            logicalSwitch: { acls: string[] };
+            acls?: Array<{ uuid: string }>;
+        };
+        expect(payload.acls?.map((row) => row.uuid).sort()).toEqual([...payload.logicalSwitch.acls].sort());
+    });
+
+    describe('on a secondary network', () => {
+        const network = 'cluster_udn_vlan-1924';
+        const controller = `${network}-network-controller`;
+        const owned = (type: string, name: string, extra: Record<string, string> = {}) => ({
+            'k8s.ovn.org/owner-controller': controller,
+            'k8s.ovn.org/owner-type': type,
+            'k8s.ovn.org/name': name,
+            ...extra,
+        });
+        const manyAcls = Array.from({ length: MAX_PORT_ACLS + 10 }, (_, rule) => ({
+            uuid: `acl-rule-${rule}`,
+            name: `NP:demo-mirror:restrict:Ingress:${rule}`,
+            priority: 1001,
+            direction: 'to-lport',
+            action: 'allow-related',
+            match: `ip4.src == 192.0.2.${rule}/32 && outport == @a900`,
+            tier: 2,
+            // A MultiNetworkPolicy: owner-type is NetworkPolicy all the same.
+            externalIds: owned('NetworkPolicy', 'demo-mirror:restrict', { direction: 'Ingress', 'gress-index': String(rule) }),
+        }));
+        const secondary: LogicalDatabase = {
+            logicalRouters: [],
+            logicalRouterPorts: [],
+            logicalSwitches: [{
+                uuid: 'ls-vlan',
+                name: 'cluster_udn_vlan.1924_ovn_localnet_switch',
+                ports: ['lsp-vm', 'lsp-localnet'],
+                externalIds: {
+                    'k8s.ovn.org/network': network,
+                    'k8s.ovn.org/role': 'secondary',
+                    'k8s.ovn.org/topology': 'localnet',
+                },
+            }],
+            logicalSwitchPorts: [
+                {
+                    uuid: 'lsp-vm',
+                    name: 'cluster_udn_vlan.1924_demo-mirror_virt-launcher-vm-a-x7k2p',
+                    addresses: ['02:00:00:00:00:01'],
+                    externalIds: { namespace: 'demo-mirror', pod: 'true' },
+                },
+                { uuid: 'lsp-localnet', name: 'cluster_udn_vlan.1924_ovn_localnet_port', type: 'localnet' },
+            ],
+            nats: [],
+            staticRoutes: [],
+            acls: [
+                ...manyAcls,
+                {
+                    uuid: 'acl-deny',
+                    name: 'NP:demo-mirror:Ingress',
+                    priority: 1000,
+                    direction: 'to-lport',
+                    action: 'drop',
+                    match: 'outport == @a901',
+                    tier: 2,
+                    externalIds: owned('NetpolNamespace', 'demo-mirror', { direction: 'Ingress', type: 'defaultDeny' }),
+                },
+            ],
+            portGroups: [
+                {
+                    uuid: 'pg-policy',
+                    name: 'a900',
+                    ports: ['lsp-vm'],
+                    acls: manyAcls.map((row) => row.uuid),
+                    externalIds: owned('NetworkPolicy', 'demo-mirror:restrict'),
+                },
+                {
+                    uuid: 'pg-deny',
+                    name: 'a901',
+                    ports: ['lsp-vm'],
+                    acls: ['acl-deny'],
+                    externalIds: owned('NetpolNamespace', 'demo-mirror', { direction: 'Ingress' }),
+                },
+            ],
+            addressSets: [],
+        };
+        const secondaryModel = buildLadderModel(secondary);
+
+        it('links a NetworkPolicy-typed owner to its MultiNetworkPolicy', () => {
+            renderConstruct(
+                'cluster_udn_vlan.1924_ovn_localnet_switch',
+                { database: secondary, databaseNode: 'cnv-1' },
+                secondaryModel,
+            );
+            // No ACL on the switch itself, yet its ports collect some.
+            expect(overviewValue('ACLs')).toBe(`${MAX_PORT_ACLS + 11} via 2 port groups`);
+
+            clickTab('Ports');
+            expandPort('virt-launcher-vm-a-x7k2p');
+            const policyGroup = groupRows().find((row) => row.textContent?.startsWith('MultiNetworkPolicy'))!;
+            expect(policyGroup).toBeDefined();
+            expect(hrefs(policyGroup)).toContain(
+                '/k8s/ns/demo-mirror/k8s.cni.cncf.io~v1beta1~MultiNetworkPolicy/restrict',
+            );
+            // The network column links the CUDN the controller serves.
+            expect(hrefs(policyGroup).some((href) => href.includes('ClusterUserDefinedNetwork/vlan-1924'))).toBe(true);
+            expect(aclRows()[0].textContent).toContain('MultiNetworkPolicy demo-mirror/restrict');
+        });
+
+        it('caps the ACL list of a port and says how many more there are', () => {
+            renderConstruct(
+                'cluster_udn_vlan.1924_ovn_localnet_switch',
+                { database: secondary, databaseNode: 'cnv-1' },
+                secondaryModel,
+            );
+            clickTab('Ports');
+            expandPort('virt-launcher-vm-a-x7k2p');
+            expect(portPolicy()?.textContent).toContain(`ACLs that apply (${MAX_PORT_ACLS + 11})`);
+            expect(aclRows()).toHaveLength(MAX_PORT_ACLS);
+            expect(container.querySelector('[data-testid="port-acl-cap"]')?.textContent).toBe('… and 11 more');
+        });
+
+        it('does not link a policy whose network role is unknown in the zone', () => {
+            const unknownRole: LogicalDatabase = {
+                ...secondary,
+                logicalSwitches: [{ ...secondary.logicalSwitches[0], externalIds: { 'k8s.ovn.org/network': network } }],
+            };
+            renderConstruct(
+                'cluster_udn_vlan.1924_ovn_localnet_switch',
+                { database: unknownRole, databaseNode: 'cnv-1' },
+                buildLadderModel(unknownRole),
+            );
+            clickTab('Ports');
+            expandPort('virt-launcher-vm-a-x7k2p');
+            const policyGroup = groupRows().find((row) => row.textContent?.includes('demo-mirror/restrict'))!;
+            expect(policyGroup.textContent?.startsWith('NetworkPolicy')).toBe(true);
+            expect(hrefs(policyGroup).some((href) => href.includes('NetworkPolicy/'))).toBe(false);
+            expect(policyGroup.querySelector('[title*="MultiNetworkPolicy"]')).not.toBeNull();
+        });
     });
 });

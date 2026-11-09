@@ -125,9 +125,9 @@ func (db LogicalDatabase) MarshalJSON() ([]byte, error) {
 	type plain LogicalDatabase
 	wire := struct {
 		plain
-		ACLs               *[]SectionRow           `json:"acls,omitempty"`
-		PortGroups         *[]SectionRow           `json:"portGroups,omitempty"`
-		AddressSets        *[]SectionRow           `json:"addressSets,omitempty"`
+		ACLs               *[]ACLRow               `json:"acls,omitempty"`
+		PortGroups         *[]PortGroupRow         `json:"portGroups,omitempty"`
+		AddressSets        *[]AddressSetRow        `json:"addressSets,omitempty"`
 		LoadBalancers      *[]LoadBalancerRow      `json:"loadBalancers,omitempty"`
 		LoadBalancerGroups *[]LoadBalancerGroupRow `json:"loadBalancerGroups,omitempty"`
 	}{plain: plain(db)}

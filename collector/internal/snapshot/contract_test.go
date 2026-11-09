@@ -5,10 +5,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 )
 
 const fixtureDir = "../../fixtures/snapshots"
+
+// matchReference finds the port group (@name) and address set ($name)
+// references in an ACL match expression.
+var matchReference = regexp.MustCompile(`([@$])([A-Za-z_][A-Za-z0-9_.]*)`)
 
 // TestFixturesConformToV2Contract keeps the fixture corpus in lockstep with
 // the Go types: every fixture must decode without unknown fields, declare
@@ -182,6 +187,67 @@ func TestDatabaseReferentialIntegrity(t *testing.T) {
 				}
 				for _, logicalSwitch := range db.LogicalSwitches {
 					checkRefs("switch "+logicalSwitch.Name, logicalSwitch.LoadBalancerUUIDs, logicalSwitch.LoadBalancerGroupUUIDs)
+				}
+			}
+
+			// The policy section arrived with ovn-recon-e2b.5; a fixture that
+			// carries it must resolve the apply side (switch and port group
+			// ACL refs, port group members) by uuid and the peer side (the
+			// @port_group and $address_set names in a match) by name, and
+			// must not leave an ACL attached to nothing.
+			if db.ACLs != nil {
+				if db.PortGroups == nil || db.AddressSets == nil {
+					t.Fatalf("fixture carries acls without portGroups and addressSets")
+				}
+				attached := map[string]int{}
+				for _, acl := range db.ACLs {
+					attached[acl.UUID] = 0
+				}
+				portGroupByName := map[string]bool{}
+				for _, group := range db.PortGroups {
+					portGroupByName[group.Name] = true
+					if group.PortUUIDs == nil || group.ACLUUIDs == nil {
+						t.Errorf("port group %s has no ports or acls list", group.Name)
+					}
+					for _, uuid := range group.PortUUIDs {
+						if !lspByUUID[uuid] {
+							t.Errorf("port group %s references unknown switch port %s", group.Name, uuid)
+						}
+					}
+					for _, uuid := range group.ACLUUIDs {
+						if _, ok := attached[uuid]; !ok {
+							t.Errorf("port group %s references unknown ACL %s", group.Name, uuid)
+						}
+						attached[uuid]++
+					}
+				}
+				addressSetByName := map[string]bool{}
+				for _, set := range db.AddressSets {
+					addressSetByName[set.Name] = true
+					if set.Addresses == nil {
+						t.Errorf("address set %s has no addresses list", set.Name)
+					}
+				}
+				for _, logicalSwitch := range db.LogicalSwitches {
+					for _, uuid := range logicalSwitch.ACLUUIDs {
+						if _, ok := attached[uuid]; !ok {
+							t.Errorf("switch %s references unknown ACL %s", logicalSwitch.Name, uuid)
+						}
+						attached[uuid]++
+					}
+				}
+				for _, acl := range db.ACLs {
+					if attached[acl.UUID] == 0 {
+						t.Errorf("ACL %s (%s) is attached to no port group and no switch", acl.UUID, acl.Name)
+					}
+					for _, ref := range matchReference.FindAllStringSubmatch(acl.Match, -1) {
+						if ref[1] == "@" && !portGroupByName[ref[2]] {
+							t.Errorf("ACL %s match names unknown port group %s", acl.UUID, ref[2])
+						}
+						if ref[1] == "$" && !addressSetByName[ref[2]] {
+							t.Errorf("ACL %s match names unknown address set %s", acl.UUID, ref[2])
+						}
+					}
 				}
 			}
 
