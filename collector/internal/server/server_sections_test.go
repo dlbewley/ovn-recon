@@ -250,6 +250,132 @@ func TestUnknownIncludeIsBadRequestNamingValidSections(t *testing.T) {
 	}
 }
 
+// TestSectionsPathIsTheIncludeQueryByAnotherSpelling covers the route the
+// plugin uses. The OpenShift console forwards a plugin request's path and
+// drops its query string (ovn-recon-e2b.12), so the section list also
+// travels as a path segment; both spellings must answer identically.
+func TestSectionsPathIsTheIncludeQueryByAnotherSpelling(t *testing.T) {
+	storeDir := t.TempDir()
+	writeFixture(t, filepath.Join(storeDir, "worker-a.json"), withSections(zoneSnapshot("worker-a")))
+	writeFixture(t, filepath.Join(storeDir, "worker-b.json"), withSections(zoneSnapshot("worker-b")))
+	store := snapshot.NewFileStore(storeDir, "")
+	srv := New(store).WithNodeLister(store)
+
+	ok := func(target string) *httptest.ResponseRecorder {
+		t.Helper()
+		rr := get(t, srv, target, nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s: expected 200, got %d: %s", target, rr.Code, rr.Body.String())
+		}
+		return rr
+	}
+
+	// One node: the body is byte-identical to the query spelling.
+	for path, query := range map[string]string{
+		"/api/v1/sections/services/snapshots/worker-a":          "/api/v1/snapshots/worker-a?include=services",
+		"/api/v1/sections/policy/snapshots/worker-a":            "/api/v1/snapshots/worker-a?include=policy",
+		"/api/v1/sections/policy,services/snapshots/worker-a":   "/api/v1/snapshots/worker-a?include=policy,services",
+		"/api/v1/sections/services,policy/snapshots/worker-a":   "/api/v1/snapshots/worker-a?include=policy,services",
+		"/api/v1/sections/policy%2Cservices/snapshots/worker-a": "/api/v1/snapshots/worker-a?include=policy,services",
+		// Both spellings on one request: the union.
+		"/api/v1/sections/services/snapshots/worker-a?include=policy": "/api/v1/snapshots/worker-a?include=policy,services",
+	} {
+		byPath, byQuery := ok(path), ok(query)
+		if !bytes.Equal(byPath.Body.Bytes(), byQuery.Body.Bytes()) {
+			t.Fatalf("%s must answer exactly like %s", path, query)
+		}
+		if got := byPath.Header().Get(headerSnapshotNodeName); got != "worker-a" {
+			t.Fatalf("%s: snapshot headers must be set, got node %q", path, got)
+		}
+	}
+	keys := databaseKeysOf(t, ok("/api/v1/sections/services/snapshots/worker-a").Body.Bytes())
+	for _, key := range serviceKeys {
+		if !contains(keys, key) {
+			t.Fatalf("path spelling must deliver %s, got %v", key, keys)
+		}
+	}
+	for _, key := range policyKeys {
+		if contains(keys, key) {
+			t.Fatalf("path spelling must not deliver %s unasked, got %v", key, keys)
+		}
+	}
+
+	// The aggregate: every zone carries the requested section.
+	var aggregate struct {
+		Snapshots []json.RawMessage `json:"snapshots"`
+	}
+	if err := json.Unmarshal(ok("/api/v1/sections/services/snapshots").Body.Bytes(), &aggregate); err != nil {
+		t.Fatalf("decode aggregate: %v", err)
+	}
+	if len(aggregate.Snapshots) != 2 {
+		t.Fatalf("expected two zones, got %d", len(aggregate.Snapshots))
+	}
+	for _, zone := range aggregate.Snapshots {
+		zoneKeys := databaseKeysOf(t, zone)
+		if !contains(zoneKeys, "loadBalancers") || contains(zoneKeys, "acls") {
+			t.Fatalf("aggregate by path must carry services only, got %v", zoneKeys)
+		}
+	}
+}
+
+func TestSectionsPathRejectsUnknownSectionsAndShapes(t *testing.T) {
+	storeDir := t.TempDir()
+	writeFixture(t, filepath.Join(storeDir, "worker-a.json"), withSections(zoneSnapshot("worker-a")))
+	store := snapshot.NewFileStore(storeDir, "")
+	srv := New(store).WithNodeLister(store)
+
+	// An unknown section is the same 400 the query spelling gives.
+	for _, target := range []string{
+		"/api/v1/sections/bogus/snapshots/worker-a",
+		"/api/v1/sections/policy,bogus/snapshots/worker-a",
+		"/api/v1/sections/bogus/snapshots",
+	} {
+		rr := get(t, srv, target, nil)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected 400, got %d", target, rr.Code)
+		}
+		if body := rr.Body.String(); !strings.Contains(body, `"bogus"`) || !strings.Contains(body, "valid sections: policy, services") {
+			t.Fatalf("%s: body must name the bad and the valid sections, got %q", target, body)
+		}
+	}
+
+	// Anything that is not .../snapshots[/<node>] under a section list is
+	// not found, and says what the path should look like.
+	for target, want := range map[string]int{
+		"/api/v1/sections/services":                     http.StatusNotFound,
+		"/api/v1/sections/services/":                    http.StatusNotFound,
+		"/api/v1/sections/services/nodes/worker-a":      http.StatusNotFound,
+		"/api/v1/sections/services/snapshotsX":          http.StatusNotFound,
+		"/api/v1/sections/services/snapshots/":          http.StatusBadRequest,
+		"/api/v1/sections/services/snapshots/a/b":       http.StatusBadRequest,
+		"/api/v1/sections/services/snapshots/no-such-n": http.StatusNotFound,
+	} {
+		rr := get(t, srv, target, nil)
+		if rr.Code != want {
+			t.Fatalf("%s: expected %d, got %d (%s)", target, want, rr.Code, strings.TrimSpace(rr.Body.String()))
+		}
+	}
+	if body := get(t, srv, "/api/v1/sections/services/nodes/worker-a", nil).Body.String(); !strings.Contains(body, "/api/v1/sections/<section>") {
+		t.Fatalf("a misshapen sections path should say what is expected, got %q", body)
+	}
+
+	post := httptest.NewRequest(http.MethodPost, "/api/v1/sections/services/snapshots/worker-a", nil)
+	rr := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rr, post)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST must stay rejected on the path spelling, got %d", rr.Code)
+	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestAggregateHonoursIncludeAndOmitsSectionsByDefault(t *testing.T) {
 	storeDir := t.TempDir()
 	writeFixture(t, filepath.Join(storeDir, "worker-a.json"), withSections(zoneSnapshot("worker-a")))
@@ -370,6 +496,7 @@ func TestSnapshotEndpointsGzipWhenAccepted(t *testing.T) {
 	for _, target := range []string{
 		"/api/v1/snapshots/cnv-1",
 		"/api/v1/snapshots/cnv-1?include=policy,services",
+		"/api/v1/sections/policy,services/snapshots/cnv-1",
 		"/api/v1/snapshots",
 	} {
 		t.Run(target, func(t *testing.T) {
@@ -434,9 +561,11 @@ func TestGzipLeavesErrorsAndProbesPlain(t *testing.T) {
 	accept := http.Header{"Accept-Encoding": {"gzip"}}
 
 	for target, wantStatus := range map[string]int{
-		"/api/v1/snapshots/missing":               http.StatusNotFound,
-		"/api/v1/snapshots/missing?include=bogus": http.StatusBadRequest,
-		"/healthz": http.StatusOK,
+		"/api/v1/snapshots/missing":                http.StatusNotFound,
+		"/api/v1/snapshots/missing?include=bogus":  http.StatusBadRequest,
+		"/api/v1/sections/bogus/snapshots/missing": http.StatusBadRequest,
+		"/api/v1/sections/services/nope":           http.StatusNotFound,
+		"/healthz":                                 http.StatusOK,
 	} {
 		rr := get(t, srv, target, accept)
 		if rr.Code != wantStatus {

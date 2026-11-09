@@ -9,9 +9,12 @@ import (
 
 // Section names an optional group of database tables. The collector reads
 // and caches every table in one pass; a response carries a section only when
-// the request asks for it with ?include=<section>[,<section>], so the ladder
-// views keep their payload while the detail views opt in to the bulk
-// (ovn-recon-e2b.9).
+// the request asks for it, so the ladder views keep their payload while the
+// detail views opt in to the bulk (ovn-recon-e2b.9). A request asks either
+// with ?include=<section>[,<section>] or, equivalently, in the path:
+// /api/v1/sections/<section>[,<section>]/snapshots[/<node>]. The plugin uses
+// the path because the console forwards paths but not query strings
+// (ovn-recon-e2b.12).
 type Section string
 
 const (
@@ -53,7 +56,8 @@ type SectionSet map[Section]bool
 // Has reports whether the section was requested.
 func (s SectionSet) Has(section Section) bool { return s[section] }
 
-// ParseSections reads the values of an include query parameter. Each value
+// ParseSections reads the values of an include query parameter (or the list
+// segment of the path spelling). Each value
 // is a comma-separated list, and the parameter may repeat; blanks are
 // ignored, so "include=" requests nothing. An unknown name is an error that
 // lists the valid ones.

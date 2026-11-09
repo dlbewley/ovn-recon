@@ -20,19 +20,32 @@ This scaffold includes:
 - `GET /api/v1/snapshots/:nodeName`: one node's zone snapshot
 - `GET /api/v1/snapshots`: every reachable node's zone snapshot in one
   response (`ClusterLogicalTopology`)
+- `GET /api/v1/sections/<section>[,<section>]/snapshots[/:nodeName]`: the
+  same two endpoints with optional sections added (see below)
 
 Example:
 
 ```bash
 curl -s http://localhost:8090/api/v1/snapshots/worker-a
+curl -s --compressed http://localhost:8090/api/v1/sections/policy,services/snapshots/worker-a
 curl -s --compressed 'http://localhost:8090/api/v1/snapshots/worker-a?include=policy,services'
 ```
 
-### Optional sections (`include`)
+### Optional sections
 
-Both snapshot endpoints take `?include=<section>[,<section>]` (the parameter
-may also repeat). Without it a response carries the ladder tables only, which
-is what the topology views fetch.
+Both snapshot endpoints can add optional sections to a response. Without
+them a response carries the ladder tables only, which is what the topology
+views fetch. There are two equivalent spellings, served by the same code:
+
+- In the path: `/api/v1/sections/<section>[,<section>]/snapshots[/:nodeName]`.
+  **This is the one the console plugin uses, and the one to use for anything
+  that reaches the collector through the OpenShift console.** The console's
+  plugin asset handler forwards a request's path and drops its query string,
+  so a query parameter silently never arrives (`ovn-recon-e2b.12`).
+- As a query parameter: `?include=<section>[,<section>]` (the parameter may
+  also repeat). Convenient for direct use with `curl`.
+
+A request that uses both gets the union.
 
 | Section | Adds to `database` | NB tables |
 |---|---|---|
@@ -49,10 +62,11 @@ a few hundred Services and NetworkPolicies, the ladder tables are 100 to
 about 200 KB, and both are nearly identical in every zone, so a polling
 topology view (and above all the aggregate, which would repeat them once per
 node) should not carry them. The collector still reads every table in one
-transaction and caches one full snapshot per node; `include` only selects
-what a response carries, so asking for a section never triggers a second
-collection. The aggregate endpoint honours `include` but a client that wants
-section data for a cluster-wide view should read it from one node's snapshot.
+transaction and caches one full snapshot per node; the section list only
+selects what a response carries, so asking for a section never triggers a
+second collection. The aggregate endpoint honours it too, but a client that
+wants section data for a cluster-wide view should read it from one node's
+snapshot.
 
 The `services` section is populated: `loadBalancers` are the NB rows as
 stored (`vips` maps `"vip:port"` to the comma-separated backend list, empty
@@ -62,7 +76,7 @@ uuid (`logicalSwitches[].loadBalancerGroup`, `logicalRouters[].loadBalancerGroup
 A switch or router sees its own `loadBalancer` rows plus the members of each
 group it attaches. The `policy` section is still ahead of its data: the
 collector does not populate it until the policy plane (`ovn-recon-e2b.5`)
-adds its tables and row types, so `include=policy` adds nothing yet.
+adds its tables and row types, so asking for `policy` adds nothing yet.
 
 ### Response headers
 

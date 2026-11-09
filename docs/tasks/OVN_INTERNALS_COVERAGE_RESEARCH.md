@@ -940,6 +940,41 @@ fixture corpus.
     running console, and whether the console's plugin proxy passes
     `Content-Encoding` through is still open from `.9`.
 
+### 2026-11-09: `ovn-recon-e2b.12` sections travel in the path
+
+Found on the lab running v1.0.6-a2: a node switch showed no Services tab
+and "rows not collected yet", although the collector held the rows.
+
+1. **The console drops query strings on the way to the collector.** The
+   plugin reaches the collector through the console's plugin asset handler
+   (`/api/plugins/ovn-recon/...`) and then the plugin's own nginx; there is
+   no `ConsolePlugin` proxy entry. `HandlePluginAssets` in
+   `openshift/console` builds the upstream URL from the request path alone,
+   so `?include=services` never arrived. Confirmed from a signed-in console
+   tab: `?include=bogus` returned 200 with the default body where the
+   collector itself answers 400.
+2. **Sections therefore travel in the path.**
+   `/api/v1/sections/<section>[,<section>]/snapshots[/<node>]` is rewritten
+   onto the query form inside the collector and served by the same handlers,
+   so the two spellings cannot drift. The plugin uses only the path form and
+   a unit test asserts it never emits a query string. `?include=` stays for
+   direct use. No operator, nginx or RBAC change: `location /api/v1/`
+   already forwards the new path.
+3. **Rejected:** a request header (works, since the handler forwards
+   headers, but hides the request from URLs and logs); a `ConsolePlugin`
+   `spec.proxy` entry (needs an operator change and TLS on the collector);
+   an nginx rewrite (the same idea hidden in the plugin image).
+4. **Why it shipped.** The collector tests and the live checks used a
+   port-forward, which bypasses the console, and the plugin tests mock
+   `fetch`. Acceptance for anything the plugin fetches now includes a check
+   from a signed-in console tab. This supersedes the request shape in the
+   `.9` entry above (decision 2) and the `useOptionalSections` notes in
+   `.5`; the rest of those entries stands.
+5. **Also seen during the same upgrade, tracked separately**
+   (`ovn-recon-ztu`): a cache entry written by the previous collector
+   version stays trusted for one TTL, so a new section can be missing from
+   the first responses after an upgrade.
+
 ## Initial Beads Backlog Mapping
 
 | Bead | Title | Section |
@@ -956,6 +991,7 @@ fixture corpus.
 | `ovn-recon-e2b.9` | Payload budgeting: table selection, endpoints, cache | 8 |
 | `ovn-recon-e2b.10` | Revisit kck.1 decision 4: SB bindings and chassis | 6, tier 5 |
 | `ovn-recon-e2b.11` | Contract: canonical JSON formatting for schemas and fixtures | 11 |
+| `ovn-recon-e2b.12` | Bug: sections must travel in the URL path, the console drops query strings | 11 |
 
 Dependencies recorded in beads: `.5`, `.6`, `.7`, `.9` after `.1`; `.8`
 after `.4`; since 2026-11-08 also `.5` and `.6` after `.9`, `.5` after `.4`,

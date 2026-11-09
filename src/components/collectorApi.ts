@@ -1,12 +1,19 @@
 import { ClusterLogicalTopology, LogicalTopologySnapshot, SnapshotSection } from '../types';
 
 // The collector is reachable through several console proxy shapes depending
-// on console version and plugin proxy configuration; try each in order.
+// on console version and plugin proxy configuration; try each in order. Each
+// entry is the collector's /api/v1 root as seen through that shape.
+//
+// On a default install only the first works: the console's plugin ASSET
+// handler forwards the request to the plugin's own nginx, which proxies
+// /api/v1/ to the collector. That handler forwards the request PATH only and
+// drops the query string, so nothing the collector needs may travel in a
+// query parameter (ovn-recon-e2b.12).
 const COLLECTOR_PROXY_PREFIXES = [
-    '/api/plugins/ovn-recon/api/v1/snapshots',
-    '/api/plugins/ovn-recon/backend/api/v1/snapshots',
-    '/api/proxy/plugin/ovn-recon/backend/api/v1/snapshots',
-    '/api/proxy/plugin/ovn-recon/api/v1/snapshots',
+    '/api/plugins/ovn-recon/api/v1',
+    '/api/plugins/ovn-recon/backend/api/v1',
+    '/api/proxy/plugin/ovn-recon/backend/api/v1',
+    '/api/proxy/plugin/ovn-recon/api/v1',
 ];
 
 // Only one prefix ever works on a given console; remember it so later
@@ -61,12 +68,17 @@ export const normalizeSections = (include?: readonly SnapshotSection[]): Snapsho
     Array.from(new Set(include ?? [])).sort();
 
 /**
- * The include query string, or '' when no section is requested: the same
- * request always produces the same URL.
+ * The path segment that selects optional sections, or '' when none is
+ * requested: `/sections/policy,services`. The same request always produces
+ * the same URL.
+ *
+ * Sections travel in the path, not as `?include=`, because the console drops
+ * query strings on the way to the collector (see COLLECTOR_PROXY_PREFIXES).
+ * The collector serves both spellings identically.
  */
-export const includeQuery = (include?: readonly SnapshotSection[]): string => {
+export const sectionsPath = (include?: readonly SnapshotSection[]): string => {
     const sections = normalizeSections(include);
-    return sections.length > 0 ? `?include=${sections.join(',')}` : '';
+    return sections.length > 0 ? `/sections/${sections.join(',')}` : '';
 };
 
 export const fetchCollectorSnapshot = (
@@ -74,8 +86,8 @@ export const fetchCollectorSnapshot = (
     options: SnapshotFetchOptions = {},
 ): Promise<LogicalTopologySnapshot> => {
     const encodedNodeName = encodeURIComponent(nodeName);
-    const query = includeQuery(options.include);
-    return fetchFirst((prefix) => `${prefix}/${encodedNodeName}${query}`);
+    const sections = sectionsPath(options.include);
+    return fetchFirst((prefix) => `${prefix}${sections}/snapshots/${encodedNodeName}`);
 };
 
 /**
@@ -84,6 +96,6 @@ export const fetchCollectorSnapshot = (
  * `include` and read section data from one representative node's snapshot.
  */
 export const fetchClusterTopology = (options: SnapshotFetchOptions = {}): Promise<ClusterLogicalTopology> => {
-    const query = includeQuery(options.include);
-    return fetchFirst((prefix) => `${prefix}${query}`);
+    const sections = sectionsPath(options.include);
+    return fetchFirst((prefix) => `${prefix}${sections}/snapshots`);
 };

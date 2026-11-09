@@ -17,8 +17,14 @@ import (
 const snapshotsPrefix = "/api/v1/snapshots/"
 const snapshotsAggregatePath = "/api/v1/snapshots"
 
+// sectionsPrefix roots the path spelling of the include parameter:
+// /api/v1/sections/<section>[,<section>]/snapshots[/<node>].
+const sectionsPrefix = "/api/v1/sections/"
+
 // includeParam selects the optional sections a snapshot response carries.
 const includeParam = "include"
+
+const sectionsPathUsage = "expected /api/v1/sections/<section>[,<section>]/snapshots[/<node>]"
 
 // aggregateConcurrency bounds parallel zone collection so an aggregate
 // request cannot fan out unbounded pod execs.
@@ -97,7 +103,45 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/readyz", s.handleReady)
 	mux.Handle(snapshotsAggregatePath, withGzip(http.HandlerFunc(s.handleSnapshotsAggregate)))
 	mux.Handle(snapshotsPrefix, withGzip(http.HandlerFunc(s.handleSnapshotByNode)))
+	mux.Handle(sectionsPrefix, withGzip(http.HandlerFunc(s.handleSectionsPath)))
 	return mux
+}
+
+// handleSectionsPath serves the path spelling of ?include=:
+//
+//	/api/v1/sections/<a>[,<b>]/snapshots           the aggregate
+//	/api/v1/sections/<a>[,<b>]/snapshots/<node>    one node
+//
+// It exists because the OpenShift console's plugin asset handler, the only
+// route from the plugin to this service on a default install, forwards a
+// request's path and drops its query string, so ?include= never arrives
+// there (ovn-recon-e2b.12). The path is rewritten onto the query form and
+// served by the same handlers, so the two spellings cannot drift apart; a
+// request that uses both gets the union.
+func (s *Server) handleSectionsPath(w http.ResponseWriter, r *http.Request) {
+	list, rest, found := strings.Cut(strings.TrimPrefix(r.URL.Path, sectionsPrefix), "/")
+	if !found || strings.TrimSpace(list) == "" {
+		http.Error(w, sectionsPathUsage, http.StatusNotFound)
+		return
+	}
+
+	target := *r.URL
+	query := target.Query()
+	query.Add(includeParam, list)
+	target.RawQuery = query.Encode()
+	target.Path = "/api/v1/" + rest
+	target.RawPath = ""
+	rewritten := r.Clone(r.Context())
+	rewritten.URL = &target
+
+	switch {
+	case target.Path == snapshotsAggregatePath:
+		s.handleSnapshotsAggregate(w, rewritten)
+	case strings.HasPrefix(target.Path, snapshotsPrefix):
+		s.handleSnapshotByNode(w, rewritten)
+	default:
+		http.Error(w, sectionsPathUsage, http.StatusNotFound)
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -135,7 +179,8 @@ func (s *Server) handleSnapshotByNode(w http.ResponseWriter, r *http.Request) {
 	s.writeSnapshot(w, snapshot.Project(payload, sections), nodeName)
 }
 
-// requestedSections reads ?include= and answers 400 itself, naming the valid
+// requestedSections reads ?include= (which handleSectionsPath also fills
+// from the path spelling) and answers 400 itself, naming the valid
 // sections, when a name is unknown. collectZone always resolves the full
 // snapshot (one collect, one cache entry per node); the sections only decide
 // what a response carries, so asking for more never triggers a recollect.

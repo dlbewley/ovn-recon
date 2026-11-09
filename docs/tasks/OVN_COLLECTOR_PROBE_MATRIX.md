@@ -36,7 +36,8 @@ commands below and adds an `NB_TRANSACT_FAILED` warning. The SB chassis query
 for bridge mappings is a separate `ovn-sbctl` exec in the `sbdb` container.
 
 The two `services` tables are collected and cached on every pass but leave
-the collector only in a response to `?include=services`. They are last in
+the collector only in a response that asks for the `services` section
+(`/api/v1/sections/services/snapshots/...` or `?include=services`). They are last in
 the transaction, so an NB schema without them fails those selects alone; a
 section table that could not be read is omitted from `database` (the key is
 absent) instead of being reported as an empty table.

@@ -12,7 +12,7 @@ import { LoadBalancerGroupRow, LoadBalancerRow, LogicalDatabase } from '../types
  * its direct load balancers and the members of every group it attaches.
  *
  * Everything here reads the optional `services` section, which a snapshot
- * carries only when requested with ?include=services; without it the lookups
+ * carries only when the services section is requested; without it the lookups
  * return undefined and the drawer keeps its "not collected" rendering.
  */
 
