@@ -6,9 +6,11 @@ This document defines the Day-1 semantics for Phase 2 snapshot delivery from the
 ## Snapshot Transport
 - Endpoint: `GET /api/v1/snapshots/:nodeName`
 - Payload: `LogicalTopologySnapshot` JSON
-- Optional sections (ovn-recon-e2b.9): `?include=policy,services` on the
-  per-node and aggregate endpoints adds the policy and service tables to
-  `database`. The default response is the ladder tables only; an unknown
+- Optional sections (ovn-recon-e2b.9): `/api/v1/sections/policy,services/snapshots[/:nodeName]`,
+  or equivalently `?include=policy,services` on the per-node and aggregate
+  endpoints, adds the policy and service tables to `database`. The plugin
+  uses the path form because the console's plugin asset handler drops query
+  strings (ovn-recon-e2b.12). The default response is the ladder tables only; an unknown
   section is a `400`. The cache below always holds the full snapshot, so
   `include` is a projection of the cached entry, never a second collection.
 - Compression: `Content-Encoding: gzip` when the request accepts it, with

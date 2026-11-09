@@ -571,8 +571,8 @@ export interface LogicalDatabase {
     /** Absent on snapshots from collectors older than the field. */
     nbGlobal?: NBGlobalRow;
 
-    // Optional sections: present only when the request names the section in
-    // ?include= (see SnapshotSection). An absent key means "not requested, or
+    // Optional sections: present only when the request names the section
+    // (see SnapshotSection). An absent key means "not requested, or
     // not collected"; an empty array means "collected, and the table is empty".
     /** Section `policy`. */
     acls?: SectionRow[];
@@ -588,8 +588,10 @@ export interface LogicalDatabase {
 
 /**
  * Optional groups of database tables the collector delivers on request:
- * `GET /api/v1/snapshots[/:node]?include=policy,services`. Without the
- * parameter a snapshot carries the ladder tables only.
+ * `GET /api/v1/sections/policy,services/snapshots[/:node]` (the plugin's
+ * spelling, because the console drops query strings) or the equivalent
+ * `GET /api/v1/snapshots[/:node]?include=policy,services`. Without either a
+ * snapshot carries the ladder tables only.
  */
 export type SnapshotSection = 'policy' | 'services';
 

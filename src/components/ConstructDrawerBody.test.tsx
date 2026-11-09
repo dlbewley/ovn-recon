@@ -787,7 +787,8 @@ describe('ConstructDrawerBody Services tab', () => {
     });
 
     it('drops the tab when the collector does not deliver the section', async () => {
-        // An older collector ignores include= and answers with the ladder.
+        // A collector that answers without the section (an entry cached by
+        // an older version, say) leaves the drawer with the ladder only.
         fetchSnapshot.mockResolvedValue({
             ...(cnv1 as unknown as LogicalTopologySnapshot),
             database: ladderDatabase,

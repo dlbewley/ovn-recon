@@ -266,7 +266,8 @@ type LogicalDatabase struct {
 	NBGlobal *NBGlobalRow `json:"nbGlobal,omitempty"`
 
 	// The optional sections (see Section). A response carries them only when
-	// the request names the section in ?include=. Nil means absent: not
+	// the request names the section (?include= or the /sections/ path). Nil
+	// means absent: not
 	// requested, or not collected. Non-nil with zero rows means collected and
 	// empty, and encodes as [] (LogicalDatabase.MarshalJSON; the omitempty
 	// here only documents that the keys are optional).
