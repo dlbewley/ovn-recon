@@ -1017,7 +1017,14 @@ corpus, and with jsdom tests over the fixtures.
    secondary network's controller. So the default network and primary
    networks resolve to `NetworkPolicy` (`networking.k8s.io/v1`), secondary
    networks to `MultiNetworkPolicy` (`k8s.cni.cncf.io/v1beta1`), and a
-   network whose role is unknown gets no link rather than a guess. The role
+   network whose role is unknown gets no link rather than a guess. Both
+   halves were verified with short-lived policies on 2026-11-09: a
+   NetworkPolicy in a namespace served by a Layer2 primary CUDN is written
+   by that network's controller alone (the default controller writes
+   nothing for it), in exactly the row shape of a MultiNetworkPolicy: one
+   policy port group, one ACL per rule, and the two `NetpolNamespace` groups
+   with `defaultDeny` and `arpAllow`. A controller other than the default
+   therefore does not imply MultiNetworkPolicy; only the role does. The role
    comes from `k8s.ovn.org/role` on the zone's switches and gateway routers
    through a resolver the caller can replace with a Kubernetes-side one.
 4. **`policyIndex.ts` holds the apply side and parses the peer side.** Built
@@ -1063,29 +1070,30 @@ corpus, and with jsdom tests over the fixtures.
    An ipBlock rule carries `ip-block-index` -2 and `ACL.name` is cut at 63
    characters.
 9. **Fixture: `cnv-1` carries the section, the other nodes do not.** The
-   rows are a later capture of the same zone (667 ACLs, 900 port groups, 63
+   rows are a later capture of the same zone (672 ACLs, 903 port groups, 63
    address sets, about 1.1 MB): rows of the four networks the fixture does
    not model are left out, `Port_Group.ports` is remapped to the fixture's
    ports by name, and a pod that no longer exists takes the groups of a pod
    of the same workload, or its namespace's group alone. The two existing
    `Logical_Switch.acls` references still resolved. Synthetic, because the
    cluster had none: the MultiNetworkPolicy row sets for two secondary
-   networks (`demo-mirror:ovn-recon-fixture-mnp`, in the shape verified with
-   a short-lived policy on 2026-11-09) and one isolation ACL added to the
-   layer2 switch's `acls`, shaped after the EVPN one.
+   networks (`demo-mirror:ovn-recon-fixture-mnp`) and a NetworkPolicy row
+   set under the primary layer2 network's controller
+   (`ovn-recon-fixture:ovn-recon-fixture-np`), both in the shapes verified
+   with short-lived policies on 2026-11-09, and one isolation ACL added to
+   the layer2 switch's `acls`, shaped after the EVPN one.
 10. **Measured.** Virtualization node: default response 217 KB (44 KB
     gzipped), with the policy section 1.22 MB (176 KB), so the section costs
     about 1.0 MB or 132 KB gzipped. Control-plane node: 138 KB (27 KB) and
     1.14 MB (158 KB). A zone collects in 0.8 to 1.0 s.
 11. **Not verified.** Nothing has been looked at in a running console: that
     needs a released build and is owed after the next pre-release, from a
-    signed-in console tab. A NetworkPolicy in a namespace served by a
-    primary UDN is expected under that network's controller and resolves to
-    `NetworkPolicy` here, but the lab has none. AdminNetworkPolicy,
-    BaselineAdminNetworkPolicy, EgressFirewall, EgressQoS, NetworkQoS and
-    namespace multicast rows do not exist on the lab; they render through
-    the generic path. Whether a secondary Layer2 network with no pod on a
-    node still has a switch there (and so a known role) was not checked.
+    signed-in console tab. AdminNetworkPolicy, BaselineAdminNetworkPolicy,
+    EgressFirewall, EgressQoS, NetworkQoS and namespace multicast rows do
+    not exist on the lab; they render through the generic path. Some
+    secondary networks have no switch in a zone at all, so their role is
+    unknown there and their policy owners stay unlinked until a caller
+    supplies a Kubernetes-side role resolver (`ovn-recon-e2b.8`).
 
 ## Initial Beads Backlog Mapping
 

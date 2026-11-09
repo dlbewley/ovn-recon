@@ -1164,6 +1164,29 @@ describe('ConstructDrawerBody policy plane', () => {
             expect(aclRows()[0].textContent).toContain('MultiNetworkPolicy demo-mirror/restrict');
         });
 
+        it('links the same rows to a NetworkPolicy when the controller\'s network is primary', () => {
+            // A NetworkPolicy in a namespace served by a primary UDN is
+            // written by that network's controller, in the very same shape.
+            const primary: LogicalDatabase = {
+                ...secondary,
+                logicalSwitches: [{
+                    ...secondary.logicalSwitches[0],
+                    externalIds: { ...secondary.logicalSwitches[0].externalIds, 'k8s.ovn.org/role': 'primary' },
+                }],
+            };
+            renderConstruct(
+                'cluster_udn_vlan.1924_ovn_localnet_switch',
+                { database: primary, databaseNode: 'cnv-1' },
+                buildLadderModel(primary),
+            );
+            clickTab('Ports');
+            expandPort('virt-launcher-vm-a-x7k2p');
+            const policyGroup = groupRows().find((row) => row.textContent?.includes('demo-mirror/restrict'))!;
+            expect(policyGroup.textContent?.startsWith('NetworkPolicy')).toBe(true);
+            expect(hrefs(policyGroup)).toContain('/k8s/ns/demo-mirror/networking.k8s.io~v1~NetworkPolicy/restrict');
+            expect(container.textContent).not.toContain('MultiNetworkPolicy');
+        });
+
         it('caps the ACL list of a port and says how many more there are', () => {
             renderConstruct(
                 'cluster_udn_vlan.1924_ovn_localnet_switch',

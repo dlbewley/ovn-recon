@@ -186,10 +186,12 @@ describe('captured logical snapshot corpus', () => {
     // fixture does not model are left out, Port_Group.ports is remapped to
     // the fixture's own switch ports by name, and pods that no longer exist
     // take the groups of a pod of the same workload (or their namespace's
-    // group). Three things are synthetic, because the capture cluster had
-    // none: the MultiNetworkPolicy rows (`ovn-recon-fixture-mnp`, in the shape
-    // verified with a short-lived policy), and the isolation ACL set directly
-    // on the layer2 switch (shaped after the one an EVPN layer2 network gets).
+    // group). Some rows are synthetic, because the capture cluster had none:
+    // the MultiNetworkPolicy rows (`ovn-recon-fixture-mnp`) and the
+    // NetworkPolicy on a primary network (`ovn-recon-fixture-np`), both in
+    // the shape verified with a short-lived policy, and the isolation ACL
+    // set directly on the layer2 switch (shaped after the one an EVPN layer2
+    // network gets).
     describe('cnv-1 policy section', () => {
         const database = corpus['cnv-1'].database!;
         const acls = database.acls ?? [];
@@ -371,12 +373,66 @@ describe('captured logical snapshot corpus', () => {
                 expect(deny.map((row) => row.externalIds?.direction).sort()).toEqual(['Egress', 'Ingress']);
                 for (const row of deny) expect(row.acls).toHaveLength(2);
             }
-            // Every other NetworkPolicy-typed row is the default network's.
-            const others = groups.filter((row) => typeOf(row) === 'NetworkPolicy' && nameOf(row) !== name);
-            for (const row of others) {
-                expect(controllerOf(row)).toBe('default-network-controller');
-                expect(ownerTarget(ownerOf(row.externalIds), roleOf)?.kind).toBe('NetworkPolicy');
+        });
+
+        it('carries a NetworkPolicy on a primary network, written by that network\'s controller alone', () => {
+            const roleOf = networkRoleResolverFor(database);
+            const name = 'ovn-recon-fixture:ovn-recon-fixture-np';
+            const controller = 'cluster_udn_example-p-cudn-network-controller';
+            // The controller's network is primary in this zone.
+            expect(roleOf('cluster_udn_example-p-cudn')).toBe('primary');
+
+            // One policy group and one rule ACL, and nothing under the
+            // default controller for the same policy.
+            const policyGroups = groups.filter((row) => nameOf(row) === name);
+            expect(policyGroups.map(controllerOf)).toEqual([controller]);
+            const [group] = policyGroups;
+            expect(typeOf(group)).toBe('NetworkPolicy');
+            const rules = group.acls.map((uuid) => aclByUuid.get(uuid)!);
+            expect(rules).toHaveLength(1);
+            expect(rules[0]).toMatchObject({ direction: 'to-lport', action: 'allow-related', priority: 1001, tier: 2 });
+            expect(typeOf(rules[0])).toBe('NetworkPolicy');
+            expect(controllerOf(rules[0])).toBe(controller);
+            expect(matchRefs(rules[0]).portGroups).toEqual([group.name]);
+
+            // Same row shape as the MultiNetworkPolicy case; only the role of
+            // the controller's network makes it a NetworkPolicy.
+            for (const row of [group, rules[0]]) {
+                expect(ownerTarget(ownerOf(row.externalIds), roleOf)).toMatchObject({
+                    apiVersion: 'networking.k8s.io/v1',
+                    kind: 'NetworkPolicy',
+                    namespace: 'ovn-recon-fixture',
+                    name: 'ovn-recon-fixture-np',
+                });
             }
+
+            // The namespace default-deny pair, under the same controller: a
+            // one-rule policy adds five ACLs and three port groups.
+            const deny = groups.filter(
+                (row) => typeOf(row) === 'NetpolNamespace' && nameOf(row) === 'ovn-recon-fixture',
+            );
+            expect(deny.map(controllerOf)).toEqual([controller, controller]);
+            expect(deny.map((row) => row.externalIds?.direction).sort()).toEqual(['Egress', 'Ingress']);
+            const added = [...rules, ...deny.flatMap((row) => row.acls.map((uuid) => aclByUuid.get(uuid)!))];
+            expect(added).toHaveLength(5);
+            expect(added.every((acl) => controllerOf(acl) === controller)).toBe(true);
+        });
+
+        it('resolves every NetworkPolicy-typed row to a kind by the role of its controller\'s network', () => {
+            const roleOf = networkRoleResolverFor(database);
+            const kindOf = (row: { externalIds?: Record<string, string> }) =>
+                ownerTarget(ownerOf(row.externalIds), roleOf)?.kind;
+            const byController = new Map<string, Set<string | undefined>>();
+            for (const row of [...acls, ...groups].filter((candidate) => typeOf(candidate) === 'NetworkPolicy')) {
+                const kinds = byController.get(controllerOf(row)!) ?? new Set();
+                kinds.add(kindOf(row));
+                byController.set(controllerOf(row)!, kinds);
+            }
+            expect([...byController.get('default-network-controller')!]).toEqual(['NetworkPolicy']);
+            expect([...byController.get('cluster_udn_example-p-cudn-network-controller')!]).toEqual(['NetworkPolicy']);
+            expect([...byController.get('cluster_udn_vlan-1924-network-controller')!]).toEqual(['MultiNetworkPolicy']);
+            expect([...byController.get('demo-mirror_example-l3-udn-network-controller')!]).toEqual(['MultiNetworkPolicy']);
+            expect(byController.size).toBe(4);
         });
     });
 

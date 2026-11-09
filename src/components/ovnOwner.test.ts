@@ -135,9 +135,48 @@ describe('ownerTarget and describeOwner', () => {
     });
 
     it('links a NetworkPolicy owned by a primary network controller as a NetworkPolicy', () => {
+        // A NetworkPolicy in a namespace served by a primary UDN is written
+        // by that network's controller alone, not by the default one: a
+        // controller other than the default does not make it a
+        // MultiNetworkPolicy.
         const owner = ownerOf(ids('NetworkPolicy', 'shop:allow-web', 'cluster_udn_example-p-cudn-network-controller'));
-        expect(ownerTarget(owner, roles)?.kind).toBe('NetworkPolicy');
-        expect(ownerTarget(owner, roles)?.apiVersion).toBe('networking.k8s.io/v1');
+        expect(ownerTarget(owner, roles)).toEqual({
+            apiVersion: 'networking.k8s.io/v1',
+            kind: 'NetworkPolicy',
+            namespace: 'shop',
+            name: 'allow-web',
+            path: '/k8s/ns/shop/networking.k8s.io~v1~NetworkPolicy/allow-web',
+        });
+        expect(ownerText(describeOwner(owner, roles))).toBe('NetworkPolicy shop/allow-web');
+        // Without a role the same owner is not linked.
+        expect(ownerTarget(owner)).toBeUndefined();
+    });
+
+    it('resolves the fixture\'s policy rows by network role: primary and secondary controllers side by side', () => {
+        const roleOf = networkRoleResolverFor(fixtureDatabase);
+        const kindsByController = new Map<string, Set<string>>();
+        const policyRows = [...(fixtureDatabase.acls ?? []), ...(fixtureDatabase.portGroups ?? [])].filter(
+            (row) => row.externalIds?.['k8s.ovn.org/owner-type'] === 'NetworkPolicy',
+        );
+        for (const row of policyRows) {
+            const owner = ownerOf(row.externalIds)!;
+            const kinds = kindsByController.get(owner.controller!) ?? new Set<string>();
+            kinds.add(ownerTarget(owner, roleOf)?.kind ?? 'unresolved');
+            kindsByController.set(owner.controller!, kinds);
+        }
+        expect(Object.fromEntries([...kindsByController].map(([controller, kinds]) => [controller, [...kinds]]))).toEqual({
+            'default-network-controller': ['NetworkPolicy'],
+            'cluster_udn_example-p-cudn-network-controller': ['NetworkPolicy'],
+            'cluster_udn_vlan-1924-network-controller': ['MultiNetworkPolicy'],
+            'demo-mirror_example-l3-udn-network-controller': ['MultiNetworkPolicy'],
+        });
+
+        const primaryGroup = (fixtureDatabase.portGroups ?? []).find(
+            (row) => row.externalIds?.['k8s.ovn.org/name'] === 'ovn-recon-fixture:ovn-recon-fixture-np',
+        )!;
+        expect(ownerLink(ownerOf(primaryGroup.externalIds), roleOf)).toBe(
+            '/k8s/ns/ovn-recon-fixture/networking.k8s.io~v1~NetworkPolicy/ovn-recon-fixture-np',
+        );
     });
 
     it('resolves the same owner type on a secondary network to a MultiNetworkPolicy', () => {

@@ -17779,6 +17779,104 @@
           "k8s.ovn.org/owner-controller": "cluster_udn_example-p-cudn-network-controller",
           "k8s.ovn.org/owner-type": "UDNIsolation"
         }
+      },
+      {
+        "uuid": "7d862ccf-6605-5fe4-a5e2-b91eefc6966d",
+        "name": "NP:ovn-recon-fixture:ovn-recon-fixture-np:Ingress:0",
+        "priority": 1001,
+        "direction": "to-lport",
+        "action": "allow-related",
+        "match": "ip4.src == 192.0.2.0/24 && tcp && tcp.dst==8080 && outport == @a9623201120265865514",
+        "tier": 2,
+        "meter": "acl-logging",
+        "externalIds": {
+          "direction": "Ingress",
+          "gress-index": "0",
+          "ip-block-index": "-2",
+          "k8s.ovn.org/id": "cluster_udn_example-p-cudn-network-controller:NetworkPolicy:ovn-recon-fixture:ovn-recon-fixture-np:Ingress:0:tcp:-2",
+          "k8s.ovn.org/name": "ovn-recon-fixture:ovn-recon-fixture-np",
+          "k8s.ovn.org/owner-controller": "cluster_udn_example-p-cudn-network-controller",
+          "k8s.ovn.org/owner-type": "NetworkPolicy",
+          "port-policy-protocol": "tcp"
+        }
+      },
+      {
+        "uuid": "d354bbe6-afde-58e1-b446-9bfe33e96983",
+        "name": "NP:ovn-recon-fixture:Ingress",
+        "priority": 1001,
+        "direction": "to-lport",
+        "action": "allow",
+        "match": "outport == @a18074550631568791424 && (arp || nd)",
+        "tier": 2,
+        "meter": "acl-logging",
+        "externalIds": {
+          "direction": "Ingress",
+          "k8s.ovn.org/id": "cluster_udn_example-p-cudn-network-controller:NetpolNamespace:ovn-recon-fixture:Ingress:arpAllow",
+          "k8s.ovn.org/name": "ovn-recon-fixture",
+          "k8s.ovn.org/owner-controller": "cluster_udn_example-p-cudn-network-controller",
+          "k8s.ovn.org/owner-type": "NetpolNamespace",
+          "type": "arpAllow"
+        }
+      },
+      {
+        "uuid": "9951934c-f457-5b61-8282-d29c6853b22a",
+        "name": "NP:ovn-recon-fixture:Ingress",
+        "priority": 1000,
+        "direction": "to-lport",
+        "action": "drop",
+        "match": "outport == @a18074550631568791424",
+        "tier": 2,
+        "meter": "acl-logging",
+        "externalIds": {
+          "direction": "Ingress",
+          "k8s.ovn.org/id": "cluster_udn_example-p-cudn-network-controller:NetpolNamespace:ovn-recon-fixture:Ingress:defaultDeny",
+          "k8s.ovn.org/name": "ovn-recon-fixture",
+          "k8s.ovn.org/owner-controller": "cluster_udn_example-p-cudn-network-controller",
+          "k8s.ovn.org/owner-type": "NetpolNamespace",
+          "type": "defaultDeny"
+        }
+      },
+      {
+        "uuid": "e3ff7abd-9a48-56e6-934c-88647fbe9263",
+        "name": "NP:ovn-recon-fixture:Egress",
+        "priority": 1001,
+        "direction": "from-lport",
+        "action": "allow",
+        "match": "inport == @a10386941276114747989 && (arp || nd)",
+        "tier": 2,
+        "meter": "acl-logging",
+        "options": {
+          "apply-after-lb": "true"
+        },
+        "externalIds": {
+          "direction": "Egress",
+          "k8s.ovn.org/id": "cluster_udn_example-p-cudn-network-controller:NetpolNamespace:ovn-recon-fixture:Egress:arpAllow",
+          "k8s.ovn.org/name": "ovn-recon-fixture",
+          "k8s.ovn.org/owner-controller": "cluster_udn_example-p-cudn-network-controller",
+          "k8s.ovn.org/owner-type": "NetpolNamespace",
+          "type": "arpAllow"
+        }
+      },
+      {
+        "uuid": "f3e17dd6-78ce-599e-ab4d-c28ba6a1f1ba",
+        "name": "NP:ovn-recon-fixture:Egress",
+        "priority": 1000,
+        "direction": "from-lport",
+        "action": "drop",
+        "match": "inport == @a10386941276114747989",
+        "tier": 2,
+        "meter": "acl-logging",
+        "options": {
+          "apply-after-lb": "true"
+        },
+        "externalIds": {
+          "direction": "Egress",
+          "k8s.ovn.org/id": "cluster_udn_example-p-cudn-network-controller:NetpolNamespace:ovn-recon-fixture:Egress:defaultDeny",
+          "k8s.ovn.org/name": "ovn-recon-fixture",
+          "k8s.ovn.org/owner-controller": "cluster_udn_example-p-cudn-network-controller",
+          "k8s.ovn.org/owner-type": "NetpolNamespace",
+          "type": "defaultDeny"
+        }
       }
     ],
     "portGroups": [
@@ -29912,6 +30010,52 @@
           "k8s.ovn.org/id": "cluster_udn_vlan-1924-network-controller:NetpolNamespace:demo-mirror:Egress",
           "k8s.ovn.org/name": "demo-mirror",
           "k8s.ovn.org/owner-controller": "cluster_udn_vlan-1924-network-controller",
+          "k8s.ovn.org/owner-type": "NetpolNamespace"
+        }
+      },
+      {
+        "uuid": "2b42c203-c4f3-5d65-9e1b-6ff7df9b92b7",
+        "name": "a9623201120265865514",
+        "ports": [],
+        "acls": [
+          "7d862ccf-6605-5fe4-a5e2-b91eefc6966d"
+        ],
+        "externalIds": {
+          "k8s.ovn.org/id": "cluster_udn_example-p-cudn-network-controller:NetworkPolicy:ovn-recon-fixture:ovn-recon-fixture-np",
+          "k8s.ovn.org/name": "ovn-recon-fixture:ovn-recon-fixture-np",
+          "k8s.ovn.org/owner-controller": "cluster_udn_example-p-cudn-network-controller",
+          "k8s.ovn.org/owner-type": "NetworkPolicy"
+        }
+      },
+      {
+        "uuid": "7787f15f-3ac5-57de-afd6-8b1e0ffa57dc",
+        "name": "a18074550631568791424",
+        "ports": [],
+        "acls": [
+          "d354bbe6-afde-58e1-b446-9bfe33e96983",
+          "9951934c-f457-5b61-8282-d29c6853b22a"
+        ],
+        "externalIds": {
+          "direction": "Ingress",
+          "k8s.ovn.org/id": "cluster_udn_example-p-cudn-network-controller:NetpolNamespace:ovn-recon-fixture:Ingress",
+          "k8s.ovn.org/name": "ovn-recon-fixture",
+          "k8s.ovn.org/owner-controller": "cluster_udn_example-p-cudn-network-controller",
+          "k8s.ovn.org/owner-type": "NetpolNamespace"
+        }
+      },
+      {
+        "uuid": "0b579237-db83-57a2-9cfa-365e83d18c76",
+        "name": "a10386941276114747989",
+        "ports": [],
+        "acls": [
+          "e3ff7abd-9a48-56e6-934c-88647fbe9263",
+          "f3e17dd6-78ce-599e-ab4d-c28ba6a1f1ba"
+        ],
+        "externalIds": {
+          "direction": "Egress",
+          "k8s.ovn.org/id": "cluster_udn_example-p-cudn-network-controller:NetpolNamespace:ovn-recon-fixture:Egress",
+          "k8s.ovn.org/name": "ovn-recon-fixture",
+          "k8s.ovn.org/owner-controller": "cluster_udn_example-p-cudn-network-controller",
           "k8s.ovn.org/owner-type": "NetpolNamespace"
         }
       }
