@@ -98,6 +98,8 @@ The plugin registers six route-based modules in `console-extensions.json`, reach
 
 Every logical route is `exact: true`, so the node ladder route cannot claim the construct page's longer path. Both ladder pages take `?select=KIND:NAME` (`useSelectParam.ts`); the construct page's breadcrumbs and the drawer's "Open details" links (`constructDetailLinks.ts`) use it and the page route.
 
+**Console integration** (`ovn-recon-zdt`): the plugin also contributes to console pages it does not own, an "OVN Recon" `console.tab/horizontalNav` (href `ovn-recon`) and an "Open in OVN Recon" `console.action/resource-provider` on Node, CUDN, UDN and NAD. None of it is unconditional: each requires `OVN_RECON_RESOURCE_TABS` or `OVN_RECON_RESOURCE_ACTIONS`, which a `console.flag/hookProvider` (`useConsoleIntegrationFlags.ts`) sets from the primary `OvnRecon`'s `status.effective.consolePlugin.integration`, failing closed. Both default off (`spec.consolePlugin.integration.resourceTabs|resourceActions`). `src/consoleExtensions.guard.test.ts` fails if a tab or action is added without its flag. The tabs render the routed pages' own bodies (`NodeNetworkStateBody`, `NetworkBody`); keep each routed page a thin wrapper rather than forking them.
+
 **Physical topology pipeline** (`NodeNetworkStateDetails` → `NodeVisualization`):
 
 1. `useK8sWatchResource` watches live K8s resources: `NodeNetworkState`, `ClusterUserDefinedNetwork`, `UserDefinedNetwork`, `NetworkAttachmentDefinition`, `RouteAdvertisements`, `NodeNetworkConfigurationEnactment`, `VTEP` (EVPN; absent on clusters without it), and the viewed node's own `Node` (for its `k8s.ovn.org/vteps` annotation only)

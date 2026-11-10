@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useParams, Link, useLocation } from 'react-router';
-import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem, ExpandableSection } from '@patternfly/react-core';
+import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem, ExpandableSection, Flex, FlexItem } from '@patternfly/react-core';
 import { DocumentTitle, K8sResourceCommon, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import NodeVisualization from './NodeVisualization';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
@@ -8,36 +8,32 @@ import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, Networ
 import { getRunningRoutes, NODE_VTEPS_ANNOTATION } from './nodeVisualizationSelectors';
 import { MAIN_TABLE_ID } from './kernelRoutes';
 import KernelRouteTable from './KernelRouteTable';
+import { logicalViewPath, physicalViewPath } from './networkPageModel';
+import { readSelectParam } from './useSelectParam';
 
 /** Where the SR-IOV Network Operator keeps its per-node state. */
 const SRIOV_OPERATOR_NAMESPACE = 'openshift-sriov-network-operator';
 
-interface NodeNetworkStateDetailsProps {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    match?: any;
+interface NodeNetworkStateBodyProps {
+    /** The node, which is also its NodeNetworkState's name. */
+    name: string;
+    /**
+     * Set when the body is a tab on the console's own Node details page
+     * (ovn-recon-zdt.1): the host page owns the title and breadcrumbs, so the
+     * body shows links to the full OVN Recon pages instead, and says plainly when
+     * the node has no NodeNetworkState.
+     */
+    embedded?: boolean;
 }
 
-const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) => {
-    const params = useParams<{ name: string }>();
+/**
+ * One node's physical topology: everything the routed physical page shows below its
+ * route handling. The routed page (NodeNetworkStateDetails) and the Node details tab
+ * (NodeOvnReconTab) both render this; there is no second copy.
+ */
+export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({ name, embedded = false }) => {
     const location = useLocation();
     const { enabled: ovnCollectorEnabled } = useOvnCollectorFeatureGate();
-
-    // Fallback to props.match.params.name if useParams is empty (common in Console plugins)
-    // Also fallback to manual URL parsing if router fails
-    let name = params.name || props?.match?.params?.name;
-    let pathSegments: string[] = [];
-
-    if (!name) {
-        // Aggressive fallback: get the last segment of the URL
-        pathSegments = location.pathname.split('/').filter(p => p);
-        if (pathSegments.length > 0) {
-            const lastSegment = pathSegments[pathSegments.length - 1];
-            // Ensure we don't pick up 'node-network-state' if the name is missing
-            if (lastSegment !== 'node-network-state') {
-                name = lastSegment;
-            }
-        }
-    }
 
     const watchResource = React.useMemo(() => name ? {
         groupVersionKind: {
@@ -152,10 +148,6 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
         [nns]
     );
 
-    if (!name) {
-        return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
-    }
-
     if (!loaded) {
         return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
     }
@@ -167,6 +159,10 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
                 <p>{loadError.message}</p>
             </PageSection>
         );
+    }
+
+    if (!nns && embedded) {
+        return <NoNodeNetworkState name={name} />;
     }
 
     if (!nns) {
@@ -188,21 +184,31 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
 
     return (
         <>
-            <DocumentTitle>{`OVN Recon - ${displayName}`}</DocumentTitle>
+            {!embedded && <DocumentTitle>{`OVN Recon - ${displayName}`}</DocumentTitle>}
             <PageSection>
-                <Breadcrumb>
-                    <BreadcrumbItem>
-                        <Link to="/ovn-recon">OVN Recon</Link>
-                    </BreadcrumbItem>
-                    <BreadcrumbItem isActive>{displayName}</BreadcrumbItem>
-                </Breadcrumb>
-                <Title headingLevel="h1" className="pf-u-mt-lg">Node Network Topology: {displayName}</Title>
-                {ovnCollectorEnabled && (
-                    <p className="pf-u-mt-sm">
-                        <Link to={`/ovn-recon/ovn/${encodeURIComponent(displayName)}`}>
-                            View logical OVN topology for this node
-                        </Link>
-                    </p>
+                {embedded ? (
+                    <EmbeddedLinks
+                        name={displayName}
+                        select={readSelectParam(location.search)}
+                        showLogical={ovnCollectorEnabled}
+                    />
+                ) : (
+                    <>
+                        <Breadcrumb>
+                            <BreadcrumbItem>
+                                <Link to="/ovn-recon">OVN Recon</Link>
+                            </BreadcrumbItem>
+                            <BreadcrumbItem isActive>{displayName}</BreadcrumbItem>
+                        </Breadcrumb>
+                        <Title headingLevel="h1" className="pf-u-mt-lg">Node Network Topology: {displayName}</Title>
+                        {ovnCollectorEnabled && (
+                            <p className="pf-u-mt-sm">
+                                <Link to={`/ovn-recon/ovn/${encodeURIComponent(displayName)}`}>
+                                    View logical OVN topology for this node
+                                </Link>
+                            </p>
+                        )}
+                    </>
                 )}
                 {mainRoutes.length > 0 && (
                     <ExpandableSection
@@ -224,6 +230,75 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
             </PageSection>
         </>
     );
+};
+
+/** The tab's header: where the full pages are. A graph selection carries over. */
+const EmbeddedLinks: React.FC<{ name: string; select: string | null; showLogical: boolean }> = ({
+    name, select, showLogical,
+}) => (
+    <Flex data-testid="ovn-recon-tab-links" spaceItems={{ default: 'spaceItemsLg' }}>
+        <FlexItem>
+            <Link to={physicalViewPath(name, select ?? undefined)}>Open physical topology in OVN Recon</Link>
+        </FlexItem>
+        {showLogical && (
+            <FlexItem>
+                <Link to={logicalViewPath(name)}>Open logical topology in OVN Recon</Link>
+            </FlexItem>
+        )}
+    </Flex>
+);
+
+/** The tab's empty state: a Node with no NodeNetworkState is common, not an error. */
+export const NoNodeNetworkState: React.FC<{ name: string; reason?: string }> = ({ name, reason }) => (
+    <PageSection>
+        <EmptyState data-testid="ovn-recon-tab-no-nns">
+            <Title headingLevel="h4" size="lg">No NodeNetworkState for this node</Title>
+            <EmptyStateBody>
+                {reason ?? (
+                    <>
+                        OVN Recon draws a node&apos;s physical topology from its NodeNetworkState, which the
+                        Kubernetes NMState Operator reports for every node it manages. There is none
+                        named {name}.
+                    </>
+                )}{' '}
+                <Link to="/ovn-recon">Open OVN Recon</Link>.
+            </EmptyStateBody>
+        </EmptyState>
+    </PageSection>
+);
+
+interface NodeNetworkStateDetailsProps {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    match?: any;
+}
+
+/** The routed physical page, /ovn-recon/node-network-state/:name. */
+const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) => {
+    const params = useParams<{ name: string }>();
+    const location = useLocation();
+
+    // Fallback to props.match.params.name if useParams is empty (common in Console plugins)
+    // Also fallback to manual URL parsing if router fails
+    let name = params.name || props?.match?.params?.name;
+    let pathSegments: string[] = [];
+
+    if (!name) {
+        // Aggressive fallback: get the last segment of the URL
+        pathSegments = location.pathname.split('/').filter(p => p);
+        if (pathSegments.length > 0) {
+            const lastSegment = pathSegments[pathSegments.length - 1];
+            // Ensure we don't pick up 'node-network-state' if the name is missing
+            if (lastSegment !== 'node-network-state') {
+                name = lastSegment;
+            }
+        }
+    }
+
+    if (!name) {
+        return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
+    }
+
+    return <NodeNetworkStateBody name={name} />;
 };
 
 export default NodeNetworkStateDetails;

@@ -820,10 +820,31 @@ export interface LookupResponse {
     warnings: LogicalTopologyWarning[];
 }
 
+/** spec.consolePlugin.integration and its resolved form in status.effective (ovn-recon-zdt.7). */
+export interface OvnReconIntegration {
+    resourceTabs?: boolean;
+    resourceActions?: boolean;
+}
+
 export interface OvnRecon extends K8sResourceCommon {
     spec?: {
+        consolePlugin?: {
+            integration?: OvnReconIntegration;
+        };
         collector?: {
             enabled?: boolean;
+        };
+    };
+    status?: {
+        /**
+         * What the operator resolved and acts on. The plugin reads console
+         * integration switches from here, never from spec: an operator that
+         * predates a field leaves it absent, which reads as off.
+         */
+        effective?: {
+            consolePlugin?: {
+                integration?: OvnReconIntegration;
+            };
         };
     };
 }
