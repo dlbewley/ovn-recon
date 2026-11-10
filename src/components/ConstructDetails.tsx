@@ -41,6 +41,7 @@ import {
     clusterLadderPath,
     ConstructDetailTab,
     constructDetailPath,
+    constructNameForNode,
     DetailKind,
     detailHrefFor,
     isDetailKind,
@@ -391,7 +392,11 @@ const ConstructDetails: React.FC = () => {
                         value={node}
                         onChange={(_event, value) => {
                             if (value && value !== node) {
-                                navigate(constructDetailPath(value, kind, name, { tab: requestedTab }));
+                                navigate(
+                                    constructDetailPath(value, kind, constructNameForNode(name, node, value), {
+                                        tab: requestedTab,
+                                    }),
+                                );
                             }
                         }}
                     >
