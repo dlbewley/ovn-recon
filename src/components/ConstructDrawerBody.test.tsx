@@ -498,9 +498,18 @@ describe('ConstructDrawerBody links to the detail page (ovn-recon-e2b.8)', () =>
     it('links a switch\'s workload ports and its Ports tab to the page', () => {
         render('cnv-1');
         expect(hrefs()).toContainEqual(['Workload ports (73)', '/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=ports']);
+        expect(hrefs()).toContainEqual(['ACLs', '/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=policy']);
         const portsTab = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Ports');
         act(() => portsTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
         expect(hrefs()).toContainEqual(['Open in full page', '/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=ports']);
+
+        // A port's expanded row links to the Policy tab narrowed to it.
+        const podRow = [...container.querySelectorAll('tr[data-testid^="port-row-"]')].find((row) =>
+            row.textContent?.includes('openshift-storage/'),
+        )!;
+        act(() => podRow.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+        const link = [...container.querySelectorAll('a')].find((anchor) => anchor.textContent === 'ACLs for this port');
+        expect(link?.getAttribute('href')).toMatch(/^\/ovn-recon\/ovn\/cnv-1\/switch\/cnv-1\?tab=policy&port=/);
     });
 
     it('shows no link for a bridge mapping', () => {

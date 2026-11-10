@@ -66,6 +66,7 @@ import { NatRuleTable, StaticRouteTable } from './RouterRuleTables';
 import ServicesView, { Surface } from './ServiceTables';
 import RuleTable, { RuleColumn } from './RuleTable';
 import { DetailHref } from './constructDetailLinks';
+import { portPolicyCounts } from './policyRows';
 import { OptionalSectionsState } from './useOptionalSections';
 
 const MAX_LISTED_PORTS = 15;
@@ -289,7 +290,7 @@ const WorkloadPortList: React.FC<{ construct: LadderConstruct }> = ({ construct 
     );
 };
 
-const SUBTLE_TEXT: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
+export const SUBTLE_TEXT: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
 
 /**
  * The Overview's "Load balancers" value. With the services section at hand
@@ -544,7 +545,7 @@ export const OverviewBody: React.FC<DrawerBodyProps> = ({
             )}
             {hasAclLine(construct, policy) && (
                 <DescriptionListGroup>
-                    <DescriptionListTerm>ACLs</DescriptionListTerm>
+                    <TabTerm href={detailHref?.('policy')}>ACLs</TabTerm>
                     <DescriptionListDescription>
                         <AclOverview construct={construct} policy={policy} />
                     </DescriptionListDescription>
@@ -682,7 +683,7 @@ export const ConfigBody: React.FC<DrawerBodyProps> = ({
     );
 };
 
-const ACTION_COLORS: Record<string, 'green' | 'red' | 'grey'> = {
+export const ACTION_COLORS: Record<string, 'green' | 'red' | 'grey'> = {
     allow: 'green',
     'allow-related': 'green',
     'allow-stateless': 'green',
@@ -690,13 +691,13 @@ const ACTION_COLORS: Record<string, 'green' | 'red' | 'grey'> = {
     reject: 'red',
 };
 
-const DIRECTION_HINTS: Record<string, string> = {
+export const DIRECTION_HINTS: Record<string, string> = {
     'from-lport': 'Traffic leaving the port (egress from the workload)',
     'to-lport': 'Traffic towards the port (ingress to the workload)',
 };
 
 /** The network a row's controller serves, linked to its UDN/CUDN when it has one. */
-const OwnerNetwork: React.FC<{ owner?: OvnOwner }> = ({ owner }) => {
+export const OwnerNetwork: React.FC<{ owner?: OvnOwner }> = ({ owner }) => {
     const network = networkOfController(owner?.controller);
     if (network === undefined) {
         return owner?.controller ? <code>{owner.controller}</code> : <span style={SUBTLE_TEXT}>—</span>;
@@ -715,7 +716,7 @@ const OwnerNetwork: React.FC<{ owner?: OvnOwner }> = ({ owner }) => {
  * network whose role is unknown in this zone is named without a link, since
  * it may be a MultiNetworkPolicy.
  */
-const OwnerName: React.FC<{ owner?: OvnOwner; roleOf: NetworkRoleResolver }> = ({ owner, roleOf }) => {
+export const OwnerName: React.FC<{ owner?: OvnOwner; roleOf: NetworkRoleResolver }> = ({ owner, roleOf }) => {
     const description = describeOwner(owner, roleOf);
     if (!description.name) return <span style={SUBTLE_TEXT}>—</span>;
     if (description.target) return <Link to={description.target.path}>{description.name}</Link>;
@@ -728,11 +729,11 @@ const OwnerName: React.FC<{ owner?: OvnOwner; roleOf: NetworkRoleResolver }> = (
 
 /** The per-type external_ids worth a glance next to an owner: the policy
  * direction and the rule kind (defaultDeny, arpAllow, AllowInterNode, ...). */
-const ownerQualifiers = (owner?: OvnOwner): string =>
+export const ownerQualifiers = (owner?: OvnOwner): string =>
     [owner?.extra.direction, owner?.extra.type].filter(Boolean).join(' · ');
 
 /** What an `@name` or `$name` in a match stands for, one line per reference. */
-const MatchReferences: React.FC<{ acl: ACLRow; index: PolicyIndex; roleOf: NetworkRoleResolver }> = ({
+export const MatchReferences: React.FC<{ acl: ACLRow; index: PolicyIndex; roleOf: NetworkRoleResolver }> = ({
     acl,
     index,
     roleOf,
@@ -803,11 +804,12 @@ const PortGroupTable: React.FC<{ groups: PortGroupRow[]; index: PolicyIndex; rol
  * port, not by the cluster; the full tables belong to the construct detail
  * page.
  */
-const PortPolicy: React.FC<{ port: LadderPort; policy: PolicyState; databaseNode?: string }> = ({
-    port,
-    policy,
-    databaseNode,
-}) => {
+const PortPolicy: React.FC<{
+    port: LadderPort;
+    policy: PolicyState;
+    databaseNode?: string;
+    detailHref?: DetailHref;
+}> = ({ port, policy, databaseNode, detailHref }) => {
     if (policy.status === 'none') return null;
     if (policy.status !== 'ready') {
         return (
@@ -851,7 +853,17 @@ const PortPolicy: React.FC<{ port: LadderPort; policy: PolicyState; databaseNode
             ) : (
                 <PortGroupTable groups={groups} index={index} roleOf={roleOf} />
             )}
-            <div className="pf-u-mt-sm"><strong>ACLs that apply ({acls.length})</strong></div>
+            <div className="pf-u-mt-sm">
+                <strong>ACLs that apply ({acls.length})</strong>
+                {detailHref && acls.length > 0 && (
+                    <>
+                        {' '}
+                        <Link to={detailHref('policy', { port: port.name })} data-testid="port-acls-link">
+                            ACLs for this port
+                        </Link>
+                    </>
+                )}
+            </div>
             {acls.length === 0 ? (
                 <div style={SUBTLE_TEXT}>No ACL applies to this port.</div>
             ) : (
@@ -910,7 +922,7 @@ const PortPolicy: React.FC<{ port: LadderPort; policy: PolicyState; databaseNode
 
 /** Long identifiers (MACs, IPs, OVN names, matches) break anywhere rather
  * than widen the drawer. */
-const WRAP_ANYWHERE: React.CSSProperties = { overflowWrap: 'anywhere' };
+export const WRAP_ANYWHERE: React.CSSProperties = { overflowWrap: 'anywhere' };
 
 /**
  * A drawer table's scroll boundary: any width the cells still cannot give up
@@ -1145,6 +1157,34 @@ export const PortsBody: React.FC<DrawerBodyProps> = ({
         },
     ];
 
+    // On the page, with the policy section at hand: how many port groups and
+    // ACLs each port has in this zone (decision 9). Absent otherwise.
+    if (isPage && policy.status === 'ready') {
+        const { index, database: policyDatabase } = policy;
+        const countsFor = (port: LadderPort) => {
+            const zonePort = zoneRowFor(policyDatabase.logicalSwitchPorts, port);
+            return zonePort ? portPolicyCounts(index, zonePort.uuid) : undefined;
+        };
+        columns.push(
+            {
+                key: 'groups',
+                title: 'Port groups',
+                cell: (port) => countsFor(port)?.groups ?? <span style={SUBTLE_TEXT}>—</span>,
+                sortValue: (port) => countsFor(port)?.groups ?? -1,
+                headerModifier: 'wrap',
+                modifier: 'fitContent',
+            },
+            {
+                key: 'acls',
+                title: 'ACLs',
+                cell: (port) => countsFor(port)?.acls ?? <span style={SUBTLE_TEXT}>—</span>,
+                sortValue: (port) => countsFor(port)?.acls ?? -1,
+                headerModifier: 'wrap',
+                modifier: 'fitContent',
+            },
+        );
+    }
+
     const caption = (shown: number, total: number) => {
         const parts: React.ReactNode[] = [];
         if (shown < total) parts.push(`${shown} of ${total} ports`);
@@ -1204,7 +1244,7 @@ export const PortsBody: React.FC<DrawerBodyProps> = ({
                 // tables cannot widen it.
                 <div style={{ width: 0, minWidth: '100%' }}>
                     <PortSummary port={port} row={port.row} nodeForChassis={nodeForChassis} nodeHref={nodeHref} />
-                    <PortPolicy port={port} policy={policy} databaseNode={databaseNode} />
+                    <PortPolicy port={port} policy={policy} databaseNode={databaseNode} detailHref={detailHref} />
                     <RawPortRow uuid={port.uuid} row={rawRowFor(port)} />
                 </div>
             )}

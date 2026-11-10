@@ -1133,6 +1133,29 @@ corpus, and with jsdom tests over the fixtures.
    bindings, CoPP, QoS) are absent until that bead lands.
 7. **Not verified.** Nothing has been looked at in a running console.
 
+### 2026-11-10: `ovn-recon-e2b.8` construct detail page, part 2
+
+1. **Policy tab** on switches, three views behind a switch:
+   - **ACLs**: every ACL in `aclsBySwitch`, with Priority, Direction,
+     Action, Tier, Owner type, Owner (linked), Network, Applied via (the
+     port groups' owner names, or "switch"), Ports here (distinct ports of
+     the switch it reaches) and Match. Facets for direction, action and
+     owner type; default order is `compareAcls`. The expanded row holds the
+     full match, its `@` and `$` references resolved, and the raw row.
+   - **Port groups**: every group with a port on the switch, with or
+     without ACLs; a line counts the zone's groups with no port here.
+   - **Address sets**: the sets the listed ACLs name, with how many ACLs
+     name each.
+   The row logic is in `policyRows.ts`.
+2. **port=** narrows the ACL view to `policyForPort`, with a "Show all"
+   link that removes the parameter.
+3. **Ports tab** on the page gains Port groups and ACLs counts when the
+   policy section is present; without it the two columns are absent. A
+   port's expanded row links "ACLs for this port" to `tab=policy&port=`, in
+   the drawer too, and the drawer's ACLs line links to the Policy tab.
+4. **Still absent**: `ovn-recon-e2b.7`'s tables, including QoS as a fourth
+   Policy view.
+
 ## Initial Beads Backlog Mapping
 
 | Bead | Title | Section |

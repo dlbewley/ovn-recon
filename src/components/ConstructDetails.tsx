@@ -53,6 +53,7 @@ import { networkResourceRef } from './logicalClassification';
 import { buildLadderModel, LadderConstruct } from './logicalLadderModel';
 import { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
 import { NatRuleTable, StaticRouteTable } from './RouterRuleTables';
+import PolicyBody from './PolicyTables';
 import SnapshotStatusLine, { summarizeOvnZones } from './SnapshotStatusLine';
 import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
 import { useChassisNodeNames } from './useChassisNodeNames';
@@ -82,13 +83,13 @@ const TAB_TITLES: Record<ConstructDetailTab, string> = {
 /**
  * The tabs a construct has. Ports for switches; Services for a switch or
  * router that attaches load balancers (the tab says "not collected" when the
- * section is missing); Routes and NAT for routers. The Policy tab follows in
- * the second half of ovn-recon-e2b.8.
+ * section is missing); Routes and NAT for routers. Policy for switches: ACLs
+ * attach to switches and port groups, not routers.
  */
 export const detailTabsFor = (construct: LadderConstruct): ConstructDetailTab[] => [
     'overview',
     'relationships',
-    ...(hasPortsTab(construct) ? (['ports'] as const) : []),
+    ...(hasPortsTab(construct) ? (['ports', 'policy'] as const) : []),
     ...(hasLoadBalancerAttachment(construct) ? (['services'] as const) : []),
     ...(construct.kind === 'router' ? (['routes'] as const) : []),
     'config',
@@ -525,6 +526,9 @@ const ConstructDetails: React.FC = () => {
                     {activeTab === 'overview' && <OverviewBody {...bodyProps} />}
                     {activeTab === 'relationships' && <RelationshipsBody {...bodyProps} />}
                     {activeTab === 'ports' && <PortsBody key={construct.uuid} {...bodyProps} />}
+                    {activeTab === 'policy' && (
+                        <PolicyBody key={construct.uuid} {...bodyProps} onClearPort={() => replaceSearch({ port: null })} />
+                    )}
                     {activeTab === 'services' && <ServicesBody key={construct.uuid} {...bodyProps} />}
                     {activeTab === 'routes' && (
                         <RoutesBody
