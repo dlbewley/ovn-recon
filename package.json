@@ -25,7 +25,8 @@
             "OvnReconOverview": "./components/OvnReconOverview",
             "NodeNetworkStateDetails": "./components/NodeNetworkStateDetails",
             "NodeLogicalTopologyDetails": "./components/NodeLogicalTopologyDetails",
-            "ClusterLogicalTopologyDetails": "./components/ClusterLogicalTopologyDetails"
+            "ClusterLogicalTopologyDetails": "./components/ClusterLogicalTopologyDetails",
+            "ConstructDetails": "./components/ConstructDetails"
         },
         "dependencies": {
             "@console/pluginAPI": ">=4.22.0-0"

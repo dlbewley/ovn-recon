@@ -84,13 +84,17 @@ Prereleases containing `-` in the tag (e.g. `v1.0.1-beta.1`) do **not** update t
 
 ### Plugin (`src/`)
 
-The plugin registers four route-based modules in `console-extensions.json`, reached from a single *Networking → OVN Recon* entry:
+The plugin registers five route-based modules in `console-extensions.json`, reached from a single *Networking → OVN Recon* entry:
 
 | Route | Module | Purpose |
 |---|---|---|
 | `/ovn-recon` (also `/ovn-recon/node-network-state`) | `OvnReconOverview` | Overview: collector status, network counts, node table |
 | `/ovn-recon/node-network-state/:name` | `NodeNetworkStateDetails` | Physical topology per node |
-| `/ovn-recon/ovn/:name` | `NodeLogicalTopologyDetails` | Logical OVN topology (collector-gated) |
+| `/ovn-recon/ovn` | `ClusterLogicalTopologyDetails` | Logical OVN topology merged across node zones (collector-gated) |
+| `/ovn-recon/ovn/:name` | `NodeLogicalTopologyDetails` | Logical OVN topology of one node's zone (collector-gated) |
+| `/ovn-recon/ovn/:node/:kind/:name` | `ConstructDetails` | One logical switch or router from one node's zone: tabbed, full-width tables; `?tab=`, `?q=`, `?port=` (collector-gated) |
+
+Every logical route is `exact: true`, so the node ladder route cannot claim the construct page's longer path. Both ladder pages take `?select=KIND:NAME` (`useSelectParam.ts`); the construct page's breadcrumbs and the drawer's "Open details" links (`constructDetailLinks.ts`) use it and the page route.
 
 **Physical topology pipeline** (`NodeNetworkStateDetails` → `NodeVisualization`):
 

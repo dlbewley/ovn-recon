@@ -13,6 +13,7 @@ import { fetchCollectorLookup, fetchCollectorSnapshot } from './collectorApi';
 import { podAddressIndex } from './routerRules';
 import { serviceOf } from './serviceIndex';
 import { SERVICE_PAGE_SIZE } from './ServiceTables';
+import { detailHrefFor } from './constructDetailLinks';
 import { EndpointSliceLike } from './serviceIndex';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
@@ -448,6 +449,63 @@ describe('ConstructDrawerBody', () => {
             input!.dispatchEvent(new Event('input', { bubbles: true }));
         });
         expect(container.textContent).toContain('No ports match.');
+    });
+});
+
+describe('ConstructDrawerBody links to the detail page (ovn-recon-e2b.8)', () => {
+    let container: HTMLDivElement;
+    let root: Root;
+
+    beforeEach(() => {
+        container = document.createElement('div');
+        document.body.appendChild(container);
+        root = createRoot(container);
+        fetchSnapshot.mockReset();
+        fetchSnapshot.mockReturnValue(new Promise(() => undefined));
+    });
+
+    afterEach(() => {
+        act(() => root.unmount());
+        container.remove();
+    });
+
+    const render = (name: string) => {
+        const construct = model.constructs.find((candidate) => candidate.name === name)!;
+        act(() => {
+            root.render(
+                <ConstructDrawerBody
+                    construct={construct}
+                    model={model}
+                    database={database}
+                    databaseNode="cnv-1"
+                    detailHref={detailHrefFor('cnv-1', construct)}
+                />,
+            );
+        });
+    };
+    const hrefs = () => [...container.querySelectorAll('a')].map((anchor) => [anchor.textContent, anchor.getAttribute('href')]);
+
+    it('opens a router\'s details and links its rule tables to Routes and NAT', () => {
+        render('GR_cnv-1');
+        const links = hrefs();
+        expect(links).toContainEqual(['Open details', '/ovn-recon/ovn/cnv-1/router/GR_cnv-1']);
+        expect(links).toContainEqual(['NAT rules (74)', '/ovn-recon/ovn/cnv-1/router/GR_cnv-1?tab=routes']);
+        expect(links).toContainEqual(['Open all 74', '/ovn-recon/ovn/cnv-1/router/GR_cnv-1?tab=routes']);
+        expect(links).toContainEqual(['Static routes (3)', '/ovn-recon/ovn/cnv-1/router/GR_cnv-1?tab=routes']);
+        expect(links).toContainEqual(['Load balancers', '/ovn-recon/ovn/cnv-1/router/GR_cnv-1?tab=services']);
+    });
+
+    it('links a switch\'s workload ports and its Ports tab to the page', () => {
+        render('cnv-1');
+        expect(hrefs()).toContainEqual(['Workload ports (73)', '/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=ports']);
+        const portsTab = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Ports');
+        act(() => portsTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+        expect(hrefs()).toContainEqual(['Open in full page', '/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=ports']);
+    });
+
+    it('shows no link for a bridge mapping', () => {
+        render('physnet-vmdata');
+        expect(container.querySelector('[data-testid="open-details"]')).toBeNull();
     });
 });
 

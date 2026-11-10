@@ -214,9 +214,17 @@ describe('ClusterLogicalTopologyDetails', () => {
             expect(selectedCards().map((card) => card.getAttribute('data-testid'))).toEqual(['construct-GR_cnv-2']);
         });
 
+        it('links the drawer to the construct detail page in its own zone (ovn-recon-e2b.8)', async () => {
+            await load('/ovn-recon/ovn?select=router:GR_cnv-2');
+            const link = container.querySelector('[data-testid="open-details"] a');
+            expect(link?.getAttribute('href')).toBe('/ovn-recon/ovn/cnv-2/router/GR_cnv-2');
+        });
+
         it('takes the first match when networks share a bridge-mapping name', async () => {
             await load('/ovn-recon/ovn?select=physnet:physnet');
             expect(drawerTitle()).toContain('Bridge mapping');
+            // Bridge mappings are synthesized: no row, no detail page.
+            expect(container.querySelector('[data-testid="open-details"]')).toBeNull();
             const cards = [...container.querySelectorAll('[data-testid="construct-physnet"]')];
             expect(cards.length).toBeGreaterThan(1);
             expect(selectedCards()).toEqual([cards[0]]);

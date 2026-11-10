@@ -80,6 +80,12 @@ const LabelText: React.FC<{ label: string }> = ({ label }) => {
  * Services, all of them in the cluster-wide section. */
 export const SERVICE_PAGE_SIZE = 100;
 
+/** Where the view renders: the drawer (narrow, halved padding) or the
+ * construct detail page (full width, PatternFly padding, 50 rows a page). */
+export type Surface = 'drawer' | 'page';
+const PAGE_SURFACE_PAGE_SIZE = 50;
+const PAGE_SURFACE_PER_PAGE = [20, 50, 100];
+
 const CLASS_COLORS: Record<VipClass, 'blue' | 'purple' | 'teal' | 'orange'> = {
     ClusterIP: 'blue',
     NodePort: 'purple',
@@ -409,7 +415,8 @@ const ServiceSectionView: React.FC<{
     isExpanded: boolean;
     onToggle: (expanded: boolean) => void;
     expandedContent: (group: ServiceGroupView) => React.ReactNode;
-}> = ({ section, title, note, allRows, rows, loadBalancerCount, filtered, isExpanded, onToggle, expandedContent }) => {
+    surface: Surface;
+}> = ({ section, title, note, allRows, rows, loadBalancerCount, filtered, isExpanded, onToggle, expandedContent, surface }) => {
     const columns: RuleColumn<ServiceGroupView>[] = [
         {
             key: 'service',
@@ -482,8 +489,9 @@ const ServiceSectionView: React.FC<{
                         rows={rows}
                         rowKey={(group) => group.key}
                         expandedContent={expandedContent}
-                        pageSize={SERVICE_PAGE_SIZE}
-                        tableStyle={SERVICE_TABLE_STYLE}
+                        pageSize={surface === 'page' ? PAGE_SURFACE_PAGE_SIZE : SERVICE_PAGE_SIZE}
+                        perPageOptions={surface === 'page' ? PAGE_SURFACE_PER_PAGE : undefined}
+                        tableStyle={surface === 'page' ? undefined : SERVICE_TABLE_STYLE}
                     />
                 ))}
         </ExpandableSection>
@@ -508,6 +516,11 @@ export interface ServicesViewProps {
     database: LogicalDatabase;
     /** The node that database came from. */
     databaseNode?: string;
+    /** Default 'drawer'. */
+    surface?: Surface;
+    /** The text filter, when the caller keeps it (the detail page's q). */
+    query?: string;
+    onQueryChange?: (value: string) => void;
 }
 
 /**
@@ -517,7 +530,14 @@ export interface ServicesViewProps {
  * missing endpoints; VIP classes inferred from the rows, declared once a
  * Service has been read; backends resolved to pods.
  */
-export const ServicesView: React.FC<ServicesViewProps> = ({ attachment, database, databaseNode }) => {
+export const ServicesView: React.FC<ServicesViewProps> = ({
+    attachment,
+    database,
+    databaseNode,
+    surface = 'drawer',
+    query: controlledQuery,
+    onQueryChange,
+}) => {
     const networks = useServiceNetworks();
     const context = React.useMemo(
         () => vipClassContext(database, networks.serviceNetworks),
@@ -542,7 +562,12 @@ export const ServicesView: React.FC<ServicesViewProps> = ({ attachment, database
         return map;
     }, [attachment]);
 
-    const [query, setQuery] = React.useState('');
+    const [ownQuery, setOwnQuery] = React.useState('');
+    const query = controlledQuery ?? ownQuery;
+    const setQuery = (value: string) => {
+        if (controlledQuery === undefined) setOwnQuery(value);
+        onQueryChange?.(value);
+    };
     const [vipClass, setVipClass] = React.useState<string>(ALL);
     const [protocol, setProtocol] = React.useState<string>(ALL);
     const [namespace, setNamespace] = React.useState<string>(ALL);
@@ -664,6 +689,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({ attachment, database
                 isExpanded={open.node}
                 onToggle={(expanded) => setOpen((current) => ({ ...current, node: expanded }))}
                 expandedContent={expandedContent}
+                surface={surface}
             />
             <ServiceSectionView
                 section="cluster"
@@ -676,6 +702,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({ attachment, database
                 isExpanded={open.cluster}
                 onToggle={(expanded) => setOpen((current) => ({ ...current, cluster: expanded }))}
                 expandedContent={expandedContent}
+                surface={surface}
             />
         </>
     );

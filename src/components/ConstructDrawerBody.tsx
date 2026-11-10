@@ -7,16 +7,11 @@ import {
     DescriptionListTerm,
     DescriptionListDescription,
     DrawerPanelBody,
-    FormSelect,
-    FormSelectOption,
     Label,
     Spinner,
     TextInput,
-    Toolbar,
-    ToolbarContent,
-    ToolbarItem,
 } from '@patternfly/react-core';
-import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
+import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
 
 import {
@@ -68,7 +63,10 @@ import { useOptionalSections } from './useOptionalSections';
 import { getResourcePath } from '../topology/links';
 import DrawerTabStrip from './DrawerTabStrip';
 import { NatRuleTable, StaticRouteTable } from './RouterRuleTables';
-import ServicesView from './ServiceTables';
+import ServicesView, { Surface } from './ServiceTables';
+import RuleTable, { RuleColumn } from './RuleTable';
+import { DetailHref } from './constructDetailLinks';
+import { OptionalSectionsState } from './useOptionalSections';
 
 const MAX_LISTED_PORTS = 15;
 /** ACLs listed for one port before a more-note: a pod under many
@@ -115,6 +113,21 @@ export interface ConstructDrawerBodyProps {
      * `databaseNode` are refetched in step with it.
      */
     sectionsRefreshKey?: string | number;
+    /**
+     * The construct's detail page (ovn-recon-e2b.8), for switches and routers:
+     * the Overview opens with an "Open details" link and each line that
+     * stands for a row set links to its tab. Unset for bridge mappings.
+     */
+    detailHref?: DetailHref;
+    /** Where the bodies render; the detail page lifts the drawer's caps. Default 'drawer'. */
+    surface?: Surface;
+    /** Detail page: the active tab's text filter (the q parameter). */
+    query?: string;
+    onQueryChange?: (value: string) => void;
+    /** Detail page: the Logical_Switch_Port to expand and scroll to. */
+    focusPort?: string;
+    /** Detail page: a port row was expanded or collapsed. */
+    onPortToggle?: (portName: string, expanded: boolean) => void;
 }
 
 /**
@@ -124,7 +137,7 @@ export interface ConstructDrawerBodyProps {
  * deliver it (an older collector, a failed table, a failed request), and
  * `ready` with the construct's load balancers resolved.
  */
-type ServicesState =
+export type ServicesState =
     | { status: 'none' }
     | { status: 'loading' }
     | { status: 'absent'; error?: string }
@@ -137,13 +150,13 @@ type ServicesState =
  * it, and `ready` with the zone's indexes. `switchUuid` is the switch's uuid
  * in that zone's database, undefined when the zone does not hold the switch.
  */
-type PolicyState =
+export type PolicyState =
     | { status: 'none' }
     | { status: 'loading' }
     | { status: 'absent'; error?: string }
     | { status: 'ready'; index: PolicyIndex; database: LogicalDatabase; switchUuid?: string };
 
-type DrawerBodyProps = ConstructDrawerBodyProps & { services: ServicesState; policy: PolicyState };
+export type DrawerBodyProps = ConstructDrawerBodyProps & { services: ServicesState; policy: PolicyState };
 
 const SEAM_ROLES = new Set(['external-switch', 'localnet-switch']);
 
@@ -340,7 +353,12 @@ const hasAclLine = (construct: LadderConstruct, policy: PolicyState): boolean =>
     return (policy.index.aclsBySwitch.get(policy.switchUuid)?.all.length ?? 0) > 0;
 };
 
-const OverviewBody: React.FC<DrawerBodyProps> = ({
+/** A summary line's term, linked to its detail tab when the page exists. */
+const TabTerm: React.FC<{ href?: string; children: React.ReactNode }> = ({ href, children }) => (
+    <DescriptionListTerm>{href ? <Link to={href}>{children}</Link> : children}</DescriptionListTerm>
+);
+
+export const OverviewBody: React.FC<DrawerBodyProps> = ({
     construct,
     nodeHref,
     physicalHref,
@@ -350,6 +368,8 @@ const OverviewBody: React.FC<DrawerBodyProps> = ({
     nodeForChassis,
     services,
     policy,
+    detailHref,
+    surface = 'drawer',
 }) => {
     const networkRef = networkResourceRef(construct.network);
     const seamNode = SEAM_ROLES.has(construct.role) ? construct.node ?? fallbackNode : undefined;
@@ -359,8 +379,15 @@ const OverviewBody: React.FC<DrawerBodyProps> = ({
     );
     const gatewayPortName = (uuid: string) => routerPortNameByUuid.get(uuid);
     const hasLoadBalancers = construct.loadBalancerCount > 0 || construct.loadBalancerGroupCount > 0;
+    const routesHref = detailHref?.('routes');
 
     return (
+        <>
+        {detailHref && surface === 'drawer' && (
+            <div className="pf-u-mb-md" data-testid="open-details">
+                <Link to={detailHref()}>Open details</Link>
+            </div>
+        )}
         <DescriptionList isCompact>
             <DescriptionListGroup>
                 <DescriptionListTerm>Role</DescriptionListTerm>
@@ -473,7 +500,7 @@ const OverviewBody: React.FC<DrawerBodyProps> = ({
             )}
             {construct.podPortCount > 0 && (
                 <DescriptionListGroup>
-                    <DescriptionListTerm>Workload ports ({construct.podPortCount})</DescriptionListTerm>
+                    <TabTerm href={detailHref?.('ports')}>Workload ports ({construct.podPortCount})</TabTerm>
                     <DescriptionListDescription>
                         <WorkloadPortList construct={construct} />
                     </DescriptionListDescription>
@@ -481,32 +508,34 @@ const OverviewBody: React.FC<DrawerBodyProps> = ({
             )}
             {construct.natRules.length > 0 && (
                 <DescriptionListGroup>
-                    <DescriptionListTerm>NAT rules ({construct.natRules.length})</DescriptionListTerm>
+                    <TabTerm href={routesHref}>NAT rules ({construct.natRules.length})</TabTerm>
                     <DescriptionListDescription>
                         <NatRuleTable
                             nats={construct.natRules}
                             database={database}
                             gatewayPortName={gatewayPortName}
+                            openAll={routesHref ? { href: routesHref, count: construct.natRules.length } : undefined}
                         />
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
             {construct.staticRouteRules.length > 0 && (
                 <DescriptionListGroup>
-                    <DescriptionListTerm>Static routes ({construct.staticRouteRules.length})</DescriptionListTerm>
+                    <TabTerm href={routesHref}>Static routes ({construct.staticRouteRules.length})</TabTerm>
                     <DescriptionListDescription>
                         <StaticRouteTable
                             routes={construct.staticRouteRules}
                             routerName={construct.name}
                             database={database}
                             nodeHref={nodeHref}
+                            openAll={routesHref ? { href: routesHref, count: construct.staticRouteRules.length } : undefined}
                         />
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
             {construct.policyCount > 0 && (
                 <DescriptionListGroup>
-                    <DescriptionListTerm>Routing policies</DescriptionListTerm>
+                    <TabTerm href={routesHref}>Routing policies</TabTerm>
                     <DescriptionListDescription>
                         {construct.policyCount}{' '}
                         <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>({NOT_COLLECTED})</span>
@@ -523,7 +552,7 @@ const OverviewBody: React.FC<DrawerBodyProps> = ({
             )}
             {hasLoadBalancers && (
                 <DescriptionListGroup>
-                    <DescriptionListTerm>Load balancers</DescriptionListTerm>
+                    <TabTerm href={detailHref?.('services')}>Load balancers</TabTerm>
                     <DescriptionListDescription>
                         <LoadBalancerOverview construct={construct} services={services} />
                     </DescriptionListDescription>
@@ -539,6 +568,7 @@ const OverviewBody: React.FC<DrawerBodyProps> = ({
                 </DescriptionListGroup>
             )}
         </DescriptionList>
+        </>
     );
 };
 
@@ -557,7 +587,7 @@ const EDGE_ROLE_TITLES: Record<string, string> = {
  * Relationships tab: each peer is a link that moves the ladder selection,
  * annotated with the edge's role and addresses.
  */
-const RelationshipsBody: React.FC<ConstructDrawerBodyProps> = ({ construct, model, onSelectConstruct }) => {
+export const RelationshipsBody: React.FC<ConstructDrawerBodyProps> = ({ construct, model, onSelectConstruct }) => {
     const connections = model.edges
         .filter((edge) => edge.source === construct.uuid || edge.target === construct.uuid)
         .map((edge) => {
@@ -607,7 +637,14 @@ const RelationshipsBody: React.FC<ConstructDrawerBodyProps> = ({ construct, mode
  * database is at hand the model's own view of the construct is shown instead,
  * labeled as derived.
  */
-const ConfigBody: React.FC<DrawerBodyProps> = ({ construct, database, databaseNode, services, policy }) => {
+export const ConfigBody: React.FC<DrawerBodyProps> = ({
+    construct,
+    database,
+    databaseNode,
+    services,
+    policy,
+    surface = 'drawer',
+}) => {
     const isDarkTheme = useIsDarkTheme();
     // The same node's database with the optional sections, once they have
     // arrived, so the raw rows include the load balancer and ACL rows the
@@ -618,7 +655,12 @@ const ConfigBody: React.FC<DrawerBodyProps> = ({ construct, database, databaseNo
             : policy.status === 'ready'
                 ? policy.database
                 : database ?? null;
-    const { source, payload } = configPayloadFor(construct, configDatabase);
+    // The page shows every port row; the drawer inlines the first 100.
+    const { source, payload } = configPayloadFor(
+        construct,
+        configDatabase,
+        surface === 'page' ? { maxPorts: Infinity } : undefined,
+    );
     const caption =
         source === 'nb-rows'
             ? `${ovnKindFor(construct).table} rows${databaseNode ? ` from node ${databaseNode}` : ''}`
@@ -634,13 +676,11 @@ const ConfigBody: React.FC<DrawerBodyProps> = ({ construct, database, databaseNo
                 isDownloadEnabled
                 code={JSON.stringify(payload, null, 2)}
                 language={Language.json}
-                height="400px"
+                height={surface === 'page' ? 'max(400px, calc(100vh - 420px))' : '400px'}
             />
         </>
     );
 };
-
-const ALL_PORT_TYPES = 'all';
 
 const ACTION_COLORS: Record<string, 'green' | 'red' | 'grey'> = {
     allow: 'green',
@@ -1026,33 +1066,33 @@ const portMatches = (port: LadderPort, query: string): boolean => {
     return (port.row.addresses ?? []).some((address) => address.toLowerCase().includes(query));
 };
 
+/** Rows per page of the Ports table on the detail page. */
+const PAGE_ROWS = 50;
+const PAGE_ROW_CHOICES = [20, 50, 100];
+
 /**
  * Every Logical_Switch_Port on a switch as a filterable table, each row
- * expandable to the port's raw NB row. Ports stay in the drawer: they are
- * not ladder constructs and do not move the ladder selection (e2b.4 decision
- * 3). Keyed by construct uuid from the parent so expansion and filters reset
- * when a different construct is selected.
+ * expandable to the port's summary, policy and raw NB row. Ports stay in the
+ * drawer: they are not ladder constructs and do not move the ladder selection
+ * (e2b.4 decision 3). Keyed by construct uuid from the parent so expansion and
+ * filters reset when a different construct is selected. On the detail page
+ * the same table runs at full width, paginated, with its filter in the URL.
  */
-const PortsBody: React.FC<DrawerBodyProps> = ({
+export const PortsBody: React.FC<DrawerBodyProps> = ({
     construct,
     database,
     databaseNode,
     nodeForChassis,
     nodeHref,
     policy,
+    detailHref,
+    surface = 'drawer',
+    query,
+    onQueryChange,
+    focusPort,
+    onPortToggle,
 }) => {
-    const [filter, setFilter] = React.useState('');
-    const [typeFilter, setTypeFilter] = React.useState(ALL_PORT_TYPES);
-    const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
-
-    const typeCounts = React.useMemo(() => {
-        const counts = new Map<string, number>();
-        for (const port of construct.ports) {
-            const type = switchPortTypeLabel(port.row);
-            counts.set(type, (counts.get(type) ?? 0) + 1);
-        }
-        return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b));
-    }, [construct.ports]);
+    const isPage = surface === 'page';
 
     // Raw rows come from the representative node's database (cluster view:
     // the first zone the construct appears in, the Config tab's rule), falling
@@ -1064,124 +1104,111 @@ const PortsBody: React.FC<DrawerBodyProps> = ({
             byUuid.get(port.uuid) ?? byName.get(port.name) ?? port.row;
     }, [database]);
 
-    const query = filter.trim().toLowerCase();
-    const rows = construct.ports.filter(
-        (port) =>
-            (typeFilter === ALL_PORT_TYPES || switchPortTypeLabel(port.row) === typeFilter) &&
-            (query === '' || portMatches(port, query)),
+    const portByUuid = React.useMemo(
+        () => new Map(construct.ports.map((port) => [port.uuid, port])),
+        [construct.ports],
     );
-
-    const toggle = (uuid: string) =>
-        setExpanded((current) => {
-            const next = new Set(current);
-            if (next.has(uuid)) next.delete(uuid);
-            else next.add(uuid);
-            return next;
-        });
+    const focusKey = focusPort ? construct.ports.find((port) => port.name === focusPort)?.uuid : undefined;
 
     // Four columns fit the default drawer; port security and the requested
     // chassis are in the expanded row's summary (ovn-recon-dp7.5).
-    const columns = ['Name', 'Type', 'Addresses', 'Up'];
+    const columns: RuleColumn<LadderPort>[] = [
+        {
+            key: 'name',
+            title: 'Name',
+            cell: (port) => <PortName port={port} />,
+            sortValue: (port) => (port.namespace && port.pod ? `${port.namespace}/${port.pod}` : port.name),
+            headerModifier: 'wrap',
+            modifier: 'breakWord',
+        },
+        {
+            key: 'type',
+            title: 'Type',
+            cell: (port) => switchPortTypeLabel(port.row),
+            sortValue: (port) => switchPortTypeLabel(port.row),
+            headerModifier: 'wrap',
+            modifier: 'fitContent',
+        },
+        {
+            key: 'addresses',
+            title: 'Addresses',
+            cell: (port) => <CodeLines items={rowAddresses(port.row.addresses)} />,
+            headerModifier: 'wrap',
+            modifier: 'fitContent',
+        },
+        {
+            key: 'up',
+            title: 'Up',
+            cell: (port) => <PortState row={port.row} />,
+            headerModifier: 'wrap',
+            modifier: 'fitContent',
+        },
+    ];
+
+    const caption = (shown: number, total: number) => {
+        const parts: React.ReactNode[] = [];
+        if (shown < total) parts.push(`${shown} of ${total} ports`);
+        if (databaseNode) parts.push(`Logical_Switch_Port rows from node ${databaseNode}`);
+        const fullPage = !isPage && detailHref ? <Link to={detailHref('ports')}>Open in full page</Link> : null;
+        if (parts.length === 0 && !fullPage) return null;
+        return (
+            <span style={SUBTLE_TEXT}>
+                {parts.join(' · ')}
+                {fullPage && (
+                    <>
+                        {parts.length > 0 ? ' · ' : ''}
+                        {fullPage}
+                    </>
+                )}
+            </span>
+        );
+    };
 
     return (
-        <>
-            <Toolbar inset={{ default: 'insetNone' }} className="pf-u-pb-sm">
-                <ToolbarContent>
-                    <ToolbarItem>
-                        <TextInput
-                            aria-label="Filter ports"
-                            type="search"
-                            placeholder={`Filter ${construct.ports.length} ports`}
-                            value={filter}
-                            onChange={(_event, value) => setFilter(value)}
-                        />
-                    </ToolbarItem>
-                    <ToolbarItem>
-                        <FormSelect
-                            aria-label="Filter by port type"
-                            value={typeFilter}
-                            onChange={(_event, value) => setTypeFilter(value)}
-                        >
-                            <FormSelectOption value={ALL_PORT_TYPES} label={`All types (${construct.ports.length})`} />
-                            {typeCounts.map(([type, count]) => (
-                                <FormSelectOption key={type} value={type} label={`${type} (${count})`} />
-                            ))}
-                        </FormSelect>
-                    </ToolbarItem>
-                </ToolbarContent>
-            </Toolbar>
-            {databaseNode && (
-                <div className="pf-u-mb-sm" style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>
-                    Logical_Switch_Port rows from node {databaseNode}
+        <RuleTable<LadderPort>
+            ariaLabel="Switch ports"
+            columns={columns}
+            rows={construct.ports}
+            rowKey={(port) => port.uuid}
+            rowTestId={(uuid) => `port-row-${uuid}`}
+            filter={{
+                ariaLabel: 'Filter ports',
+                placeholder: (total) => `Filter ${total} ports`,
+                matches: portMatches,
+                value: query,
+                onChange: onQueryChange,
+            }}
+            facets={[
+                {
+                    key: 'type',
+                    ariaLabel: 'Filter by port type',
+                    allLabel: (total) => `All types (${total})`,
+                    valueOf: (port) => switchPortTypeLabel(port.row),
+                },
+            ]}
+            summary={({ shown, total }) => caption(shown, total)}
+            emptyMessage={{ none: 'No ports on this switch.', noMatch: 'No ports match.' }}
+            tableStyle={isPage ? undefined : DRAWER_TABLE_STYLE}
+            pageSize={isPage ? PAGE_ROWS : undefined}
+            perPageOptions={isPage ? PAGE_ROW_CHOICES : undefined}
+            focusKey={isPage ? focusKey : undefined}
+            onToggleRow={(uuid, expanded) => {
+                const port = portByUuid.get(uuid);
+                if (port) onPortToggle?.(port.name, expanded);
+            }}
+            expandedContent={(port) => (
+                // Summary, then policy, then the raw row on request: the order
+                // answers "what applies to this pod?" first (ovn-recon-dp7.5).
+                // Zero width plus a full minimum: the details fill the row but
+                // add nothing to the table's own minimum width, so nested
+                // tables cannot widen it.
+                <div style={{ width: 0, minWidth: '100%' }}>
+                    <PortSummary port={port} row={port.row} nodeForChassis={nodeForChassis} nodeHref={nodeHref} />
+                    <PortPolicy port={port} policy={policy} databaseNode={databaseNode} />
+                    <RawPortRow uuid={port.uuid} row={rawRowFor(port)} />
                 </div>
             )}
-            <DrawerTableWrap>
-            <Table aria-label="Switch ports" variant="compact" isExpandable style={DRAWER_TABLE_STYLE}>
-                <Thead>
-                    <Tr>
-                        <Th screenReaderText="Row expansion" />
-                        {columns.map((column) => <Th key={column} modifier="wrap">{column}</Th>)}
-                    </Tr>
-                </Thead>
-                {rows.map((port, rowIndex) => {
-                    const isExpanded = expanded.has(port.uuid);
-                    const row = port.row;
-                    return (
-                        <Tbody key={port.uuid} isExpanded={isExpanded}>
-                            <Tr data-testid={`port-row-${port.uuid}`}>
-                                <Td
-                                    expand={{
-                                        rowIndex,
-                                        isExpanded,
-                                        onToggle: () => toggle(port.uuid),
-                                        expandId: `port-${port.uuid}`,
-                                    }}
-                                />
-                                <Td dataLabel="Name" modifier="breakWord"><PortName port={port} /></Td>
-                                <Td dataLabel="Type" modifier="fitContent">{switchPortTypeLabel(row)}</Td>
-                                <Td dataLabel="Addresses" modifier="fitContent"><CodeLines items={rowAddresses(row.addresses)} /></Td>
-                                <Td dataLabel="Up" modifier="fitContent"><PortState row={row} /></Td>
-                            </Tr>
-                            <Tr isExpanded={isExpanded}>
-                                <Td dataLabel="Details" colSpan={columns.length + 1}>
-                                    <ExpandableRowContent>
-                                        {/* Summary, then policy, then the raw row on request:
-                                            the order answers "what applies to this pod?" first
-                                            (ovn-recon-dp7.5). */}
-                                        {isExpanded && (
-                                            // Zero width plus a full minimum: the
-                                            // details fill the row but add nothing
-                                            // to the table's own minimum width, so
-                                            // nested tables cannot widen it.
-                                            <div style={{ width: 0, minWidth: '100%' }}>
-                                                <PortSummary
-                                                    port={port}
-                                                    row={row}
-                                                    nodeForChassis={nodeForChassis}
-                                                    nodeHref={nodeHref}
-                                                />
-                                                <PortPolicy port={port} policy={policy} databaseNode={databaseNode} />
-                                                <RawPortRow uuid={port.uuid} row={rawRowFor(port)} />
-                                            </div>
-                                        )}
-                                    </ExpandableRowContent>
-                                </Td>
-                            </Tr>
-                        </Tbody>
-                    );
-                })}
-                {rows.length === 0 && (
-                    <Tbody>
-                        <Tr>
-                            <Td colSpan={columns.length + 1}>
-                                {construct.ports.length === 0 ? 'No ports on this switch.' : 'No ports match.'}
-                            </Td>
-                        </Tr>
-                    </Tbody>
-                )}
-            </Table>
-            </DrawerTableWrap>
-        </>
+        />
     );
 };
 
@@ -1192,7 +1219,13 @@ const PortsBody: React.FC<DrawerBodyProps> = ({
  * from the parent so filters, sections and expansion reset on a different
  * construct.
  */
-const ServicesBody: React.FC<DrawerBodyProps> = ({ services, databaseNode }) => {
+export const ServicesBody: React.FC<DrawerBodyProps> = ({
+    services,
+    databaseNode,
+    surface = 'drawer',
+    query,
+    onQueryChange,
+}) => {
     if (services.status !== 'ready') {
         return services.status === 'loading' ? (
             <div><Spinner size="md" aria-label="Loading services" /> Loading services…</div>
@@ -1214,7 +1247,16 @@ const ServicesBody: React.FC<DrawerBodyProps> = ({ services, databaseNode }) => 
         );
     }
 
-    return <ServicesView attachment={services.attachment} database={services.database} databaseNode={databaseNode} />;
+    return (
+        <ServicesView
+            attachment={services.attachment}
+            database={services.database}
+            databaseNode={databaseNode}
+            surface={surface}
+            query={query}
+            onQueryChange={onQueryChange}
+        />
+    );
 };
 
 /**
@@ -1278,8 +1320,25 @@ const useDrawerSections = ({
         needsFetch ? DRAWER_SECTIONS : NO_SECTIONS,
         sectionsRefreshKey,
     );
-    const servicesDatabase = carriedServices ?? fetched.database;
-    const policyDatabase = carriedPolicy ?? fetched.database;
+    return useSectionStates(construct, database, fetched, { services: wantsServices, policy: wantsPolicy });
+};
+
+/**
+ * The services and policy states for a construct, from a database that may
+ * already carry the sections (`carried`) and the result of a section request
+ * (`fetched`). Shared by the drawer and the construct detail page, which
+ * requests the sections per tab.
+ */
+export const useSectionStates = (
+    construct: LadderConstruct,
+    carried: LogicalDatabase | null | undefined,
+    fetched: OptionalSectionsState,
+    wants: { services: boolean; policy: boolean },
+): { services: ServicesState; policy: PolicyState } => {
+    const servicesDatabase = (hasServicesSection(carried) ? carried : undefined) ?? fetched.database;
+    const policyDatabase = (hasPolicySection(carried) ? carried : undefined) ?? fetched.database;
+    const wantsServices = wants.services;
+    const wantsPolicy = wants.policy;
 
     const services = React.useMemo<ServicesState>(() => {
         if (!wantsServices) return { status: 'none' };

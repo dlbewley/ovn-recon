@@ -117,6 +117,16 @@ describe('ovnKindRegistry', () => {
         expect(withDb.source).toBe('nb-rows');
     });
 
+    it('caps the inlined port rows unless told otherwise (the detail page lifts the cap)', () => {
+        const construct = byName('cnv-1');
+        const capped = configPayloadFor(construct, database, { maxPorts: 10 }).payload as { ports: unknown[]; portsOmitted?: number };
+        expect(capped.ports).toHaveLength(10);
+        expect(capped.portsOmitted).toBe(construct.ports.length - 10);
+        const all = configPayloadFor(construct, database, { maxPorts: Infinity }).payload as { ports: unknown[]; portsOmitted?: number };
+        expect(all.ports).toHaveLength(construct.ports.length);
+        expect(all.portsOmitted).toBeUndefined();
+    });
+
     it('gives unknown kinds a generic fallback definition', () => {
         const alien = { ...byName('GR_cnv-1'), kind: 'load-balancer' } as never;
         const kind = ovnKindFor(alien);

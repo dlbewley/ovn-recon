@@ -43,6 +43,7 @@ import SnapshotStatusLine, { summarizeOvnZones } from './SnapshotStatusLine';
 import { useChassisNodeNames } from './useChassisNodeNames';
 import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
 import { constructSelectValue, findConstructBySelectValue, useSelectionDeepLink } from './useSelectParam';
+import { detailHrefFor } from './constructDetailLinks';
 
 const REFRESH_INTERVAL_MS = 30000;
 
@@ -343,6 +344,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             databaseNode={name}
                                             sectionsRefreshKey={snapshot?.metadata?.generatedAt}
                                             nodeForChassis={nodeForChassis}
+                                            detailHref={detailHrefFor(name, selectedConstruct)}
                                         />
                                     </>
                                 )}
