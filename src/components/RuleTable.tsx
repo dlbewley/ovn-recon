@@ -35,6 +35,9 @@ export interface RuleTableProps<R> {
      * applies to all rows first. Unset, every row renders.
      */
     pageSize?: number;
+    /** Style for the table element, e.g. narrower cell padding where the
+     * table has to fit a drawer. Unset, PatternFly's compact defaults apply. */
+    tableStyle?: React.CSSProperties;
 }
 
 /**
@@ -52,6 +55,7 @@ export const RuleTable = <R,>({
     expandedContent,
     openAll,
     pageSize,
+    tableStyle,
 }: RuleTableProps<R>): React.ReactElement => {
     const [sort, setSort] = React.useState<{ index: number; direction: 'asc' | 'desc' } | null>(null);
     const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
@@ -137,7 +141,7 @@ export const RuleTable = <R,>({
                 />
             )}
             <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
-                <Table aria-label={ariaLabel} variant="compact" isExpandable={expandable}>
+                <Table aria-label={ariaLabel} variant="compact" isExpandable={expandable} style={tableStyle}>
                     <Thead>
                         <Tr>
                             {expandable && <Th screenReaderText="Row expansion" />}

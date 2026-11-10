@@ -47,6 +47,34 @@ const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--s
 const WRAP_ANYWHERE: React.CSSProperties = { overflowWrap: 'anywhere' };
 const DASH = <span style={SUBTLE}>—</span>;
 
+/**
+ * Half PatternFly's cell padding: six columns at the default inset need about
+ * 650px, more than the drawer's 612px body at its default half width
+ * (ovn-recon-dp7.5 made the same trade for the Ports table).
+ */
+const SERVICE_TABLE_STYLE = {
+    '--pf-v6-c-table--cell--Padding--base': 'var(--pf-t--global--spacer--sm)',
+    '--pf-v6-c-table--cell--first-last-child--PaddingInline': 'var(--pf-t--global--spacer--xs)',
+} as React.CSSProperties;
+
+/** Long Service names wrap at their hyphens and after the slash, never
+ * inside a word, so the column keeps a readable width. */
+const BREAK_WORD: React.CSSProperties = { overflowWrap: 'break-word' };
+
+/** "namespace/name" with a break opportunity after the slash. */
+const LabelText: React.FC<{ label: string }> = ({ label }) => {
+    const slash = label.indexOf('/');
+    return slash < 0 ? (
+        <>{label}</>
+    ) : (
+        <>
+            {label.slice(0, slash + 1)}
+            <wbr />
+            {label.slice(slash + 1)}
+        </>
+    );
+};
+
 /** Rows per page in each section: a large cluster holds thousands of
  * Services, all of them in the cluster-wide section. */
 export const SERVICE_PAGE_SIZE = 100;
@@ -114,12 +142,14 @@ const ServiceName: React.FC<{ group: ServiceGroupView }> = ({ group }) =>
                 name: group.service.name,
             })}
             title={group.loadBalancers.map((row) => row.name).join('\n')}
-            style={WRAP_ANYWHERE}
+            style={BREAK_WORD}
         >
-            {group.label}
+            <LabelText label={group.label} />
         </Link>
     ) : (
-        <code style={WRAP_ANYWHERE}>{group.label}</code>
+        <code style={BREAK_WORD}>
+            <LabelText label={group.label} />
+        </code>
     );
 
 const BackendsCell: React.FC<{ group: ServiceGroupView }> = ({ group }) => {
@@ -360,8 +390,10 @@ const ServiceDetail: React.FC<{
                 ))}
             </div>
             {firstError?.status === 'error' && (
-                <div style={SUBTLE} className="pf-u-mb-sm" data-testid="backend-lookup-error">
-                    {plural(failed.size, 'backend')} on other nodes could not be looked up: {firstError.message}
+                // The collector helper's message lists every path it tried:
+                // too long for the drawer, so it is the tooltip.
+                <div style={SUBTLE} className="pf-u-mb-sm" data-testid="backend-lookup-error" title={firstError.message}>
+                    {plural(failed.size, 'backend')} on other nodes could not be looked up.
                 </div>
             )}
             <div>
@@ -440,7 +472,12 @@ const ServiceSectionView: React.FC<{
     return (
         <ExpandableSection
             toggleContent={
-                <span data-testid={`services-section-${section}`}>
+                // Link buttons do not wrap; the cluster-wide heading is longer
+                // than the drawer is wide.
+                <span
+                    data-testid={`services-section-${section}`}
+                    style={{ whiteSpace: 'normal', textAlign: 'start', display: 'inline-block' }}
+                >
                     {title}
                     {note && <span style={SUBTLE}> ({note})</span>} · {count}
                 </span>
@@ -466,6 +503,7 @@ const ServiceSectionView: React.FC<{
                         rowKey={(group) => group.key}
                         expandedContent={expandedContent}
                         pageSize={SERVICE_PAGE_SIZE}
+                        tableStyle={SERVICE_TABLE_STYLE}
                     />
                 ))}
         </ExpandableSection>

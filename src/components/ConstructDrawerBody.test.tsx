@@ -1002,9 +1002,9 @@ describe('ConstructDrawerBody Services tab', () => {
         setFilter('dual-stack-echo');
         expandRow(rowOf(CLUSTER_TABLE, 'ovn-recon-fixture/dual-stack-echo')!);
         await act(async () => undefined);
-        expect(container.querySelector('[data-testid="backend-lookup-error"]')?.textContent).toBe(
-            '4 backends on other nodes could not be looked up: Collector request failed (404)',
-        );
+        const note = container.querySelector('[data-testid="backend-lookup-error"]');
+        expect(note?.textContent).toBe('4 backends on other nodes could not be looked up.');
+        expect(note?.getAttribute('title')).toBe('Collector request failed (404)');
     });
 
     it('narrows by type, protocol, namespace and missing endpoints', () => {
