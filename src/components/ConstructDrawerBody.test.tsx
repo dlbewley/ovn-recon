@@ -7,9 +7,7 @@ import { buildLadderModel } from './logicalLadderModel';
 import ConstructDrawerBody, {
     MAX_PORT_ACLS,
     MAX_SERVICE_ROWS,
-    natRuleText,
     rowAddresses,
-    staticRouteText,
 } from './ConstructDrawerBody';
 import { policyForPort, policyIndexFor } from './policyIndex';
 import { fetchCollectorSnapshot } from './collectorApi';
@@ -63,12 +61,59 @@ describe('ConstructDrawerBody', () => {
         });
     };
 
-    it('lists NAT rules on a gateway router, capped with a more-note', () => {
-        render('GR_cnv-1');
+    const renderWithDatabase = (name: string) => {
+        const construct = byName(name);
+        expect(construct).toBeDefined();
+        act(() => {
+            root.render(<ConstructDrawerBody construct={construct!} model={model} database={database} />);
+        });
+    };
+
+    it('folds per-pod SNAT on a gateway router into one row that expands to the pods', () => {
+        renderWithDatabase('GR_cnv-1');
         const text = container.textContent ?? '';
         expect(text).toContain('NAT rules (74)');
-        expect(text).toContain('snat 192.168.4.72');
-        expect(text).toMatch(/and \d+ more/);
+        expect(text).not.toMatch(/and \d+ more/);
+        expect(container.querySelector('[data-testid="nat-type-counts"]')?.textContent).toBe('SNAT 74');
+
+        const table = container.querySelector('table[aria-label="NAT rules"]')!;
+        const rows = table.querySelectorAll('tbody > tr[data-testid^="rule-row-"]');
+        expect(rows).toHaveLength(2);
+        expect(rows[0].querySelector('[data-testid="nat-group-logical"]')?.textContent).toBe(
+            '73 logical IPs in 10.131.0.0/23',
+        );
+        expect(rows[1].textContent).toContain('100.64.0.5');
+        // Port range column: some of the folded rows carry one.
+        expect(rows[0].textContent).toMatch(/32768-60999 \(\d+ of 73\)/);
+
+        expect(container.querySelector('[data-testid="nat-group-addresses"]')).toBeNull();
+        const toggle = rows[0].querySelector('button')!;
+        act(() => toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+        const addresses = container.querySelector('[data-testid="nat-group-addresses"]')!;
+        expect(addresses.textContent).toContain('10.131.1.193');
+        const podLink = [...addresses.querySelectorAll('a')].find((a) =>
+            a.textContent === 'hive/hiveadmission-6b44465788-fnxq7');
+        expect(podLink?.getAttribute('href')).toBe('/k8s/ns/hive/core~v1~Pod/hiveadmission-6b44465788-fnxq7');
+    });
+
+    it('keeps dnat_and_snat rows as rows of their own with a count chip', () => {
+        const construct = byName('GR_cnv-1')!;
+        const withFip = {
+            ...construct,
+            natRules: [
+                ...construct.natRules,
+                { uuid: 'fip-1', type: 'dnat_and_snat' as const, externalIp: '192.168.4.200', logicalIp: '10.131.1.193' },
+            ],
+        };
+        act(() => {
+            root.render(<ConstructDrawerBody construct={withFip} model={model} database={database} />);
+        });
+        expect(container.querySelector('[data-testid="nat-type-counts"]')?.textContent).toBe('DNAT+SNAT 1 SNAT 74');
+        const fipRow = container.querySelector('[data-testid="rule-row-fip-1"]')!;
+        expect(fipRow.textContent).toContain('DNAT+SNAT');
+        expect(fipRow.textContent).toContain('192.168.4.200');
+        expect(fipRow.textContent).toContain('hive/hiveadmission-6b44465788-fnxq7');
+        expect(fipRow.querySelector('button')).toBeNull();
     });
 
     it('shows gateway port hosting resolved to a node name, falling back to the chassis id', () => {
@@ -160,41 +205,73 @@ describe('ConstructDrawerBody', () => {
         expect(text).not.toContain('ACLs');
     });
 
-    it('renders NAT match and route extras in the rule text', () => {
-        expect(
-            natRuleText(
+    it('shows NAT match, priority and gateway port as columns when set', () => {
+        const construct = byName('GR_cnv-1')!;
+        const gatewayPort = database.logicalRouterPorts.find((port) => port.name === 'rtoe-GR_cnv-1')!;
+        const extended = {
+            ...construct,
+            natRules: [
                 {
-                    uuid: 'n',
-                    type: 'snat',
+                    uuid: 'n1',
+                    type: 'snat' as const,
                     externalIp: '192.0.2.1',
                     logicalIp: '10.0.0.0/24',
                     match: 'ip4.dst == $set',
                     priority: 5,
-                    gatewayPort: 'lrp-1',
+                    gatewayPort: gatewayPort.uuid,
                 },
-                (uuid) => (uuid === 'lrp-1' ? 'rtoe-GR_x' : undefined),
-            ),
-        ).toBe('snat 192.0.2.1 ⇄ 10.0.0.0/24, match ip4.dst == $set, priority 5, on rtoe-GR_x');
-        expect(natRuleText({ uuid: 'n', type: 'snat', externalIp: '1.1.1.1', logicalIp: '10.0.0.1' })).toBe(
-            'snat 1.1.1.1 ⇄ 10.0.0.1',
+            ],
+        };
+        act(() => {
+            root.render(<ConstructDrawerBody construct={extended} model={model} database={database} />);
+        });
+        const headers = [...container.querySelectorAll('table[aria-label="NAT rules"] thead th')].map(
+            (th) => th.textContent,
         );
-        expect(
-            staticRouteText({
-                uuid: 'r',
-                ipPrefix: '0.0.0.0/0',
-                nexthop: '10.0.0.1',
-                routeTable: 'rt1',
-                bfd: 'bfd-1',
-                selectionFields: ['ip_src', 'ip_dst'],
-            }),
-        ).toBe('0.0.0.0/0 → 10.0.0.1, table rt1, bfd, ecmp(ip_src ip_dst)');
+        expect(headers).toEqual(['Type', 'External IP', 'Logical IP', 'Match', 'Priority', 'Gateway port']);
+        const row = container.querySelector('[data-testid="rule-row-n1"]')!;
+        expect(row.textContent).toContain('ip4.dst == $set');
+        expect(row.textContent).toContain('rtoe-GR_cnv-1');
     });
 
-    it('lists static routes with nexthops', () => {
-        render('ovn_cluster_router');
+    it('lists static routes as a table, default first, src-ip last, next hops resolved', () => {
+        renderWithDatabase('ovn_cluster_router');
         const text = container.textContent ?? '';
         expect(text).toMatch(/Static routes \(\d+\)/);
-        expect(text).toContain('→');
+        const rows = [...container.querySelectorAll('table[aria-label="Static routes"] tbody > tr')];
+        const policies = rows.map((row) => row.querySelector('td[data-label="Policy"]')?.textContent);
+        const firstSrc = policies.indexOf('src-ip');
+        expect(firstSrc).toBeGreaterThan(0);
+        expect(policies.slice(firstSrc).every((policy) => policy === 'src-ip')).toBe(true);
+
+        const transit = rows.find((row) => row.textContent?.startsWith('10.130.0.0/23'))!;
+        expect(transit.textContent).toContain('→ node ctrl-3');
+        const join = rows.find((row) => row.textContent?.startsWith('10.131.0.0/23'))!;
+        expect(join.textContent).toContain('→ rtoj-GR_cnv-1 (GR_cnv-1)');
+    });
+
+    it('calls out the default route and renders flags', () => {
+        const construct = byName('GR_cnv-1')!;
+        const extended = {
+            ...construct,
+            staticRouteRules: [
+                { uuid: 'r2', ipPrefix: '10.0.0.0/8', nexthop: '192.168.4.9', routeTable: 'rt1', bfd: 'bfd-1' },
+                ...construct.staticRouteRules,
+                { uuid: 'r3', ipPrefix: '10.1.0.0/16', nexthop: '192.168.4.9', selectionFields: ['ip_src', 'ip_dst'] },
+            ],
+        };
+        act(() => {
+            root.render(<ConstructDrawerBody construct={extended} model={model} database={database} />);
+        });
+        const rows = [...container.querySelectorAll('table[aria-label="Static routes"] tbody > tr')];
+        expect(rows[0].querySelector('td[data-label="Prefix"]')?.textContent).toBe('0.0.0.0/0 default');
+        expect(rows[0].textContent).toContain('on-link via rtoe-GR_cnv-1');
+        const r2 = container.querySelector('[data-testid="rule-row-r2"]')!;
+        expect(r2.querySelector('td[data-label="Route table"]')?.textContent).toBe('rt1');
+        expect(r2.querySelector('td[data-label="Flags"]')?.textContent).toBe('BFD');
+        const r3 = container.querySelector('[data-testid="rule-row-r3"]')!;
+        expect(r3.querySelector('td[data-label="Flags"]')?.textContent).toBe('ECMP ip_src,ip_dst');
+        expect(r3.querySelector('td[data-label="Route table"]')?.textContent).toBe('main');
     });
 
     it('links the owning CUDN from a UDN construct', () => {

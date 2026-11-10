@@ -23,10 +23,8 @@ import {
     ACLRow,
     LogicalDatabase,
     LogicalSwitchPortRow,
-    NATRow,
     PortGroupRow,
     SnapshotSection,
-    StaticRouteRow,
 } from '../types';
 import { networkResourceRef } from './logicalClassification';
 import {
@@ -72,8 +70,8 @@ import { useIsDarkTheme } from './useIsDarkTheme';
 import { useOptionalSections } from './useOptionalSections';
 import { getResourcePath } from '../topology/links';
 import DrawerTabStrip from './DrawerTabStrip';
+import { NatRuleTable, StaticRouteTable } from './RouterRuleTables';
 
-const MAX_LISTED_RULES = 10;
 const MAX_LISTED_PORTS = 15;
 /** Services tab render cap: unlike ports per switch, Services per node are
  * unbounded (hundreds on a lab, thousands on a large cluster). */
@@ -153,28 +151,6 @@ type PolicyState =
 type DrawerBodyProps = ConstructDrawerBodyProps & { services: ServicesState; policy: PolicyState };
 
 const SEAM_ROLES = new Set(['external-switch', 'localnet-switch']);
-
-/** `gatewayPortName` resolves NAT.gateway_port (an LRP uuid) to the port's name. */
-export const natRuleText = (nat: NATRow, gatewayPortName?: (uuid: string) => string | undefined): string => {
-    const target = nat.logicalPort ? `${nat.logicalIp} (${nat.logicalPort})` : nat.logicalIp ?? '';
-    const parts = [`${nat.type} ${nat.externalIp ?? ''} ⇄ ${target}`];
-    if (nat.match) parts.push(`match ${nat.match}`);
-    if (nat.priority) parts.push(`priority ${nat.priority}`);
-    if (nat.gatewayPort) parts.push(`on ${gatewayPortName?.(nat.gatewayPort) ?? nat.gatewayPort}`);
-    return parts.join(', ');
-};
-
-export const staticRouteText = (route: StaticRouteRow): string => {
-    const parts = [`${route.ipPrefix} → ${route.nexthop ?? ''}`];
-    if (route.policy) parts.push(`policy ${route.policy}`);
-    if (route.outputPort) parts.push(`via ${route.outputPort}`);
-    if (route.routeTable) parts.push(`table ${route.routeTable}`);
-    if (route.bfd) parts.push('bfd');
-    if (route.selectionFields && route.selectionFields.length > 0) {
-        parts.push(`ecmp(${route.selectionFields.join(' ')})`);
-    }
-    return parts.join(', ');
-};
 
 /** Short form of a chassis id for display when no Node claims it. */
 const shortChassis = (chassisName: string): string =>
@@ -257,18 +233,6 @@ const loadBalancerSummary = (direct: number, groups: number): string => {
     if (direct > 0) parts.push(`${direct} direct`);
     if (groups > 0) parts.push(`${groups} group${groups === 1 ? '' : 's'}`);
     return parts.join(' · ');
-};
-
-const RuleList: React.FC<{ items: string[] }> = ({ items }) => {
-    const shown = items.slice(0, MAX_LISTED_RULES);
-    return (
-        <>
-            {shown.map((item, index) => <div key={`${index}:${item}`}><code>{item}</code></div>)}
-            {items.length > shown.length && (
-                <div>… and {items.length - shown.length} more</div>
-            )}
-        </>
-    );
 };
 
 const WorkloadPortList: React.FC<{ construct: LadderConstruct }> = ({ construct }) => {
@@ -528,7 +492,11 @@ const OverviewBody: React.FC<DrawerBodyProps> = ({
                 <DescriptionListGroup>
                     <DescriptionListTerm>NAT rules ({construct.natRules.length})</DescriptionListTerm>
                     <DescriptionListDescription>
-                        <RuleList items={construct.natRules.map((nat) => natRuleText(nat, gatewayPortName))} />
+                        <NatRuleTable
+                            nats={construct.natRules}
+                            database={database}
+                            gatewayPortName={gatewayPortName}
+                        />
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
@@ -536,7 +504,12 @@ const OverviewBody: React.FC<DrawerBodyProps> = ({
                 <DescriptionListGroup>
                     <DescriptionListTerm>Static routes ({construct.staticRouteRules.length})</DescriptionListTerm>
                     <DescriptionListDescription>
-                        <RuleList items={construct.staticRouteRules.map(staticRouteText)} />
+                        <StaticRouteTable
+                            routes={construct.staticRouteRules}
+                            routerName={construct.name}
+                            database={database}
+                            nodeHref={nodeHref}
+                        />
                     </DescriptionListDescription>
                 </DescriptionListGroup>
             )}
