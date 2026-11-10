@@ -10,6 +10,7 @@ import { getNamespaceQueryPath, getProjectPath, getResourceLinks, getResourcePat
 import { nodeKindRegistry } from './registry';
 import { buildNodeViewModel } from './viewModel';
 import { descriptorFor, NODE_TYPES } from './descriptors';
+import { CATEGORICAL_COLORS } from './palette';
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
 
 /**
@@ -260,8 +261,11 @@ describe('the descriptor table', () => {
             expect(typeof d.items).toBe('function');
             expect(typeof d.id).toBe('function');
             expect(typeof d.present).toBe('function');
-            expect(d.color).toMatch(/^#[0-9A-Fa-f]{3,6}$/);
+            // A categorical colour off the shared palette: designTokens.test.ts holds
+            // the palette to contrast and keeps it clear of status colours (ovn-recon-nt4.1).
+            expect(CATEGORICAL_COLORS.map((c) => c.css)).toContain(d.color);
             expect(d.icon).toBeDefined();
+            expect(d.legend.label).not.toBe('');
         });
     });
 

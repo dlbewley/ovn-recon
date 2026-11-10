@@ -41,6 +41,7 @@ import {
     attachmentNodeId, attachmentSourceNodeId, bridgeMappingNodeId, cudnNodeId,
     interfaceNodeId, nadNodeId, udnNodeId
 } from './ids';
+import { CATEGORICAL, NodeStatus } from './palette';
 import { getUdnTopologyAndRole } from './registry';
 import {
     AttachmentNode, IntegrationBridgeNode, NetworkColumnItem, NodeKind, ResourceRef
@@ -128,12 +129,21 @@ export interface NodeTypeDescriptor<T = never> {
     items: (ctx: GraphContext) => T[];
     id: (item: T, ctx: GraphContext) => string;
     icon: React.ReactNode;
+    /**
+     * Accent: the card's stripe and icon colour. A categorical colour from
+     * topology/palette, never a status colour -- state has its own icon (ovn-recon-nt4.1).
+     */
     color: string;
+    /**
+     * What the legend calls this kind and one sentence on what it is (ovn-recon-nt4.2).
+     * Required, so a new kind cannot reach the canvas without an entry.
+     */
+    legend: { label: string; description: string };
     /** Node height when it varies with content. */
     height?: (item: T, defaultHeight: number) => number;
     present: (item: T, ctx: GraphContext) => NodePresentation;
-    /** Status dot on the node. Omitted by types that have no meaningful up/down. */
-    status?: (item: T) => 'up' | 'down' | 'unknown';
+    /** State icon on the node. Omitted by types that have no meaningful up/down. */
+    status?: (item: T) => NodeStatus;
     /** Extra content drawn inside the node box, e.g. the attachment namespace list. */
     detail?: (item: T, box: { width: number; height: number }) => React.ReactNode;
     edges?: (item: T, ctx: GraphContext, out: EdgeSink) => void;
@@ -152,6 +162,13 @@ export interface NodeTypeDescriptor<T = never> {
 // --- shared behaviour ------------------------------------------------------
 
 /** Every interface-backed node presents the same way and contributes the same edges. */
+/**
+ * nmstate's own word, read as up, down, or neither. `ignore`, `absent` and `unknown`
+ * are not faults; the old dot drew all three as down.
+ */
+const interfaceStatus = (state: string | undefined): NodeStatus =>
+    (state === 'up' ? 'up' : state === 'down' ? 'down' : 'unknown');
+
 const presentInterface = (iface: Interface): NodePresentation => ({
     label: iface.name,
     subtitle: iface.type,
@@ -259,23 +276,25 @@ const interfaceEdges = (iface: Interface, ctx: GraphContext, out: EdgeSink) => {
     }
 };
 
-/** An interface-backed descriptor differs only in role, lane, icon and colour. */
+/** An interface-backed descriptor differs only in role, lane, icon, colour and legend. */
 const interfaceType = (
     type: NodeTypeId,
     role: InterfaceRole,
     lane: string | null,
     icon: React.ReactNode,
-    color: string
+    color: string,
+    legend: { label: string; description: string }
 ): NodeTypeDescriptor<Interface> => ({
     type,
     kind: 'interface',
     lane,
     icon,
     color,
+    legend,
     items: (ctx) => interfacesWithRole(ctx, role),
     id: (iface, ctx) => interfaceNodeId(iface, ctx),
     present: presentInterface,
-    status: (iface) => (iface.state === 'up' ? 'up' : 'down'),
+    status: (iface) => interfaceStatus(iface.state),
     edges: interfaceEdges
 });
 
@@ -295,27 +314,58 @@ const resourceRefOf = (
 // --- the table -------------------------------------------------------------
 
 /**
+ * ACCENTS FOLLOW THE LANES, left to right: blue for NICs and bonds, cyan for devices cut
+ * or tagged from them (VFs, VLANs), jade for tunnels and the Layer 3 lane, purple for
+ * bridges and their ports, magenta for networks, violet for attachments, gray for what
+ * sits outside the lanes. The icon tells kinds within a family apart.
+ *
  * ORDER MATTERS WITHIN A LANE. Descriptors sharing a lane stack in table order and take
  * their group rank from it, so bridge mappings must precede VRFs in the Layer 3 lane.
  * Getting this backwards inverts the lane and moves every edge that touches it -- which
  * it did, once, before the snapshot caught it.
  */
 export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
-    interfaceType('physical', 'physical', 'eth', <ResourcePoolIcon />, '#0066CC'),
+    interfaceType('physical', 'physical', 'eth', <ResourcePoolIcon />, CATEGORICAL.blue.css, {
+        label: 'Physical interface',
+        description: 'An Ethernet NIC on the host, as NodeNetworkState reports it.'
+    }),
     {
         // nmstate calls a VF `ethernet`; the drawer and canvas say what kind.
-        ...interfaceType('sriov-vf', 'sriov-vf', 'vf', <CloneIcon />, '#3E8635'),
+        // Its own accent, not its PF's: a VF lane beside the NICs must not read as
+        // more NICs (ovn-recon-s3t.63).
+        ...interfaceType('sriov-vf', 'sriov-vf', 'vf', <CloneIcon />, CATEGORICAL.cyan.css, {
+            label: 'SR-IOV virtual function',
+            description: 'A VF carved from a physical NIC and still on the host.'
+        }),
         present: (iface) => ({ ...presentInterface(iface), subtitle: 'ethernet (SR-IOV VF)', graphLabel: 'VF' })
     },
-    interfaceType('bond', 'bond', 'bond', <PficonVcenterIcon />, '#663399'),
-    interfaceType('vlan', 'vlan', 'vlan', <TagIcon />, '#9933CC'),
+    interfaceType('bond', 'bond', 'bond', <PficonVcenterIcon />, CATEGORICAL.blue.css, {
+        label: 'Bond',
+        description: 'Several NICs aggregated into one link.'
+    }),
+    interfaceType('vlan', 'vlan', 'vlan', <TagIcon />, CATEGORICAL.cyan.css, {
+        label: 'VLAN',
+        description: 'A tagged device on a base interface. MACVLAN devices draw here too.'
+    }),
     // Shares the VLAN lane: both are devices layered on something to their left. The
     // icon and colour keep a tunnel endpoint tellable from a tag (ovn-recon-s3t.52).
-    interfaceType('vxlan', 'vxlan', 'vlan', <ConnectedIcon />, '#009596'),
-    interfaceType('bridge', 'bridge', 'bridge', <InfrastructureIcon />, '#FF6600'),
-    interfaceType('bridge-port', 'bridge-port', 'logical', <NetworkIcon />, '#0099CC'),
+    interfaceType('vxlan', 'vxlan', 'vlan', <ConnectedIcon />, CATEGORICAL.jade.css, {
+        label: 'VXLAN',
+        description: 'A tunnel endpoint, layered on the interface holding its local address.'
+    }),
+    interfaceType('bridge', 'bridge', 'bridge', <InfrastructureIcon />, CATEGORICAL.purple.css, {
+        label: 'Bridge',
+        description: 'An OVS bridge such as br-ex. A Linux bridge shows the Linux icon.'
+    }),
+    interfaceType('bridge-port', 'bridge-port', 'logical', <NetworkIcon />, CATEGORICAL.purple.css, {
+        label: 'Bridge port',
+        description: 'An OVS internal interface, such as an OVN management port. Hidden until you show hidden columns.'
+    }),
     // Rendered in the grid at the foot of the canvas rather than in a lane.
-    interfaceType('other', 'host-local', null, <NetworkIcon />, '#666'),
+    interfaceType('other', 'host-local', null, <NetworkIcon />, CATEGORICAL.gray.css, {
+        label: 'Other interface',
+        description: 'Loopback, veth and other host-local devices, in the grid at the foot of the canvas.'
+    }),
 
     {
         type: 'ovn-mapping',
@@ -323,7 +373,11 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         lane: 'l3',
         groupTitle: 'Bridge Mappings',
         icon: <RouteIcon />,
-        color: '#009900',
+        color: CATEGORICAL.jade.css,
+        legend: {
+            label: 'OVN bridge mapping',
+            description: 'The name OVN uses for a provider bridge (ovn.bridge-mappings). Nothing flows through it.'
+        },
         items: (ctx) => ctx.bridgeMappings,
         id: (mapping) => bridgeMappingNodeId(mapping.localnet),
         present: (mapping) => ({
@@ -349,7 +403,11 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         groupTitle: 'VRFs',
         gapBefore: 40,
         icon: <InfrastructureIcon />,
-        color: '#CC6600',
+        color: CATEGORICAL.jade.css,
+        legend: {
+            label: 'VRF',
+            description: 'A Linux VRF: its own routing table. A Primary network gets one per node.'
+        },
         items: (ctx) => interfacesWithRole(ctx, 'vrf'),
         id: (vrf, ctx) => interfaceNodeId(vrf, ctx),
         present: (vrf) => {
@@ -365,7 +423,7 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
                 state: details.length > 0 ? details.join(' ') : vrf.state
             };
         },
-        status: (vrf) => (vrf.state === 'up' ? 'up' : 'down'),
+        status: (vrf) => interfaceStatus(vrf.state),
         edges: (vrf, ctx, out) => {
             const ra = findRouteAdvertisementForVrf(ctx.routeAdvertisements, vrf.name);
             getCudnsSelectedByRouteAdvertisement(ra, ctx.cudns).forEach((cudn) => {
@@ -448,7 +506,11 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         groupTitle: 'Integration',
         gapBefore: 40,
         icon: <InfrastructureIcon />,
-        color: '#009596',
+        color: CATEGORICAL.purple.css,
+        legend: {
+            label: 'OVN integration bridge',
+            description: 'br-int, where OVN attaches everything. Not reported by nmstate; drawn from the ports that name it.'
+        },
         // OVN's flows decide what passes between br-int's ports; a highlight must
         // not guess by walking through it.
         opaque: true,
@@ -502,7 +564,11 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         kind: 'cudn',
         lane: 'networks',
         icon: <NetworkIcon />,
-        color: '#CC0099',
+        color: CATEGORICAL.magenta.css,
+        legend: {
+            label: 'ClusterUserDefinedNetwork',
+            description: 'A cluster-scoped network (CUDN), with its topology and subnets.'
+        },
         items: (ctx) => ctx.cudns,
         id: (cudn) => cudnNodeId(cudn.metadata?.name),
         present: (cudn) => {
@@ -562,7 +628,11 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         kind: 'udn',
         lane: 'networks',
         icon: <NetworkIcon />,
-        color: '#0084A8',
+        color: CATEGORICAL.magenta.css,
+        legend: {
+            label: 'UserDefinedNetwork',
+            description: 'A namespaced network (UDN), labelled with its namespace.'
+        },
         items: (ctx) => ctx.udns,
         id: (udn) => udnNodeId(udn),
         present: (udn) => {
@@ -583,7 +653,11 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         kind: 'attachment',
         lane: 'attachments',
         icon: <MigrationIcon />,
-        color: '#F0AB00',
+        color: CATEGORICAL.violet.css,
+        legend: {
+            label: 'Attached namespaces',
+            description: 'The namespaces a network is attached to, from its status.'
+        },
         // Synthetic: built by the caller from CUDN status and UDN presence, so it is
         // supplied rather than derived from the context.
         items: (ctx) => ctx.attachmentNodes ?? [],
@@ -603,7 +677,7 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         }),
         detail: (attachment, box) => (
             <foreignObject x={10} y={60} width={box.width - 20} height={box.height - 70}>
-                <div style={{ fontSize: '10px', color: '#eee', wordWrap: 'break-word', lineHeight: '1.2' }}>
+                <div style={{ fontSize: '10px', color: 'var(--pf-t--global--text--color--subtle)', wordWrap: 'break-word', lineHeight: '1.2' }}>
                     {attachment.namespaces.join(', ')}
                 </div>
             </foreignObject>
@@ -627,7 +701,11 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         kind: 'nad',
         lane: 'nads',
         icon: <RouteIcon />,
-        color: '#CC9900',
+        color: CATEGORICAL.violet.css,
+        legend: {
+            label: 'NetworkAttachmentDefinition',
+            description: 'A NAD in a namespace. Hidden until you show Net Attach Defs.'
+        },
         items: (ctx) => ctx.nads,
         id: (nad) => nadNodeId(nad),
         present: (nad) => {
@@ -711,7 +789,11 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         kind: 'lldp-neighbor',
         lane: 'lldp',
         icon: <PluggedIcon />,
-        color: '#2E7D32',
+        color: CATEGORICAL.gray.css,
+        legend: {
+            label: 'LLDP neighbour',
+            description: 'The switch port at the far end of a NIC\'s cable, as heard over LLDP.'
+        },
         items: (ctx) => ctx.lldpNeighbors ?? [],
         id: (neighbor) => neighbor.id,
         present: (neighbor) => {

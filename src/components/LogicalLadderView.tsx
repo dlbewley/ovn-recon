@@ -9,7 +9,7 @@ import {
 } from '@patternfly/react-icons';
 
 import { ConstructRole, DEFAULT_NETWORK, LogicalTier, networkResourceRef } from './logicalClassification';
-import { LadderConstruct, LadderModel } from './logicalLadderModel';
+import { LadderConstruct, LadderEdgeKind, LadderModel } from './logicalLadderModel';
 import {
     CONSTRUCT_HEIGHT,
     CONSTRUCT_WIDTH,
@@ -25,6 +25,7 @@ import {
     shortenName,
 } from './logicalLadderLabels';
 import { ViewportBox } from './canvasViewport';
+import { CATEGORICAL, CategoricalColor, SURFACE } from '../topology/palette';
 
 // The label text lives with its fitting logic; the drawer imports it from here.
 export { EDGE_ROLE_LABELS, edgeLabel } from './logicalLadderLabels';
@@ -72,16 +73,49 @@ export interface LogicalLadderViewProps {
     onSelectedBox?: (box: ViewportBox | null) => void;
 }
 
-/** Band palette; index 0 is the default network's neutral slot. */
-export const NETWORK_PALETTE = [
-    '#6A6E73', // neutral gray - default network
-    '#009596', // teal
-    '#0066CC', // blue
-    '#5752D1', // purple
-    '#B98412', // gold
-    '#3E8635', // green
-    '#A30000', // red
+/**
+ * Band colours, by palette slot; slot 0 is the default network's neutral gray.
+ *
+ * A slot is chosen from the network's NAME (networkColorIndex), never its position, so
+ * a network keeps its colour under any filter. Slots 4 and 6 were PatternFly's warning
+ * gold and danger red, which made a healthy network read as an error, and slot 5 was
+ * PatternFly 5's success green; they are now magenta, cyan and violet, from the
+ * categorical palette that keeps clear of every status colour (ovn-recon-nt4.1). The
+ * slot count is NETWORK_PALETTE_SIZE in logicalLadderLayout, unchanged, so no network
+ * moves to a different slot.
+ */
+export const NETWORK_SLOTS: CategoricalColor[] = [
+    CATEGORICAL.gray,
+    CATEGORICAL.jade,
+    CATEGORICAL.blue,
+    CATEGORICAL.purple,
+    CATEGORICAL.magenta,
+    CATEGORICAL.cyan,
+    CATEGORICAL.violet,
 ];
+
+export const NETWORK_PALETTE: string[] = NETWORK_SLOTS.map((slot) => slot.css);
+
+/**
+ * How each ladder edge kind is drawn and what the legend calls it (ovn-recon-nt4.2).
+ * The renderer and the legend read this one table; keyed by the model's union, so a
+ * new edge kind without an entry is a compile error.
+ */
+export const LADDER_EDGE_STYLES: Record<LadderEdgeKind, { label: string; description: string; dashArray?: string }> = {
+    'router-link': {
+        label: 'Router port',
+        description: 'A switch attached to a router through a router port. The label names the port\'s purpose and addresses.',
+    },
+    'router-peer': {
+        label: 'Router peering',
+        description: 'Two routers joined port to port, with no switch between them. The label gives both ends.',
+        dashArray: '6 4',
+    },
+    'localnet-link': {
+        label: 'Localnet',
+        description: 'A switch\'s localnet port, out to the physical network through a bridge mapping.',
+    },
+};
 
 const TIER_LABELS: Record<LogicalTier, string> = {
     physical: 'Physical network',
@@ -109,6 +143,26 @@ const ROLE_LABELS: Record<ConstructRole, string> = {
 };
 
 export const roleLabel = (role: ConstructRole): string => ROLE_LABELS[role];
+
+/** One line per role, for the legend. */
+export const ROLE_DESCRIPTIONS: Record<ConstructRole, string> = {
+    'bridge-mapping': 'Where a localnet leaves OVN: the localnet name and the OVS bridge the node maps it to.',
+    'external-switch': 'Joins a gateway router to the node\'s physical network.',
+    'localnet-switch': 'A switch with a localnet port, bridged to a provider network.',
+    'gateway-router': 'A node\'s gateway router: north-south traffic, with its SNAT and DNAT rules.',
+    'join-switch': 'Joins the gateway routers to the cluster router.',
+    'transit-switch': 'Spans node zones: traffic between nodes crosses it over the tunnel.',
+    'transit-router': 'A router spanning node zones, peered with each node\'s gateway router.',
+    'cluster-router': 'The network\'s distributed router, routing between node subnets.',
+    'node-switch': 'One node\'s switch on a Layer 3 network, holding that node\'s pod subnet.',
+    'layer2-switch': 'A Layer 2 network\'s one switch, shared by every node.',
+    'other-router': 'A router no rule here classifies.',
+    'other-switch': 'A switch no rule here classifies.',
+};
+
+/** Routers draw as pills, switches as rounded boxes. */
+export const constructCornerRadius = (kind: LadderConstruct['kind']): number =>
+    (kind === 'router' ? CONSTRUCT_HEIGHT / 2 : 8);
 
 // Same icon language as the node visualization: RouteIcon for anything that
 // routes, PluggedIcon for the seam to the physical network, MigrationIcon
@@ -154,6 +208,8 @@ export const networkDisplayName = (network: string): string => {
 };
 
 const TIER_LABEL_WIDTH = 130;
+/** Gap between a selected card and its halo. Drawn outside the card; moves nothing. */
+const SELECTION_HALO = 4;
 const BAND_HEADER_HEIGHT = 34;
 
 /**
@@ -312,8 +368,6 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
     if (construct.remotePeers.length > 0) statParts.push(`⇄ ${construct.remotePeers.length} nodes`);
     if (construct.localnetPorts.length > 0) statParts.push('physnet');
 
-    const isRouter = construct.kind === 'router';
-
     return (
         <g
             transform={`translate(${x - CONSTRUCT_WIDTH / 2}, ${y - CONSTRUCT_HEIGHT / 2})`}
@@ -327,16 +381,35 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
         >
             {/* The card shows a shortened name; hover and assistive tech get all of it. */}
             <title>{construct.name}</title>
+            {/* First rect: tests read the selection ring off it. */}
             <rect
                 width={CONSTRUCT_WIDTH}
                 height={CONSTRUCT_HEIGHT}
-                rx={isRouter ? CONSTRUCT_HEIGHT / 2 : 8}
-                fill="var(--pf-t--global--background--color--primary--default, #fff)"
-                stroke={isSelected ? 'var(--pf-t--global--border--color--clicked, #0066CC)' : color}
+                rx={constructCornerRadius(construct.kind)}
+                fill={SURFACE.card}
+                stroke={isSelected ? SURFACE.selected : color}
                 strokeWidth={isSelected ? 3 : 1.5}
             />
+            {/* A halo outside the ring: blue is one of the band colours, so a thicker
+                stroke alone did not set a selected card apart in a blue band. */}
+            {isSelected && (
+                <rect
+                    x={-SELECTION_HALO}
+                    y={-SELECTION_HALO}
+                    width={CONSTRUCT_WIDTH + SELECTION_HALO * 2}
+                    height={CONSTRUCT_HEIGHT + SELECTION_HALO * 2}
+                    rx={constructCornerRadius(construct.kind) + SELECTION_HALO}
+                    fill="none"
+                    stroke={SURFACE.selected}
+                    strokeWidth={1.5}
+                    strokeOpacity={0.6}
+                    pointerEvents="none"
+                />
+            )}
             {/* The header renders as HTML so the role icon sits inline with
-                the title instead of floating over the name/stat lines. */}
+                the title instead of floating over the name/stat lines. The band
+                colour is on the icon only: as text it failed contrast in one theme
+                or the other (ovn-recon-nt4.1). */}
             <foreignObject x={0} y={4} width={CONSTRUCT_WIDTH} height={20}>
                 <div
                     style={{
@@ -344,7 +417,7 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: 4,
-                        color,
+                        color: SURFACE.text,
                         fontSize: 12,
                         fontWeight: 700,
                         lineHeight: 1,
@@ -352,7 +425,7 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
                         overflow: 'hidden',
                     }}
                 >
-                    {roleIcon(construct.role)}
+                    <span style={{ display: 'inline-flex', color }}>{roleIcon(construct.role)}</span>
                     <span>
                         {roleLabel(construct.role)}
                         {construct.node ? ` · ${construct.node}` : ''}
@@ -364,7 +437,7 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
                 y={34}
                 textAnchor="middle"
                 fontSize="10"
-                fill="var(--pf-t--global--text--color--regular, #151515)"
+                fill={SURFACE.text}
             >
                 {shortenName(construct.name, NAME_MAX_CHARS)}
             </text>
@@ -374,7 +447,7 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
                     y={50}
                     textAnchor="middle"
                     fontSize="10"
-                    fill="var(--pf-t--global--text--color--subtle, #6A6E73)"
+                    fill={SURFACE.subtleText}
                 >
                     {truncate(statParts.join(' · '), 34)}
                 </text>
@@ -478,12 +551,26 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                                         onNetworkSelect(band.network);
                                     }}
                                 >
+                                    {/* The band's colour as a swatch and the chip's outline;
+                                        the words in text colours, which pass contrast in both
+                                        themes where a band colour as text did not. */}
+                                    <span
+                                        aria-hidden="true"
+                                        data-testid={`network-swatch-${band.network}`}
+                                        style={{
+                                            width: 10,
+                                            height: 10,
+                                            borderRadius: 2,
+                                            background: color,
+                                            flex: 'none',
+                                        }}
+                                    />
                                     {networkKindBadge(band.network) && (
                                         <span
                                             data-testid={`network-kind-${band.network}`}
                                             style={{
                                                 border: `1px solid ${color}`,
-                                                color,
+                                                color: SURFACE.subtleText,
                                                 borderRadius: 4,
                                                 fontSize: 10,
                                                 fontWeight: 700,
@@ -494,7 +581,7 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                                             {networkKindBadge(band.network)}
                                         </span>
                                     )}
-                                    <span style={{ color, fontSize: 13, fontWeight: 700 }}>
+                                    <span style={{ color: SURFACE.text, fontSize: 13, fontWeight: 700 }}>
                                         {networkDisplayName(band.network)}
                                     </span>
                                 </div>
@@ -511,7 +598,7 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                         textAnchor="end"
                         dominantBaseline="middle"
                         fontSize="11"
-                        fill="var(--pf-t--global--text--color--subtle, #6A6E73)"
+                        fill={SURFACE.subtleText}
                     >
                         {TIER_LABELS[tier]}
                     </text>
@@ -531,7 +618,8 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                                 y2={target.y}
                                 stroke="var(--pf-t--global--border--color--default, #6A6E73)"
                                 strokeWidth={1.5}
-                                strokeDasharray={edge.kind === 'router-peer' ? '6 4' : undefined}
+                                strokeDasharray={LADDER_EDGE_STYLES[edge.kind].dashArray}
+                                data-edge-kind={edge.kind}
                             />
                             {label && (
                                 <text
@@ -594,7 +682,7 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                             width={CONSTRUCT_WIDTH}
                             height={CONSTRUCT_HEIGHT}
                             rx={8}
-                            fill="var(--pf-t--global--background--color--primary--default, #fff)"
+                            fill={SURFACE.card}
                             stroke={colorByNetwork.get(aggregate.network) ?? NETWORK_PALETTE[0]}
                             strokeWidth={1.5}
                             strokeDasharray="4 3"
@@ -605,7 +693,7 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                             textAnchor="middle"
                             fontSize="12"
                             fontWeight={700}
-                            fill="var(--pf-t--global--text--color--regular, #151515)"
+                            fill={SURFACE.text}
                         >
                             {aggregate.count} × {roleLabel(aggregate.role)}
                         </text>

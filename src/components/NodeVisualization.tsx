@@ -19,6 +19,10 @@ import { buildNodeViewModel } from '../topology/viewModel';
 import { computeEdgeBow, computeNodeOrder, sortByRank } from './nodeVisualizationLayout';
 import { laneOrderingInput, layoutLanes, LaneViewState, PlacedNode } from '../topology/lanes';
 import { descriptorFor, iconFor, NodeTypeId, NODE_TYPES, opaqueNodeIds } from '../topology/descriptors';
+import { edgeAppearance } from '../topology/edgeStyles';
+import { STATUS_STYLE, SURFACE } from '../topology/palette';
+import { NodeStatusIcon } from '../topology/statusIcon';
+import { LegendButton, PhysicalLegend } from './GraphLegend';
 import { buildFlowGraph, flowPath } from '../topology/flowPath';
 import { useSelectionDeepLink } from './useSelectParam';
 import { shiftIfNeeded, svgMeetRegion, svgMeetScale, useKeepSelectionVisible, ViewportBox } from './canvasViewport';
@@ -46,6 +50,28 @@ const NO_VTEPS: Vtep[] = [];
 
 /** Pointer travel, in CSS pixels, before a press on the background counts as a pan rather than a click. */
 const PAN_DRAG_THRESHOLD_PX = 3;
+
+/** Corner radius of a node card. */
+const CARD_RADIUS = 6;
+/** Width of the accent stripe down a card's left edge. */
+const ACCENT_WIDTH = 4;
+
+/**
+ * The accent stripe: the card's left edge, ACCENT_WIDTH wide, following its rounded
+ * corners so nothing pokes past them.
+ *
+ * Written with no space after the leading M on purpose: the snapshot test collects
+ * `path[d^="M "]` as same-lane edge arcs, and a stripe must not read as an edge.
+ */
+const accentStripePath = (height: number): string => {
+    const r = CARD_RADIUS;
+    const w = ACCENT_WIDTH;
+    // Where the corner arc crosses x = w.
+    const inset = r - Math.sqrt(r * r - (r - w) * (r - w));
+    const top = Number(inset.toFixed(3));
+    const bottom = Number((height - inset).toFixed(3));
+    return `M${w},${top}V${bottom}A${r},${r} 0 0 1 0,${height - r}V${r}A${r},${r} 0 0 1 ${w},${top}Z`;
+};
 
 const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [], vteps = NO_VTEPS, nodeVtepsAnnotation,
@@ -325,18 +351,19 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         if (!start || !end) return null;
 
         const highlighted = highlightedPath.has(edgeKey(edge.source, edge.target));
-        const isReference = edge.kind === 'reference';
-        const isInferred = edge.provenance === 'inferred';
-        const stroke = isHighlightActive ? (highlighted ? '#0066CC' : '#ccc') : 'currentColor';
+        // Dash and resting opacity come off the table the legend reads (ovn-recon-nt4.2).
+        const rest = edgeAppearance(edge.kind, edge.provenance);
+        // The lit path is brand blue, which the dark theme lightens; a fixed #0066CC
+        // all but vanished on the dark canvas.
+        const stroke = isHighlightActive ? (highlighted ? SURFACE.flow : SURFACE.border) : 'currentColor';
         const strokeWidth = isHighlightActive ? (highlighted ? 4 : 1) : 2;
-        const dashArray = isReference ? '6 4' : undefined;
         const opacity = isHighlightActive
             ? (highlighted ? 1 : 0.1)
-            : (isInferred ? 0.4 : isReference ? 0.65 : 1);
+            : rest.opacity;
         const appearance = {
             stroke,
             strokeWidth,
-            strokeDasharray: dashArray,
+            strokeDasharray: rest.dashArray,
             opacity,
             'data-provenance': edge.provenance,
             'data-rule': edge.rule
@@ -716,8 +743,21 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         const displayType = presentation.graphLabel || presentation.subtitle;
         const status = descriptor.status?.(item);
         const isFocused = focusedNodeId === node.id;
+        // Selection draws the same ring as focus, so a node selected from the drawer,
+        // a search result or a deep link is marked even while focus is elsewhere.
+        const isSelected = selectedNodeId === node.id;
+        const isOutlined = isFocused || isSelected;
         const nodeFindings = findingsFor(node.id);
         const findingsText = nodeFindings.length > 0 ? `, ${describeCounts(countBySeverity(nodeFindings))}` : '';
+        // The state line is coloured only when it IS the state word ("down"), not when
+        // a kind uses it for something else (a VRF's ports and table).
+        const stateColor = status && presentation.state?.toLowerCase() === status
+            ? STATUS_STYLE[status].text
+            : SURFACE.subtleText;
+        const frame = {
+            stroke: isOutlined ? SURFACE.selected : SURFACE.border,
+            strokeWidth: isOutlined ? 3 : 1
+        };
 
         return (
             <g
@@ -743,25 +783,43 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                 onBlur={() => setFocusedNodeId((current) => (current === node.id ? null : current))}
             >
                 <title>{presentation.label} ({displayType})</title>
+                {/*
+                  * A neutral card (ovn-recon-nt4.1): the surface and text are the console's
+                  * own tokens, the kind is the icon plus a stripe in its accent, and the
+                  * state is a status icon. Colour on the card is then either "which kind"
+                  * (the accent, never a status hue) or "how it is" (status tokens only),
+                  * and the findings badge stays the loudest thing on it.
+                  *
+                  * This rect stays first: tests and the reveal read the node's box and
+                  * its ring off the first rect in the group.
+                  */}
                 <rect
                     width={itemWidth}
                     height={node.height}
-                    rx={5}
-                    fill={descriptor.color}
-                    stroke={isFocused ? 'var(--pf-t--global--border--color--clicked, #0066CC)' : 'var(--pf-t--global--border--color--default)'}
-                    strokeWidth={isFocused ? 3 : 1}
+                    rx={CARD_RADIUS}
+                    fill={SURFACE.card}
+                    {...frame}
                 />
-                <foreignObject x={10} y={10} width={20} height={20}>
-                    <div style={{ color: '#fff' }}>{iconFor(descriptor, item)}</div>
+                <path d={accentStripePath(node.height)} fill={descriptor.color} data-accent={descriptor.type} />
+                {/* The ring again over the stripe, so focus and selection read all round. */}
+                {isOutlined && (
+                    <rect width={itemWidth} height={node.height} rx={CARD_RADIUS} fill="none" pointerEvents="none" {...frame} />
+                )}
+                <foreignObject x={12} y={10} width={20} height={20}>
+                    <div style={{ color: descriptor.color, fontSize: 16, lineHeight: 1 }}>{iconFor(descriptor, item)}</div>
                 </foreignObject>
-                <text x={35} y={25} fontSize="12" fontWeight="bold" fill="#fff">{presentation.label}</text>
-                <text x={10} y={45} fontSize="10" fill="#eee">{displayType}</text>
+                <text x={36} y={24} fontSize="12" fontWeight="bold" fill={SURFACE.text}>{presentation.label}</text>
+                <text x={12} y={45} fontSize="10" fill={SURFACE.subtleText}>{displayType}</text>
                 {!descriptor.detail && presentation.state && (
-                    <text x={10} y={60} fontSize="10" fill="#eee">{presentation.state}</text>
+                    <text x={12} y={60} fontSize="10" fill={stateColor}>{presentation.state}</text>
                 )}
                 {descriptor.detail?.(item, { width: itemWidth, height: node.height })}
                 {status && (
-                    <circle cx={itemWidth - 15} cy={15} r={5} fill={status === 'up' ? '#4CAF50' : '#F44336'} />
+                    // Where the dot was and about its size, below the findings badge's reach
+                    // (it ends at y=9) and smaller than it: the badge stays the loudest mark.
+                    <foreignObject x={itemWidth - 22} y={10} width={14} height={14} data-testid="node-status">
+                        <NodeStatusIcon status={status} />
+                    </foreignObject>
                 )}
                 {/* Decorator only: straddles the top edge, right-aligned, and moves nothing. */}
                 <FindingsBadge findings={nodeFindings} x={itemWidth - 6 - findingsBadgeWidth(nodeFindings)} y={-9} />
@@ -889,6 +947,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                                 <FlexItem><Button variant="secondary" onClick={handleZoomOut} aria-label="Zoom out">-</Button></FlexItem>
                                 <FlexItem><Button variant="secondary" onClick={handleZoomIn} aria-label="Zoom in">+</Button></FlexItem>
                                 <FlexItem><Button variant="link" onClick={handleResetZoom}>Reset view</Button></FlexItem>
+                                <FlexItem><LegendButton><PhysicalLegend /></LegendButton></FlexItem>
                             </Flex>
                             <svg
                                 ref={svgRef}
