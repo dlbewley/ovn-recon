@@ -32,6 +32,7 @@ import { fetchClusterTopology } from './collectorApi';
 import { mergeZones } from './logicalClusterModel';
 import { aggregateId } from './logicalLadderLayout';
 import ConstructDrawerBody, { LOGICAL_DRAWER_WIDTH } from './ConstructDrawerBody';
+import { useLadderViewport } from './useLadderViewport';
 import SnapshotJsonControls from './SnapshotJsonControls';
 import LogicalLadderView, {
     LadderSearch,
@@ -49,11 +50,6 @@ import { constructSelectValue, findConstructBySelectValue, useSelectionDeepLink 
 // per-node view.
 const REFRESH_INTERVAL_MS = 60000;
 
-interface Point {
-    x: number;
-    y: number;
-}
-
 const ClusterLogicalTopologyDetails: React.FC = () => {
     const { enabled, loaded: gateLoaded, loadError: gateError } = useOvnCollectorFeatureGate();
 
@@ -64,11 +60,10 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
     const [hostFilter, setHostFilter] = React.useState<string>('all');
     const [networkFilter, setNetworkFilter] = React.useState<string>('all');
     const [selectedUuid, setSelectedUuid] = React.useState<string | null>(null);
+    // Pan, zoom and reveal against the canvas left beside the inline drawer
+    // (ovn-recon-dp7.7).
+    const viewport = useLadderViewport({ selectedUuid, minZoom: 0.3 });
     const [expandedGroups, setExpandedGroups] = React.useState<ReadonlySet<string>>(new Set());
-    const [zoom, setZoom] = React.useState<number>(1);
-    const [pan, setPan] = React.useState<Point>({ x: 0, y: 0 });
-    const [isDragging, setIsDragging] = React.useState<boolean>(false);
-    const [lastPointer, setLastPointer] = React.useState<Point | null>(null);
 
     const loadTopology = React.useCallback(async () => {
         if (!enabled) return;
@@ -173,7 +168,6 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
     // the reported position — mirroring the physical view, where only drawer
     // navigation moves the viewport).
     const [revealRequest, setRevealRequest] = React.useState<{ uuid: string; nonce: number }>();
-    const canvasRef = React.useRef<HTMLDivElement | null>(null);
     const selectConstructFromDrawer = React.useCallback((uuid: string) => {
         const target = model?.constructByUuid.get(uuid);
         if (target) {
@@ -199,13 +193,6 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
         () => (model ? ladderSearchMatches(model, networkFilter, search) : []),
         [model, networkFilter, search],
     );
-
-    const revealPosition = React.useCallback((position: { x: number; y: number }) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const { width: cw, height: ch } = canvas.getBoundingClientRect();
-        setPan({ x: cw / 2 - position.x * zoom, y: ch / 2 - position.y * zoom });
-    }, [zoom]);
 
     // The Config tab's raw rows come from one representative zone: the zone
     // whose uuid survived the merge (zones[0]).
@@ -246,36 +233,6 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
         });
     }, []);
 
-    const zoomIn = () => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))));
-    const zoomOut = () => setZoom((value) => Math.max(0.3, Number((value - 0.1).toFixed(2))));
-    const resetView = () => {
-        setZoom(1);
-        setPan({ x: 0, y: 0 });
-    };
-
-    const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        if (event.deltaY < 0) zoomIn(); else zoomOut();
-    };
-
-    const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-        setIsDragging(true);
-        setLastPointer({ x: event.clientX, y: event.clientY });
-    };
-
-    const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
-        if (!isDragging || !lastPointer) return;
-        const dx = event.clientX - lastPointer.x;
-        const dy = event.clientY - lastPointer.y;
-        setPan((current) => ({ x: current.x + dx, y: current.y + dy }));
-        setLastPointer({ x: event.clientX, y: event.clientY });
-    };
-
-    const handleMouseUp = () => {
-        setIsDragging(false);
-        setLastPointer(null);
-    };
-
     if (!gateLoaded) {
         return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
     }
@@ -315,7 +272,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                 <Title headingLevel="h1" className="pf-u-mt-lg">Cluster Logical OVN Topology</Title>
             </PageSection>
             <PageSection isFilled>
-                <Drawer isExpanded={selectedConstruct != null}>
+                <Drawer isExpanded={selectedConstruct != null} isInline>
                     <DrawerContent
                         panelContent={(
                             <DrawerPanelContent isResizable widths={{ default: LOGICAL_DRAWER_WIDTH }} minSize="320px">
@@ -413,9 +370,9 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                             ))}
                                         </FormSelect>
                                     </FlexItem>
-                                    <FlexItem><Button variant="secondary" onClick={zoomOut}>-</Button></FlexItem>
-                                    <FlexItem><Button variant="secondary" onClick={zoomIn}>+</Button></FlexItem>
-                                    <FlexItem><Button variant="link" onClick={resetView}>Reset view</Button></FlexItem>
+                                    <FlexItem><Button variant="secondary" onClick={viewport.zoomOut}>-</Button></FlexItem>
+                                    <FlexItem><Button variant="secondary" onClick={viewport.zoomIn}>+</Button></FlexItem>
+                                    <FlexItem><Button variant="link" onClick={viewport.resetView}>Reset view</Button></FlexItem>
                                     <FlexItem>
                                         <Button variant="tertiary" onClick={() => loadTopology()} isDisabled={isLoading}>
                                             Refresh now
@@ -446,17 +403,13 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                 </Flex>
 
                                 <div
-                                    ref={canvasRef}
+                                    {...viewport.canvasProps}
                                     className="pf-u-mt-md"
-                                    style={{ height: 'max(560px, calc(100vh - 340px))', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: isDragging ? 'grabbing' : 'grab' }}
-                                    onWheel={handleWheel}
-                                    onMouseDown={handleMouseDown}
-                                    onMouseMove={handleMouseMove}
-                                    onMouseUp={handleMouseUp}
-                                    onMouseLeave={handleMouseUp}
+                                    data-testid="ladder-canvas"
+                                    style={{ height: 'max(560px, calc(100vh - 340px))', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: viewport.isDragging ? 'grabbing' : 'grab' }}
                                 >
                                     {model && (
-                                        <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
+                                        <div data-testid="ladder-content" style={{ transform: viewport.contentTransform, transformOrigin: '0 0' }}>
                                             <LogicalLadderView
                                                 model={model}
                                                 selectedUuid={selectedUuid}
@@ -467,7 +420,8 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                                 onAggregateToggle={toggleAggregate}
                                                 onNetworkSelect={setNetworkFilter}
                                                 revealRequest={revealRequest}
-                                                onRevealPosition={revealPosition}
+                                                onRevealBox={viewport.onRevealBox}
+                                                onSelectedBox={viewport.onSelectedBox}
                                             />
                                         </div>
                                     )}

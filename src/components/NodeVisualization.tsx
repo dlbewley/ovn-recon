@@ -21,6 +21,7 @@ import { laneOrderingInput, layoutLanes, LaneViewState, PlacedNode } from '../to
 import { descriptorFor, iconFor, NodeTypeId, NODE_TYPES, opaqueNodeIds } from '../topology/descriptors';
 import { buildFlowGraph, flowPath } from '../topology/flowPath';
 import { useSelectionDeepLink } from './useSelectParam';
+import { shiftIfNeeded, svgMeetRegion, svgMeetScale, useKeepSelectionVisible, ViewportBox } from './canvasViewport';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -393,6 +394,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     const handleZoom = (direction: 1 | -1) => {
         if (!viewBox) return;
         userAdjustedView.current = true;
+        releaseReveal.current();
 
         const newZoom = direction > 0
             ? Math.min(2.5, Number((zoomLevel + 0.1).toFixed(2)))
@@ -466,6 +468,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                 if (travelled < PAN_DRAG_THRESHOLD_PX) return;
             }
             userAdjustedView.current = true;
+            releaseReveal.current();
             suppressBackgroundClick.current = true;
             const deltaX = event.clientX - panStart.x;
             const deltaY = event.clientY - panStart.y;
@@ -498,6 +501,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     const handleResetZoom = () => {
         // Back to the untouched state: the viewBox resumes tracking canvas growth.
         userAdjustedView.current = false;
+        releaseReveal.current();
         setViewBox({ x: 0, y: 0, width, height: calculatedHeight });
         setZoomLevel(1);
     };
@@ -538,24 +542,60 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         return undefined;
     };
 
+    /** A drawn node's box in canvas coordinates. */
+    const nodeBoxOf = (id: string): ViewportBox | null => {
+        const position = absolutePositionOf(id);
+        const placed = placedNodeById.get(id);
+        if (!position || !placed) return null;
+        return { x: position.x, y: position.y, width: itemWidth, height: placed.height };
+    };
+
+    /**
+     * Keep the selection visible beside the inline drawer (ovn-recon-dp7.7):
+     * drawer navigation and deep links centre the node in the visible canvas
+     * and keep it centred while the drawer opens or is resized; a canvas click
+     * pans only when the node is not wholly visible. The visible region is
+     * what the svg actually shows: its viewBox fitted "meet" into its current
+     * size, which shows more than the viewBox along the roomier axis.
+     */
+    const keepVisible = useKeepSelectionVisible({
+        selectionKey: selectedPlacedNode ? selectedNodeId : null,
+        getSelectionBox: () => (selectedNodeId ? nodeBoxOf(selectedNodeId) : null),
+        adjustView: (compute) => {
+            const svg = svgContainerRef.current;
+            if (!svg) return;
+            // An svg not laid out yet (or in jsdom) reports no size; the
+            // region helpers then treat the viewBox itself as what shows.
+            const { width: svgWidth, height: svgHeight } = svg.getBoundingClientRect();
+            const size = { width: svgWidth, height: svgHeight };
+            setViewBox((previous) => {
+                const current = previous ?? { x: 0, y: 0, width, height: calculatedHeight };
+                const shift = compute(svgMeetRegion(current, size), 1 / svgMeetScale(current, size));
+                return shiftIfNeeded(current, shift, (state, { dx, dy }) => {
+                    userAdjustedView.current = true;
+                    return { ...state, x: state.x + dx, y: state.y + dy };
+                });
+            });
+        },
+    });
+    const releaseReveal = React.useRef(keepVisible.release);
+    releaseReveal.current = keepVisible.release;
+    const { setCanvas } = keepVisible;
+    const svgRef = React.useCallback((element: SVGSVGElement | null) => {
+        svgContainerRef.current = element;
+        setCanvas(element);
+    }, [setCanvas]);
+
     /**
      * Pan the view to center a node, keeping the zoom. Only drawer navigation
-     * does this: a hyperlink changes the node under review invisibly -- often to
-     * one hidden behind the drawer -- while a canvas click is on something the
-     * user can already see, and yanking the view then would be disorienting.
+     * and deep links do this: a hyperlink changes the node under review
+     * invisibly, while a canvas click is on something the user can already
+     * see, and yanking the view then would be disorienting (a click pans only
+     * as far as needed to show the whole node).
      */
     const centerViewOn = (id: string) => {
-        const position = absolutePositionOf(id);
-        if (!position) return;
-        userAdjustedView.current = true;
-        const viewWidth = viewBox?.width ?? width;
-        const viewHeight = viewBox?.height ?? calculatedHeight;
-        setViewBox({
-            x: position.x + itemWidth / 2 - viewWidth / 2,
-            y: position.y + itemHeight / 2 - viewHeight / 2,
-            width: viewWidth,
-            height: viewHeight
-        });
+        const box = nodeBoxOf(id);
+        if (box) keepVisible.reveal(id, box);
     };
 
     // Rebuilt each render: the Relationships tab must see the edges of the
@@ -766,7 +806,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         <Card isFullHeight>
             <CardTitle>OVN Recon - Network Topology</CardTitle>
             <CardBody style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
-                <Drawer isExpanded={!!activeNode}>
+                <Drawer isExpanded={!!activeNode} isInline>
                     <DrawerContent panelContent={activeNode ? panelContent : null}>
                         <DrawerContentBody style={{ padding: '12px 24px', overflow: 'auto' }}>
                             <Flex style={{ marginBottom: '16px', alignItems: 'center', gap: '16px' }}>
@@ -821,7 +861,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                                 <FlexItem><Button variant="link" onClick={handleResetZoom}>Reset view</Button></FlexItem>
                             </Flex>
                             <svg
-                                ref={svgContainerRef}
+                                ref={svgRef}
                                 width="100%"
                                 height={calculatedHeight}
                                 viewBox={viewBox ? `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}` : `0 0 ${width} ${calculatedHeight}`}

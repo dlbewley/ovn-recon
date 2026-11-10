@@ -24,6 +24,7 @@ import {
     layoutEdgeLabels,
     shortenName,
 } from './logicalLadderLabels';
+import { ViewportBox } from './canvasViewport';
 
 // The label text lives with its fitting logic; the drawer imports it from here.
 export { EDGE_ROLE_LABELS, edgeLabel } from './logicalLadderLabels';
@@ -57,8 +58,18 @@ export interface LogicalLadderViewProps {
      * filters and lays out the model internally.
      */
     revealRequest?: { uuid: string; nonce: number };
-    /** Called with the construct's center in content coordinates (pre-pan/zoom). */
-    onRevealPosition?: (position: { x: number; y: number }) => void;
+    /**
+     * Answers a reveal request with the construct's card box, in the svg's
+     * own coordinates (pre-pan/zoom): the tier-label gutter and band header
+     * are included, so the box is exactly where the card is drawn.
+     */
+    onRevealBox?: (uuid: string, box: ViewportBox) => void;
+    /**
+     * Reports the selected construct's card box whenever the selection or
+     * the layout changes (null while it is not drawn, e.g. collapsed into an
+     * aggregate), so the page can keep it visible as the canvas resizes.
+     */
+    onSelectedBox?: (box: ViewportBox | null) => void;
 }
 
 /** Band palette; index 0 is the default network's neutral slot. */
@@ -144,6 +155,23 @@ export const networkDisplayName = (network: string): string => {
 
 const TIER_LABEL_WIDTH = 130;
 const BAND_HEADER_HEIGHT = 34;
+
+/**
+ * A construct's card box in the svg's coordinates, or null when the layout
+ * does not place it. Layout positions are card centres inside the group that
+ * is shifted right by the tier-label gutter and down by the band header; a
+ * reveal that used the bare position landed 130px off (ovn-recon-dp7.7).
+ */
+export const ladderCardBox = (layout: LadderLayout, uuid: string): ViewportBox | null => {
+    const position = layout.positions[uuid];
+    if (!position) return null;
+    return {
+        x: TIER_LABEL_WIDTH + position.x - CONSTRUCT_WIDTH / 2,
+        y: BAND_HEADER_HEIGHT + position.y - CONSTRUCT_HEIGHT / 2,
+        width: CONSTRUCT_WIDTH,
+        height: CONSTRUCT_HEIGHT,
+    };
+};
 
 /** Characters of a construct name that fit a card at the name's font size. */
 const NAME_MAX_CHARS = 30;
@@ -365,7 +393,8 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
     onAggregateToggle,
     onNetworkSelect,
     revealRequest,
-    onRevealPosition,
+    onRevealBox,
+    onSelectedBox,
 }) => {
     const model = React.useMemo(() => filterModel(fullModel, networkFilter), [fullModel, networkFilter]);
     const layout: LadderLayout = React.useMemo(
@@ -378,13 +407,18 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
     // the expansion or filter change that makes the target placeable.
     const answeredRevealNonce = React.useRef(0);
     React.useEffect(() => {
-        if (!revealRequest || !onRevealPosition) return;
+        if (!revealRequest || !onRevealBox) return;
         if (revealRequest.nonce === answeredRevealNonce.current) return;
-        const position = layout.positions[revealRequest.uuid];
-        if (!position) return;
+        const box = ladderCardBox(layout, revealRequest.uuid);
+        if (!box) return;
         answeredRevealNonce.current = revealRequest.nonce;
-        onRevealPosition(position);
-    }, [revealRequest, onRevealPosition, layout]);
+        onRevealBox(revealRequest.uuid, box);
+    }, [revealRequest, onRevealBox, layout]);
+
+    React.useEffect(() => {
+        if (!onSelectedBox) return;
+        onSelectedBox(selectedUuid ? ladderCardBox(layout, selectedUuid) : null);
+    }, [selectedUuid, onSelectedBox, layout]);
 
     const edgeLabels = React.useMemo(() => layoutEdgeLabels(model.edges, layout), [model, layout]);
 
