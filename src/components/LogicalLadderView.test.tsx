@@ -85,6 +85,44 @@ describe('LogicalLadderView', () => {
         expect(text).toContain('interconnect · router 100.65.0.5/16 p2p 100.88.0.11/31 ⇄ p2p 100.88.0.10/31');
     });
 
+    it('wraps a long edge label into lines and keeps the whole label as its title', () => {
+        const model = render();
+        const interconnect = model.edges.find((edge) => edge.role === 'interconnect');
+        expect(interconnect).toBeDefined();
+        const label = container.querySelector(`[data-testid="edge-label-${interconnect?.id}"]`);
+        expect(label).not.toBeNull();
+        const lines = [...(label?.querySelectorAll('tspan') ?? [])].map((line) => line.textContent);
+        expect(lines).toEqual(['interconnect · router 100.65.0.5/16', 'p2p 100.88.0.11/31 ⇄ p2p 100.88.0.10/31']);
+        expect(label?.querySelector('title')?.textContent).toBe(
+            'interconnect · router 100.65.0.5/16 p2p 100.88.0.11/31 ⇄ p2p 100.88.0.10/31',
+        );
+        // A label that fits stays on one line.
+        const short = model.edges.find((edge) => edge.role === 'tunnel');
+        expect(
+            container.querySelectorAll(`[data-testid="edge-label-${short?.id}"] tspan`),
+        ).toHaveLength(1);
+    });
+
+    it('shortens long names in the middle and titles the card with the full name', () => {
+        render();
+        const nameOnCard = (name: string) => {
+            const card = container.querySelector(`[data-testid="construct-${name}"]`);
+            expect(card).not.toBeNull();
+            // The card's accessible title is the whole name...
+            expect(card?.firstElementChild?.tagName).toBe('title');
+            expect(card?.firstElementChild?.textContent).toBe(name);
+            // ...and its first text line is what the card shows.
+            return card?.querySelector('text')?.textContent ?? '';
+        };
+        // A network's Layer 2 switch and its transit router used to read the same.
+        const layer2Switch = nameOnCard('cluster_udn_example.p.cudn_ovn_layer2_switch');
+        const transitRouter = nameOnCard('cluster_udn_example.p.cudn_transit_router');
+        expect(layer2Switch).toBe('cluster_udn_exa…_layer2_switch');
+        expect(transitRouter).toBe('cluster_udn_ex…_transit_router');
+        // A name that fits is shown as it is.
+        expect(nameOnCard('ovn_cluster_router')).toBe('ovn_cluster_router');
+    });
+
     it('reports selection on construct click', () => {
         const onSelect = jest.fn();
         const model = render({ onSelect });

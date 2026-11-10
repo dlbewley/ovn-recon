@@ -7,8 +7,12 @@ import {
     NETWORK_PALETTE_SIZE,
     TIER_ORDER,
 } from './logicalLadderLayout';
+import { EDGE_LABEL_CHAR_WIDTH, edgeLabel, layoutEdgeLabels } from './logicalLadderLabels';
+import { mergeZones } from './logicalClusterModel';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
+import cnv2 from '../../collector/fixtures/snapshots/cnv-2.json';
+import ctrl1 from '../../collector/fixtures/snapshots/ctrl-1.json';
 
 const database = (cnv1 as unknown as LogicalTopologySnapshot).database as LogicalDatabase;
 
@@ -181,5 +185,94 @@ describe('band colors under filtering', () => {
         const filtered = layoutLadder(narrowTo('default'));
         expect(filtered.bands).toHaveLength(1);
         expect(filtered.bands[0].colorIndex).toBe(0);
+    });
+});
+
+describe('edge labels stay inside their network band', () => {
+    const zones = { 'cnv-1': cnv1, 'cnv-2': cnv2, 'ctrl-1': ctrl1 } as unknown as Record<string, LogicalTopologySnapshot>;
+    // Every model the ladder renders from the captured corpus: each zone on
+    // its own (the per-node view) and all of them merged (the cluster view).
+    const models: Array<[string, LadderModel]> = [
+        ...Object.entries(zones).map(([name, snapshot]): [string, LadderModel] => [
+            name,
+            buildLadderModel(snapshot.database as LogicalDatabase),
+        ]),
+        ['merged cluster', mergeZones(Object.values(zones))],
+    ];
+
+    // Collapsed role groups hide their edges, so also lay out with every
+    // group expanded: the widest bands and the most labels.
+    const layoutsOf = (model: LadderModel) => {
+        const collapsed = layoutLadder(model);
+        const expanded = layoutLadder(model, {
+            expandedGroupIds: new Set(collapsed.aggregates.map((aggregate) => aggregate.id)),
+        });
+        return [collapsed, expanded];
+    };
+
+    it.each(models)('%s: no label box crosses its band boundary', (_name, model) => {
+        for (const layout of layoutsOf(model)) {
+            const boxes = layoutEdgeLabels(model.edges, layout);
+            const bandByNetwork = new Map(layout.bands.map((band) => [band.network, band]));
+            const placedAndLabelled = model.edges.filter(
+                (edge) => layout.positions[edge.source] && layout.positions[edge.target] && edgeLabel(edge) !== '',
+            );
+            expect(placedAndLabelled.length).toBeGreaterThan(0);
+
+            for (const edge of placedAndLabelled) {
+                const box = boxes.get(edge.id);
+                expect(box).toBeDefined();
+                if (!box) continue;
+
+                // The label belongs to the band of the constructs it joins.
+                expect(box.network).toBe(model.constructByUuid.get(edge.source)?.network);
+                const band = bandByNetwork.get(box.network);
+                expect(band).toBeDefined();
+                if (!band) continue;
+
+                expect(box.x).toBeGreaterThanOrEqual(band.x);
+                expect(box.x + box.width).toBeLessThanOrEqual(band.x + band.width);
+                expect(box.y).toBeGreaterThanOrEqual(0);
+                expect(box.y + box.height).toBeLessThanOrEqual(layout.height);
+
+                // The box bounds every line, and wrapping loses nothing.
+                for (const line of box.lines) {
+                    expect(line.length * EDGE_LABEL_CHAR_WIDTH).toBeLessThanOrEqual(box.width);
+                }
+                expect(box.lines.join(' ')).toBe(edgeLabel(edge));
+            }
+        }
+    });
+
+    it.each(models)('%s: labels of different bands never overlap', (_name, model) => {
+        for (const layout of layoutsOf(model)) {
+            const boxes = [...layoutEdgeLabels(model.edges, layout).values()];
+            for (const a of boxes) {
+                for (const b of boxes) {
+                    if (a.network === b.network) continue;
+                    const apartX = a.x + a.width <= b.x || b.x + b.width <= a.x;
+                    const apartY = a.y + a.height <= b.y || b.y + b.height <= a.y;
+                    expect(apartX || apartY).toBe(true);
+                }
+            }
+        }
+    });
+
+    it('wraps the interconnect label that used to overrun its band', () => {
+        const model = buildLadderModel(database);
+        const layout = layoutLadder(model);
+        const interconnect = model.edges.find((edge) => edge.role === 'interconnect');
+        expect(interconnect).toBeDefined();
+        if (!interconnect) return;
+        const box = layoutEdgeLabels(model.edges, layout).get(interconnect.id);
+        const band = layout.bands.find((candidate) => candidate.network === box?.network);
+        expect(box).toBeDefined();
+        expect(band).toBeDefined();
+        if (!box || !band) return;
+
+        // The regression: on one line the label is wider than the whole band.
+        expect(edgeLabel(interconnect).length * EDGE_LABEL_CHAR_WIDTH).toBeGreaterThan(band.width);
+        expect(box.lines.length).toBeGreaterThan(1);
+        expect(box.width).toBeLessThan(band.width);
     });
 });

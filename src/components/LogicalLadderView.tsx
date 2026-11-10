@@ -8,7 +8,7 @@ import {
 } from '@patternfly/react-icons';
 
 import { ConstructRole, DEFAULT_NETWORK, LogicalTier, networkResourceRef } from './logicalClassification';
-import { LadderConstruct, LadderEdge, LadderModel } from './logicalLadderModel';
+import { LadderConstruct, LadderModel } from './logicalLadderModel';
 import {
     CONSTRUCT_HEIGHT,
     CONSTRUCT_WIDTH,
@@ -16,12 +16,23 @@ import {
     layoutLadder,
     TIER_ORDER,
 } from './logicalLadderLayout';
+import {
+    EDGE_LABEL_FONT_SIZE,
+    EDGE_LABEL_LINE_HEIGHT,
+    edgeLabel,
+    layoutEdgeLabels,
+    shortenName,
+} from './logicalLadderLabels';
+
+// The label text lives with its fitting logic; the drawer imports it from here.
+export { EDGE_ROLE_LABELS, edgeLabel } from './logicalLadderLabels';
 
 /**
  * Presentational SVG for the ladder view: tinted network bands left-to-right,
  * fixed north-south tiers, constructs as cards, edges labelled with the
  * addresses of the router port that creates them. Pure rendering — geometry
- * comes from layoutLadder, semantics from buildLadderModel.
+ * comes from layoutLadder, label fitting from logicalLadderLabels, semantics
+ * from buildLadderModel.
  */
 
 export interface LogicalLadderViewProps {
@@ -133,6 +144,10 @@ export const networkDisplayName = (network: string): string => {
 const TIER_LABEL_WIDTH = 130;
 const BAND_HEADER_HEIGHT = 34;
 
+/** Characters of a construct name that fit a card at the name's font size. */
+const NAME_MAX_CHARS = 30;
+
+/** End truncation, for the stat line, whose leading parts matter most. */
 const truncate = (value: string, max: number): string =>
     value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 
@@ -159,36 +174,6 @@ const filterModel = (model: LadderModel, networkFilter: string): LadderModel => 
         edges: model.edges.filter((edge) => kept.has(edge.source) && kept.has(edge.target)),
         networks: model.networks.filter((network) => network === networkFilter),
     };
-};
-
-export const EDGE_ROLE_LABELS: Record<LadderEdge['role'], string> = {
-    localnet: 'localnet',
-    join: 'join',
-    external: 'external',
-    gateway: 'gateway',
-    tunnel: 'tunnel',
-    interconnect: 'interconnect',
-    link: '',
-};
-
-// An interconnect leg mixes two address kinds: the router's address on the
-// network's join subnet, and the /31 (or /127) point-to-point pair carrying
-// the tunnel. Annotate each so the mix reads as function, not just numbers.
-const annotateInterconnectAddresses = (addresses: string[]): string =>
-    addresses
-        .map((address) => (/\/(31|127)$/.test(address) ? `p2p ${address}` : `router ${address}`))
-        .join(' ');
-
-export const edgeLabel = (edge: LadderEdge): string => {
-    const annotate = edge.role === 'interconnect'
-        ? annotateInterconnectAddresses
-        : (addresses: string[]) => addresses.join(' ');
-    const left = annotate(edge.networks);
-    const right = annotate(edge.peerNetworks ?? []);
-    const addresses = left && right ? `${left} ⇄ ${right}` : left || right;
-    const role = EDGE_ROLE_LABELS[edge.role];
-    if (!addresses) return role;
-    return role ? `${role} · ${addresses}` : addresses;
 };
 
 interface ConstructCardProps {
@@ -231,6 +216,8 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
             opacity={isDimmed ? 0.25 : 1}
             data-testid={`construct-${construct.name}`}
         >
+            {/* The card shows a shortened name; hover and assistive tech get all of it. */}
+            <title>{construct.name}</title>
             <rect
                 width={CONSTRUCT_WIDTH}
                 height={CONSTRUCT_HEIGHT}
@@ -270,7 +257,7 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
                 fontSize="10"
                 fill="var(--pf-t--global--text--color--regular, #151515)"
             >
-                {truncate(construct.name, 30)}
+                {shortenName(construct.name, NAME_MAX_CHARS)}
             </text>
             {statParts.length > 0 && (
                 <text
@@ -317,6 +304,8 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
         answeredRevealNonce.current = revealRequest.nonce;
         onRevealPosition(position);
     }, [revealRequest, onRevealPosition, layout]);
+
+    const edgeLabels = React.useMemo(() => layoutEdgeLabels(model.edges, layout), [model, layout]);
 
     const query = search.trim().toLowerCase();
     const colorByNetwork = React.useMemo(() => {
@@ -417,9 +406,7 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                     const source = layout.positions[edge.source];
                     const target = layout.positions[edge.target];
                     if (!source || !target) return null;
-                    const midX = (source.x + target.x) / 2;
-                    const midY = (source.y + target.y) / 2;
-                    const label = edgeLabel(edge);
+                    const label = edgeLabels.get(edge.id);
                     return (
                         <g key={edge.id}>
                             <line
@@ -433,16 +420,26 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                             />
                             {label && (
                                 <text
-                                    x={midX}
-                                    y={midY - 4}
                                     textAnchor="middle"
-                                    fontSize="9"
+                                    fontSize={EDGE_LABEL_FONT_SIZE}
                                     fill="var(--pf-t--global--text--color--subtle, #6A6E73)"
                                     stroke="var(--pf-t--global--background--color--primary--default, #fff)"
                                     strokeWidth={3}
                                     paintOrder="stroke"
+                                    data-testid={`edge-label-${edge.id}`}
                                 >
-                                    {label}
+                                    {/* Wrapped to stay inside the band; the title keeps it whole. */}
+                                    <title>{edgeLabel(edge)}</title>
+                                    {label.lines.map((line, index) => (
+                                        <tspan
+                                            // Lines are positional: a label never reorders its own lines.
+                                            key={index}
+                                            x={label.x + label.width / 2}
+                                            y={label.firstBaseline + index * EDGE_LABEL_LINE_HEIGHT}
+                                        >
+                                            {line}
+                                        </tspan>
+                                    ))}
                                 </text>
                             )}
                         </g>
