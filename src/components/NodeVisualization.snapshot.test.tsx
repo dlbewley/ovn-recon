@@ -58,6 +58,9 @@ describe('NodeVisualization rendered structure', () => {
                 x: m ? Number(m[1]) : null,
                 y: m ? Number(m[2]) : null,
                 fill: g.querySelector('rect')?.getAttribute('fill') ?? '',
+                // The kind's colour moved from the fill to an accent stripe (ovn-recon-nt4.1);
+                // the baseline keeps seeing it.
+                accent: g.querySelector('[data-accent]')?.getAttribute('fill') ?? '',
                 labels: texts
             };
         }).sort((a, b) => `${a.x},${a.y},${a.title}`.localeCompare(`${b.x},${b.y},${b.title}`));

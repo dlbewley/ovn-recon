@@ -34,6 +34,7 @@ import { aggregateId } from './logicalLadderLayout';
 import ConstructDrawerBody, { LOGICAL_DRAWER_WIDTH } from './ConstructDrawerBody';
 import { useLadderViewport } from './useLadderViewport';
 import SnapshotJsonControls from './SnapshotJsonControls';
+import { LegendButton, LogicalLegend } from './GraphLegend';
 import LogicalLadderView, {
     LadderSearch,
     ladderSearchMatches,
@@ -375,6 +376,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                     <FlexItem><Button variant="secondary" onClick={viewport.zoomOut}>-</Button></FlexItem>
                                     <FlexItem><Button variant="secondary" onClick={viewport.zoomIn}>+</Button></FlexItem>
                                     <FlexItem><Button variant="link" onClick={viewport.resetView}>Reset view</Button></FlexItem>
+                                    <FlexItem><LegendButton><LogicalLegend /></LegendButton></FlexItem>
                                     <FlexItem>
                                         <Button variant="tertiary" onClick={() => loadTopology()} isDisabled={isLoading}>
                                             Refresh now

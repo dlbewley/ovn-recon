@@ -6,9 +6,14 @@ import { LogicalDatabase, LogicalTopologySnapshot } from '../types';
 import { buildLadderModel } from './logicalLadderModel';
 import LogicalLadderView, {
     constructMatches,
+    LADDER_EDGE_STYLES,
     ladderSearchMatches,
+    NETWORK_PALETTE,
     networkDisplayName,
 } from './LogicalLadderView';
+import { DEFAULT_NETWORK } from './logicalClassification';
+import { networkColorIndex } from './logicalLadderLayout';
+import { CATEGORICAL, SURFACE } from '../topology/palette';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 import { drawnCardBoxIn } from './canvasTestGeometry';
@@ -248,5 +253,87 @@ describe('ladder search matching', () => {
         expect(opacity('cnv-1')).toBe('1');
         expect(opacity('join')).toBe('0.25');
         act(() => root.unmount());
+    });
+});
+
+/**
+ * Band and card styling (ovn-recon-nt4.1): band colours are categorical and drawn on
+ * graphics only; the words are in text tokens; a selected card is ringed and haloed.
+ */
+describe('LogicalLadderView styling', () => {
+    let container: HTMLDivElement;
+    let root: Root;
+
+    beforeEach(() => {
+        container = document.createElement('div');
+        document.body.appendChild(container);
+        root = createRoot(container);
+    });
+
+    afterEach(() => {
+        act(() => root.unmount());
+        container.remove();
+    });
+
+    const model = buildLadderModel(database);
+    const render = (props: Partial<React.ComponentProps<typeof LogicalLadderView>> = {}) => {
+        act(() => {
+            root.render(<LogicalLadderView model={model} selectedUuid={null} onSelect={jest.fn()} {...props} />);
+        });
+    };
+    /** jsdom rewrites a hex colour to rgb(); a var() it keeps as written. */
+    const asStyled = (color: string) => {
+        const probe = document.createElement('span');
+        probe.style.background = color;
+        return probe.style.background;
+    };
+    const swatchColor = (network: string) =>
+        container.querySelector<HTMLElement>(`[data-testid="network-swatch-${network}"]`)?.style.background;
+
+    it('no longer offers danger red or warning gold to a network', () => {
+        expect(NETWORK_PALETTE).not.toContain('#A30000');
+        expect(NETWORK_PALETTE).not.toContain('#B98412');
+        expect(NETWORK_PALETTE[0]).toBe(CATEGORICAL.gray.css);
+    });
+
+    it('gives the default network the neutral slot and every other network a categorical colour', () => {
+        render();
+        model.networks.forEach((network) => {
+            const expected = NETWORK_PALETTE[networkColorIndex(network, network === DEFAULT_NETWORK)];
+            expect({ network, color: swatchColor(network) }).toEqual({ network, color: asStyled(expected) });
+        });
+        expect(swatchColor(DEFAULT_NETWORK)).toBe(CATEGORICAL.gray.css);
+    });
+
+    it('keeps a network\'s colour when the view is filtered to it', () => {
+        render();
+        const network = model.networks.find((candidate) => candidate !== DEFAULT_NETWORK)!;
+        const unfiltered = swatchColor(network);
+        render({ networkFilter: network });
+        expect(swatchColor(network)).toBe(unfiltered);
+    });
+
+    it('writes band names, chips and card titles in text colours, not band colours', () => {
+        render();
+        const cudn = 'cluster_udn_example-p-cudn';
+        const chip = container.querySelector<HTMLElement>(`[data-testid="network-kind-${cudn}"]`)!;
+        expect(chip.style.color).toBe(SURFACE.subtleText);
+        expect(chip.style.borderColor || chip.style.border).toContain(swatchColor(cudn));
+        const name = chip.nextElementSibling as HTMLElement;
+        expect(name.style.color).toBe(SURFACE.text);
+        const card = container.querySelector('[data-testid="construct-GR_cnv-1"]')!;
+        expect(card.querySelector<HTMLElement>('foreignObject div')!.style.color).toBe(SURFACE.text);
+    });
+
+    it('rings and haloes the selected card, and draws router peering dashed', () => {
+        const selected = model.constructs.find((construct) => construct.name === 'GR_cnv-1')!;
+        render({ selectedUuid: selected.uuid });
+        const rects = container.querySelectorAll('[data-testid="construct-GR_cnv-1"] > rect');
+        expect(rects[0].getAttribute('stroke-width')).toBe('3');
+        expect(rects[1]?.getAttribute('fill')).toBe('none');
+        expect(container.querySelectorAll('[data-testid="construct-join"] > rect')).toHaveLength(1);
+        const peer = container.querySelector('line[data-edge-kind="router-peer"]');
+        expect(peer?.getAttribute('stroke-dasharray')).toBe(LADDER_EDGE_STYLES['router-peer'].dashArray);
+        expect(container.querySelector('line[data-edge-kind="router-link"]')?.getAttribute('stroke-dasharray')).toBeNull();
     });
 });

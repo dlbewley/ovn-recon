@@ -10,6 +10,7 @@ import { getNamespaceQueryPath, getProjectPath, getResourceLinks, getResourcePat
 import { nodeKindRegistry } from './registry';
 import { buildNodeViewModel } from './viewModel';
 import { descriptorFor, NODE_TYPES } from './descriptors';
+import { CATEGORICAL_COLORS } from './palette';
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
 
 /**
@@ -260,9 +261,23 @@ describe('the descriptor table', () => {
             expect(typeof d.items).toBe('function');
             expect(typeof d.id).toBe('function');
             expect(typeof d.present).toBe('function');
-            expect(d.color).toMatch(/^#[0-9A-Fa-f]{3,6}$/);
+            // A categorical colour off the shared palette: designTokens.test.ts holds
+            // the palette to contrast and keeps it clear of status colours (ovn-recon-nt4.1).
+            expect(CATEGORICAL_COLORS.map((c) => c.css)).toContain(d.color);
             expect(d.icon).toBeDefined();
+            expect(d.legend.label).not.toBe('');
         });
+    });
+
+    it('gives two kinds that share a lane and an icon different accents', () => {
+        // On a neutral card the accent is the only thing left to tell them apart
+        // (ovn-recon-nt4.1): br-int from the host bridges, a UDN from a CUDN.
+        const iconType = (icon: unknown) => (icon as { type?: unknown } | null)?.type;
+        const clashes = NODE_TYPES.flatMap((a, i) => NODE_TYPES.slice(i + 1)
+            .filter((b) => a.lane !== null && a.lane === b.lane
+                && iconType(a.icon) === iconType(b.icon) && a.color === b.color)
+            .map((b) => `${a.type} and ${b.type}`));
+        expect(clashes).toEqual([]);
     });
 
     it('stacks bridge mappings above VRFs in the Layer 3 lane', () => {
