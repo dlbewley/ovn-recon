@@ -6,7 +6,8 @@ import { act } from 'react';
 
 import { ClusterUserDefinedNetwork, NodeNetworkConfigurationEnactment, NodeNetworkState } from '../types';
 import * as viewModel from '../topology/viewModel';
-import NodeVisualization from './NodeVisualization';
+import NodeVisualizationComponent from './NodeVisualization';
+import { routed } from './testRouter';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
@@ -30,6 +31,10 @@ const TABS = ['Overview', 'Relationships', 'Config'] as const;
 
 const fixture = <T,>(...segments: string[]): T =>
     JSON.parse(fs.readFileSync(path.join(process.cwd(), 'test', 'fixtures', ...segments), 'utf-8')) as T;
+
+// The view reads and writes ?select= through the router; the console provides
+// one in production.
+const NodeVisualization = routed(NodeVisualizationComponent);
 
 describe('NodeVisualization drawer', () => {
     let container: HTMLDivElement;

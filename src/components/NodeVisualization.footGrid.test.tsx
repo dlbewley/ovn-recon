@@ -5,7 +5,8 @@ import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 
 import { Interface, NodeNetworkState } from '../types';
-import NodeVisualization from './NodeVisualization';
+import NodeVisualizationComponent from './NodeVisualization';
+import { routed } from './testRouter';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
@@ -57,6 +58,10 @@ const renderAndRead = (nns: NodeNetworkState) => {
     container.remove();
     return result;
 };
+
+// The view reads and writes ?select= through the router; the console provides
+// one in production.
+const NodeVisualization = routed(NodeVisualizationComponent);
 
 describe('NodeVisualization foot grid and edge routing', () => {
     /**

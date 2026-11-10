@@ -4,6 +4,7 @@ import { act } from 'react';
 
 import { ClusterLogicalTopology, LogicalTopologySnapshot } from '../types';
 import ClusterLogicalTopologyDetails from './ClusterLogicalTopologyDetails';
+import { LocationRecord, TestRouter } from './testRouter';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 import cnv2 from '../../collector/fixtures/snapshots/cnv-2.json';
@@ -19,6 +20,7 @@ jest.mock('./useOvnCollectorFeatureGate', () => ({
 }));
 
 jest.mock('react-router', () => ({
+    ...jest.requireActual('react-router'),
     Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={String(to)}>{children}</a>,
     useParams: () => ({}),
 }));
@@ -36,11 +38,20 @@ const aggregate: ClusterLogicalTopology = {
 describe('ClusterLogicalTopologyDetails', () => {
     let container: HTMLDivElement;
     let root: Root;
+    let locations: LocationRecord[];
+    const current = () => locations[locations.length - 1];
+    const renderPage = (initialEntry = '/ovn-recon/ovn') =>
+        root.render(
+            <TestRouter initialEntry={initialEntry} onLocation={(record) => locations.push(record)}>
+                <ClusterLogicalTopologyDetails />
+            </TestRouter>,
+        );
 
     beforeEach(() => {
         container = document.createElement('div');
         document.body.appendChild(container);
         root = createRoot(container);
+        locations = [];
         global.fetch = jest.fn().mockResolvedValue({
             ok: true,
             json: async () => aggregate,
@@ -55,7 +66,7 @@ describe('ClusterLogicalTopologyDetails', () => {
 
     it('narrows to a single node perspective under the host filter', async () => {
         await act(async () => {
-            root.render(<ClusterLogicalTopologyDetails />);
+            renderPage();
         });
         await act(async () => {
             await Promise.resolve();
@@ -97,7 +108,7 @@ describe('ClusterLogicalTopologyDetails', () => {
 
     it('keeps the last-good topology rendered when a refresh fails', async () => {
         await act(async () => {
-            root.render(<ClusterLogicalTopologyDetails />);
+            renderPage();
         });
         await act(async () => {
             await Promise.resolve();
@@ -123,7 +134,7 @@ describe('ClusterLogicalTopologyDetails', () => {
 
     it('renders the merged cluster ladder from the aggregate payload', async () => {
         await act(async () => {
-            root.render(<ClusterLogicalTopologyDetails />);
+            renderPage();
         });
         // Flush the fetch promise chain.
         await act(async () => {
@@ -149,7 +160,7 @@ describe('ClusterLogicalTopologyDetails', () => {
      */
     it('opens a resizable drawer with bare panel content, like the physical view', async () => {
         await act(async () => {
-            root.render(<ClusterLogicalTopologyDetails />);
+            renderPage();
         });
         await act(async () => {
             await Promise.resolve();
@@ -179,5 +190,70 @@ describe('ClusterLogicalTopologyDetails', () => {
         const strip = tablist!.closest('.ovn-drawer-tab-strip');
         expect(strip).not.toBeNull();
         expect(strip!.previousElementSibling?.classList.contains('pf-v6-c-drawer__head')).toBe(true);
+    });
+    /**
+     * select=KIND:NAME on the cluster page (ovn-recon-s3t.16): restored on the
+     * first model that contains it through the drawer-navigation path, and
+     * resolved to the first match when networks share a bridge-mapping name.
+     */
+    describe('deep-linked selection', () => {
+        const load = async (entry: string) => {
+            await act(async () => { renderPage(entry); });
+            await act(async () => { await Promise.resolve(); });
+        };
+        const drawerTitle = () =>
+            container.querySelector('.pf-v6-c-drawer.pf-m-expanded .pf-v6-c-drawer__head h2')?.textContent ?? null;
+        const selectedCards = () =>
+            [...container.querySelectorAll('[data-testid^="construct-"]')].filter(
+                (card) => card.querySelector('rect')?.getAttribute('stroke-width') === '3');
+
+        it('restores a selection from the URL and opens its drawer', async () => {
+            await load('/ovn-recon/ovn?select=router:GR_cnv-2');
+            expect(drawerTitle()).toContain('Gateway router');
+            expect(drawerTitle()).toContain('cnv-2');
+            expect(selectedCards().map((card) => card.getAttribute('data-testid'))).toEqual(['construct-GR_cnv-2']);
+        });
+
+        it('takes the first match when networks share a bridge-mapping name', async () => {
+            await load('/ovn-recon/ovn?select=physnet:physnet');
+            expect(drawerTitle()).toContain('Bridge mapping');
+            const cards = [...container.querySelectorAll('[data-testid="construct-physnet"]')];
+            expect(cards.length).toBeGreaterThan(1);
+            expect(selectedCards()).toEqual([cards[0]]);
+        });
+
+        it('ignores a stale construct and keeps the filters as they are', async () => {
+            await load('/ovn-recon/ovn?select=router:GR_gone');
+            expect(drawerTitle()).toBeNull();
+            expect(container.querySelector<HTMLSelectElement>('select[aria-label="Filter by host"]')!.value).toBe('all');
+            expect(container.querySelector<HTMLSelectElement>('select[aria-label="Filter by network"]')!.value).toBe('all');
+        });
+
+        it('steps through search matches and writes each one to the URL', async () => {
+            await load('/ovn-recon/ovn?host=x');
+            const search = container.querySelector<HTMLInputElement>('input[aria-label="Search constructs"]')!;
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'GR_cnv');
+            act(() => { search.dispatchEvent(new Event('input', { bubbles: true })); });
+
+            await act(async () => {
+                search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            });
+            expect(current().search).toBe('?host=x&select=router:GR_cnv-1');
+            expect(container.textContent).toContain('1 / 2');
+
+            const next = container.querySelector<HTMLButtonElement>('button[aria-label="Next match"]')!;
+            await act(async () => { next.click(); });
+            expect(current().search).toBe('?host=x&select=router:GR_cnv-2');
+            expect(container.textContent).toContain('2 / 2');
+
+            await act(async () => { next.click(); });
+            expect(current().search).toBe('?host=x&select=router:GR_cnv-1');
+
+            await act(async () => {
+                container.querySelector<HTMLButtonElement>('button[aria-label="Previous match"]')!.click();
+            });
+            expect(current().search).toBe('?host=x&select=router:GR_cnv-2');
+            expect(locations.every((record) => record.navigationType !== 'PUSH')).toBe(true);
+        });
     });
 });

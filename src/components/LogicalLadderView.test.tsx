@@ -4,7 +4,11 @@ import { act } from 'react';
 
 import { LogicalDatabase, LogicalTopologySnapshot } from '../types';
 import { buildLadderModel } from './logicalLadderModel';
-import LogicalLadderView, { networkDisplayName } from './LogicalLadderView';
+import LogicalLadderView, {
+    constructMatches,
+    ladderSearchMatches,
+    networkDisplayName,
+} from './LogicalLadderView';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 
@@ -172,5 +176,56 @@ describe('LogicalLadderView', () => {
         // A new nonce for the same uuid answers again.
         renderWith(2);
         expect(onRevealPosition).toHaveBeenCalledTimes(2);
+    });
+});
+
+/**
+ * The search box promised "name, role, node, or subnet" but matched the raw role
+ * id, so typing the label drawn on a card ("Node switch") dimmed every construct
+ * (ovn-recon-nt4.6).
+ */
+describe('ladder search matching', () => {
+    const model = buildLadderModel(database);
+    const byValue = (value: string) =>
+        model.constructs.find((construct) => `${construct.kind}:${construct.name}` === value)!;
+
+    it('matches the role label drawn on the card, not only the role id', () => {
+        const nodeSwitch = byValue('switch:cnv-1');
+        expect(constructMatches(nodeSwitch, 'node switch')).toBe(true);
+        expect(constructMatches(nodeSwitch, 'node-switch')).toBe(true);
+        expect(constructMatches(byValue('switch:join'), 'node switch')).toBe(false);
+        expect(constructMatches(byValue('router:GR_cnv-1'), 'gateway router')).toBe(true);
+    });
+
+    it('matches the network display name as well as its OVN identity', () => {
+        const udnSwitch = byValue('switch:demo.mirror_example.l3.udn_cnv-1');
+        expect(networkDisplayName(udnSwitch.network)).toBe('demo-mirror/example-l3-udn');
+        expect(constructMatches(udnSwitch, 'demo-mirror/example')).toBe(true);
+        expect(constructMatches(byValue('switch:cnv-1'), 'default cluster network')).toBe(true);
+    });
+
+    it('lists matches in reading order under the network filter, and none for an empty query', () => {
+        const all = ladderSearchMatches(model, 'all', '  Node Switch ').map((construct) => construct.name);
+        expect(all.sort()).toEqual(['cnv-1', 'demo.mirror_example.l3.udn_cnv-1']);
+        expect(ladderSearchMatches(model, 'default', 'node switch').map((construct) => construct.name))
+            .toEqual(['cnv-1']);
+        expect(ladderSearchMatches(model, 'all', '   ')).toEqual([]);
+
+        // Top tier first: routers on the gateway tier come before switches.
+        const names = ladderSearchMatches(model, 'default', 'cnv-1').map((construct) => construct.name);
+        expect(names.indexOf('GR_cnv-1')).toBeLessThan(names.indexOf('cnv-1'));
+    });
+
+    it('stops dimming a construct that matches by its label', () => {
+        const container = document.createElement('div');
+        const root = createRoot(container);
+        act(() => {
+            root.render(<LogicalLadderView model={model} selectedUuid={null} onSelect={jest.fn()} search="node switch" />);
+        });
+        const opacity = (name: string) =>
+            container.querySelector(`[data-testid="construct-${name}"]`)!.getAttribute('opacity');
+        expect(opacity('cnv-1')).toBe('1');
+        expect(opacity('join')).toBe('0.25');
+        act(() => root.unmount());
     });
 });
