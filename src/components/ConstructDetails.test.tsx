@@ -7,6 +7,9 @@ import { LogicalDatabase, LogicalTopologySnapshot } from '../types';
 import ConstructDetails from './ConstructDetails';
 import { fetchClusterTopology, fetchCollectorSnapshot, SnapshotFetchOptions } from './collectorApi';
 import { LocationRecord, TestRouter } from './testRouter';
+import { matchRefs, policyForPort, policyIndexFor } from './policyIndex';
+import { describeOwner, networkRoleResolverFor, ownerOf } from './ovnOwner';
+import { referencedAddressSets, switchPortGroups } from './policyRows';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 import cnv2 from '../../collector/fixtures/snapshots/cnv-2.json';
@@ -124,7 +127,7 @@ describe('ConstructDetails', () => {
         it('renders a switch from its node snapshot with the tabs a switch has', async () => {
             await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1');
             expect(container.querySelector('h1')?.textContent).toContain('cnv-1');
-            expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Ports', 'Services', 'Config']);
+            expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Ports', 'Policy', 'Services', 'Config']);
             expect(activeTab()).toBe('Overview');
             // The overview is the drawer's, without the drawer's own link in.
             expect(container.textContent).toContain('OVN name');
@@ -327,6 +330,150 @@ describe('ConstructDetails', () => {
             const payload = JSON.parse(container.querySelector('[data-testid="code-editor"]')!.textContent!);
             expect(payload.ports).toHaveLength(75);
             expect(payload.portsOmitted).toBeUndefined();
+        });
+    });
+    describe('Policy tab (cnv-1 node switch)', () => {
+        const full = (cnv1 as unknown as LogicalTopologySnapshot).database as LogicalDatabase;
+        const index = policyIndexFor(full);
+        const nodeSwitch = full.logicalSwitches.find((row) => row.name === 'cnv-1')!;
+        const acls = index.aclsBySwitch.get(nodeSwitch.uuid)!.all;
+        const roleOf = networkRoleResolverFor(full);
+        const aclRows = () => [...container.querySelectorAll('table[aria-label="ACLs"] tr[data-testid^="rule-row-"]')];
+        const summary = () => container.querySelector('[data-testid="acl-summary"]')?.textContent ?? '';
+        const select = (label: string) => container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
+        const filter = () => container.querySelector<HTMLInputElement>('input[aria-label="Filter ACLs"]')!;
+        const rowFor = (uuid: string) =>
+            aclRows().find((candidate) => candidate.getAttribute('data-testid') === `rule-row-${uuid}`);
+
+        it('lists every ACL on the switch, paginated', async () => {
+            await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=policy');
+            expect(requests()).toEqual([['cnv-1', []], ['cnv-1', ['policy']]]);
+            expect(summary().startsWith(`${acls.length} ACLs`)).toBe(true);
+            expect(aclRows()).toHaveLength(Math.min(50, acls.length));
+        });
+
+        it('narrows by direction, action and owner type', async () => {
+            await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=policy');
+            const toLport = acls.filter((acl) => acl.direction === 'to-lport');
+            await setValue(select('Filter by direction'), 'to-lport');
+            expect(summary().startsWith(`${toLport.length} of ${acls.length} ACLs`)).toBe(true);
+
+            const action = toLport[0].action;
+            const byAction = toLport.filter((acl) => acl.action === action);
+            await setValue(select('Filter by action'), action);
+            expect(summary().startsWith(`${byAction.length} of ${acls.length} ACLs`)).toBe(true);
+
+            await setValue(select('Filter by direction'), 'all');
+            await setValue(select('Filter by action'), 'all');
+            const kind = describeOwner(ownerOf(acls[0].externalIds), roleOf).kind;
+            const byKind = acls.filter((acl) => describeOwner(ownerOf(acl.externalIds), roleOf).kind === kind);
+            expect(byKind.length).toBeLessThan(acls.length);
+            await setValue(select('Filter by owner type'), kind);
+            expect(summary().startsWith(`${byKind.length} of ${acls.length} ACLs`)).toBe(true);
+        });
+
+        it('sorts by priority', async () => {
+            await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=policy');
+            const header = [...container.querySelectorAll('table[aria-label="ACLs"] th button')].find(
+                (button) => button.textContent === 'Priority',
+            );
+            await click(header);
+            const priorityOf = (row: Element) => Number(row.querySelectorAll('td')[1].textContent);
+            expect(priorityOf(aclRows()[0])).toBe(Math.min(...acls.map((acl) => acl.priority)));
+            await click(header);
+            expect(priorityOf(aclRows()[0])).toBe(Math.max(...acls.map((acl) => acl.priority)));
+        });
+
+        it('links a NetworkPolicy owner', async () => {
+            const linked = acls.find((acl) => describeOwner(ownerOf(acl.externalIds), roleOf).target?.kind === 'NetworkPolicy')!;
+            expect(linked).toBeDefined();
+            const description = describeOwner(ownerOf(linked.externalIds), roleOf);
+            await renderAt(`/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=policy&q=${encodeURIComponent(description.name!)}`);
+            expect(rowFor(linked.uuid)?.querySelector(`a[href="${description.target!.path}"]`)).not.toBeNull();
+        });
+
+        it('resolves @ and $ references in the expanded row', async () => {
+            const withGroup = acls.find((acl) => matchRefs(acl).portGroups.some((name) => index.portGroupByName.has(name)))!;
+            const withSet = acls.find((acl) => matchRefs(acl).addressSets.some((name) => index.addressSetByName.has(name)))!;
+            expect(withGroup).toBeDefined();
+            expect(withSet).toBeDefined();
+            for (const [acl, sigil] of [[withGroup, '@'], [withSet, '$']] as const) {
+                await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=policy');
+                await setValue(filter(), acl.match);
+                await click(rowFor(acl.uuid)?.querySelector('button'));
+                const detail = container.querySelector(`[data-testid="acl-detail-${acl.uuid}"]`)!;
+                const refs = matchRefs(acl);
+                const name = sigil === '@'
+                    ? refs.portGroups.find((candidate) => index.portGroupByName.has(candidate))!
+                    : refs.addressSets.find((candidate) => index.addressSetByName.has(candidate))!;
+                const line = [...detail.querySelectorAll('div')].find((div) => div.textContent?.startsWith(`${sigil}${name} `));
+                expect(line).toBeDefined();
+                expect(line!.textContent).not.toContain('unresolved');
+            }
+        });
+
+        it('lists only the port groups with a port here and counts the others', async () => {
+            const { here, elsewhere } = switchPortGroups(index, full, nodeSwitch.uuid);
+            await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=policy');
+            await click(container.querySelector('#policy-view-groups'));
+            expect(container.querySelector('[data-testid="rule-table-summary"]')?.textContent).toContain(
+                `${here.length} port groups`,
+            );
+            expect(container.querySelector('[data-testid="port-groups-elsewhere"]')?.textContent).toBe(
+                `${elsewhere} port groups in this zone have no port here.`,
+            );
+        });
+
+        it('lists the address sets the ACLs reference', async () => {
+            const sets = referencedAddressSets(index, acls);
+            await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=policy');
+            await click(container.querySelector('#policy-view-sets'));
+            expect(container.querySelector('[data-testid="rule-table-summary"]')?.textContent).toContain(
+                `${sets.length} address sets named by the ACLs`,
+            );
+        });
+
+        it('adds policy columns to Ports and lands "ACLs for this port" on the Policy tab for that port', async () => {
+            await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=ports');
+            const headers = () =>
+                [...container.querySelectorAll('table[aria-label="Switch ports"] > thead th')].map((th) => th.textContent);
+            expect(headers()).toEqual(['Row expansion', 'Name', 'Type', 'Addresses', 'Up', 'Port groups', 'ACLs']);
+
+            const portUuid = nodeSwitch.ports.find((uuid) => policyForPort(index, uuid).acls.length > 1)!;
+            const portName = full.logicalSwitchPorts.find((row) => row.uuid === portUuid)!.name;
+            const expected = policyForPort(index, portUuid).acls.length;
+            await renderAt(`/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=ports&port=${encodeURIComponent(portName)}`);
+            const link = container.querySelector('[data-testid="port-acls-link"]')!;
+            expect(link).not.toBeNull();
+            const href = link.getAttribute('href')!;
+            expect(new URLSearchParams(href.split('?')[1]).get('tab')).toBe('policy');
+            expect(new URLSearchParams(href.split('?')[1]).get('port')).toBe(portName);
+            const before = requests().length;
+            await click(link);
+            expect(activeTab()).toBe('Policy');
+            expect(container.querySelector('[data-testid="policy-port"]')?.textContent).toContain(portName);
+            expect(summary().startsWith(`${expected} ACLs`)).toBe(true);
+            // Moving between Ports and Policy fetched nothing more.
+            expect(requests()).toHaveLength(before);
+
+            const showAll = [...container.querySelectorAll('button')].find(
+                (button) => button.textContent === 'Show all ACLs on the switch',
+            );
+            await click(showAll);
+            expect(current().search).toBe('?tab=policy');
+            expect(summary().startsWith(`${acls.length} ACLs`)).toBe(true);
+        });
+
+        it('leaves the Ports policy columns out without the section', async () => {
+            fetchSnapshot.mockImplementation(async (node, options) => {
+                if (options?.include?.length) throw new Error('section request failed');
+                return ladderSnapshot(FIXTURES[node]);
+            });
+            await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=ports');
+            const headers = [...container.querySelectorAll('table[aria-label="Switch ports"] > thead th')].map((th) => th.textContent);
+            expect(headers).toEqual(['Row expansion', 'Name', 'Type', 'Addresses', 'Up']);
+            await clickTab('Policy');
+            expect(container.querySelector('[data-testid="policy-not-collected"]')).not.toBeNull();
         });
     });
 });
