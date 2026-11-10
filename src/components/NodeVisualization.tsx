@@ -22,6 +22,10 @@ import { descriptorFor, iconFor, NodeTypeId, NODE_TYPES, opaqueNodeIds } from '.
 import { buildFlowGraph, flowPath } from '../topology/flowPath';
 import { useSelectionDeepLink } from './useSelectParam';
 import { shiftIfNeeded, svgMeetRegion, svgMeetScale, useKeepSelectionVisible, ViewportBox } from './canvasViewport';
+import { countBySeverity, findingsForGraphNode } from '../insights/selectors';
+import type { Finding } from '../insights/types';
+import { describeCounts, FindingsBadge, findingsBadgeWidth, HideInfoSwitch } from '../insights/ui/FindingsViews';
+import { useHideInfoFindings, useNodeFindings, visibleFindings } from '../insights/ui/useFindings';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -51,7 +55,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
 
 
     // Fetch all NodeNetworkState resources for the dropdown
-    const [allNodeNetworkStates] = useK8sWatchResource<NodeNetworkState[]>({
+    const [allNodeNetworkStates, allNodeNetworkStatesLoaded] = useK8sWatchResource<NodeNetworkState[]>({
         groupVersionKind: {
             group: 'nmstate.io',
             version: 'v1beta1',
@@ -90,6 +94,17 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     );
     const { interfaces } = ctx;
     const { lldpNeighbors } = ctx;
+
+    // Findings (ovn-recon-7i6.1). Evaluated here, off the same context, and never in
+    // the layout below: the badge reads them, the layout does not.
+    const allFindings = useNodeFindings(ctx, allNodeNetworkStates, allNodeNetworkStatesLoaded);
+    const [hideInfo, setHideInfo] = useHideInfoFindings();
+    const findings = React.useMemo(() => visibleFindings(allFindings, hideInfo), [allFindings, hideInfo]);
+    const nodeName = nns?.metadata?.name || '';
+    const findingsFor = React.useCallback(
+        (id: string): Finding[] => (findings.length === 0 ? [] : findingsForGraphNode(findings, nodeName, id)),
+        [findings, nodeName]
+    );
     const hasLldpData = hasLldpNeighbors(interfaces);
 
     // State for toggle
@@ -613,7 +628,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         onSelectNode: (id) => {
             selectNode(id);
             centerViewOn(id);
-        }
+        },
+        findingsFor
     });
 
     const handleNodeClick = (event: React.SyntheticEvent, id: string) => {
@@ -700,6 +716,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         const displayType = presentation.graphLabel || presentation.subtitle;
         const status = descriptor.status?.(item);
         const isFocused = focusedNodeId === node.id;
+        const nodeFindings = findingsFor(node.id);
+        const findingsText = nodeFindings.length > 0 ? `, ${describeCounts(countBySeverity(nodeFindings))}` : '';
 
         return (
             <g
@@ -713,7 +731,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                 }}
                 role="button"
                 tabIndex={0}
-                aria-label={`${presentation.label} (${displayType})`}
+                aria-label={`${presentation.label} (${displayType})${findingsText}`}
                 onClick={(e) => handleNodeClick(e, node.id)}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -745,6 +763,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                 {status && (
                     <circle cx={itemWidth - 15} cy={15} r={5} fill={status === 'up' ? '#4CAF50' : '#F44336'} />
                 )}
+                {/* Decorator only: straddles the top edge, right-aligned, and moves nothing. */}
+                <FindingsBadge findings={nodeFindings} x={itemWidth - 6 - findingsBadgeWidth(nodeFindings)} y={-9} />
             </g>
         );
     };
@@ -856,6 +876,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                                         onChange={(first, second) => setShowHiddenColumns(getSwitchChecked(first, second))}
                                     />
                                 </FlexItem>
+                                {allFindings.some((finding) => finding.severity === 'info') && (
+                                    <FlexItem>
+                                        <HideInfoSwitch
+                                            id="hide-info-findings-toggle"
+                                            findings={allFindings}
+                                            hideInfo={hideInfo}
+                                            onChange={setHideInfo}
+                                        />
+                                    </FlexItem>
+                                )}
                                 <FlexItem><Button variant="secondary" onClick={handleZoomOut} aria-label="Zoom out">-</Button></FlexItem>
                                 <FlexItem><Button variant="secondary" onClick={handleZoomIn} aria-label="Zoom in">+</Button></FlexItem>
                                 <FlexItem><Button variant="link" onClick={handleResetZoom}>Reset view</Button></FlexItem>

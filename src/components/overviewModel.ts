@@ -7,6 +7,9 @@ import {
     RouteAdvertisements,
     UserDefinedNetwork,
 } from '../types';
+import { findingSubjectLink, FindingLink } from '../insights/links';
+import { countBySeverity, SeverityCounts } from '../insights/selectors';
+import type { Finding, Severity } from '../insights/types';
 import { extractLldpNeighbors } from './nodeVisualizationSelectors';
 
 /**
@@ -121,4 +124,68 @@ export const filterNodeSummaries = (summaries: NodeSummary[], query: string): No
     const needle = query.trim().toLowerCase();
     if (needle === '') return summaries;
     return summaries.filter((node) => node.name.toLowerCase().includes(needle));
+};
+
+// --- Findings (ovn-recon-7i6.1) ---------------------------------------------------
+
+/** Findings counted per node, for the node table's Findings column. Network-wide findings belong to no node. */
+export const findingCountsByNode = (findings: Finding[]): Map<string, SeverityCounts> => {
+    const byNode = new Map<string, Finding[]>();
+    findings.forEach((finding) => {
+        const node = finding.scope.node;
+        if (!node) return;
+        byNode.set(node, [...(byNode.get(node) ?? []), finding]);
+    });
+    return new Map(Array.from(byNode.entries()).map(([node, list]) => [node, countBySeverity(list)]));
+};
+
+export interface FindingGroupEntry {
+    finding: Finding;
+    /** Where the entry links: its subject, selected. */
+    link: FindingLink;
+    /** "on worker-1", or "network-wide" for a finding that belongs to no one node. */
+    where: string;
+}
+
+export interface FindingGroup {
+    ruleId: string;
+    title: string;
+    severity: Severity;
+    entries: FindingGroupEntry[];
+}
+
+/**
+ * The overview list: findings grouped by rule, warnings' rules first. A network-scope
+ * finding is one entry, under its network, because the evaluator raises it once for
+ * the cluster rather than once per node. `nodeNames` gives a node page on which to
+ * select a network that every node's graph draws (the first by name).
+ */
+export const groupFindingsByRule = (
+    findings: Finding[],
+    nodeNames: string[],
+    titleFor: (ruleId: string) => string | undefined
+): FindingGroup[] => {
+    const anyNode = nodeNames.slice().sort()[0];
+    const groups = new Map<string, FindingGroup>();
+    findings.forEach((finding) => {
+        let group = groups.get(finding.ruleId);
+        if (!group) {
+            group = {
+                ruleId: finding.ruleId,
+                title: titleFor(finding.ruleId) ?? finding.ruleId,
+                severity: finding.severity,
+                entries: []
+            };
+            groups.set(finding.ruleId, group);
+        }
+        if (finding.severity === 'warning') group.severity = 'warning';
+        group.entries.push({
+            finding,
+            link: findingSubjectLink(finding, anyNode),
+            where: finding.scope.node ? `on ${finding.scope.node}` : 'network-wide'
+        });
+    });
+    return Array.from(groups.values()).sort((a, b) =>
+        (a.severity === b.severity ? 0 : a.severity === 'warning' ? -1 : 1)
+        || a.title.localeCompare(b.title));
 };
