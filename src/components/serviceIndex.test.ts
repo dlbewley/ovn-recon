@@ -1,15 +1,29 @@
 import { LoadBalancerRow, LogicalDatabase, LogicalTopologySnapshot } from '../types';
 import {
     attachmentSummaryText,
+    declaredVipClass,
+    groupServices,
     hasServicesSection,
+    endpointOwnerResolver,
+    EndpointSliceLike,
+    endpointSliceQueryFor,
+    inferVipClass,
+    isIpAddress,
+    KubeServiceLike,
     loadBalancersFor,
+    parseVip,
     scopeOf,
+    sectionOf,
+    serviceFacetCounts,
+    serviceGroupMatches,
     serviceIndexFor,
     serviceOf,
-    serviceVipRowMatches,
     serviceVipRows,
     splitBackends,
+    splitSummaryText,
     summarizeAttachment,
+    summarizeSplit,
+    vipClassContext,
 } from './serviceIndex';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
@@ -325,15 +339,6 @@ describe('serviceIndex', () => {
             // A VIP-less row is not a VIP without endpoints.
             expect(summarizeAttachment(loadBalancersFor(nodeSwitch, db)!).vipsWithoutEndpoints).toBe(1);
         });
-
-        it('filters by Service, VIP and backend', () => {
-            const match = (query: string) => rows().filter((row) => serviceVipRowMatches(row, query)).map((row) => row.vip);
-            expect(match('dns-default')).toEqual(['172.30.0.10:53', '172.30.0.10:53']);
-            expect(match('172.30.80.5:443')).toEqual(['172.30.80.5:443']);
-            expect(match('10.129.5.152')).toEqual(['192.168.4.10:30080', '172.30.80.5:443']);
-            expect(match('fd02::5a3c')).toEqual(['[fd02::5a3c]:443']);
-            expect(match('no-such-thing')).toEqual([]);
-        });
     });
 
     describe('attachmentSummaryText', () => {
@@ -402,6 +407,496 @@ describe('serviceIndex', () => {
                 new Set(['openshift-dns/dns-default']),
             );
             expect(new Set(entries.map((entry) => entry.loadBalancer.protocol))).toEqual(new Set(['tcp', 'udp']));
+        });
+    });
+});
+
+/**
+ * A zone for the one-row-per-Service view (ovn-recon-dp7.6), on documentation
+ * addresses: the node at 192.0.2.10 on 192.0.2.0/24 with a second address
+ * 198.51.100.10 that only its node ports reveal, a service network of
+ * 172.30.0.0/16, and a LoadBalancer address 192.0.2.200.
+ */
+const splitDatabase = (): LogicalDatabase => ({
+    logicalRouters: [
+        {
+            uuid: 'gr',
+            name: 'GR_node-a',
+            ports: ['rtoe'],
+            loadBalancer: ['lb-api', 'lb-shop-np', 'lb-dns-router'],
+            loadBalancerGroup: ['g-cluster'],
+            externalIds: { physical_ip: '192.0.2.10', physical_ips: '192.0.2.10' },
+        },
+    ],
+    logicalRouterPorts: [
+        { uuid: 'rtoe', name: 'rtoe-GR_node-a', networks: ['192.0.2.10/24'], externalIds: { 'gateway-physical-ip': 'yes' } },
+    ],
+    logicalSwitches: [
+        {
+            uuid: 'sw',
+            name: 'node-a',
+            ports: [],
+            loadBalancer: ['lb-api', 'lb-shop-np', 'lb-dns-switch', 'lb-etp-local'],
+            loadBalancerGroup: ['g-cluster', 'g-switch'],
+        },
+    ],
+    logicalSwitchPorts: [],
+    nats: [],
+    staticRoutes: [
+        { uuid: 'masq', ipPrefix: '169.254.0.0/17', nexthop: '169.254.0.4', externalIds: { 'k8s.ovn.org/node-masquerade-subnet': '' } },
+    ],
+    loadBalancers: [
+        lb({
+            uuid: 'lb-api',
+            name: 'Service_default/kubernetes_TCP_node_router+switch_node-a',
+            vips: { '172.30.0.1:443': '192.0.2.11:6443,192.0.2.12:6443' },
+            externalIds: { 'k8s.ovn.org/kind': 'Service', 'k8s.ovn.org/owner': 'default/kubernetes' },
+        }),
+        lb({
+            uuid: 'lb-shop-np',
+            name: 'Service_shop/web_TCP_node_router+switch_node-a',
+            vips: {
+                '192.0.2.10:30443': '10.129.0.5:8443',
+                '198.51.100.10:30443': '10.129.0.5:8443',
+            },
+        }),
+        lb({
+            uuid: 'lb-shop',
+            name: 'Service_shop/web_TCP_cluster',
+            vips: {
+                '172.30.80.5:443': '10.129.0.5:8443,10.130.0.9:8443',
+                '172.30.80.5:80': '10.129.0.5:8080,10.130.0.9:8080',
+                '192.0.2.200:443': '10.129.0.5:8443,10.130.0.9:8443',
+                '[fd02::5]:443': '[fd01::5]:8443',
+            },
+            options: { affinity_timeout: '10800', reject: 'true' },
+        }),
+        lb({
+            uuid: 'lb-ext',
+            name: 'Service_shop/legacy_TCP_cluster',
+            vips: { '172.30.90.9:8080': '', '203.0.113.7:8080': '' },
+            externalIds: { 'k8s.ovn.org/kind': 'Service', 'k8s.ovn.org/owner': 'shop/legacy' },
+        }),
+        lb({
+            uuid: 'lb-dns-udp',
+            name: 'Service_openshift-dns/dns-default_UDP_cluster',
+            protocol: 'udp',
+            vips: { '172.30.0.10:53': '10.128.0.5:5353' },
+            externalIds: { 'k8s.ovn.org/kind': 'Service', 'k8s.ovn.org/owner': 'openshift-dns/dns-default' },
+        }),
+        lb({
+            uuid: 'lb-dns-switch',
+            name: 'Service_openshift-dns/dns-default_TCP_node_switch_node-a',
+            vips: { '172.30.0.10:53': '10.128.0.5:5353' },
+            externalIds: { 'k8s.ovn.org/kind': 'Service', 'k8s.ovn.org/owner': 'openshift-dns/dns-default' },
+        }),
+        lb({
+            uuid: 'lb-dns-router',
+            name: 'Service_openshift-dns/dns-default_TCP_node_router_node-a',
+            vips: { '172.30.0.10:53': '10.128.0.5:5353' },
+            externalIds: { 'k8s.ovn.org/kind': 'Service', 'k8s.ovn.org/owner': 'openshift-dns/dns-default' },
+        }),
+        lb({
+            uuid: 'lb-etp-local',
+            name: 'Service_shop/local_TCP_node_switch_node-a',
+            vips: { '169.254.0.3:31000': '10.129.0.7:80' },
+            externalIds: { 'k8s.ovn.org/kind': 'Service', 'k8s.ovn.org/owner': 'shop/local' },
+        }),
+        lb({
+            uuid: 'lb-tmpl',
+            name: 'Service_shop/tmpl_TCP_node_switch_template_IPv4',
+            vips: { '^NODEIP_IPv4_0:32000': '^shop_tmpl_TCP_32000_v4' },
+            externalIds: { 'k8s.ovn.org/kind': 'Service', 'k8s.ovn.org/owner': 'shop/tmpl' },
+        }),
+    ],
+    loadBalancerGroups: [
+        { uuid: 'g-cluster', name: 'clusterLBGroup', loadBalancers: ['lb-shop', 'lb-ext', 'lb-dns-udp'] },
+        { uuid: 'g-switch', name: 'clusterSwitchLBGroup', loadBalancers: ['lb-tmpl'] },
+    ],
+});
+
+const SERVICE_NETWORKS = ['172.30.0.0/16', 'fd02::/112'];
+
+describe('serviceIndex one row per Service (dp7.6)', () => {
+    const splitSwitch = { kind: 'switch', uuid: 'sw', name: 'node-a' };
+    const splitRouter = { kind: 'router', uuid: 'gr', name: 'GR_node-a' };
+
+    describe('parseVip', () => {
+        it('splits IPv4, bracketed IPv6, bare and template keys', () => {
+            expect(parseVip('172.30.0.1:443')).toEqual({ address: '172.30.0.1', port: 443 });
+            expect(parseVip('[fd02::5]:443')).toEqual({ address: 'fd02::5', port: 443 });
+            expect(parseVip('[fd02::5]')).toEqual({ address: 'fd02::5' });
+            expect(parseVip('172.30.0.1')).toEqual({ address: '172.30.0.1' });
+            expect(parseVip('fd02::5')).toEqual({ address: 'fd02::5' });
+            expect(parseVip('^NODEIP_IPv4_0:32000')).toEqual({ address: '^NODEIP_IPv4_0', port: 32000 });
+        });
+    });
+
+    describe('vipClassContext', () => {
+        it("learns the node's addresses from physical_ips, the external port and shared node ports", () => {
+            const context = vipClassContext(splitDatabase(), SERVICE_NETWORKS);
+            const nodePort = (address: string) =>
+                inferVipClass(`${address}:30443`, 'node_router+switch', 'shop/web', context).vipClass;
+            expect(nodePort('192.0.2.10')).toBe('NodePort');
+            // Not on any router: known only because it carries the same node
+            // port as 192.0.2.10 on the same node-scoped load balancer.
+            expect(nodePort('198.51.100.10')).toBe('NodePort');
+            expect(context.externalSubnets).toHaveLength(1);
+            expect([...context.servicesWithNodePorts].sort()).toEqual(['shop/local', 'shop/tmpl', 'shop/web']);
+        });
+
+        it('does not take the service network or the masquerade range for node addresses', () => {
+            const db = splitDatabase();
+            db.logicalRouters[0].externalIds!.physical_ips = '192.0.2.10,169.254.0.15';
+            const context = vipClassContext(db, SERVICE_NETWORKS);
+            expect(context.nodeAddresses.size).toBe(2);
+        });
+    });
+
+    describe('inferVipClass', () => {
+        const context = vipClassContext(splitDatabase(), SERVICE_NETWORKS);
+        const infer = (vip: string, scope: Parameters<typeof inferVipClass>[1], service: string) =>
+            inferVipClass(vip, scope, service, context);
+
+        it('reads a service-network address as a ClusterIP, on either scope and family', () => {
+            expect(infer('172.30.80.5:443', 'cluster', 'shop/web')).toMatchObject({ vipClass: 'ClusterIP', basis: 'inferred' });
+            expect(infer('[fd02::5]:443', 'cluster', 'shop/web').vipClass).toBe('ClusterIP');
+            // Host-network endpoints put a ClusterIP on a node-scoped row.
+            expect(infer('172.30.0.1:443', 'node_router+switch', 'default/kubernetes').vipClass).toBe('ClusterIP');
+        });
+
+        it('reads node, masquerade and template addresses as node ports', () => {
+            expect(infer('192.0.2.10:30443', 'node_router+switch', 'shop/web').vipClass).toBe('NodePort');
+            expect(infer('169.254.0.3:31000', 'node_switch', 'shop/local')).toMatchObject({
+                vipClass: 'NodePort',
+                reason: expect.stringContaining('masquerade'),
+            });
+            expect(infer('^NODEIP_IPv4_0:32000', 'unknown', 'shop/tmpl').vipClass).toBe('NodePort');
+        });
+
+        it('tells a LoadBalancer address from an ExternalIP by whether the Service has node ports', () => {
+            expect(infer('192.0.2.200:443', 'cluster', 'shop/web')).toMatchObject({ vipClass: 'LoadBalancer', basis: 'inferred' });
+            expect(infer('203.0.113.7:8080', 'cluster', 'shop/legacy').vipClass).toBe('ExternalIP');
+            // A node address on a cluster-scoped row is an external IP someone
+            // set to the node's address, not a node port.
+            expect(infer('192.0.2.10:8080', 'cluster', 'shop/legacy').vipClass).toBe('ExternalIP');
+        });
+
+        it('without the service network, counts only the external subnet as external', () => {
+            const fallback = vipClassContext(splitDatabase());
+            expect(fallback.serviceNetworks).toHaveLength(0);
+            expect(inferVipClass('192.0.2.200:443', 'cluster', 'shop/web', fallback).vipClass).toBe('LoadBalancer');
+            expect(inferVipClass('172.30.80.5:443', 'cluster', 'shop/web', fallback)).toMatchObject({
+                vipClass: 'ClusterIP',
+                reason: expect.stringContaining('not known'),
+            });
+            // Outside every known subnet: indistinguishable from a ClusterIP.
+            expect(inferVipClass('203.0.113.7:8080', 'cluster', 'shop/legacy', fallback).vipClass).toBe('ClusterIP');
+        });
+    });
+
+    describe('declaredVipClass', () => {
+        const web: KubeServiceLike = {
+            spec: {
+                type: 'LoadBalancer',
+                clusterIPs: ['172.30.80.5', 'fd02:0:0:0::5'],
+                externalIPs: ['203.0.113.9'],
+                ports: [{ port: 443, nodePort: 30443, protocol: 'TCP' }],
+            },
+            status: { loadBalancer: { ingress: [{ ip: '192.0.2.200' }] } },
+        };
+
+        it('names each class from the Service, matching IPv6 by value', () => {
+            expect(declaredVipClass('172.30.80.5:443', 'tcp', web)).toMatchObject({ vipClass: 'ClusterIP', basis: 'declared' });
+            expect(declaredVipClass('[fd02::5]:443', 'tcp', web)?.vipClass).toBe('ClusterIP');
+            expect(declaredVipClass('203.0.113.9:443', 'tcp', web)?.vipClass).toBe('ExternalIP');
+            expect(declaredVipClass('192.0.2.200:443', 'tcp', web)?.vipClass).toBe('LoadBalancer');
+            expect(declaredVipClass('198.51.100.10:30443', 'tcp', web)?.vipClass).toBe('NodePort');
+        });
+
+        it('says nothing for an address or port the Service does not name', () => {
+            expect(declaredVipClass('198.51.100.10:30443', 'udp', web)).toBeUndefined();
+            expect(declaredVipClass('10.0.0.1:443', 'tcp', web)).toBeUndefined();
+            expect(declaredVipClass('172.30.80.5:443', 'tcp', { spec: { clusterIP: '172.30.80.5' } })?.vipClass).toBe(
+                'ClusterIP',
+            );
+        });
+    });
+
+    describe('sectionOf', () => {
+        it('puts direct node-scoped rows here and everything shared cluster-wide', () => {
+            expect(sectionOf('node_switch', ['direct'])).toBe('node');
+            expect(sectionOf('unknown', ['direct'])).toBe('node');
+            expect(sectionOf('cluster', ['direct'])).toBe('cluster');
+            expect(sectionOf('cluster', ['clusterLBGroup'])).toBe('cluster');
+            // A template row parses as node-scoped but arrives through a group.
+            expect(sectionOf('node_switch', ['clusterSwitchLBGroup'])).toBe('cluster');
+        });
+    });
+
+    describe('groupServices', () => {
+        const groups = (construct = splitSwitch, declared?: Map<string, KubeServiceLike>) =>
+            groupServices(
+                loadBalancersFor(construct, splitDatabase())!,
+                vipClassContext(splitDatabase(), SERVICE_NETWORKS),
+                declared,
+            );
+        const find = (list: ReturnType<typeof groups>, key: string) => list.find((group) => group.key === key)!;
+
+        it('makes one row per Service and section, node section first', () => {
+            expect(groups().map((group) => group.key)).toEqual([
+                'node|default/kubernetes',
+                'node|openshift-dns/dns-default',
+                'node|shop/local',
+                'node|shop/web',
+                'cluster|openshift-dns/dns-default',
+                'cluster|shop/legacy',
+                'cluster|shop/tmpl',
+                'cluster|shop/web',
+            ]);
+            // The gateway router sees its own node-scoped variant of DNS.
+            expect(find(groups(splitRouter), 'node|openshift-dns/dns-default').loadBalancers.map((row) => row.uuid)).toEqual([
+                'lb-dns-router',
+            ]);
+        });
+
+        it('folds a Service with several ports, addresses and families into one row', () => {
+            const web = find(groups(), 'cluster|shop/web');
+            expect(web.vips.map((vip) => vip.vip)).toEqual([
+                '172.30.80.5:80',
+                '172.30.80.5:443',
+                '192.0.2.200:443',
+                '[fd02::5]:443',
+            ]);
+            expect(web.ports).toEqual([
+                { port: 80, protocol: 'tcp' },
+                { port: 443, protocol: 'tcp' },
+            ]);
+            expect(web.classes).toEqual([
+                { vipClass: 'ClusterIP', inferred: true },
+                { vipClass: 'LoadBalancer', inferred: true },
+            ]);
+            // Endpoints, not address:port pairs.
+            expect(web.backendCount).toBe(3);
+            expect(web.vipsWithoutEndpoints).toBe(0);
+            expect(web.sources).toEqual(['clusterLBGroup']);
+
+            const nodePorts = find(groups(), 'node|shop/web');
+            expect(nodePorts.classes).toEqual([{ vipClass: 'NodePort', inferred: true }]);
+            expect(nodePorts.ports).toEqual([{ port: 30443, protocol: 'tcp' }]);
+        });
+
+        it('merges protocols of one Service and counts VIPs without endpoints', () => {
+            const dns = find(groups(), 'node|openshift-dns/dns-default');
+            expect(dns.protocols).toEqual(['tcp']);
+            expect(find(groups(), 'cluster|openshift-dns/dns-default').protocols).toEqual(['udp']);
+            const legacy = find(groups(), 'cluster|shop/legacy');
+            expect(legacy.vipsWithoutEndpoints).toBe(2);
+            expect(legacy.backendCount).toBe(0);
+        });
+
+        it('switches a VIP to its declared class once the Service has been read', () => {
+            const declared = new Map<string, KubeServiceLike>([
+                ['shop/web', { spec: { type: 'NodePort', clusterIPs: ['172.30.80.5'], externalIPs: ['192.0.2.200'], ports: [{ port: 443, nodePort: 30443 }] } }],
+            ]);
+            const web = find(groups(splitSwitch, declared), 'cluster|shop/web');
+            const classOf = (vip: string) => web.vips.find((entry) => entry.vip === vip)!.classification;
+            expect(classOf('172.30.80.5:443')).toMatchObject({ vipClass: 'ClusterIP', basis: 'declared' });
+            expect(classOf('192.0.2.200:443')).toMatchObject({ vipClass: 'ExternalIP', basis: 'declared' });
+            // Not named by the Service (the IPv6 ClusterIP is missing from
+            // this copy): stays inferred.
+            expect(classOf('[fd02::5]:443')).toMatchObject({ vipClass: 'ClusterIP', basis: 'inferred' });
+            expect(web.classes).toEqual([
+                { vipClass: 'ClusterIP', inferred: true },
+                { vipClass: 'ExternalIP', inferred: false },
+            ]);
+            expect(find(groups(splitSwitch, declared), 'node|shop/web').classes).toEqual([
+                { vipClass: 'NodePort', inferred: false },
+            ]);
+        });
+    });
+
+    describe('facets', () => {
+        const all = groupServices(
+            loadBalancersFor(splitSwitch, splitDatabase())!,
+            vipClassContext(splitDatabase(), SERVICE_NETWORKS),
+        );
+        const keys = (facets: Parameters<typeof serviceGroupMatches>[1]) =>
+            all.filter((group) => serviceGroupMatches(group, facets)).map((group) => group.key);
+
+        it('narrows by type, protocol, namespace and missing endpoints', () => {
+            expect(keys({ vipClass: 'NodePort' })).toEqual(['node|shop/local', 'node|shop/web', 'cluster|shop/tmpl']);
+            expect(keys({ vipClass: 'LoadBalancer' })).toEqual(['cluster|shop/web']);
+            expect(keys({ protocol: 'udp' })).toEqual(['cluster|openshift-dns/dns-default']);
+            expect(keys({ namespace: 'default' })).toEqual(['node|default/kubernetes']);
+            expect(keys({ withoutEndpoints: true })).toEqual(['cluster|shop/legacy']);
+        });
+
+        it('asks the VIP facets of one VIP together', () => {
+            // shop/legacy has an ExternalIP and a VIP without endpoints, and
+            // they are the same VIP; shop/web's LoadBalancer VIP has endpoints.
+            expect(keys({ vipClass: 'ExternalIP', withoutEndpoints: true })).toEqual(['cluster|shop/legacy']);
+            expect(keys({ vipClass: 'LoadBalancer', withoutEndpoints: true })).toEqual([]);
+            expect(keys({ vipClass: 'NodePort', protocol: 'udp' })).toEqual([]);
+        });
+
+        it('matches text in the Service, load balancer names, VIPs and backends', () => {
+            expect(keys({ query: 'DNS-default' })).toEqual(['node|openshift-dns/dns-default', 'cluster|openshift-dns/dns-default']);
+            expect(keys({ query: '192.0.2.200' })).toEqual(['cluster|shop/web']);
+            expect(keys({ query: '10.130.0.9' })).toEqual(['cluster|shop/web']);
+            expect(keys({ query: '_node_router+switch_' })).toEqual(['node|default/kubernetes', 'node|shop/web']);
+            expect(keys({ query: '  ' })).toHaveLength(all.length);
+        });
+
+        it('counts the rows each facet value keeps', () => {
+            const counts = serviceFacetCounts(all);
+            expect(Object.fromEntries(counts.classes)).toEqual({ ClusterIP: 5, NodePort: 3, LoadBalancer: 1, ExternalIP: 1 });
+            expect(Object.fromEntries(counts.protocols)).toEqual({ tcp: 7, udp: 1 });
+            expect(counts.namespaces.get('shop')).toBe(5);
+            expect(counts.withoutEndpoints).toBe(1);
+        });
+    });
+
+    describe('split summary', () => {
+        it('counts load balancers here and cluster-wide, and the VIPs without endpoints', () => {
+            const attachment = loadBalancersFor(splitSwitch, splitDatabase())!;
+            expect(summarizeSplit(attachment)).toEqual({ here: 4, clusterWide: 4, total: 8, vipsWithoutEndpoints: 2 });
+            expect(splitSummaryText(attachment)).toBe('4 here · 4 cluster-wide · 2 VIPs without endpoints');
+            expect(splitSummaryText(loadBalancersFor(splitRouter, splitDatabase())!)).toBe(
+                '3 here · 3 cluster-wide · 2 VIPs without endpoints',
+            );
+        });
+
+        it('keeps naming the empty groups when nothing is programmed', () => {
+            expect(splitSummaryText(loadBalancersFor(udnSwitch, database())!)).toBe(
+                '0 load balancers; groups blue_clusterLBGroup and blue_clusterSwitchLBGroup are empty',
+            );
+        });
+    });
+
+    describe('EndpointSlice backends', () => {
+        const slice = (overrides: EndpointSliceLike & { name: string }): EndpointSliceLike => {
+            const { name, ...rest } = overrides;
+            return {
+                metadata: { name, namespace: 'shop', labels: { 'kubernetes.io/service-name': 'web' } },
+                addressType: 'IPv4',
+                ports: [{ name: 'https', port: 8443, protocol: 'TCP' }],
+                ...rest,
+            };
+        };
+        const pod = (name: string, address: string, node = 'node-b') => ({
+            addresses: [address],
+            targetRef: { kind: 'Pod', name, namespace: 'shop' },
+            nodeName: node,
+        });
+
+        it('matches each backend address and port across several slices and both families', () => {
+            const resolve = endpointOwnerResolver([
+                slice({ name: 'web-a', endpoints: [pod('web-1', '10.129.0.5', 'node-a')] }),
+                slice({ name: 'web-b', endpoints: [pod('web-2', '10.130.0.9')] }),
+                slice({
+                    name: 'web-v6',
+                    addressType: 'IPv6',
+                    endpoints: [pod('web-1', 'fd01:0:0:5:0:0:0:98', 'node-a')],
+                }),
+            ]);
+            expect(resolve('10.129.0.5:8443', 'tcp')).toEqual({ namespace: 'shop', pod: 'web-1', node: 'node-a', slice: 'web-a' });
+            expect(resolve('10.130.0.9:8443', 'tcp')?.pod).toBe('web-2');
+            // The bracketed OVN spelling meets the slice's long form.
+            expect(resolve('[fd01:0:0:5::98]:8443', 'tcp')).toMatchObject({ pod: 'web-1', slice: 'web-v6' });
+        });
+
+        it('needs the port and protocol to match, and treats a port without a number as every port', () => {
+            const resolve = endpointOwnerResolver([
+                slice({ name: 'web-a', endpoints: [pod('web-1', '10.129.0.5')] }),
+                slice({ name: 'dns', ports: [{ port: null, protocol: 'UDP' }], endpoints: [pod('dns-1', '10.128.0.5')] }),
+            ]);
+            expect(resolve('10.129.0.5:8080', 'tcp')).toBeUndefined();
+            expect(resolve('10.129.0.5:8443', 'udp')).toBeUndefined();
+            expect(resolve('10.128.0.5:5353', 'udp')?.pod).toBe('dns-1');
+            expect(resolve('10.128.0.5:5353', 'tcp')).toBeUndefined();
+        });
+
+        it('resolves a host-network backend to its pod, and nothing for an unnamed or doubly claimed address', () => {
+            const resolve = endpointOwnerResolver([
+                slice({
+                    name: 'api',
+                    ports: [{ port: 6443, protocol: 'TCP' }],
+                    // Host network: the address is the node's, the target the pod.
+                    endpoints: [{ addresses: ['192.0.2.11'], targetRef: { kind: 'Pod', name: 'kube-apiserver-a', namespace: 'openshift-kube-apiserver' }, nodeName: 'ctrl-a' }],
+                }),
+                slice({ name: 'web-a', endpoints: [pod('web-1', '10.129.0.5'), pod('web-9', '10.129.0.5')] }),
+                slice({ name: 'manual', endpoints: [{ addresses: ['10.131.0.7'] }] }),
+            ]);
+            expect(resolve('192.0.2.11:6443', 'tcp')).toMatchObject({ namespace: 'openshift-kube-apiserver', pod: 'kube-apiserver-a', node: 'ctrl-a' });
+            expect(resolve('10.129.0.5:8443', 'tcp')).toBeUndefined();
+            expect(resolve('10.131.0.7:8443', 'tcp')).toBeUndefined();
+            expect(resolve('10.250.0.1:8443', 'tcp')).toBeUndefined();
+        });
+
+        it("reads a user-defined network's mirrors and only that network's", () => {
+            const udnLb = lb({ uuid: 'u', name: 'cluster_udn_blue_Service_shop/web_TCP_cluster', externalIds: { 'k8s.ovn.org/kind': 'Service', 'k8s.ovn.org/owner': 'shop/web', 'k8s.ovn.org/network': 'cluster_udn_blue' } });
+            expect(endpointSliceQueryFor([udnLb])).toEqual({ labelKey: 'k8s.ovn.org/service-name', network: 'cluster_udn_blue' });
+            expect(endpointSliceQueryFor([lb({ uuid: 'd', name: 'Service_shop/web_TCP_cluster' })])).toEqual({
+                labelKey: 'kubernetes.io/service-name',
+            });
+            const mirror = (name: string, network: string, address: string) =>
+                slice({
+                    name,
+                    metadata: { name, namespace: 'shop', labels: { 'k8s.ovn.org/service-name': 'web' }, annotations: { 'k8s.ovn.org/endpointslice-network': network } },
+                    endpoints: [pod('web-1', address)],
+                });
+            const resolve = endpointOwnerResolver(
+                [mirror('web-blue', 'cluster_udn_blue', '10.200.0.5'), mirror('web-green', 'cluster_udn_green', '10.201.0.5')],
+                'cluster_udn_blue',
+            );
+            expect(resolve('10.200.0.5:8443', 'tcp')?.slice).toBe('web-blue');
+            expect(resolve('10.201.0.5:8443', 'tcp')).toBeUndefined();
+        });
+
+        it('looks only at IP backends', () => {
+            expect(isIpAddress('10.130.0.9')).toBe(true);
+            expect(isIpAddress('fd01::5')).toBe(true);
+            expect(isIpAddress('^shop_tmpl_TCP_32000_v4')).toBe(false);
+            expect(isIpAddress('10.130.0.0/24')).toBe(false);
+        });
+    });
+
+    describe('over the cnv-1 fixture', () => {
+        const switchRow = cnv1Db.logicalSwitches.find((row) => row.name === 'cnv-1')!;
+        const attachment = loadBalancersFor({ kind: 'switch', uuid: switchRow.uuid, name: 'cnv-1' }, cnv1Db)!;
+        const context = vipClassContext(cnv1Db, ['172.30.0.0/16', 'fd02::/112']);
+        const all = groupServices(attachment, context);
+
+        it('lists one row per Service per section, fewer rows than VIPs', () => {
+            const vipRows = serviceVipRows(attachment).length;
+            const services = new Set(all.map((group) => group.label));
+            expect(all.length).toBeLessThan(vipRows);
+            expect(all.filter((group) => group.section === 'node')).toHaveLength(
+                new Set(attachment.direct.map((row) => `${serviceOf(row)!.namespace}/${serviceOf(row)!.name}`)).size,
+            );
+            // A Service is at most two rows: one per section.
+            expect(all.length).toBeLessThanOrEqual(2 * services.size);
+            expect(all[0].section).toBe('node');
+        });
+
+        it('states the split the way the bead measured it', () => {
+            const split = summarizeSplit(attachment);
+            expect(split.here).toBe(attachment.direct.length);
+            expect(split.here + split.clusterWide).toBe(split.total);
+            expect(splitSummaryText(attachment)).toMatch(/^22 here · \d{3} cluster-wide · \d+ VIPs without endpoints$/);
+        });
+
+        it('classifies every VIP, with node ports on both node addresses and LoadBalancer addresses outside the service network', () => {
+            const vips = all.flatMap((group) => group.vips);
+            const classes = new Set(vips.map((vip) => vip.classification.vipClass));
+            expect(classes).toEqual(new Set(['ClusterIP', 'NodePort', 'LoadBalancer']));
+            const nodePorts = vips.filter((vip) => vip.classification.vipClass === 'NodePort');
+            // Every node port listens on two addresses of the node.
+            expect(new Set(nodePorts.map((vip) => vip.address)).size).toBe(2);
+            expect(nodePorts.every((vip) => (vip.port ?? 0) >= 30000)).toBe(true);
+            const clusterIps = vips.filter((vip) => vip.classification.vipClass === 'ClusterIP');
+            expect(clusterIps.every((vip) => vip.address.startsWith('172.30.') || vip.address.startsWith('fd02:'))).toBe(true);
         });
     });
 });

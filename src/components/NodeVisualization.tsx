@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, Switch, Flex, FlexItem, Button, FormSelect, FormSelectOption } from '@patternfly/react-core';
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
+import { useNavigate } from 'react-router';
 
 
 import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements, SriovNetworkNodeState, Vtep } from '../types';
@@ -19,7 +20,7 @@ import { computeEdgeBow, computeNodeOrder, sortByRank } from './nodeVisualizatio
 import { laneOrderingInput, layoutLanes, LaneViewState, PlacedNode } from '../topology/lanes';
 import { descriptorFor, iconFor, NodeTypeId, NODE_TYPES, opaqueNodeIds } from '../topology/descriptors';
 import { buildFlowGraph, flowPath } from '../topology/flowPath';
-import { navigateToPath } from './navigateToPath';
+import { useSelectionDeepLink } from './useSelectParam';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -58,10 +59,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         isList: true,
     });
 
+    const navigate = useNavigate();
     const handleHostSelect = (event: React.FormEvent<HTMLSelectElement>) => {
         const value = (event.target as HTMLSelectElement).value;
         if (value) {
-            navigateToPath(`/ovn-recon/node-network-state/${value}`);
+            navigate(`/ovn-recon/node-network-state/${value}`);
         }
     };
 
@@ -617,6 +619,23 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
             setHighlightedPath(new Set());
         }
     }, [selectionVanished]);
+
+    /**
+     * select=<canonical node id> in the URL (ovn-recon-s3t.16). A link restores
+     * through the same path as drawer navigation -- select, light the flow path,
+     * center -- once the canvas draws that node; an id it never draws (a stale
+     * link, or a lane that is toggled off) is ignored.
+     */
+    useSelectionDeepLink<string>({
+        selected: selectedPlacedNode ? selectedNodeId : null,
+        encode: (id) => id,
+        resolve: (id) => (placedNodeById.has(id) ? id : null),
+        apply: (id) => {
+            selectNode(id);
+            setActivePopoverTab('overview');
+            centerViewOn(id);
+        },
+    });
 
 
 

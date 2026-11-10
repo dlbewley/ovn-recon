@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Link } from 'react-router';
+import { Pagination } from '@patternfly/react-core';
 import { ExpandableRowContent, Table, Tbody, Td, Th, Thead, ThProps, Tr } from '@patternfly/react-table';
 
 /**
@@ -28,6 +29,15 @@ export interface RuleTableProps<R> {
     expandedContent?: (row: R) => React.ReactNode | undefined;
     /** Link to the full list (the construct detail page) when one exists. */
     openAll?: { href: string; count: number };
+    /**
+     * Rows per page. When set and the rows outnumber it, a compact pager
+     * shows under the summary and only the current page renders; sorting
+     * applies to all rows first. Unset, every row renders.
+     */
+    pageSize?: number;
+    /** Style for the table element, e.g. narrower cell padding where the
+     * table has to fit a drawer. Unset, PatternFly's compact defaults apply. */
+    tableStyle?: React.CSSProperties;
 }
 
 /**
@@ -44,9 +54,19 @@ export const RuleTable = <R,>({
     summary,
     expandedContent,
     openAll,
+    pageSize,
+    tableStyle,
 }: RuleTableProps<R>): React.ReactElement => {
     const [sort, setSort] = React.useState<{ index: number; direction: 'asc' | 'desc' } | null>(null);
     const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
+    const [page, setPage] = React.useState(1);
+    const [perPage, setPerPage] = React.useState(pageSize ?? 0);
+    // A different row set (a filter changed) starts again at its first page;
+    // the same rows rebuilt (fresher data) keep the page.
+    const rowSignature = pageSize ? rows.map(rowKey).join('\n') : '';
+    React.useEffect(() => {
+        setPage(1);
+    }, [rowSignature]);
 
     const sortedRows = React.useMemo(() => {
         const column = sort ? columns[sort.index] : undefined;
@@ -80,6 +100,11 @@ export const RuleTable = <R,>({
         };
     };
 
+    const paged = pageSize !== undefined && pageSize > 0 && rows.length > pageSize;
+    const pageCount = paged ? Math.max(1, Math.ceil(sortedRows.length / perPage)) : 1;
+    const currentPage = Math.min(page, pageCount);
+    const shownRows = paged ? sortedRows.slice((currentPage - 1) * perPage, currentPage * perPage) : sortedRows;
+
     const expandable = expandedContent != null && rows.some((row) => expandedContent(row) !== undefined);
 
     return (
@@ -95,8 +120,28 @@ export const RuleTable = <R,>({
                     )}
                 </div>
             )}
+            {paged && (
+                <Pagination
+                    itemCount={sortedRows.length}
+                    perPage={perPage}
+                    page={currentPage}
+                    onSetPage={(_event, next) => setPage(next)}
+                    onPerPageSelect={(_event, next) => {
+                        setPerPage(next);
+                        setPage(1);
+                    }}
+                    perPageOptions={[...new Set([pageSize, pageSize * 2, pageSize * 5])].map((value) => ({
+                        title: String(value),
+                        value,
+                    }))}
+                    isCompact
+                    widgetId={`${ariaLabel}-pager`.replace(/\s+/g, '-')}
+                    titles={{ paginationAriaLabel: `${ariaLabel} pages` }}
+                    data-testid="rule-table-pager"
+                />
+            )}
             <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
-                <Table aria-label={ariaLabel} variant="compact" isExpandable={expandable}>
+                <Table aria-label={ariaLabel} variant="compact" isExpandable={expandable} style={tableStyle}>
                     <Thead>
                         <Tr>
                             {expandable && <Th screenReaderText="Row expansion" />}
@@ -107,7 +152,7 @@ export const RuleTable = <R,>({
                             ))}
                         </Tr>
                     </Thead>
-                    {sortedRows.map((row, rowIndex) => {
+                    {shownRows.map((row, rowIndex) => {
                         const key = rowKey(row);
                         const content = expandable ? expandedContent?.(row) : undefined;
                         const isExpanded = content !== undefined && expanded.has(key);

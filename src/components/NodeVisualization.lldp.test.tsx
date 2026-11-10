@@ -6,7 +6,8 @@ import { act } from 'react';
 import * as yaml from 'js-yaml';
 
 import { NodeNetworkState } from '../types';
-import NodeVisualization from './NodeVisualization';
+import NodeVisualizationComponent from './NodeVisualization';
+import { routed } from './testRouter';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
@@ -21,6 +22,10 @@ const loadFixture = (name: string): NodeNetworkState => {
         return yaml.load(fixtureContent) as NodeNetworkState;
     }
 };
+
+// The view reads and writes ?select= through the router; the console provides
+// one in production.
+const NodeVisualization = routed(NodeVisualizationComponent);
 
 describe('NodeVisualization LLDP', () => {
     let container: HTMLDivElement;

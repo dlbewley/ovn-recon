@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { DocumentTitle, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
-import { useParams, Link } from 'react-router';
+import { useParams, Link, useNavigate } from 'react-router';
 import {
     PageSection,
     Title,
@@ -19,7 +19,6 @@ import {
     DrawerCloseButton,
     Flex,
     FlexItem,
-    TextInput,
     FormSelect,
     FormSelectOption,
     Button,
@@ -33,11 +32,17 @@ import { fetchCollectorSnapshot } from './collectorApi';
 import { buildLadderModel } from './logicalLadderModel';
 import ConstructDrawerBody, { LOGICAL_DRAWER_WIDTH } from './ConstructDrawerBody';
 import SnapshotJsonControls from './SnapshotJsonControls';
-import LogicalLadderView, { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
+import LogicalLadderView, {
+    LadderSearch,
+    ladderSearchMatches,
+    networkDisplayName,
+    roleIcon,
+    roleLabel,
+} from './LogicalLadderView';
 import SnapshotStatusLine, { summarizeOvnZones } from './SnapshotStatusLine';
 import { useChassisNodeNames } from './useChassisNodeNames';
 import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
-import { navigateToPath } from './navigateToPath';
+import { constructSelectValue, findConstructBySelectValue, useSelectionDeepLink } from './useSelectParam';
 
 const REFRESH_INTERVAL_MS = 30000;
 
@@ -96,6 +101,10 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     const nodeForChassis = useChassisNodeNames();
 
     const [snapshot, setSnapshot] = React.useState<LogicalTopologySnapshot | null>(null);
+    // The node the snapshot on screen was fetched for. A select link applies
+    // only to that node's model, never to the previous node's in the render
+    // between a route change and the reset below.
+    const [snapshotNode, setSnapshotNode] = React.useState<string>('');
     const [isLoading, setIsLoading] = React.useState<boolean>(false);
     const [snapshotError, setSnapshotError] = React.useState<string>('');
     const [lastLoadedAt, setLastLoadedAt] = React.useState<number>(Date.now());
@@ -118,11 +127,12 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     // a merged model in place while this one holds a single node's snapshot, so
     // here a choice is a route change: another node loads its snapshot, and
     // "All hosts" climbs back out to the cluster view.
+    const navigate = useNavigate();
     const handleHostSelect = (_event: React.FormEvent<HTMLSelectElement>, value: string) => {
         if (value === 'all') {
-            navigateToPath('/ovn-recon/ovn');
+            navigate('/ovn-recon/ovn');
         } else if (value && value !== name) {
-            navigateToPath(`/ovn-recon/ovn/${encodeURIComponent(value)}`);
+            navigate(`/ovn-recon/ovn/${encodeURIComponent(value)}`);
         }
     };
 
@@ -131,6 +141,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     // while the next snapshot loads.
     React.useEffect(() => {
         setSnapshot(null);
+        setSnapshotNode('');
         setSnapshotError('');
         setSelectedUuid(null);
         setRevealRequest(undefined);
@@ -149,6 +160,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
         try {
             const payload = await fetchCollectorSnapshot(name);
             setSnapshot(payload);
+            setSnapshotNode(name);
             setLastLoadedAt(Date.now());
         } catch (error) {
             // Keep the last-good snapshot rendered: a transient failure (a
@@ -203,6 +215,20 @@ const NodeLogicalTopologyDetails: React.FC = () => {
         setSelectedUuid(uuid);
         setRevealRequest((current) => ({ uuid, nonce: (current?.nonce ?? 0) + 1 }));
     }, [model]);
+
+    // select=KIND:NAME in the URL (ovn-recon-s3t.16): restored through the
+    // same path as drawer navigation, written back on every selection change.
+    useSelectionDeepLink({
+        selected: selectedConstruct,
+        encode: constructSelectValue,
+        resolve: (value) => (model && snapshotNode === name ? findConstructBySelectValue(model, value) : null),
+        apply: (construct) => selectConstructFromDrawer(construct.uuid),
+    });
+
+    const searchMatches = React.useMemo(
+        () => (model ? ladderSearchMatches(model, networkFilter, search) : []),
+        [model, networkFilter, search],
+    );
 
     const revealPosition = React.useCallback((position: Point) => {
         const canvas = canvasRef.current;
@@ -370,12 +396,12 @@ const NodeLogicalTopologyDetails: React.FC = () => {
 
                                 <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }} alignItems={{ default: 'alignItemsCenter' }}>
                                     <FlexItem>
-                                        <TextInput
-                                            aria-label="Search constructs"
-                                            type="search"
-                                            placeholder="Search by name, role, node, or subnet"
+                                        <LadderSearch
                                             value={search}
-                                            onChange={(_event, value) => setSearch(value)}
+                                            onChange={setSearch}
+                                            matches={searchMatches}
+                                            selectedUuid={selectedUuid}
+                                            onReveal={selectConstructFromDrawer}
                                         />
                                     </FlexItem>
                                     <FlexItem>

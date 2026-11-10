@@ -3,9 +3,13 @@
 // https://react.dev/reference/react/act#error-the-current-testing-environment-is-not-configured-to-support-act
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-// jsdom has no TextEncoder, and react-router builds one when it is imported.
-// The drawer facts render route tables through RuleTable, which links with
-// react-router, so every suite reaching the facts would otherwise fail to load.
-const { TextEncoder, TextDecoder } = require('util');
-if (typeof global.TextEncoder === 'undefined') global.TextEncoder = TextEncoder;
-if (typeof global.TextDecoder === 'undefined') global.TextDecoder = TextDecoder;
+// react-router 7 reaches for TextEncoder at import time; jsdom does not provide
+// it. The console supplies the router in production, so this matters only for
+// suites that load the real react-router instead of mocking it: those rendering
+// under a MemoryRouter, and every suite that builds drawer facts, since route
+// tables render through RuleTable, which imports Link.
+if (typeof global.TextEncoder === 'undefined') {
+    const { TextEncoder, TextDecoder } = require('util');
+    global.TextEncoder = TextEncoder;
+    global.TextDecoder = TextDecoder;
+}

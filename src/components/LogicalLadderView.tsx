@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { SearchInput } from '@patternfly/react-core';
 import {
     InfrastructureIcon,
     MigrationIcon,
@@ -151,11 +152,19 @@ const NAME_MAX_CHARS = 30;
 const truncate = (value: string, max: number): string =>
     value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 
-const constructMatches = (construct: LadderConstruct, query: string): boolean => {
+/**
+ * Whether a construct matches a lowercased search query. The haystack holds
+ * what the card shows as well as the raw identities behind it: the role label
+ * ("Node switch") next to the role id ("node-switch"), and the network's
+ * display name ("ns1/blue") next to its OVN identity ("ns1_blue").
+ */
+export const constructMatches = (construct: LadderConstruct, query: string): boolean => {
     const haystack = [
         construct.name,
         construct.role,
+        roleLabel(construct.role),
         construct.network,
+        networkDisplayName(construct.network),
         construct.node ?? '',
         construct.subnet ?? '',
     ]
@@ -174,6 +183,78 @@ const filterModel = (model: LadderModel, networkFilter: string): LadderModel => 
         edges: model.edges.filter((edge) => kept.has(edge.source) && kept.has(edge.target)),
         networks: model.networks.filter((network) => network === networkFilter),
     };
+};
+
+/**
+ * The constructs a search matches under a network filter, in reading order:
+ * tier by tier from the top, band by band from the left, then by name. Empty
+ * for an empty query. The ladder search steps through this list.
+ */
+export const ladderSearchMatches = (
+    model: LadderModel,
+    networkFilter: string,
+    search: string,
+): LadderConstruct[] => {
+    const query = search.trim().toLowerCase();
+    if (query === '') return [];
+    const tierIndex = new Map(TIER_ORDER.map((tier, index) => [tier, index]));
+    const networkIndex = new Map(model.networks.map((network, index) => [network, index]));
+    return filterModel(model, networkFilter)
+        .constructs.filter((construct) => constructMatches(construct, query))
+        .sort((a, b) =>
+            (tierIndex.get(a.tier) ?? 0) - (tierIndex.get(b.tier) ?? 0)
+            || (networkIndex.get(a.network) ?? 0) - (networkIndex.get(b.network) ?? 0)
+            || a.name.localeCompare(b.name));
+};
+
+export interface LadderSearchProps {
+    value: string;
+    onChange: (value: string) => void;
+    /** ladderSearchMatches for the current value. */
+    matches: LadderConstruct[];
+    selectedUuid: string | null;
+    /** Select and reveal a match: the page's drawer-navigation path. */
+    onReveal: (uuid: string) => void;
+}
+
+/**
+ * The ladder pages' search box. Typing dims what does not match; Enter selects
+ * and reveals the first match (the next one when a match is already selected),
+ * and the arrows step through the matches with a count beside them.
+ */
+export const LadderSearch: React.FC<LadderSearchProps> = ({ value, onChange, matches, selectedUuid, onReveal }) => {
+    const index = matches.findIndex((construct) => construct.uuid === selectedUuid);
+    const step = (delta: 1 | -1) => {
+        if (matches.length === 0) return;
+        const next = index < 0
+            ? (delta > 0 ? 0 : matches.length - 1)
+            : (index + delta + matches.length) % matches.length;
+        onReveal(matches[next].uuid);
+    };
+    const hasQuery = value.trim() !== '';
+    let resultsCount: string | undefined;
+    if (hasQuery) {
+        resultsCount = index >= 0 ? `${index + 1} / ${matches.length}` : String(matches.length);
+    }
+    return (
+        <SearchInput
+            aria-label="Search constructs"
+            placeholder="Search by name, role, node, or subnet"
+            value={value}
+            onChange={(_event, next) => onChange(next)}
+            onSearch={() => step(1)}
+            onClear={() => onChange('')}
+            resultsCount={resultsCount}
+            resultsCountContext={matches.length === 1 ? ' match' : ' matches'}
+            onNextClick={() => step(1)}
+            onPreviousClick={() => step(-1)}
+            isNextNavigationButtonDisabled={matches.length === 0}
+            isPreviousNavigationButtonDisabled={matches.length === 0}
+            nextNavigationButtonAriaLabel="Next match"
+            previousNavigationButtonAriaLabel="Previous match"
+            submitSearchButtonLabel="Reveal match"
+        />
+    );
 };
 
 interface ConstructCardProps {

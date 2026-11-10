@@ -5,7 +5,10 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
-import NodeVisualization from './NodeVisualization';
+import NodeVisualizationComponent from './NodeVisualization';
+import { routed } from './testRouter';
+
+const NodeVisualization = routed(NodeVisualizationComponent);
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
