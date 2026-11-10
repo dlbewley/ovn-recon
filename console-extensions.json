@@ -59,6 +59,46 @@
         }
     },
     {
+        "type": "console.page/route",
+        "properties": {
+            "exact": true,
+            "path": "/ovn-recon/networks",
+            "component": {
+                "$codeRef": "NetworkDetails"
+            }
+        }
+    },
+    {
+        "type": "console.page/route",
+        "properties": {
+            "exact": true,
+            "path": "/ovn-recon/networks/cudn/:name",
+            "component": {
+                "$codeRef": "NetworkDetails"
+            }
+        }
+    },
+    {
+        "type": "console.page/route",
+        "properties": {
+            "exact": true,
+            "path": "/ovn-recon/networks/udn/:namespace/:name",
+            "component": {
+                "$codeRef": "NetworkDetails"
+            }
+        }
+    },
+    {
+        "type": "console.page/route",
+        "properties": {
+            "exact": true,
+            "path": "/ovn-recon/networks/nad/:namespace/:name",
+            "component": {
+                "$codeRef": "NetworkDetails"
+            }
+        }
+    },
+    {
         "type": "console.navigation/href",
         "properties": {
             "id": "ovn-recon-nav",

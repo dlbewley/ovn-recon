@@ -270,7 +270,7 @@ const OvnReconOverview: React.FC = () => {
                     )}
                     <GalleryItem>
                         <Card isFullHeight data-testid="overview-networks-card">
-                            <CardTitle>Networks</CardTitle>
+                            <CardTitle><Link to="/ovn-recon/networks">Networks</Link></CardTitle>
                             <CardBody>
                                 <DescriptionList isCompact isHorizontal>
                                     <DescriptionListGroup>
