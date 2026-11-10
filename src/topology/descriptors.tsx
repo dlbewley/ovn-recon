@@ -315,9 +315,12 @@ const resourceRefOf = (
 
 /**
  * ACCENTS FOLLOW THE LANES, left to right: blue for NICs and bonds, cyan for devices cut
- * or tagged from them (VFs, VLANs), jade for tunnels and the Layer 3 lane, purple for
- * bridges and their ports, magenta for networks, violet for attachments, gray for what
- * sits outside the lanes. The icon tells kinds within a family apart.
+ * or tagged from them (VFs, VLANs), purple for host bridges and their ports, jade for
+ * OVN's own plumbing and the Layer 3 lane (br-int, bridge mappings, VRFs) and for
+ * tunnels, magenta for CUDNs, violet for attachments, gray for what sits outside the
+ * lanes. Within a family the icon tells kinds apart; where two kinds share a lane AND
+ * an icon (br-int and the bridges, a UDN and a CUDN) their accents differ instead, and
+ * topology.test.ts holds that.
  *
  * ORDER MATTERS WITHIN A LANE. Descriptors sharing a lane stack in table order and take
  * their group rank from it, so bridge mappings must precede VRFs in the Layer 3 lane.
@@ -506,7 +509,9 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         groupTitle: 'Integration',
         gapBefore: 40,
         icon: <InfrastructureIcon />,
-        color: CATEGORICAL.purple.css,
+        // Not the bridges' purple: br-int shares their lane and icon, and is OVN's,
+        // not the host's -- it takes the bridge mappings' jade.
+        color: CATEGORICAL.jade.css,
         legend: {
             label: 'OVN integration bridge',
             description: 'br-int, where OVN attaches everything. Not reported by nmstate; drawn from the ports that name it.'
@@ -628,7 +633,8 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         kind: 'udn',
         lane: 'networks',
         icon: <NetworkIcon />,
-        color: CATEGORICAL.magenta.css,
+        // Shares the CUDN's lane and icon, so not its colour.
+        color: CATEGORICAL.cyan.css,
         legend: {
             label: 'UserDefinedNetwork',
             description: 'A namespaced network (UDN), labelled with its namespace.'

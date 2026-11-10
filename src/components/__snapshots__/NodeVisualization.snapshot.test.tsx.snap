@@ -288,7 +288,7 @@ exports[`NodeVisualization rendered structure bonded-lldp, with neighbours shown
       "y": 290,
     },
     {
-      "accent": "var(--pf-t--color--purple--40, #876fd4)",
+      "accent": "#2a9d8f",
       "fill": "var(--pf-t--global--background--color--primary--default)",
       "labels": [
         "br-int",
@@ -790,7 +790,7 @@ exports[`NodeVisualization rendered structure evpn-vxlan, default view 1`] = `
       "y": 190,
     },
     {
-      "accent": "var(--pf-t--color--purple--40, #876fd4)",
+      "accent": "#2a9d8f",
       "fill": "var(--pf-t--global--background--color--primary--default)",
       "labels": [
         "br-int",
@@ -955,7 +955,7 @@ exports[`NodeVisualization rendered structure evpn-vxlan, with the cluster's VTE
       "y": 190,
     },
     {
-      "accent": "var(--pf-t--color--purple--40, #876fd4)",
+      "accent": "#2a9d8f",
       "fill": "var(--pf-t--global--background--color--primary--default)",
       "labels": [
         "br-int",
@@ -1318,7 +1318,7 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, all lanes reveal
       "y": 240,
     },
     {
-      "accent": "var(--pf-t--color--purple--40, #876fd4)",
+      "accent": "#2a9d8f",
       "fill": "var(--pf-t--global--background--color--primary--default)",
       "labels": [
         "br-int",
@@ -1520,7 +1520,7 @@ exports[`NodeVisualization rendered structure primary-cudn-vrf, default view 1`]
       "y": 240,
     },
     {
-      "accent": "var(--pf-t--color--purple--40, #876fd4)",
+      "accent": "#2a9d8f",
       "fill": "var(--pf-t--global--background--color--primary--default)",
       "labels": [
         "br-int",
@@ -1842,7 +1842,7 @@ exports[`NodeVisualization rendered structure sriov, default view 1`] = `
       "y": 340,
     },
     {
-      "accent": "var(--pf-t--color--purple--40, #876fd4)",
+      "accent": "#2a9d8f",
       "fill": "var(--pf-t--global--background--color--primary--default)",
       "labels": [
         "br-int",
@@ -2106,7 +2106,7 @@ exports[`NodeVisualization rendered structure sriov, with its SriovNetworkNodeSt
       "y": 340,
     },
     {
-      "accent": "var(--pf-t--color--purple--40, #876fd4)",
+      "accent": "#2a9d8f",
       "fill": "var(--pf-t--global--background--color--primary--default)",
       "labels": [
         "br-int",

@@ -269,6 +269,17 @@ describe('the descriptor table', () => {
         });
     });
 
+    it('gives two kinds that share a lane and an icon different accents', () => {
+        // On a neutral card the accent is the only thing left to tell them apart
+        // (ovn-recon-nt4.1): br-int from the host bridges, a UDN from a CUDN.
+        const iconType = (icon: unknown) => (icon as { type?: unknown } | null)?.type;
+        const clashes = NODE_TYPES.flatMap((a, i) => NODE_TYPES.slice(i + 1)
+            .filter((b) => a.lane !== null && a.lane === b.lane
+                && iconType(a.icon) === iconType(b.icon) && a.color === b.color)
+            .map((b) => `${a.type} and ${b.type}`));
+        expect(clashes).toEqual([]);
+    });
+
     it('stacks bridge mappings above VRFs in the Layer 3 lane', () => {
         // Descriptor order within a lane IS the group order, and getting it backwards
         // inverts the lane. It did, once, before the snapshot caught it.
