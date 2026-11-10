@@ -31,6 +31,7 @@ import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { fetchCollectorSnapshot } from './collectorApi';
 import { buildLadderModel } from './logicalLadderModel';
 import ConstructDrawerBody, { LOGICAL_DRAWER_WIDTH } from './ConstructDrawerBody';
+import { useLadderViewport } from './useLadderViewport';
 import SnapshotJsonControls from './SnapshotJsonControls';
 import LogicalLadderView, {
     LadderSearch,
@@ -68,11 +69,6 @@ const resolveNodeName = (routeName?: string): string => {
         return match[1];
     }
 };
-
-interface Point {
-    x: number;
-    y: number;
-}
 
 const NodeLogicalTopologyDetails: React.FC = () => {
     const { name: routeName } = useParams<{ name?: string }>();
@@ -116,12 +112,10 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     // the page can pan it into view (drawer navigation only, matching the
     // physical view).
     const [revealRequest, setRevealRequest] = React.useState<{ uuid: string; nonce: number }>();
-    const canvasRef = React.useRef<HTMLDivElement | null>(null);
     const [selectedUuid, setSelectedUuid] = React.useState<string | null>(null);
-    const [zoom, setZoom] = React.useState<number>(1);
-    const [pan, setPan] = React.useState<Point>({ x: 0, y: 0 });
-    const [isDragging, setIsDragging] = React.useState<boolean>(false);
-    const [lastPointer, setLastPointer] = React.useState<Point | null>(null);
+    // Pan, zoom and reveal against the canvas left beside the inline drawer
+    // (ovn-recon-dp7.7).
+    const viewport = useLadderViewport({ selectedUuid, minZoom: 0.4 });
 
     // Same control as the cluster view's "Filter by host", but that page filters
     // a merged model in place while this one holds a single node's snapshot, so
@@ -147,8 +141,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
         setRevealRequest(undefined);
         setSearch('');
         setNetworkFilter('all');
-        setZoom(1);
-        setPan({ x: 0, y: 0 });
+        viewport.resetView();
     }, [name]);
 
     const loadSnapshot = React.useCallback(async () => {
@@ -230,43 +223,6 @@ const NodeLogicalTopologyDetails: React.FC = () => {
         [model, networkFilter, search],
     );
 
-    const revealPosition = React.useCallback((position: Point) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const { width: cw, height: ch } = canvas.getBoundingClientRect();
-        setPan({ x: cw / 2 - position.x * zoom, y: ch / 2 - position.y * zoom });
-    }, [zoom]);
-
-    const zoomIn = () => setZoom((value) => Math.min(2.5, Number((value + 0.1).toFixed(2))));
-    const zoomOut = () => setZoom((value) => Math.max(0.4, Number((value - 0.1).toFixed(2))));
-    const resetView = () => {
-        setZoom(1);
-        setPan({ x: 0, y: 0 });
-    };
-
-    const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        if (event.deltaY < 0) zoomIn(); else zoomOut();
-    };
-
-    const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-        setIsDragging(true);
-        setLastPointer({ x: event.clientX, y: event.clientY });
-    };
-
-    const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
-        if (!isDragging || !lastPointer) return;
-        const dx = event.clientX - lastPointer.x;
-        const dy = event.clientY - lastPointer.y;
-        setPan((current) => ({ x: current.x + dx, y: current.y + dy }));
-        setLastPointer({ x: event.clientX, y: event.clientY });
-    };
-
-    const handleMouseUp = () => {
-        setIsDragging(false);
-        setLastPointer(null);
-    };
-
     if (!gateLoaded) {
         return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
     }
@@ -317,7 +273,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                 </p>
             </PageSection>
             <PageSection isFilled>
-                <Drawer isExpanded={selectedConstruct != null}>
+                <Drawer isExpanded={selectedConstruct != null} isInline>
                     <DrawerContent
                         panelContent={(
                             <DrawerPanelContent isResizable widths={{ default: LOGICAL_DRAWER_WIDTH }} minSize="320px">
@@ -432,9 +388,9 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             ))}
                                         </FormSelect>
                                     </FlexItem>
-                                    <FlexItem><Button variant="secondary" onClick={zoomOut}>-</Button></FlexItem>
-                                    <FlexItem><Button variant="secondary" onClick={zoomIn}>+</Button></FlexItem>
-                                    <FlexItem><Button variant="link" onClick={resetView}>Reset view</Button></FlexItem>
+                                    <FlexItem><Button variant="secondary" onClick={viewport.zoomOut}>-</Button></FlexItem>
+                                    <FlexItem><Button variant="secondary" onClick={viewport.zoomIn}>+</Button></FlexItem>
+                                    <FlexItem><Button variant="link" onClick={viewport.resetView}>Reset view</Button></FlexItem>
                                     <FlexItem>
                                         <Button variant="tertiary" onClick={() => loadSnapshot()} isDisabled={isLoading}>
                                             Refresh now
@@ -463,17 +419,13 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                 </Flex>
 
                                 <div
-                                    ref={canvasRef}
+                                    {...viewport.canvasProps}
                                     className="pf-u-mt-md"
-                                    style={{ height: 'max(560px, calc(100vh - 340px))', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: isDragging ? 'grabbing' : 'grab' }}
-                                    onWheel={handleWheel}
-                                    onMouseDown={handleMouseDown}
-                                    onMouseMove={handleMouseMove}
-                                    onMouseUp={handleMouseUp}
-                                    onMouseLeave={handleMouseUp}
+                                    data-testid="ladder-canvas"
+                                    style={{ height: 'max(560px, calc(100vh - 340px))', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: viewport.isDragging ? 'grabbing' : 'grab' }}
                                 >
                                     {model && (
-                                        <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
+                                        <div data-testid="ladder-content" style={{ transform: viewport.contentTransform, transformOrigin: '0 0' }}>
                                             <LogicalLadderView
                                                 model={model}
                                                 selectedUuid={selectedUuid}
@@ -481,7 +433,8 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                                 networkFilter={networkFilter}
                                                 search={search}
                                                 revealRequest={revealRequest}
-                                                onRevealPosition={revealPosition}
+                                                onRevealBox={viewport.onRevealBox}
+                                                onSelectedBox={viewport.onSelectedBox}
                                             />
                                         </div>
                                     )}

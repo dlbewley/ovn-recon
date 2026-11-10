@@ -11,6 +11,7 @@ import LogicalLadderView, {
 } from './LogicalLadderView';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
+import { drawnCardBoxIn } from './canvasTestGeometry';
 
 const database = (cnv1 as unknown as LogicalTopologySnapshot).database as LogicalDatabase;
 
@@ -147,11 +148,13 @@ describe('LogicalLadderView', () => {
         expect(container.querySelector('[data-testid="construct-ovn_cluster_router"]')).toBeNull();
     });
 
-    it('answers a reveal request with the construct position, once per nonce', () => {
+    const drawnCardBox = (name: string) => drawnCardBoxIn(container, name);
+
+    it('answers a reveal request with the card box, once per nonce', () => {
         const model = buildLadderModel(database);
         const target = model.constructs.find((construct) => construct.name === 'ovn_cluster_router');
         expect(target).toBeDefined();
-        const onRevealPosition = jest.fn();
+        const onRevealBox = jest.fn();
         const renderWith = (nonce: number) =>
             act(() => {
                 root.render(
@@ -160,22 +163,40 @@ describe('LogicalLadderView', () => {
                         selectedUuid={target!.uuid}
                         onSelect={jest.fn()}
                         revealRequest={{ uuid: target!.uuid, nonce }}
-                        onRevealPosition={onRevealPosition}
+                        onRevealBox={onRevealBox}
                     />,
                 );
             });
         renderWith(1);
-        expect(onRevealPosition).toHaveBeenCalledTimes(1);
-        const position = onRevealPosition.mock.calls[0][0];
-        expect(position.x).toBeGreaterThan(0);
-        expect(position.y).toBeGreaterThan(0);
+        expect(onRevealBox).toHaveBeenCalledTimes(1);
+        const [uuid, box] = onRevealBox.mock.calls[0];
+        expect(uuid).toBe(target!.uuid);
+        // The box is where the card is DRAWN: the layout position plus the
+        // tier-label gutter and band header the cards are translated by.
+        expect(box).toEqual(drawnCardBox('ovn_cluster_router'));
         // Same nonce re-rendered: no second answer (a later layout change
         // must not re-yank the viewport).
         renderWith(1);
-        expect(onRevealPosition).toHaveBeenCalledTimes(1);
+        expect(onRevealBox).toHaveBeenCalledTimes(1);
         // A new nonce for the same uuid answers again.
         renderWith(2);
-        expect(onRevealPosition).toHaveBeenCalledTimes(2);
+        expect(onRevealBox).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports the selected card box, and null once nothing is selected', () => {
+        const model = buildLadderModel(database);
+        const target = model.constructs.find((construct) => construct.name === 'ovn_cluster_router')!;
+        const onSelectedBox = jest.fn();
+        const renderWith = (selectedUuid: string | null) =>
+            act(() => {
+                root.render(
+                    <LogicalLadderView model={model} selectedUuid={selectedUuid} onSelect={jest.fn()} onSelectedBox={onSelectedBox} />,
+                );
+            });
+        renderWith(target.uuid);
+        expect(onSelectedBox).toHaveBeenLastCalledWith(drawnCardBox('ovn_cluster_router'));
+        renderWith(null);
+        expect(onSelectedBox).toHaveBeenLastCalledWith(null);
     });
 });
 
