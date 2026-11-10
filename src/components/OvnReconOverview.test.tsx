@@ -6,6 +6,7 @@ import { act } from 'react';
 
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
 import OvnReconOverview from './OvnReconOverview';
+import { TestRouter } from './testRouter';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 
@@ -25,10 +26,6 @@ jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
 
 jest.mock('./useOvnCollectorFeatureGate', () => ({
     useOvnCollectorFeatureGate: () => ({ ...mockGate }),
-}));
-
-jest.mock('react-router', () => ({
-    Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={String(to)}>{children}</a>,
 }));
 
 describe('OvnReconOverview', () => {
@@ -68,9 +65,14 @@ describe('OvnReconOverview', () => {
         jest.restoreAllMocks();
     });
 
-    const render = async () => {
+    // The search box reads and writes the page URL, so the page needs a router.
+    const render = async (initialEntry = '/ovn-recon') => {
         await act(async () => {
-            root.render(<OvnReconOverview />);
+            root.render(
+                <TestRouter initialEntry={initialEntry}>
+                    <OvnReconOverview />
+                </TestRouter>,
+            );
         });
         await act(async () => {
             await Promise.resolve();
@@ -145,6 +147,30 @@ describe('OvnReconOverview', () => {
         expect(row('worker-2.example.com')).not.toBeNull();
         expect(container.querySelectorAll('[data-testid^="overview-node-"]')).toHaveLength(1);
         expect(text()).toContain('1 of 2 nodes');
+    });
+
+    it('leads with the cluster search, above the cards', async () => {
+        await render();
+
+        const search = container.querySelector('[data-testid="overview-search"]');
+        const networks = container.querySelector('[data-testid="overview-networks-card"]');
+        expect(search).not.toBeNull();
+        expect(search!.compareDocumentPosition(networks!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        // Nothing is searched until a search is submitted.
+        expect(container.querySelector('[data-testid="search-results"]')).toBeNull();
+        expect((global.fetch as jest.Mock).mock.calls.some(([url]) => String(url).includes('/lookup/'))).toBe(false);
+    });
+
+    it('searches the NodeNetworkStates it already watches, and says so when the collector is off', async () => {
+        mockGate.enabled = false;
+        await render('/ovn-recon?q=bond2');
+
+        const group = container.querySelector('[data-testid="search-group-node-interface"]');
+        expect(group).not.toBeNull();
+        expect(group!.textContent).toContain('bond2');
+        expect(group!.querySelector('a[href="/ovn-recon/node-network-state/worker-2.example.com?select=iface:bond2"]')).not.toBeNull();
+        expect(container.querySelector('[data-testid="search-partial"]')!.textContent).toContain('the collector is not enabled');
+        expect(global.fetch).not.toHaveBeenCalled();
     });
 
     it('shows the collector as unreachable without hiding the rest of the page', async () => {

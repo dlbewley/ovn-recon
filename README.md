@@ -46,9 +46,16 @@ The plugin watches these resources in real-time and renders interactive physical
 
 ## Using OVN Recon
 
-- **Overview**: `/ovn-recon` (the single *Networking → OVN Recon* menu entry): collector status,
-  network counts, and a node table with per-node facts and links to every view. `/ovn-recon/node-network-state`
-  still lands here so older bookmarks keep working.
+- **Overview**: `/ovn-recon` (the single *Networking → OVN Recon* menu entry): a cluster-wide search,
+  collector status, network counts, and a node table with per-node facts and links to every view.
+  `/ovn-recon/node-network-state` still lands here so older bookmarks keep working.
+  - **Find in cluster**: type an IP address, a CIDR, a MAC, or part of a pod, VM, network or interface
+    name and press Enter. Results are grouped by kind (pod and VM ports, router ports, NAT rules, Service
+    VIPs, node interfaces, routes) and each opens the logical or physical view with the object selected.
+    Routes and subnets that only contain the address are folded into a separate, collapsed section. The
+    search is kept in the page URL (`/ovn-recon?q=10.131.0.70`), so it can be bookmarked and linked to.
+    OVN objects are searched by the collector; with the collector disabled the search still covers every
+    node's NodeNetworkState and says the result is partial.
 - **Physical view**: `/ovn-recon/node-network-state/:name`
 - **Cluster logical OVN view**: `/ovn-recon/ovn` (shown when the collector feature gate is enabled)
 - **Node logical OVN view**: `/ovn-recon/ovn/:name` (shown when the collector feature gate is enabled)

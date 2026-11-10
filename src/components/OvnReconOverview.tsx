@@ -31,6 +31,7 @@ import {
     RouteAdvertisements,
     UserDefinedNetwork,
 } from '../types';
+import ClusterSearch from './ClusterSearch';
 import { fetchClusterTopology } from './collectorApi';
 import { freshnessFromAge, oldestSnapshotAgeMs } from './snapshotFreshness';
 import SnapshotStatusLine from './SnapshotStatusLine';
@@ -46,10 +47,11 @@ import {
 
 /**
  * The single front door for OVN Recon (ovn-recon-brx). One Networking entry
- * lands here. The page answers three things before anyone clicks -- what the
- * collector knows, what networks exist, and how the fleet is wired -- and the
- * node table carries enough per-node fact to pick a node for a reason. The
- * cluster logical view keeps its own route behind the first card.
+ * lands here. The page leads with a search over every node (ovn-recon-tpp.2),
+ * then answers three things before anyone clicks -- what the collector knows,
+ * what networks exist, and how the fleet is wired -- and the node table
+ * carries enough per-node fact to pick a node for a reason. The cluster
+ * logical view keeps its own route behind the first card.
  */
 
 // Same cadence as the cluster view: the aggregate probes every zone, so it
@@ -172,6 +174,17 @@ const OvnReconOverview: React.FC = () => {
                 <p style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>
                     Physical and logical network topology across {plural(fleet.nodes, 'node')}
                 </p>
+            </PageSection>
+
+            <PageSection>
+                <ClusterSearch
+                    nodeNetworkStates={nodeNetworkStates}
+                    nodes={nodes}
+                    stateLoaded={nnsLoaded || Boolean(nnsError)}
+                    stateError={nnsError ? (nnsError.message || String(nnsError)) : undefined}
+                    collectorEnabled={collectorEnabled}
+                    gateLoaded={gateLoaded}
+                />
             </PageSection>
 
             <PageSection>

@@ -88,7 +88,7 @@ The plugin registers five route-based modules in `console-extensions.json`, reac
 
 | Route | Module | Purpose |
 |---|---|---|
-| `/ovn-recon` (also `/ovn-recon/node-network-state`) | `OvnReconOverview` | Overview: collector status, network counts, node table |
+| `/ovn-recon` (also `/ovn-recon/node-network-state`) | `OvnReconOverview` | Overview: cluster-wide search (`?q=`), collector status, network counts, node table |
 | `/ovn-recon/node-network-state/:name` | `NodeNetworkStateDetails` | Physical topology per node |
 | `/ovn-recon/ovn` | `ClusterLogicalTopologyDetails` | Logical OVN topology merged across node zones (collector-gated) |
 | `/ovn-recon/ovn/:name` | `NodeLogicalTopologyDetails` | Logical OVN topology of one node's zone (collector-gated) |
@@ -105,6 +105,8 @@ Every logical route is `exact: true`, so the node ladder route cannot claim the 
 5. `NodeVisualization.tsx` — renders the graph as an SVG/HTML grid using PatternFly components
 
 **Logical topology** (`NodeLogicalTopologyDetails`): Fetches JSON snapshots from the collector service at `/api/v1/snapshots/:nodeName`. Feature-gated by `useOvnCollectorFeatureGate`, which watches the `OvnRecon` CR for `spec.collector.enabled`.
+
+**Cluster search** (`ClusterSearch` on the overview): merges the collector's `/api/v1/lookup/{ip|mac|cidr|name}/{value}` hits with browser-side hits from the NodeNetworkStates the overview already watches. `clusterSearchModel.ts` is the pure part (input detection, merging, folding of covering routes, link building); result links use the `?select=` deep links of the three graph pages.
 
 **All UI components use PatternFly v6** to stay consistent with OpenShift 4.20+.
 
