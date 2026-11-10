@@ -114,6 +114,27 @@ type ConsolePluginSpec struct {
 
 	// Logging controls for the console plugin backend.
 	Logging ConsolePluginLoggingSpec `json:"logging,omitempty"`
+
+	// Integration controls what OVN Recon adds to console pages it does not
+	// own, such as the Node and network details pages. Every switch is off
+	// by default, so installing or upgrading the plugin changes nothing on
+	// those pages until an administrator opts in. The switches are
+	// cluster-wide: they apply to every console user.
+	Integration ConsolePluginIntegrationSpec `json:"integration,omitempty"`
+}
+
+// ConsolePluginIntegrationSpec switches the plugin's contributions to other
+// console pages. Each field is read by the plugin from status.effective.
+type ConsolePluginIntegrationSpec struct {
+	// ResourceTabs adds an "OVN Recon" tab to the Node,
+	// ClusterUserDefinedNetwork, UserDefinedNetwork and
+	// NetworkAttachmentDefinition details pages. Defaults to false.
+	ResourceTabs *bool `json:"resourceTabs,omitempty"`
+
+	// ResourceActions adds an "Open in OVN Recon" action to the actions menu
+	// of Node, ClusterUserDefinedNetwork, UserDefinedNetwork and
+	// NetworkAttachmentDefinition resources. Defaults to false.
+	ResourceActions *bool `json:"resourceActions,omitempty"`
 }
 
 type ConsolePluginLoggingSpec struct {
@@ -262,6 +283,22 @@ type EffectiveConsolePlugin struct {
 	LogLevel string `json:"logLevel"`
 	// AccessLog reports whether per-request access logging is on.
 	AccessLog bool `json:"accessLog"`
+	// Integration reports which contributions to other console pages are on.
+	// The plugin reads these values, not the spec; an operator that predates
+	// them leaves the field absent, which the plugin treats as all off.
+	// Optional in the schema so a status written by an older operator still
+	// validates while an upgrade rolls out.
+	// +optional
+	Integration EffectiveConsolePluginIntegration `json:"integration"`
+}
+
+type EffectiveConsolePluginIntegration struct {
+	// ResourceTabs reports whether the "OVN Recon" tab is added to resource
+	// details pages.
+	ResourceTabs bool `json:"resourceTabs"`
+	// ResourceActions reports whether the "Open in OVN Recon" action is added
+	// to resource action menus.
+	ResourceActions bool `json:"resourceActions"`
 }
 
 type EffectiveCollector struct {

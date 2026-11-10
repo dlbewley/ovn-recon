@@ -42,6 +42,8 @@ the object was created. To see what the operator actually resolved, read
 | `consolePlugin.image.pullPolicy`| `string` | `IfNotPresent` | Plugin backend ImagePullPolicy. |
 | `consolePlugin.logging.level` | `string` | `info` | Console plugin backend log level. Allowed: `error`, `warn`, `info`, `debug`. |
 | `consolePlugin.logging.accessLog.enabled` | `bool` | `false` | Enables request access logging in the console plugin backend. |
+| `consolePlugin.integration.resourceTabs` | `bool` | `false` | Adds an **OVN Recon** tab to the console's Node, ClusterUserDefinedNetwork, UserDefinedNetwork and NetworkAttachmentDefinition details pages. See [Console Integration](#console-integration). |
+| `consolePlugin.integration.resourceActions` | `bool` | `false` | Adds an **Open in OVN Recon** action to the actions menu of the same four kinds. See [Console Integration](#console-integration). |
 | `collector.enabled` | `bool` | `true` | Enables logical topology features backed by the collector service. |
 | `collector.image.repository`| `string` | _release image_ | OVN collector image repository. Unset runs the image the operator release declares (`RELATED_IMAGE_COLLECTOR`), falling back to `quay.io/dbewley/ovn-collector`. |
 | `collector.image.tag` | `string` | _inherits `consolePlugin.image.tag`_ | OVN collector image tag. |
@@ -98,6 +100,40 @@ the object was created. To see what the operator actually resolved, read
 - When enabled, the operator also reconciles collector ServiceAccount/ClusterRole and RoleBindings in each `collector.probeNamespaces` entry.
 - Current default mode is standalone Deployment; DaemonSet support is a planned future evolution for per-node collection scale.
 
+### Console Integration
+
+OVN Recon can add to console pages it does not own, but only when an administrator asks.
+Both switches are **off by default**: installing or upgrading the operator changes nothing
+on the Node or network pages until one is turned on.
+
+| Switch | What it adds |
+|--------|--------------|
+| `consolePlugin.integration.resourceTabs` | An **OVN Recon** tab on the details page of a Node (that node's physical topology, with links to the full physical and logical pages), a ClusterUserDefinedNetwork, a UserDefinedNetwork and a NetworkAttachmentDefinition (the network's findings, summary and placement by node, with a link to the full network page). |
+| `consolePlugin.integration.resourceActions` | An **Open in OVN Recon** action in the actions menu of the same four kinds: a Node opens its physical topology, a network its network page. |
+
+```bash
+oc patch ovnrecon ovn-recon --type=merge -p '{
+  "spec": {
+    "consolePlugin": {
+      "integration": { "resourceTabs": true, "resourceActions": true }
+    }
+  }
+}'
+```
+
+Set a switch to `false`, or remove it, to take the additions away again.
+
+- The switches are **cluster-wide**, not per user: they apply to everyone who uses the console.
+- The plugin reads them from the primary `OvnRecon`'s `status.effective.consolePlugin.integration`,
+  never from the spec, so they take effect once the operator has reconciled the change.
+- They **fail closed**. The plugin shows nothing when there is no `OvnRecon`, when the operator
+  has not published the fields (an operator older than these switches), when the resource cannot
+  be read, or when the console user may not read `OvnRecon` resources. A user without read access
+  to `ovnrecons.recon.bewley.net` therefore never sees the tabs or actions, even with the switches on;
+  the `ovnrecon-viewer-role` ClusterRole grants that access.
+- Each tab and action is a console extension that requires a feature flag
+  (`OVN_RECON_RESOURCE_TABS`, `OVN_RECON_RESOURCE_ACTIONS`) which only these switches set.
+
 ### Status Conditions
 
 | Condition Type | Description |
@@ -125,6 +161,7 @@ oc get ovnrecon ovn-recon -o jsonpath='{.status.effective}' | jq
 | `targetNamespace` | Namespace the workload runs in. |
 | `operator.logLevel`, `operator.eventMinType`, `operator.eventDedupeWindow` | Operator policy. Follows the **primary** OvnRecon, so it can differ from this object's spec. |
 | `consolePlugin.enabled`, `displayName`, `image`, `pullPolicy`, `logLevel`, `accessLog` | Resolved console plugin settings; `image` is the full reference the Deployment runs. |
+| `consolePlugin.integration.resourceTabs`, `resourceActions` | Whether the console integration switches are on. The plugin reads these, not the spec. |
 | `collector.enabled`, `image`, `pullPolicy`, `probeNamespaces`, `logLevel`, `includeProbeOutput` | Resolved collector settings. |
 | `collector.cache.enabled`, `ttlSeconds` | Cache on/off and freshness window after the `30` s floor. |
 | `collector.cache.mode` | Requested backing: `auto`, `EmptyDir` or `PVC`. |

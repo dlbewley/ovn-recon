@@ -100,6 +100,7 @@ func effectiveConfigFor(
 			PullPolicy:  string(imagePullPolicyFor(ovnRecon)),
 			LogLevel:    consolePluginErrorLogLevelFor(ovnRecon),
 			AccessLog:   ovnRecon.Spec.ConsolePlugin.Logging.AccessLog.Enabled,
+			Integration: consolePluginIntegrationFor(ovnRecon),
 		},
 		Collector: reconv1beta1.EffectiveCollector{
 			Enabled:            collectorEnabled,
