@@ -318,7 +318,11 @@ describe('ClusterSearch', () => {
             expect(routers.querySelector('a[href="/ovn-recon/ovn/node-a?select=router:ovn_cluster_router"]')).not.toBeNull();
 
             const services = byTestId('search-group-service-vip')!;
-            expect(services.textContent).toContain('VIP 203.0.113.70:443');
+            // One row per Service and address: the port is a chip, the zones are counted.
+            expect(services.textContent).toContain('VIP 203.0.113.70');
+            expect(services.textContent).toContain('443/TCP');
+            expect(services.textContent).toContain('Programmed in 1 of 2 zones');
+            expect(services.textContent).toContain('not in node-b');
             expect(services.querySelector('a[href="/k8s/ns/shop/core~v1~Service/web"]')!.textContent).toBe('shop/web');
             expect(services.querySelector('a[data-view="logical"]')).toBeNull();
 
@@ -552,6 +556,111 @@ describe('ClusterSearch', () => {
             expect(byTestId('search-results')).toBeNull();
             expect(byTestId('search-hint')).not.toBeNull();
             expect(lookupUrls()).toHaveLength(1);
+        });
+    });
+
+    describe('one line per answer (ovn-recon-tpp.8)', () => {
+        const lb = (node: string, rowName: string, vip: string): LookupHit =>
+            hit({
+                node,
+                table: 'Load_Balancer',
+                rowName,
+                construct: undefined,
+                owner: { kind: 'Service', namespace: 'openshift-dns', name: 'dns-default' },
+                matchedField: 'vips',
+                matchedValue: vip,
+            });
+
+        it('shows a Service VIP once, with its ports and zones, and its load balancer rows on request', async () => {
+            fetchMock.mockResolvedValue(ok(lookup([
+                lb('node-a', 'Service_openshift-dns/dns-default_TCP_node_router_node-a', '198.51.100.10:53'),
+                lb('node-a', 'Service_openshift-dns/dns-default_UDP_node_router_node-a', '198.51.100.10:53'),
+                lb('node-b', 'Service_openshift-dns/dns-default_TCP_node_router_node-b', '198.51.100.10:53'),
+                lb('node-b', 'Service_openshift-dns/dns-default_UDP_node_router_node-b', '198.51.100.10:53'),
+                lb('node-a', 'Service_openshift-dns/dns-default_TCP_cluster', '198.51.100.10:9154'),
+                lb('node-b', 'Service_openshift-dns/dns-default_TCP_cluster', '198.51.100.10:9154'),
+            ], { query: { kind: 'ip', value: '198.51.100.10' } })));
+            await render();
+            await search('198.51.100.10');
+
+            const services = byTestId('search-group-service-vip')!;
+            expect(services.textContent).toContain('Service VIPs (1)');
+            expect(services.querySelectorAll('[data-testid="search-result"]')).toHaveLength(1);
+            expect(Array.from(services.querySelectorAll('.pf-v6-c-label')).map((label) => label.textContent)).toEqual([
+                '53/TCP', '53/UDP', '9154/TCP',
+            ]);
+            expect(byTestId('search-zone-count')!.textContent).toBe('Programmed in 2 of 2 zones');
+            expect(services.querySelector('a[href="/k8s/ns/openshift-dns/core~v1~Service/dns-default"]')).not.toBeNull();
+            expect(byTestId('search-member')).toBeNull();
+
+            await click(buttonWithText('Show the 5 load balancer rows'));
+            const members = Array.from(container.querySelectorAll('[data-testid="search-member"]'));
+            expect(members.map((member) => member.firstElementChild!.textContent)).toEqual([
+                'Service_openshift-dns/dns-default_TCP_cluster',
+                'Service_openshift-dns/dns-default_TCP_node_router_node-a',
+                'Service_openshift-dns/dns-default_UDP_node_router_node-a',
+                'Service_openshift-dns/dns-default_TCP_node_router_node-b',
+                'Service_openshift-dns/dns-default_UDP_node_router_node-b',
+            ]);
+            // The cluster-wide row says its own port, which is not the VIP's alone.
+            expect(members[0].textContent).toContain('VIP 198.51.100.10:9154');
+        });
+
+        it('leads a name search with the exact node interface and folds per-node ports, keeping each link', async () => {
+            fetchMock.mockResolvedValue(ok(lookup(['node-a', 'node-b'].map((node) => hit({
+                node,
+                rowName: `ens4_${node}`,
+                construct: { kind: 'switch', name: `ext_${node}`, uuid: node },
+                owner: undefined,
+                matchedField: 'name',
+                matchedValue: `ens4_${node}`,
+                matchType: 'substring',
+            })), { query: { kind: 'name', value: 'ens4' } })));
+            await render();
+            await search('ens4');
+
+            const groups = Array.from(container.querySelectorAll('[data-testid^="search-group-"]')).map((group) => group.getAttribute('data-testid'));
+            expect(groups).toEqual(['search-group-node-interface', 'search-group-switch-port']);
+            const ports = byTestId('search-group-switch-port')!;
+            expect(ports.querySelectorAll('[data-testid="search-result"]')).toHaveLength(1);
+            expect(ports.textContent).toContain('ens4_<node>');
+            expect(ports.textContent).toContain('starts with the text');
+            expect(ports.textContent).toContain('On 2 nodes: node-a, node-b');
+
+            await click(buttonWithText('Show the 2 rows'));
+            expect(ports.querySelector('a[href="/ovn-recon/ovn/node-a?select=switch:ext_node-a"]')!.textContent).toBe('Logical view');
+            expect(ports.querySelector('a[href="/ovn-recon/ovn/node-b?select=switch:ext_node-b"]')!.textContent).toBe('Logical view');
+        });
+
+        it('lists the groups with their counts only above two groups', async () => {
+            const routerPort = hit({
+                table: 'Logical_Router_Port',
+                rowName: 'rtoe-GR_node-a',
+                construct: { kind: 'router', name: 'GR_node-a', uuid: 'r' },
+                owner: undefined,
+                matchedField: 'networks',
+                matchedValue: '198.51.100.20/24',
+            });
+            fetchMock.mockResolvedValue(ok(lookup([routerPort], { query: { kind: 'ip', value: '198.51.100.20' } })));
+            await render();
+            await search('198.51.100.20');
+            expect(container.querySelectorAll('[data-testid^="search-group-"]')).toHaveLength(2);
+            expect(byTestId('search-jump-list')).toBeNull();
+
+            fetchMock.mockResolvedValue(ok(lookup([
+                routerPort,
+                hit({ table: 'NAT', rowName: undefined, construct: { kind: 'router', name: 'GR_node-a', uuid: 'r' }, owner: undefined, matchedField: 'externalIp', matchedValue: '198.51.100.20' }),
+            ], { query: { kind: 'ip', value: '198.51.100.20' } })));
+            await click(container.querySelector('button[aria-label="Search"]'));
+            const jump = byTestId('search-jump-list')!;
+            expect(jump.textContent).toBe('Jump to: Router ports (1) · NAT rules (1) · Node interfaces (1) · Covering routes and subnets (1)');
+            expect(container.querySelector('#ovn-recon-search-nat')).not.toBeNull();
+
+            // The covering section opens when it is jumped to.
+            const coveringToggle = () => byTestId('search-covering')!.querySelector('button')!;
+            expect(coveringToggle().getAttribute('aria-expanded')).toBe('false');
+            await click(buttonWithText('Covering routes and subnets (1)'));
+            expect(coveringToggle().getAttribute('aria-expanded')).toBe('true');
         });
     });
 });

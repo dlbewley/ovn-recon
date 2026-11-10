@@ -45,6 +45,17 @@ import { constructSelectValue, encodeSelectValue, withSelectParam } from './useS
  * - Nothing is hidden silently. What was not searched (collector off or
  *   unreachable, a zone with no cached snapshot, hits cut by the limit) is
  *   reported next to the results.
+ *
+ * And the answer comes first (ovn-recon-tpp.8). OVN-Kubernetes writes many
+ * rows per object: a Service is a load balancer per protocol per node
+ * (`Service_<ns>/<name>_TCP_node_router_<node>`), a node bridge is a
+ * localnet port per node (`br-ex_<node>`). Those are folded into one row
+ * that keeps every underlying row as a member, with its own place and links:
+ * a Service VIP by Service, network and address, with its ports and the
+ * zones that program it; any other row whose name differs from zone to zone
+ * only by that zone's node name, by its name with the node left out. A name
+ * search ranks exact names first, then names that start with the text, then
+ * names that merely contain it, and so do the groups.
  */
 
 /* ------------------------------------------------------------------ */
@@ -235,8 +246,15 @@ export interface SearchOwner {
     note?: string;
 }
 
+/**
+ * How a result matched: the collector's match types, plus `prefix` for a
+ * name that starts with the searched text. The collector reports that as a
+ * substring; it is told apart here so it ranks between exact and substring.
+ */
+export type SearchMatchType = LookupMatchType | 'prefix';
+
 export interface SearchMatch {
-    type: LookupMatchType;
+    type: SearchMatchType;
     /** What matched, in words: `address`, `MAC`, `VIP`, `name`. */
     field: string;
     /** The matched value as stored. */
@@ -265,6 +283,29 @@ export interface SearchResult {
     places: SearchPlace[];
     /** Links that are not tied to one place: the cluster view of a multi-zone result. */
     links: SearchLink[];
+    /** A Service VIP: the ports programmed on the address, as `53/TCP`, sorted. */
+    ports?: string[];
+    /** A Service VIP: in how many of the searched zones the address is programmed. */
+    zones?: ZoneCount;
+    /**
+     * A folded row: the rows it stands for (a Service's load balancers, a
+     * per-node port on each node), each with its own place and links.
+     */
+    members?: SearchResult[];
+}
+
+export interface ZoneCount {
+    /** Searched zones holding the result. */
+    found: number;
+    /** Zones the collector searched. */
+    searched: number;
+    /** Searched zones without it, sorted. */
+    missing: string[];
+    /**
+     * The collector cut its hits to the limit, so a zone may be missing
+     * only because its hit was cut.
+     */
+    incomplete?: boolean;
 }
 
 export interface SearchResultGroup {
@@ -526,6 +567,264 @@ export const coveringGroupsOfHits = (hits: LookupHit[]): CoveringGroup[] => {
 };
 
 /* ------------------------------------------------------------------ */
+/* Name ranking                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A name match ranked against the searched text: `exact` when the stored
+ * value is the text in any case, `prefix` when it starts with it, else as
+ * it came. Matches of an address or MAC query are left as they are.
+ */
+export const rankNameMatch = (query: SearchQuery, match: SearchMatch): SearchMatch => {
+    if (query.kind !== 'name' || (match.type !== 'substring' && match.type !== 'prefix')) return match;
+    const value = match.value.toLowerCase();
+    const needle = query.value.toLowerCase();
+    if (value === needle) return { ...match, type: 'exact' };
+    if (value.startsWith(needle)) return { ...match, type: 'prefix' };
+    return { ...match, type: 'substring' };
+};
+
+/* ------------------------------------------------------------------ */
+/* Service VIPs: one row per Service and address                       */
+/* ------------------------------------------------------------------ */
+
+// OVN-Kubernetes names a Service's load balancers
+// Service_<namespace>/<name>_<protocol>_<cluster | node_router_<node> | ...>,
+// sometimes behind a network prefix. Namespaces and Service names are DNS
+// labels, so neither holds an underscore.
+const SERVICE_LOAD_BALANCER = /Service_([a-z0-9.-]+)\/([a-z0-9.-]+)_(TCP|UDP|SCTP)(?:_|$)/i;
+
+/** The Service and protocol a load balancer row is named for, when its name follows the OVN-Kubernetes form. */
+export const serviceOfLoadBalancerName = (
+    name: string | undefined,
+): { namespace: string; name: string; protocol: string } | undefined => {
+    const parsed = SERVICE_LOAD_BALANCER.exec(name ?? '');
+    return parsed ? { namespace: parsed[1], name: parsed[2], protocol: parsed[3].toUpperCase() } : undefined;
+};
+
+/**
+ * A load balancer `vips` key read as address and port: `198.51.100.10:443`,
+ * `[2001:db8::10]:443`, or an address with no port. The address is in
+ * canonical spelling, so the same VIP written two ways is one.
+ */
+export const parseVip = (vip: string): { address: string; port?: string } => {
+    const bracketed = /^\[(.+)\]:(\d+)$/.exec(vip);
+    const v4 = /^([^:]+):(\d+)$/.exec(vip);
+    const [address, port] = bracketed ? [bracketed[1], bracketed[2]] : v4 ? [v4[1], v4[2]] : [vip.replace(/^\[|\]$/g, ''), undefined];
+    const parsed = parsePrefix(address);
+    const canonical = parsed ? networkCidr(parsed).split('/')[0] : address;
+    return port ? { address: canonical, port } : { address: canonical };
+};
+
+const ownerIdentity = (owner: SearchOwner | undefined): string =>
+    owner ? `${owner.kind}/${owner.namespace ?? ''}/${owner.name}` : '';
+
+const compareByPlace = (a: SearchResult, b: SearchResult): number =>
+    (a.places[0]?.node ?? '').localeCompare(b.places[0]?.node ?? '') || a.title.localeCompare(b.title) || a.key.localeCompare(b.key);
+
+const unionPlaces = (members: SearchResult[]): SearchPlace[] => {
+    const places = new Map<string, SearchPlace>();
+    for (const member of members) {
+        for (const place of member.places) {
+            if (!places.has(place.node)) places.set(place.node, place);
+        }
+    }
+    return Array.from(places.values()).sort((a, b) => a.node.localeCompare(b.node));
+};
+
+const bestMatchType = (members: SearchResult[]): SearchMatchType =>
+    members.map((member) => member.match.type).sort((a, b) => MATCH_RANK[a] - MATCH_RANK[b])[0];
+
+/** The best-ranked member's name match, with its node name left out when it holds one. */
+const nameMatchOf = (members: SearchResult[]): SearchMatch => {
+    const best = [...members].sort((a, b) => MATCH_RANK[a.match.type] - MATCH_RANK[b.match.type])[0];
+    const node = best.places[0]?.node ?? '';
+    return { ...best.match, value: members.length > 1 ? withoutNodeName(best.match.value, node) : best.match.value };
+};
+
+const comparePorts = (a: string, b: string): number => {
+    const [portA, protocolA] = a.split('/');
+    const [portB, protocolB] = b.split('/');
+    return Number(portA) - Number(portB) || (protocolA ?? '').localeCompare(protocolB ?? '');
+};
+
+/**
+ * Service VIP hits as one result per Service, network and VIP address. A
+ * Service is a load balancer per protocol in each zone, and often one for
+ * the node router and one for the node switch, so one ClusterIP on ten
+ * nodes is forty hits; here it is one row with its ports, the zones that
+ * program it out of the zones searched, and every load balancer row as a
+ * member. A load balancer with no Service owner and no Service name is a
+ * Service of its own, under its row name.
+ *
+ * The collector reports one VIP key per load balancer row, the first that
+ * matched; a second port of the same address in the same row is only seen
+ * when another row carries it.
+ */
+export const foldServiceVips = (
+    hits: LookupHit[],
+    searchedZones: string[],
+    options: { query?: SearchQuery; truncated?: boolean } = {},
+): SearchResult[] => {
+    // A name search finds load balancers by row name: those fold by Service
+    // alone, with no address.
+    const buckets = new Map<string, { hits: LookupHit[]; address?: string }>();
+    for (const vipHit of hits) {
+        const address = vipHit.matchedField === 'vips' ? parseVip(vipHit.matchedValue).address : undefined;
+        const named = serviceOfLoadBalancerName(vipHit.rowName);
+        const service = vipHit.owner
+            ? `${vipHit.owner.kind}/${vipHit.owner.namespace ?? ''}/${vipHit.owner.name}`
+            : named ? `Service/${named.namespace}/${named.name}` : `row/${vipHit.rowName ?? vipHit.rowUuid}`;
+        const key = `collector|service|${vipHit.network}|${service}|${address ?? 'name'}`;
+        const bucket = buckets.get(key) ?? { hits: [], address };
+        bucket.hits.push(vipHit);
+        buckets.set(key, bucket);
+    }
+    const searched = sortedUnique(searchedZones);
+    return Array.from(buckets.entries()).map(([key, bucket]) => {
+        const first = bucket.hits[0];
+        const members = foldResults(bucket.hits.map((vipHit) => {
+            const member = resultOfHit(vipHit);
+            return options.query ? { ...member, match: rankNameMatch(options.query, member.match) } : member;
+        })).sort(compareByPlace);
+        const named = bucket.hits.map((vipHit) => serviceOfLoadBalancerName(vipHit.rowName)).find(Boolean);
+        let owner = members.find((member) => member.owner)?.owner;
+        if (!owner && named) {
+            owner = {
+                kind: 'Service',
+                namespace: named.namespace,
+                name: named.name,
+                href: getResourcePath({ apiVersion: 'v1', kind: 'Service', namespace: named.namespace, name: named.name }),
+            };
+        }
+        const ports = new Set<string>();
+        for (const vipHit of bucket.hits) {
+            if (vipHit.matchedField !== 'vips') continue;
+            const { port } = parseVip(vipHit.matchedValue);
+            const protocol = serviceOfLoadBalancerName(vipHit.rowName)?.protocol;
+            if (port) ports.add(protocol ? `${port}/${protocol}` : port);
+        }
+        const places = unionPlaces(members);
+        const found = new Set(places.map((place) => place.node));
+        const zones: ZoneCount = {
+            found: searched.filter((zone) => found.has(zone)).length,
+            searched: searched.length,
+            missing: searched.filter((zone) => !found.has(zone)),
+        };
+        if (options.truncated) zones.incomplete = true;
+        const result: SearchResult = {
+            key,
+            kind: 'service-vip',
+            source: 'collector',
+            title: owner ? (owner.namespace ? `${owner.namespace}/${owner.name}` : owner.name) : (first.rowName || 'Load balancer'),
+            subtitle: `Service VIP · ${members.length} load balancer ${members.length === 1 ? 'row' : 'rows'}`,
+            match: bucket.address !== undefined
+                ? { type: bestMatchType(members), field: 'VIP', value: bucket.address }
+                : nameMatchOf(members),
+            network: first.network,
+            places,
+            links: [],
+            ports: Array.from(ports).sort(comparePorts),
+            zones,
+            members,
+        };
+        if (owner) result.owner = owner;
+        return result;
+    });
+};
+
+/* ------------------------------------------------------------------ */
+/* Rows named after their node: one row across nodes                   */
+/* ------------------------------------------------------------------ */
+
+/** What stands for the node name in a row folded across nodes. */
+export const NODE_PLACEHOLDER = '<node>';
+
+const isNameCharacter = (character: string | undefined): boolean =>
+    character !== undefined && /[A-Za-z0-9]/.test(character);
+
+/**
+ * The text with every whole occurrence of the node name replaced by
+ * NODE_PLACEHOLDER. "Whole" means not inside a longer name: `node-1` is
+ * not replaced in `node-10`.
+ */
+export const withoutNodeName = (text: string, node: string): string => {
+    if (!node) return text;
+    let out = '';
+    let from = 0;
+    for (let at = text.indexOf(node); at !== -1; at = text.indexOf(node, at + node.length)) {
+        if (isNameCharacter(text[at - 1]) || isNameCharacter(text[at + node.length])) continue;
+        out += text.slice(from, at) + NODE_PLACEHOLDER;
+        from = at + node.length;
+    }
+    return out + text.slice(from);
+};
+
+/**
+ * Fold collector results that are one object per node: rows found in a
+ * single zone whose name, construct or matched value differ from zone to
+ * zone only by that zone's node name (`br-ex_node-a` on switch
+ * `ext_node-a`, `br-ex_node-b` on `ext_node-b`). They become one row named
+ * with NODE_PLACEHOLDER, listing every node, with the original rows as
+ * members. A row already seen in several zones under one name is the same
+ * row everywhere and is left as it is; so is a row whose name holds no node
+ * name, and a group of one. Network, owner, kind and match type are part of
+ * the identity, so rows in two networks never fold.
+ */
+export const foldAcrossNodes = (results: SearchResult[]): SearchResult[] => {
+    const order: (SearchResult | string)[] = [];
+    const buckets = new Map<string, { members: SearchResult[]; title: string; subtitle?: string; value: string }>();
+    for (const result of results) {
+        const node = result.source === 'collector' && result.places.length === 1 && !result.members
+            ? result.places[0].node
+            : undefined;
+        if (!node) {
+            order.push(result);
+            continue;
+        }
+        const title = withoutNodeName(result.title, node);
+        const construct = result.construct ? withoutNodeName(result.construct.name, node) : '';
+        if (title === result.title && construct === (result.construct?.name ?? '')) {
+            order.push(result);
+            continue;
+        }
+        const subtitle = result.subtitle === undefined ? undefined : withoutNodeName(result.subtitle, node);
+        const value = withoutNodeName(result.match.value, node);
+        const key = [
+            'fold', result.kind, result.network ?? '', title, subtitle ?? '',
+            result.construct ? `${result.construct.kind}:${construct}` : '',
+            result.match.field, value, result.match.type, ownerIdentity(result.owner), result.context ?? '',
+        ].join('|');
+        let bucket = buckets.get(key);
+        if (!bucket) {
+            bucket = { members: [], title, subtitle, value };
+            buckets.set(key, bucket);
+            order.push(key);
+        }
+        bucket.members.push(result);
+    }
+    return order.map((entry) => {
+        if (typeof entry !== 'string') return entry;
+        const bucket = buckets.get(entry) as { members: SearchResult[]; title: string; subtitle?: string; value: string };
+        if (bucket.members.length === 1) return bucket.members[0];
+        const members = [...bucket.members].sort(compareByPlace);
+        const first = members[0];
+        const folded: SearchResult = {
+            ...first,
+            key: entry,
+            title: bucket.title,
+            match: { ...first.match, value: bucket.value },
+            places: unionPlaces(members),
+            links: [],
+            members,
+        };
+        if (bucket.subtitle !== undefined) folded.subtitle = bucket.subtitle;
+        delete folded.construct;
+        return folded;
+    });
+};
+
+/* ------------------------------------------------------------------ */
 /* Cluster hits: what the overview already watches                     */
 /* ------------------------------------------------------------------ */
 
@@ -647,16 +946,14 @@ const matchInterface = (query: SearchQuery, iface: Interface, nodeAddresses: Nod
         if (name === needle) {
             matches.push({ match: { type: 'exact', field: 'name', value: iface.name } });
         } else if (name.includes(needle)) {
-            matches.push({ match: { type: 'substring', field: 'name', value: iface.name } });
+            matches.push({ match: { type: name.startsWith(needle) ? 'prefix' : 'substring', field: 'name', value: iface.name } });
         } else {
             const altNames = Array.isArray(iface['alt-names']) ? iface['alt-names'] : [];
             const alt = altNames
                 .map((entry) => entry?.name)
                 .find((altName): altName is string => typeof altName === 'string' && altName.toLowerCase().includes(needle));
             if (alt) {
-                matches.push({
-                    match: { type: alt.toLowerCase() === needle ? 'exact' : 'substring', field: 'alternative name', value: alt },
-                });
+                matches.push({ match: rankNameMatch(query, { type: 'substring', field: 'alternative name', value: alt }) });
             }
         }
     }
@@ -904,7 +1201,10 @@ export const describeSearched = (coverage: SearchCoverage, snapshotNote = ''): s
 
 export interface ClusterSearchResults {
     query: SearchQuery;
-    /** Results by kind, in page order; empty kinds are left out. */
+    /**
+     * Results by kind, best match first: the groups holding an exact match,
+     * then the rest, each tier in page order. Empty kinds are left out.
+     */
     groups: SearchResultGroup[];
     /** Rows across all groups. */
     resultCount: number;
@@ -915,8 +1215,10 @@ export interface ClusterSearchResults {
     coverage: SearchCoverage;
 }
 
-// exact, then inside the queried CIDR, then a name that only contains the text.
-const MATCH_RANK: Record<LookupMatchType, number> = { exact: 0, within: 1, substring: 2, containment: 3 };
+// exact, then inside the queried CIDR or a name that starts with the text
+// (never both: one is an address search, the other a name search), then a
+// name that only contains the text.
+const MATCH_RANK: Record<SearchMatchType, number> = { exact: 0, within: 1, prefix: 1, substring: 2, containment: 3 };
 
 const compareResults = (a: SearchResult, b: SearchResult): number =>
     MATCH_RANK[a.match.type] - MATCH_RANK[b.match.type] ||
@@ -946,18 +1248,35 @@ export const buildClusterSearchResults = (
 ): ClusterSearchResults => {
     const hits = outcome.state === 'searched' ? (outcome.response.hits ?? []) : [];
     const watched = searchWatchedResources(query, sources);
+    const direct = hits.filter((hit) => hit.matchType !== 'containment');
+    const isVip = (hit: LookupHit): boolean => kindOfHit(hit) === 'service-vip';
 
-    const results = foldResults([
-        ...hits.filter((hit) => hit.matchType !== 'containment').map(resultOfHit),
-        ...watched.results,
-    ]);
+    const services = foldServiceVips(
+        direct.filter(isVip),
+        outcome.state === 'searched' ? (outcome.response.zones ?? []).map((zone) => zone.node) : [],
+        { query, truncated: outcome.state === 'searched' && Boolean(outcome.response.truncated) },
+    );
+    const results = [
+        ...foldAcrossNodes(foldResults([
+            ...direct.filter((hit) => !isVip(hit)).map((hit) => {
+                const result = resultOfHit(hit);
+                return { ...result, match: rankNameMatch(query, result.match) };
+            }),
+            ...watched.results,
+        ])),
+        ...services,
+    ];
+    const pageOrder = (kind: SearchResultKind): number => RESULT_KINDS.findIndex((entry) => entry.kind === kind);
     const groups = RESULT_KINDS
         .map(({ kind, label }) => ({
             kind,
             label,
             results: results.filter((result) => result.kind === kind).sort(compareResults),
         }))
-        .filter((group) => group.results.length > 0);
+        .filter((group) => group.results.length > 0)
+        .sort((a, b) =>
+            MATCH_RANK[a.results[0].match.type] - MATCH_RANK[b.results[0].match.type] ||
+            pageOrder(a.kind) - pageOrder(b.kind));
 
     const covering = [
         ...coveringGroupsOfHits(hits.filter((hit) => hit.matchType === 'containment')),
@@ -972,4 +1291,37 @@ export const buildClusterSearchResults = (
         coveringCount: covering.reduce((total, group) => total + group.hitCount, 0),
         coverage: describeCoverage(outcome, sources),
     };
+};
+
+/* ------------------------------------------------------------------ */
+/* The jump list                                                       */
+/* ------------------------------------------------------------------ */
+
+export interface SearchJumpTarget {
+    /** The element id of the group on the page. */
+    id: string;
+    label: string;
+    /** Rows in the group; for the covering section, the covering hits. */
+    count: number;
+}
+
+/** The page id of a result group, the target of its jump-list entry. */
+export const searchGroupAnchorId = (kind: SearchResultKind | 'covering'): string => `ovn-recon-search-${kind}`;
+
+/**
+ * A short list of the groups with their counts, shown above the results
+ * when there are more than two result groups; one or two are on screen
+ * already. The covering section is listed last when there is one.
+ */
+export const jumpTargets = (results: ClusterSearchResults): SearchJumpTarget[] => {
+    if (results.groups.length <= 2) return [];
+    const targets = results.groups.map((group) => ({
+        id: searchGroupAnchorId(group.kind),
+        label: group.label,
+        count: group.results.length,
+    }));
+    if (results.covering.length > 0) {
+        targets.push({ id: searchGroupAnchorId('covering'), label: 'Covering routes and subnets', count: results.coveringCount });
+    }
+    return targets;
 };

@@ -13,17 +13,23 @@ import {
     describeSearched,
     describeSearchQuery,
     detectSearchQuery,
+    foldAcrossNodes,
     foldResults,
+    foldServiceVips,
+    jumpTargets,
     logicalViewPath,
     normalizeMac,
     overviewSearchPath,
+    parseVip,
     physicalViewPath,
     readSearchParam,
     resultOfHit,
     SearchQuery,
     SearchResult,
     searchWatchedResources,
+    serviceOfLoadBalancerName,
     vmOfLauncherPod,
+    withoutNodeName,
     withSearchParam,
 } from './clusterSearchModel';
 
@@ -418,17 +424,20 @@ describe('exact matches before covering routes', () => {
         expect(groups[0].entries[0].what).toBe('NAT logical IP');
     });
 
-    it('puts exact matches ahead of substring matches within a group', () => {
+    it('puts exact matches ahead of prefix matches, and prefix ahead of substring, within a group', () => {
         const hits = [
             hit({ rowName: 'shop_web-canary', matchedField: 'name', matchedValue: 'shop_web-canary', matchType: 'substring' }),
             hit({ rowName: 'shop_web', matchedField: 'name', matchedValue: 'shop_web', matchType: 'exact' }),
             hit({ rowName: 'shop_a-web-proxy', matchedField: 'name', matchedValue: 'shop_a-web-proxy', matchType: 'substring' }),
+            hit({ rowName: 'a-shop_web', matchedField: 'name', matchedValue: 'a-shop_web', matchType: 'substring' }),
         ];
         const results = buildClusterSearchResults(query('shop_web'), searched(hits), { nodeNetworkStates: [] });
         expect(results.groups[0].results.map((result) => [result.match.type, result.title])).toEqual([
             ['exact', 'shop_web'],
+            ['prefix', 'shop_web-canary'],
+            ['substring', 'a-shop_web'],
+            // Not a prefix of the text either way: it keeps the collector's type.
             ['substring', 'shop_a-web-proxy'],
-            ['substring', 'shop_web-canary'],
         ]);
     });
 });
@@ -757,5 +766,282 @@ describe('coverage', () => {
         const rejected = describeCoverage({ state: 'rejected', message: '"x" is not an IP address' }, sources);
         expect(rejected).toMatchObject({ collector: 'rejected', collectorMessage: '"x" is not an IP address', partial: true });
         expect(describeSearched(rejected)).toBe('the NodeNetworkState of 3 nodes');
+    });
+});
+
+describe('Service VIPs: one row per Service and address (ovn-recon-tpp.8)', () => {
+    const lb = (node: string, rowName: string, vip: string, overrides: Partial<LookupHit> = {}): LookupHit =>
+        hit({
+            node,
+            table: 'Load_Balancer',
+            rowName,
+            construct: undefined,
+            owner: { kind: 'Service', namespace: 'openshift-dns', name: 'dns-default' },
+            matchedField: 'vips',
+            matchedValue: vip,
+            ...overrides,
+        });
+    const zones = NODES.map((zone) => ({ node: zone, snapshotGeneratedAt: GENERATED_AT, sourceHealth: 'healthy' }));
+    // Every zone but the last programs the VIP: a load balancer per
+    // protocol for the node router and the node switch, and the cluster-wide
+    // one, which has the same name in every zone.
+    const programmed = NODES.slice(0, 9);
+    const dnsHits = programmed.flatMap((zone) => [
+        lb(zone, `Service_openshift-dns/dns-default_TCP_node_router_${zone}`, '198.51.100.10:53'),
+        lb(zone, `Service_openshift-dns/dns-default_TCP_node_switch_${zone}`, '198.51.100.10:53'),
+        lb(zone, `Service_openshift-dns/dns-default_UDP_node_router_${zone}`, '198.51.100.10:53'),
+        lb(zone, `Service_openshift-dns/dns-default_UDP_node_switch_${zone}`, '198.51.100.10:53'),
+        lb(zone, 'Service_openshift-dns/dns-default_TCP_cluster', '198.51.100.10:9154'),
+    ]);
+
+    it('reads a load balancer name and a VIP key', () => {
+        expect(serviceOfLoadBalancerName('Service_openshift-dns/dns-default_UDP_node_switch_node-a'))
+            .toEqual({ namespace: 'openshift-dns', name: 'dns-default', protocol: 'UDP' });
+        expect(serviceOfLoadBalancerName('cluster_udn_red_Service_shop/web_TCP_cluster'))
+            .toEqual({ namespace: 'shop', name: 'web', protocol: 'TCP' });
+        expect(serviceOfLoadBalancerName('some-other-lb')).toBeUndefined();
+        expect(parseVip('198.51.100.10:53')).toEqual({ address: '198.51.100.10', port: '53' });
+        expect(parseVip('[2001:0db8::0010]:443')).toEqual({ address: '2001:db8::10', port: '443' });
+        expect(parseVip('198.51.100.10')).toEqual({ address: '198.51.100.10' });
+    });
+
+    it('folds forty-odd load balancer rows into one row with ports, zone count and members', () => {
+        const results = buildClusterSearchResults(
+            query('198.51.100.10'),
+            searched(dnsHits, { query: { kind: 'ip', value: '198.51.100.10' }, zones }),
+            { nodeNetworkStates: [] },
+        );
+        expect(results.groups.map((group) => group.kind)).toEqual(['service-vip']);
+        expect(results.resultCount).toBe(1);
+        const [service] = results.groups[0].results;
+        expect(service).toMatchObject({
+            kind: 'service-vip',
+            title: 'openshift-dns/dns-default',
+            match: { type: 'exact', field: 'VIP', value: '198.51.100.10' },
+            network: 'default',
+            owner: { kind: 'Service', href: '/k8s/ns/openshift-dns/core~v1~Service/dns-default' },
+            ports: ['53/TCP', '53/UDP', '9154/TCP'],
+            zones: { found: 9, searched: 10, missing: ['node-j'] },
+        });
+        expect(service.zones!.incomplete).toBeUndefined();
+        expect(service.places.map((place) => place.node)).toEqual(programmed);
+        // Four per-node rows in each of nine zones, and the cluster-wide row
+        // once, listing the nine zones that hold it.
+        expect(service.members).toHaveLength(37);
+        const cluster = service.members!.find((member) => member.title === 'Service_openshift-dns/dns-default_TCP_cluster')!;
+        expect(cluster.places.map((place) => place.node)).toEqual(programmed);
+        expect(service.members!.filter((member) => member.places[0].node === 'node-a').map((member) => member.title)).toEqual([
+            'Service_openshift-dns/dns-default_TCP_cluster',
+            'Service_openshift-dns/dns-default_TCP_node_router_node-a',
+            'Service_openshift-dns/dns-default_TCP_node_switch_node-a',
+            'Service_openshift-dns/dns-default_UDP_node_router_node-a',
+            'Service_openshift-dns/dns-default_UDP_node_switch_node-a',
+        ]);
+        expect(service.subtitle).toBe('Service VIP · 37 load balancer rows');
+    });
+
+    it('keeps the same VIP in two networks as two rows, each with its network', () => {
+        const folded = foldServiceVips(
+            [
+                lb('node-a', 'Service_shop/web_TCP_cluster', '198.51.100.20:80', { owner: { kind: 'Service', namespace: 'shop', name: 'web' } }),
+                lb('node-a', 'cluster_udn_red_Service_shop/web_TCP_cluster', '198.51.100.20:80', {
+                    owner: { kind: 'Service', namespace: 'shop', name: 'web' },
+                    network: 'cluster_udn_red',
+                }),
+            ],
+            ['node-a'],
+        );
+        expect(folded.map((result) => [result.title, result.network, result.ports])).toEqual([
+            ['shop/web', 'default', ['80/TCP']],
+            ['shop/web', 'cluster_udn_red', ['80/TCP']],
+        ]);
+    });
+
+    it('keeps two Services apart, and two addresses of one Service apart', () => {
+        const folded = foldServiceVips(
+            [
+                lb('node-a', 'Service_shop/web_TCP_cluster', '198.51.100.20:80', { owner: { kind: 'Service', namespace: 'shop', name: 'web' } }),
+                lb('node-a', 'Service_shop/api_TCP_cluster', '198.51.100.20:80', { owner: { kind: 'Service', namespace: 'shop', name: 'api' } }),
+                lb('node-a', 'Service_shop/web_TCP_node_router_node-a', '[2001:db8::20]:80', { owner: { kind: 'Service', namespace: 'shop', name: 'web' } }),
+            ],
+            ['node-a'],
+        );
+        expect(folded.map((result) => [result.title, result.match.value])).toEqual([
+            ['shop/web', '198.51.100.20'],
+            ['shop/api', '198.51.100.20'],
+            ['shop/web', '2001:db8::20'],
+        ]);
+    });
+
+    it('names the Service from the load balancer name when the row has no owner', () => {
+        const [result] = foldServiceVips(
+            [
+                lb('node-a', 'Service_shop/web_TCP_node_router_node-a', '198.51.100.20:80', { owner: undefined }),
+                lb('node-b', 'Service_shop/web_UDP_node_router_node-b', '198.51.100.20:81', { owner: undefined }),
+            ],
+            ['node-a', 'node-b'],
+        );
+        expect(result).toMatchObject({
+            title: 'shop/web',
+            owner: { kind: 'Service', namespace: 'shop', name: 'web', href: '/k8s/ns/shop/core~v1~Service/web' },
+            ports: ['80/TCP', '81/UDP'],
+            zones: { found: 2, searched: 2, missing: [] },
+        });
+        expect(result.members).toHaveLength(2);
+    });
+
+    it('folds load balancers found by name by Service alone, with no ports', () => {
+        const byName = (zone: string, protocol: string): LookupHit =>
+            lb(zone, `Service_openshift-dns/dns-default_${protocol}_node_router_${zone}`, `Service_openshift-dns/dns-default_${protocol}_node_router_${zone}`, {
+                matchedField: 'name',
+                matchType: 'substring',
+            });
+        const results = buildClusterSearchResults(
+            query('Service_openshift-dns'),
+            searched(['node-a', 'node-b'].flatMap((zone) => [byName(zone, 'TCP'), byName(zone, 'UDP')]), {
+                query: { kind: 'name', value: 'Service_openshift-dns' },
+            }),
+            { nodeNetworkStates: [] },
+        );
+        expect(results.resultCount).toBe(1);
+        expect(results.groups[0].results[0]).toMatchObject({
+            title: 'openshift-dns/dns-default',
+            match: { type: 'prefix', field: 'name', value: 'Service_openshift-dns/dns-default_TCP_node_router_<node>' },
+            ports: [],
+            zones: { found: 2, searched: 2, missing: [] },
+        });
+        expect(results.groups[0].results[0].members).toHaveLength(4);
+    });
+
+    it('says a missing zone may only be cut when the collector cut its hits', () => {
+        const [result] = foldServiceVips([lb('node-a', 'Service_shop/web_TCP_cluster', '198.51.100.20:80')], ['node-a', 'node-b'], { truncated: true });
+        expect(result.zones).toEqual({ found: 1, searched: 2, missing: ['node-b'], incomplete: true });
+    });
+});
+
+describe('rows named after their node fold across nodes (ovn-recon-tpp.8)', () => {
+    it('replaces a whole node name only', () => {
+        expect(withoutNodeName('br-ex_node-a', 'node-a')).toBe('br-ex_<node>');
+        expect(withoutNodeName('ext_node-1', 'node-10')).toBe('ext_node-1');
+        expect(withoutNodeName('ext_node-10', 'node-1')).toBe('ext_node-10');
+        expect(withoutNodeName('rtoe-GR_node-a', 'node-a')).toBe('rtoe-GR_<node>');
+    });
+
+    const localnet = (zone: string, overrides: Partial<LookupHit> = {}): LookupHit =>
+        hit({
+            node: zone,
+            rowName: `br-ex_${zone}`,
+            construct: { kind: 'switch', name: `ext_${zone}`, uuid: `ext-${zone}` },
+            owner: undefined,
+            matchedField: 'name',
+            matchedValue: `br-ex_${zone}`,
+            matchType: 'substring',
+            ...overrides,
+        });
+    const bridgeStates = NODES.map((zone) => nns(zone, [
+        { name: 'br-ex', type: 'ovs-bridge', state: 'up' },
+        { name: 'br-ex1', type: 'ovs-bridge', state: 'up' },
+    ]));
+
+    it('ranks the exact interfaces first and folds the per-node ports into one row that keeps each link', () => {
+        const hits = NODES.map((zone) => localnet(zone));
+        const results = buildClusterSearchResults(
+            query('br-ex'),
+            searched(hits, { query: { kind: 'name', value: 'br-ex' } }),
+            { nodeNetworkStates: bridgeStates },
+        );
+
+        // The group holding the exact match leads, ahead of page order.
+        expect(results.groups.map((group) => group.kind)).toEqual(['node-interface', 'switch-port']);
+        const interfaces = results.groups[0].results;
+        expect(interfaces.map((result) => [result.match.type, result.title, result.places.length])).toEqual([
+            ['exact', 'br-ex', 10],
+            ['prefix', 'br-ex1', 10],
+        ]);
+        expect(interfaces[0].places[3]).toEqual({
+            node: 'node-d',
+            link: { view: 'physical', label: 'Physical view', href: '/ovn-recon/node-network-state/node-d?select=iface:br-ex' },
+        });
+
+        const ports = results.groups[1].results;
+        expect(ports).toHaveLength(1);
+        expect(ports[0]).toMatchObject({
+            title: 'br-ex_<node>',
+            subtitle: 'Switch port on switch ext_<node>',
+            match: { type: 'prefix', field: 'name', value: 'br-ex_<node>' },
+        });
+        expect(ports[0].construct).toBeUndefined();
+        expect(ports[0].places.map((place) => place.node)).toEqual(NODES);
+        expect(ports[0].members!.map((member) => [member.title, member.places[0].link!.href])).toEqual(
+            NODES.map((zone) => [`br-ex_${zone}`, `/ovn-recon/ovn/${zone}?select=switch:ext_${zone}`]),
+        );
+        expect(results.resultCount).toBe(3);
+    });
+
+    it('leaves a row with the same name in every zone as it is, and never folds two networks', () => {
+        const transit = NODES.map((zone) => hit({
+            node: zone,
+            rowName: 'tstor-node-a',
+            construct: { kind: 'switch', name: 'transit_switch', uuid: zone },
+            owner: undefined,
+            matchedField: 'name',
+            matchedValue: 'tstor-node-a',
+            matchType: 'substring',
+        }));
+        const red = ['node-a', 'node-b'].map((zone) => localnet(zone, { network: 'cluster_udn_red' }));
+        const blue = ['node-a', 'node-b'].map((zone) => localnet(zone, { network: 'cluster_udn_blue' }));
+        const folded = foldAcrossNodes(foldResults([...transit, ...red, ...blue].map(resultOfHit)));
+
+        expect(folded.map((result) => [result.title, result.network, result.places.length, result.members?.length])).toEqual([
+            ['tstor-node-a', 'default', 10, undefined],
+            ['br-ex_<node>', 'cluster_udn_red', 2, 2],
+            ['br-ex_<node>', 'cluster_udn_blue', 2, 2],
+        ]);
+    });
+
+    it('leaves a per-node row found on one node alone', () => {
+        const folded = foldAcrossNodes([resultOfHit(localnet('node-a'))]);
+        expect(folded[0]).toMatchObject({ title: 'br-ex_node-a', construct: { name: 'ext_node-a' } });
+        expect(folded[0].members).toBeUndefined();
+    });
+});
+
+describe('the jump list (ovn-recon-tpp.8)', () => {
+    const nodeState = nns('node-a', [
+        { name: 'br-ex', type: 'ovs-interface', state: 'up', ipv4: { address: [{ ip: '192.0.2.10', 'prefix-length': 24 }] } },
+    ], [
+        { destination: '192.0.2.0/24', 'next-hop-address': '0.0.0.0', 'next-hop-interface': 'br-ex', 'table-id': 254 },
+    ]);
+    const routerPort = hit({
+        table: 'Logical_Router_Port',
+        rowName: 'rtoe-GR_node-a',
+        construct: { kind: 'router', name: 'GR_node-a', uuid: 'r' },
+        owner: undefined,
+        matchedField: 'networks',
+        matchedValue: '192.0.2.10/24',
+    });
+    const nat = hit({
+        table: 'NAT',
+        rowName: undefined,
+        construct: { kind: 'router', name: 'GR_node-a', uuid: 'r' },
+        owner: undefined,
+        matchedField: 'externalIp',
+        matchedValue: '192.0.2.10',
+    });
+
+    it('is empty with two groups or fewer', () => {
+        const results = buildClusterSearchResults(query('192.0.2.10'), searched([routerPort]), { nodeNetworkStates: [nodeState] });
+        expect(results.groups).toHaveLength(2);
+        expect(jumpTargets(results)).toEqual([]);
+    });
+
+    it('lists each group with its count above two groups, then the covering section', () => {
+        const results = buildClusterSearchResults(query('192.0.2.10'), searched([routerPort, nat]), { nodeNetworkStates: [nodeState] });
+        expect(jumpTargets(results)).toEqual([
+            { id: 'ovn-recon-search-router-port', label: 'Router ports', count: 1 },
+            { id: 'ovn-recon-search-nat', label: 'NAT rules', count: 1 },
+            { id: 'ovn-recon-search-node-interface', label: 'Node interfaces', count: 1 },
+            { id: 'ovn-recon-search-covering', label: 'Covering routes and subnets', count: 1 },
+        ]);
     });
 });
