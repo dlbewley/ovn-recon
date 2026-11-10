@@ -215,6 +215,12 @@ describe('NodeLogicalTopologyDetails', () => {
             expect(current().search).toBe('?select=switch:transit_switch');
         });
 
+        it('links the drawer to the construct detail page in this node\'s zone (ovn-recon-e2b.8)', async () => {
+            await load('/ovn-recon/ovn/cnv-1?select=switch:transit_switch');
+            const link = container.querySelector('[data-testid="open-details"] a');
+            expect(link?.getAttribute('href')).toBe('/ovn-recon/ovn/cnv-1/switch/transit_switch');
+        });
+
         it('ignores an unknown construct without erroring', async () => {
             await load('/ovn-recon/ovn/cnv-1?select=switch:no-such-switch');
             expect(drawerTitle()).toBeNull();

@@ -45,6 +45,7 @@ import SnapshotStatusLine, { summarizeOvnZones } from './SnapshotStatusLine';
 import { useChassisNodeNames } from './useChassisNodeNames';
 import { freshnessFromAge, oldestSnapshotAgeMs } from './snapshotFreshness';
 import { constructSelectValue, findConstructBySelectValue, useSelectionDeepLink } from './useSelectParam';
+import { detailHrefFor, detailZoneFor } from './constructDetailLinks';
 
 // Aggregate collection probes every zone, so refresh less eagerly than the
 // per-node view.
@@ -299,6 +300,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                             databaseNode={drawerDatabase?.node}
                                             sectionsRefreshKey={drawerDatabase?.generatedAt}
                                             nodeForChassis={nodeForChassis}
+                                            detailHref={detailHrefFor(detailZoneFor(selectedConstruct), selectedConstruct)}
                                         />
                                     </>
                                 )}

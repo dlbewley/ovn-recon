@@ -23,6 +23,12 @@ import { loadBalancersFor } from './serviceIndex';
 /** How many port rows the Config tab inlines before pointing at the download. */
 const MAX_RAW_PORT_ROWS = 100;
 
+export interface RawRowOptions {
+    /** Port rows inlined before the rest are counted as omitted; default
+     * MAX_RAW_PORT_ROWS. The construct detail page passes Infinity. */
+    maxPorts?: number;
+}
+
 export interface OvnKindDefinition {
     /** The OVN northbound table this kind renders from. */
     table: string;
@@ -33,7 +39,7 @@ export interface OvnKindDefinition {
      * in); null when no database is at hand, in which case the caller falls
      * back to the construct itself.
      */
-    rawRows(construct: LadderConstruct, database: LogicalDatabase): Record<string, unknown> | null;
+    rawRows(construct: LadderConstruct, database: LogicalDatabase, options?: RawRowOptions): Record<string, unknown> | null;
 }
 
 /** Find a row by uuid first (node view), then by name (merged cluster view,
@@ -44,10 +50,8 @@ const findRow = <T extends { uuid: string; name: string }>(
 ): T | undefined =>
     rows?.find((row) => row.uuid === construct.uuid) ?? rows?.find((row) => row.name === construct.name);
 
-const capPorts = <T,>(ports: T[]): { ports: T[]; portsOmitted?: number } =>
-    ports.length > MAX_RAW_PORT_ROWS
-        ? { ports: ports.slice(0, MAX_RAW_PORT_ROWS), portsOmitted: ports.length - MAX_RAW_PORT_ROWS }
-        : { ports };
+const capPorts = <T,>(ports: T[], max = MAX_RAW_PORT_ROWS): { ports: T[]; portsOmitted?: number } =>
+    ports.length > max ? { ports: ports.slice(0, max), portsOmitted: ports.length - max } : { ports };
 
 /**
  * The Load_Balancer rows set directly on a switch or router and the
@@ -82,7 +86,7 @@ const directAclRows = (switchUuid: string, database: LogicalDatabase): { acls?: 
 
 const routerKind: OvnKindDefinition = {
     table: 'Logical_Router',
-    rawRows(construct, database) {
+    rawRows(construct, database, options) {
         const row = findRow(database.logicalRouters, construct);
         if (!row) return null;
         const portByUuid = new Map(database.logicalRouterPorts.map((port) => [port.uuid, port]));
@@ -102,7 +106,7 @@ const routerKind: OvnKindDefinition = {
             .filter((chassis): chassis is GatewayChassisRow => Boolean(chassis));
         return {
             logicalRouter: row,
-            ...capPorts(ports),
+            ...capPorts(ports, options?.maxPorts),
             nat: (row.nat ?? []).map((uuid) => natByUuid.get(uuid)).filter(Boolean),
             staticRoutes: (row.staticRoutes ?? []).map((uuid) => routeByUuid.get(uuid)).filter(Boolean),
             ...(gatewayChassis.length > 0 ? { gatewayChassis } : {}),
@@ -113,7 +117,7 @@ const routerKind: OvnKindDefinition = {
 
 const switchKind: OvnKindDefinition = {
     table: 'Logical_Switch',
-    rawRows(construct, database) {
+    rawRows(construct, database, options) {
         const row = findRow(database.logicalSwitches, construct);
         if (!row) return null;
         const portByUuid = new Map(database.logicalSwitchPorts.map((port) => [port.uuid, port]));
@@ -123,6 +127,7 @@ const switchKind: OvnKindDefinition = {
                 row.ports
                     .map((uuid) => portByUuid.get(uuid))
                     .filter((port): port is LogicalSwitchPortRow => Boolean(port)),
+                options?.maxPorts,
             ),
             ...directAclRows(row.uuid, database),
             ...loadBalancerRows(construct, database),
@@ -172,9 +177,10 @@ export const ovnKindFor = (construct: LadderConstruct): OvnKindDefinition =>
 export const configPayloadFor = (
     construct: LadderConstruct,
     database: LogicalDatabase | null,
+    options?: RawRowOptions,
 ): { source: 'nb-rows' | 'model'; payload: Record<string, unknown> } => {
     if (database) {
-        const rows = ovnKindFor(construct).rawRows(construct, database);
+        const rows = ovnKindFor(construct).rawRows(construct, database, options);
         if (rows) return { source: 'nb-rows', payload: rows };
     }
     return { source: 'model', payload: { construct } };

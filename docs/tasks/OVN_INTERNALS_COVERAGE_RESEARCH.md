@@ -394,6 +394,9 @@ Proposed shape:
    Services (LBs), Routes and NAT (static routes, policies, NAT, MAC
    bindings), Config. PatternFly `Table` with toolbar filters; deep-linkable
    so a Pod page could one day link straight to its port.
+   *Resolved 2026-11-10 (`ovn-recon-e2b.8`): one route,
+   `/ovn-recon/ovn/:node/:kind/:name`, with the zone as a path segment; see
+   section 11.*
 4. **A port inspector is the eventual cross-cut**: LSP -> port groups ->
    ACLs -> address sets, plus LBs it backs. It is the "what does OVN do to
    this pod" answer and falls out of the indexes tier 2 builds. Not scoped
@@ -448,6 +451,8 @@ Config and, new, a `detailTabs` contribution for the page.
 - Should the detail page be one route with a `kind` segment, or two routes?
   Two routes read better in the console breadcrumb; one route is less
   registration in `console-extensions.json`.
+  *Resolved 2026-11-08, implemented 2026-11-10 (`ovn-recon-e2b.8`): one route
+  with a `kind` segment; the breadcrumb is the page's own either way.*
 - Is per-UDN owner-controller attribution (`k8s.ovn.org/owner-controller`
   values other than `default-network-controller`) stable enough to key the
   network band color on, or do we keep `k8s.ovn.org/network`?
@@ -1094,6 +1099,39 @@ corpus, and with jsdom tests over the fixtures.
     secondary networks have no switch in a zone at all, so their role is
     unknown there and their policy owners stay unlinked until a caller
     supplies a Kubernetes-side role resolver (`ovn-recon-e2b.8`).
+
+### 2026-11-10: `ovn-recon-e2b.8` construct detail page, part 1
+
+1. **Route.** `/ovn-recon/ovn/:node/:kind/:name`, `exact: true`, module
+   `ConstructDetails`; the node ladder route `/ovn-recon/ovn/:name` became
+   `exact: true` in the same change. `kind` is `switch` or `router`; any
+   other kind, a name the zone does not hold and a disabled collector gate
+   each render an empty state. Query parameters `tab`, `q` (the active tab's
+   text filter) and `port` (a Logical_Switch_Port name) are written with
+   replace.
+2. **Data.** The ladder's own request first (no sections), then one request
+   for the union of the sections the opened tabs need: Ports needs `policy`
+   (its expanded row shows the port's groups and ACLs), Services needs
+   `services`. The union only grows during a visit. No polling; Refresh
+   reissues both. The aggregate is never requested.
+3. **Tables.** Built on `RuleTable`, which gained an optional text filter,
+   facets, per-page choices, a focused row (expand, turn to its page,
+   scroll; page only) and an empty message. No separate table-state hook.
+   The drawer's Ports table moved onto it unchanged in look.
+4. **Tabs in part 1.** Overview, Relationships (a peer click opens the
+   peer's page in the same zone), Ports (paginated at 50), Services
+   (dp7.6's body at full width), Routes and NAT (every static route and NAT
+   rule; NAT grouped by intent or one row per rule), Config (no port cap).
+5. **Drawer links.** Both ladder pages pass `detailHref`: "Open details" on
+   the Overview, the count lines linked to their tab, "Open all N" under NAT
+   and static routes, "Open in full page" on Ports. The cluster view links
+   to `detailZoneFor(construct)`: its own node when that is one of its
+   zones, else `zones[0]`. Bridge mappings have no page and no link.
+6. **Owed to part 2.** The Policy tab (ACLs, port groups, address sets), the
+   Ports tab's port-group and ACL counts and "ACLs for this port", and the
+   ACL line's link. `ovn-recon-e2b.7`'s tables (router policies, MAC
+   bindings, CoPP, QoS) are absent until that bead lands.
+7. **Not verified.** Nothing has been looked at in a running console.
 
 ## Initial Beads Backlog Mapping
 

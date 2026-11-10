@@ -98,20 +98,82 @@ const GroupPortRanges: React.FC<{ group: NatGroupView }> = ({ group }) => {
 const natField = (view: NatView, field: keyof NATRow): string | number | undefined =>
     view.kind === 'rule' ? (view.rule[field] as string | number | undefined) : undefined;
 
-export interface NatRuleTableProps {
+/** Options the construct detail page sets on the router tables; the drawer
+ * leaves them unset (or sets only openAll). */
+export interface RuleTablePageOptions {
+    /** Show only rules whose text contains this (case-insensitive). */
+    query?: string;
+    /** Link to the detail page's Routes and NAT tab. */
+    openAll?: { href: string; count: number };
+    pageSize?: number;
+    perPageOptions?: number[];
+}
+
+export interface NatRuleTableProps extends RuleTablePageOptions {
     nats: NATRow[];
     database?: LogicalDatabase | null;
     /** Resolve NAT.gateway_port (a Logical_Router_Port uuid) to its name. */
     gatewayPortName?: (uuid: string) => string | undefined;
+    /** Fold per-address SNAT rows into groups (default); false lists one row per rule. */
+    grouped?: boolean;
+    /** Extra toolbar items above the table (the page's grouping switch). */
+    toolbarItems?: React.ReactNode;
 }
+
+const queryMatches = (query: string | undefined, values: Array<string | number | undefined>): boolean => {
+    const needle = query?.trim().toLowerCase();
+    if (!needle) return true;
+    return values.some((value) => value !== undefined && String(value).toLowerCase().includes(needle));
+};
+
+/** Whether a NAT rule's text contains the query. */
+export const natRuleMatches = (
+    nat: NATRow,
+    query: string | undefined,
+    gatewayPortName?: (uuid: string) => string | undefined,
+): boolean =>
+    queryMatches(query, [
+        NAT_TYPE_LABELS[nat.type],
+        nat.type,
+        nat.externalIp,
+        nat.logicalIp,
+        nat.logicalPort,
+        nat.match,
+        nat.externalPortRange,
+        nat.gatewayPort ? gatewayPortName?.(nat.gatewayPort) ?? nat.gatewayPort : undefined,
+    ]);
+
+/** Whether a static route's text contains the query. */
+export const staticRouteMatches = (route: StaticRouteRow, query: string | undefined): boolean =>
+    queryMatches(query, [route.ipPrefix, route.nexthop, route.outputPort, routePolicy(route), route.routeTable]);
 
 /**
  * A router's NAT rules grouped by intent: plain per-address SNAT rows that
  * share an external IP fold into one expandable row listing the addresses
  * and their pods; dnat and dnat_and_snat rows stay rows of their own.
  */
-export const NatRuleTable: React.FC<NatRuleTableProps> = ({ nats, database, gatewayPortName }) => {
-    const views = React.useMemo(() => groupNatRules(nats, candidateSubnets(database)), [nats, database]);
+export const NatRuleTable: React.FC<NatRuleTableProps> = ({
+    nats: allNats,
+    database,
+    gatewayPortName,
+    grouped = true,
+    query,
+    openAll,
+    pageSize,
+    perPageOptions,
+    toolbarItems,
+}) => {
+    const nats = React.useMemo(
+        () => (query ? allNats.filter((nat) => natRuleMatches(nat, query, gatewayPortName)) : allNats),
+        [allNats, query, gatewayPortName],
+    );
+    const views = React.useMemo<NatView[]>(
+        () =>
+            grouped
+                ? groupNatRules(nats, candidateSubnets(database))
+                : nats.map((rule) => ({ kind: 'rule', key: rule.uuid, rule })),
+        [nats, database, grouped],
+    );
     const ownerOf = React.useMemo(() => podAddressIndex(database), [database]);
     const counts = natTypeCounts(nats);
 
@@ -223,6 +285,11 @@ export const NatRuleTable: React.FC<NatRuleTableProps> = ({ nats, database, gate
             expandedContent={(view) =>
                 view.kind === 'group' ? <NatGroupAddresses group={view} ownerOf={ownerOf} /> : undefined
             }
+            openAll={openAll}
+            pageSize={pageSize}
+            perPageOptions={perPageOptions}
+            toolbarItems={toolbarItems}
+            emptyMessage={{ none: 'No NAT rules.', noMatch: 'No NAT rules match.' }}
         />
     );
 };
@@ -261,7 +328,7 @@ const routeFlags = (route: StaticRouteRow): string[] => [
         : []),
 ];
 
-export interface StaticRouteTableProps {
+export interface StaticRouteTableProps extends RuleTablePageOptions {
     routes: StaticRouteRow[];
     /** The router's OVN name, to find its ports in `database`. */
     routerName: string;
@@ -274,8 +341,23 @@ export interface StaticRouteTableProps {
  * default route first within each, next hops annotated with the router port
  * or node they land on when the zone's database can tell.
  */
-export const StaticRouteTable: React.FC<StaticRouteTableProps> = ({ routes, routerName, database, nodeHref }) => {
-    const ordered = React.useMemo(() => groupStaticRoutes(routes).flatMap((group) => group.routes), [routes]);
+export const StaticRouteTable: React.FC<StaticRouteTableProps> = ({
+    routes,
+    routerName,
+    database,
+    nodeHref,
+    query,
+    openAll,
+    pageSize,
+    perPageOptions,
+}) => {
+    const ordered = React.useMemo(
+        () =>
+            groupStaticRoutes(routes)
+                .flatMap((group) => group.routes)
+                .filter((route) => staticRouteMatches(route, query)),
+        [routes, query],
+    );
     const resolve = React.useMemo(() => nexthopResolverFor(database, routerName), [database, routerName]);
     const defaults = routes.filter((route) => isDefaultPrefix(route.ipPrefix)).length;
     const sourceRoutes = routes.filter((route) => routePolicy(route) === 'src-ip').length;
@@ -360,6 +442,10 @@ export const StaticRouteTable: React.FC<StaticRouteTableProps> = ({ routes, rout
             rows={ordered}
             rowKey={(route) => route.uuid}
             summary={<span data-testid="static-route-summary">{summaryParts.join(' · ')}</span>}
+            openAll={openAll}
+            pageSize={pageSize}
+            perPageOptions={perPageOptions}
+            emptyMessage={{ none: 'No static routes.', noMatch: 'No static routes match.' }}
         />
     );
 };
