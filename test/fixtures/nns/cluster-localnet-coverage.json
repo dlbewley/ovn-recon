@@ -1,0 +1,400 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "nmstate.io/v1beta1",
+      "kind": "NodeNetworkState",
+      "metadata": {
+        "name": "worker-1"
+      },
+      "status": {
+        "currentState": {
+          "interfaces": [
+            {
+              "name": "br-ex",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "br-vmdata",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "ens192",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-ex"
+            },
+            {
+              "name": "ens224",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-vmdata"
+            }
+          ],
+          "ovn": {
+            "bridge-mappings": [
+              {
+                "bridge": "br-ex",
+                "localnet": "physnet"
+              },
+              {
+                "bridge": "br-vmdata",
+                "localnet": "physnet-vmdata"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "nmstate.io/v1beta1",
+      "kind": "NodeNetworkState",
+      "metadata": {
+        "name": "worker-2"
+      },
+      "status": {
+        "currentState": {
+          "interfaces": [
+            {
+              "name": "br-ex",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "br-vmdata",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "ens192",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-ex"
+            },
+            {
+              "name": "ens224",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-vmdata"
+            }
+          ],
+          "ovn": {
+            "bridge-mappings": [
+              {
+                "bridge": "br-ex",
+                "localnet": "physnet"
+              },
+              {
+                "bridge": "br-vmdata",
+                "localnet": "physnet-vmdata"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "nmstate.io/v1beta1",
+      "kind": "NodeNetworkState",
+      "metadata": {
+        "name": "worker-3"
+      },
+      "status": {
+        "currentState": {
+          "interfaces": [
+            {
+              "name": "br-ex",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "br-vmdata",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "ens192",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-ex"
+            },
+            {
+              "name": "ens224",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-vmdata"
+            }
+          ],
+          "ovn": {
+            "bridge-mappings": [
+              {
+                "bridge": "br-ex",
+                "localnet": "physnet"
+              },
+              {
+                "bridge": "br-vmdata",
+                "localnet": "physnet-vmdata"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "nmstate.io/v1beta1",
+      "kind": "NodeNetworkState",
+      "metadata": {
+        "name": "worker-4"
+      },
+      "status": {
+        "currentState": {
+          "interfaces": [
+            {
+              "name": "br-ex",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "br-vmdata",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "ens192",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-ex"
+            },
+            {
+              "name": "ens224",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-vmdata"
+            }
+          ],
+          "ovn": {
+            "bridge-mappings": [
+              {
+                "bridge": "br-ex",
+                "localnet": "physnet"
+              },
+              {
+                "bridge": "br-vmdata",
+                "localnet": "physnet-vmdata"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "nmstate.io/v1beta1",
+      "kind": "NodeNetworkState",
+      "metadata": {
+        "name": "control-1"
+      },
+      "status": {
+        "currentState": {
+          "interfaces": [
+            {
+              "name": "br-ex",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "ens192",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-ex"
+            }
+          ],
+          "ovn": {
+            "bridge-mappings": [
+              {
+                "bridge": "br-ex",
+                "localnet": "physnet"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "nmstate.io/v1beta1",
+      "kind": "NodeNetworkState",
+      "metadata": {
+        "name": "control-2"
+      },
+      "status": {
+        "currentState": {
+          "interfaces": [
+            {
+              "name": "br-ex",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "ens192",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-ex"
+            }
+          ],
+          "ovn": {
+            "bridge-mappings": [
+              {
+                "bridge": "br-ex",
+                "localnet": "physnet"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "nmstate.io/v1beta1",
+      "kind": "NodeNetworkState",
+      "metadata": {
+        "name": "control-3"
+      },
+      "status": {
+        "currentState": {
+          "interfaces": [
+            {
+              "name": "br-ex",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "ens192",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-ex"
+            }
+          ],
+          "ovn": {
+            "bridge-mappings": [
+              {
+                "bridge": "br-ex",
+                "localnet": "physnet"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "nmstate.io/v1beta1",
+      "kind": "NodeNetworkState",
+      "metadata": {
+        "name": "storage-1"
+      },
+      "status": {
+        "currentState": {
+          "interfaces": [
+            {
+              "name": "br-ex",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "ens192",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-ex"
+            }
+          ],
+          "ovn": {
+            "bridge-mappings": [
+              {
+                "bridge": "br-ex",
+                "localnet": "physnet"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "nmstate.io/v1beta1",
+      "kind": "NodeNetworkState",
+      "metadata": {
+        "name": "storage-2"
+      },
+      "status": {
+        "currentState": {
+          "interfaces": [
+            {
+              "name": "br-ex",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "ens192",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-ex"
+            }
+          ],
+          "ovn": {
+            "bridge-mappings": [
+              {
+                "bridge": "br-ex",
+                "localnet": "physnet"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "nmstate.io/v1beta1",
+      "kind": "NodeNetworkState",
+      "metadata": {
+        "name": "storage-3"
+      },
+      "status": {
+        "currentState": {
+          "interfaces": [
+            {
+              "name": "br-ex",
+              "type": "ovs-bridge",
+              "state": "up"
+            },
+            {
+              "name": "ens192",
+              "type": "ethernet",
+              "state": "up",
+              "mtu": 1500,
+              "controller": "br-ex"
+            }
+          ],
+          "ovn": {
+            "bridge-mappings": [
+              {
+                "bridge": "br-ex",
+                "localnet": "physnet"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "k8s.cni.cncf.io/v1",
+      "kind": "NetworkAttachmentDefinition",
+      "metadata": {
+        "name": "machinenet",
+        "namespace": "default",
+        "ownerReferences": [
+          {
+            "apiVersion": "k8s.ovn.org/v1",
+            "kind": "ClusterUserDefinedNetwork",
+            "name": "machinenet"
+          }
+        ]
+      },
+      "spec": {
+        "config": "{\"cniVersion\":\"1.1.0\",\"mtu\":1500,\"name\":\"cluster_udn_machinenet\",\"netAttachDefName\":\"default/machinenet\",\"physicalNetworkName\":\"physnet\",\"role\":\"secondary\",\"topology\":\"localnet\",\"type\":\"ovn-k8s-cni-overlay\"}"
+      }
+    },
+    {
+      "apiVersion": "k8s.cni.cncf.io/v1",
+      "kind": "NetworkAttachmentDefinition",
+      "metadata": {
+        "name": "vlan-333",
+        "namespace": "default",
+        "ownerReferences": [
+          {
+            "apiVersion": "k8s.ovn.org/v1",
+            "kind": "ClusterUserDefinedNetwork",
+            "name": "vlan-333"
+          }
+        ]
+      },
+      "spec": {
+        "config": "{\"cniVersion\":\"1.1.0\",\"mtu\":1500,\"name\":\"cluster_udn_vlan-333\",\"netAttachDefName\":\"default/vlan-333\",\"physicalNetworkName\":\"thirdmap\",\"role\":\"secondary\",\"topology\":\"localnet\",\"type\":\"ovn-k8s-cni-overlay\",\"vlanID\":333}"
+      }
+    },
+    {
+      "apiVersion": "k8s.cni.cncf.io/v1",
+      "kind": "NetworkAttachmentDefinition",
+      "metadata": {
+        "name": "vlan-333-again",
+        "namespace": "default",
+        "ownerReferences": [
+          {
+            "apiVersion": "k8s.ovn.org/v1",
+            "kind": "ClusterUserDefinedNetwork",
+            "name": "vlan-333-again"
+          }
+        ]
+      },
+      "spec": {
+        "config": "{\"cniVersion\":\"1.1.0\",\"mtu\":1500,\"name\":\"cluster_udn_vlan-333-again\",\"netAttachDefName\":\"default/vlan-333-again\",\"physicalNetworkName\":\"secondmap\",\"role\":\"secondary\",\"topology\":\"localnet\",\"type\":\"ovn-k8s-cni-overlay\",\"vlanID\":333}"
+      }
+    },
+    {
+      "apiVersion": "k8s.cni.cncf.io/v1",
+      "kind": "NetworkAttachmentDefinition",
+      "metadata": {
+        "name": "vlan-999",
+        "namespace": "default",
+        "ownerReferences": [
+          {
+            "apiVersion": "k8s.ovn.org/v1",
+            "kind": "ClusterUserDefinedNetwork",
+            "name": "vlan-999"
+          }
+        ]
+      },
+      "spec": {
+        "config": "{\"cniVersion\":\"1.1.0\",\"mtu\":1500,\"name\":\"cluster_udn_vlan-999\",\"netAttachDefName\":\"default/vlan-999\",\"physicalNetworkName\":\"secondmap\",\"role\":\"secondary\",\"topology\":\"localnet\",\"type\":\"ovn-k8s-cni-overlay\",\"vlanID\":999}"
+      }
+    },
+    {
+      "apiVersion": "k8s.cni.cncf.io/v1",
+      "kind": "NetworkAttachmentDefinition",
+      "metadata": {
+        "name": "machinenet",
+        "namespace": "demo-mirror",
+        "ownerReferences": [
+          {
+            "apiVersion": "k8s.ovn.org/v1",
+            "kind": "ClusterUserDefinedNetwork",
+            "name": "machinenet"
+          }
+        ]
+      },
+      "spec": {
+        "config": "{\"cniVersion\":\"1.1.0\",\"mtu\":1500,\"name\":\"cluster_udn_machinenet\",\"netAttachDefName\":\"demo-mirror/machinenet\",\"physicalNetworkName\":\"physnet\",\"role\":\"secondary\",\"topology\":\"localnet\",\"type\":\"ovn-k8s-cni-overlay\"}"
+      }
+    },
+    {
+      "apiVersion": "k8s.cni.cncf.io/v1",
+      "kind": "NetworkAttachmentDefinition",
+      "metadata": {
+        "name": "vlan-1924",
+        "namespace": "demo-mirror",
+        "ownerReferences": [
+          {
+            "apiVersion": "k8s.ovn.org/v1",
+            "kind": "ClusterUserDefinedNetwork",
+            "name": "vlan-1924"
+          }
+        ]
+      },
+      "spec": {
+        "config": "{\"cniVersion\":\"1.1.0\",\"mtu\":1500,\"name\":\"cluster_udn_vlan-1924\",\"netAttachDefName\":\"demo-mirror/vlan-1924\",\"physicalNetworkName\":\"physnet-vmdata\",\"role\":\"secondary\",\"topology\":\"localnet\",\"type\":\"ovn-k8s-cni-overlay\",\"vlanID\":1924}"
+      }
+    }
+  ]
+}

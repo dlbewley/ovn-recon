@@ -1,0 +1,241 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "k8s.ovn.org/v1",
+      "kind": "ClusterUserDefinedNetwork",
+      "metadata": {
+        "name": "machinenet"
+      },
+      "spec": {
+        "namespaceSelector": {
+          "matchLabels": {
+            "network/machine": ""
+          }
+        },
+        "network": {
+          "localnet": {
+            "ipam": {
+              "mode": "Disabled"
+            },
+            "mtu": 1500,
+            "physicalNetworkName": "physnet",
+            "role": "Secondary"
+          },
+          "topology": "Localnet"
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "type": "NetworkCreated",
+            "status": "True",
+            "reason": "NetworkAttachmentDefinitionCreated",
+            "message": "NetworkAttachmentDefinition has been created in following namespaces: [default, demo-mirror]"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "k8s.ovn.org/v1",
+      "kind": "ClusterUserDefinedNetwork",
+      "metadata": {
+        "name": "vlan-1924"
+      },
+      "spec": {
+        "namespaceSelector": {
+          "matchLabels": {
+            "network/vlan-1924": ""
+          }
+        },
+        "network": {
+          "localnet": {
+            "ipam": {
+              "mode": "Disabled"
+            },
+            "physicalNetworkName": "physnet-vmdata",
+            "role": "Secondary",
+            "vlan": {
+              "access": {
+                "id": 1924
+              },
+              "mode": "Access"
+            }
+          },
+          "topology": "Localnet"
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "type": "NetworkCreated",
+            "status": "True",
+            "reason": "NetworkAttachmentDefinitionCreated",
+            "message": "NetworkAttachmentDefinition has been created in following namespaces: [demo-mirror]"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "k8s.ovn.org/v1",
+      "kind": "ClusterUserDefinedNetwork",
+      "metadata": {
+        "name": "vlan-1926"
+      },
+      "spec": {
+        "namespaceSelector": {
+          "matchLabels": {
+            "network/vlan-1926": ""
+          }
+        },
+        "network": {
+          "localnet": {
+            "ipam": {
+              "mode": "Disabled"
+            },
+            "physicalNetworkName": "physnet-vmdata",
+            "role": "Secondary",
+            "vlan": {
+              "access": {
+                "id": 1926
+              },
+              "mode": "Access"
+            }
+          },
+          "topology": "Localnet"
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "type": "NetworkCreated",
+            "status": "True",
+            "reason": "NetworkAttachmentDefinitionCreated",
+            "message": "NetworkAttachmentDefinition has been created in following namespaces: []"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "k8s.ovn.org/v1",
+      "kind": "ClusterUserDefinedNetwork",
+      "metadata": {
+        "name": "vlan-333"
+      },
+      "spec": {
+        "namespaceSelector": {
+          "matchLabels": {
+            "kubernetes.io/metadata.name": "default"
+          }
+        },
+        "network": {
+          "localnet": {
+            "ipam": {
+              "mode": "Disabled"
+            },
+            "physicalNetworkName": "thirdmap",
+            "role": "Secondary",
+            "vlan": {
+              "access": {
+                "id": 333
+              },
+              "mode": "Access"
+            }
+          },
+          "topology": "Localnet"
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "type": "NetworkCreated",
+            "status": "True",
+            "reason": "NetworkAttachmentDefinitionCreated",
+            "message": "NetworkAttachmentDefinition has been created in following namespaces: [default]"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "k8s.ovn.org/v1",
+      "kind": "ClusterUserDefinedNetwork",
+      "metadata": {
+        "name": "vlan-333-again"
+      },
+      "spec": {
+        "namespaceSelector": {
+          "matchLabels": {
+            "kubernetes.io/metadata.name": "default"
+          }
+        },
+        "network": {
+          "localnet": {
+            "ipam": {
+              "mode": "Disabled"
+            },
+            "physicalNetworkName": "secondmap",
+            "role": "Secondary",
+            "vlan": {
+              "access": {
+                "id": 333
+              },
+              "mode": "Access"
+            }
+          },
+          "topology": "Localnet"
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "type": "NetworkCreated",
+            "status": "True",
+            "reason": "NetworkAttachmentDefinitionCreated",
+            "message": "NetworkAttachmentDefinition has been created in following namespaces: [default]"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "k8s.ovn.org/v1",
+      "kind": "ClusterUserDefinedNetwork",
+      "metadata": {
+        "name": "vlan-999"
+      },
+      "spec": {
+        "namespaceSelector": {
+          "matchLabels": {
+            "kubernetes.io/metadata.name": "default"
+          }
+        },
+        "network": {
+          "localnet": {
+            "ipam": {
+              "mode": "Disabled"
+            },
+            "physicalNetworkName": "secondmap",
+            "role": "Secondary",
+            "vlan": {
+              "access": {
+                "id": 999
+              },
+              "mode": "Access"
+            }
+          },
+          "topology": "Localnet"
+        }
+      },
+      "status": {
+        "conditions": [
+          {
+            "type": "NetworkCreated",
+            "status": "True",
+            "reason": "NetworkAttachmentDefinitionCreated",
+            "message": "NetworkAttachmentDefinition has been created in following namespaces: [default]"
+          }
+        ]
+      }
+    }
+  ]
+}
