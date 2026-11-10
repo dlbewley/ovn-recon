@@ -29,6 +29,8 @@ import {
     getPoliciesClaimingBridgeMapping,
     getPoliciesClaimingInterface,
     getRouteAdvertisementsMatchingCudn,
+    getRoutesViaInterface,
+    getRunningRoutes,
     getVrfConnectionInfo,
     getVrfRoutesForInterface,
     NETWORK_ID_ANNOTATION,
@@ -37,8 +39,7 @@ import {
     NODE_VTEPS_ANNOTATION,
     parseNadConfig,
     resolvePatchPortCudn,
-    UnresolvedVrfNetworkId,
-    VrfAssociatedRoute
+    UnresolvedVrfNetworkId
 } from '../components/nodeVisualizationSelectors';
 import {
     ClusterUserDefinedNetwork,
@@ -340,13 +341,22 @@ const udnRef = (namespace: string, name: string): ResourceRef => ({
     apiVersion: 'k8s.ovn.org/v1', kind: 'UserDefinedNetwork', name, namespace
 });
 
-const routeText = (route: VrfAssociatedRoute): string => [
-    route.destination,
-    route.nextHopAddress ? ` via ${route.nextHopAddress}` : '',
-    route.nextHopInterface ? ` dev ${route.nextHopInterface}` : '',
-    route.metric ? ` metric ${route.metric}` : '',
-    route.protocol ? ` proto ${route.protocol}` : ''
-].join('');
+/**
+ * Kernel routes leaving through this device, from every table (ovn-recon-dp7.2).
+ * Omitted when there are none. The table is built from all running routes and
+ * narrowed to this device afterwards, so an ECMP route shows all its next hops
+ * and a default route's preferred mark reflects the whole table.
+ */
+const routesViaFacts = (raw: Interface | undefined, ctx: GraphContext): Fact[] => {
+    const name = raw?.name || '';
+    if (getRoutesViaInterface(name, ctx.nns).length === 0) return [];
+    return [{
+        label: 'Routes via this interface',
+        value: { table: 'kernel-routes', routes: getRunningRoutes(ctx.nns), viaInterface: name },
+        provenance: 'observed',
+        hint: `NNS routes.running entries whose next-hop-interface is ${name}, from every route table.`
+    }];
+};
 
 const getBridgePortNames = (raw: Interface | undefined): string[] => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -764,6 +774,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     emptyText: 'No bridge ports reported in NNS.'
                 });
             }
+            facts.push(...routesViaFacts(raw, ctx));
             return facts;
         }
     },
@@ -1151,7 +1162,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     : []),
                 {
                     label: 'Routes',
-                    value: vrfRoutes.map((route) => ({ text: routeText(route) })),
+                    value: { table: 'kernel-routes', routes: vrfRoutes },
                     provenance: 'observed',
                     hint: 'NNS routes in this VRF\'s route table, or leaving via one of its ports.',
                     emptyText: 'No associated routes found in NNS.'

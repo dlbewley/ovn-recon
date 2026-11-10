@@ -6,10 +6,12 @@ import { CodeEditor, Language } from '@patternfly/react-code-editor';
 import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import * as yaml from 'js-yaml';
 
+import type { InterfaceSelector } from '../components/KernelRouteTable';
 import { TopologyEdge } from '../components/nodeVisualizationModel';
 import { useIsDarkTheme } from '../components/useIsDarkTheme';
 import { GraphContext } from './context';
 import { baseFacts, FactList, ProvenanceLabel } from './facts';
+import { resolveInterfaceRef } from './ids';
 import { nodeKindRegistry } from './registry';
 import { DrawerTabDefinition, DrawerTabId } from './types';
 
@@ -33,7 +35,25 @@ export interface DrawerTabHooks {
     edges: TopologyEdge[];
     labelFor: (id: string) => string;
     onSelectNode: (id: string) => void;
+    /**
+     * Whether the canvas draws this node. Selecting one it does not draw
+     * clears the selection, so links are offered only to drawn nodes. When
+     * absent, every resolvable node is treated as drawn.
+     */
+    isDrawn?: (id: string) => boolean;
 }
+
+/**
+ * An interface name in a drawer table (a route's next-hop interface) as a
+ * link that moves the selection the way the Relationships tab does, when the
+ * graph draws that interface.
+ */
+export const interfaceSelector = (ctx: GraphContext, hooks: DrawerTabHooks): InterfaceSelector =>
+    (name) => {
+        const id = resolveInterfaceRef(name, ctx);
+        if (!id || (hooks.isDrawn && !hooks.isDrawn(id))) return undefined;
+        return () => hooks.onSelectNode(id);
+    };
 
 const subtle: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
 
@@ -99,7 +119,7 @@ export const buildDrawerTabs = (
             const facts = nodeKindRegistry[node.kind]?.facts?.(node, ctx);
             return (
                 <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
-                    <FactList facts={facts ?? baseFacts(node)} />
+                    <FactList facts={facts ?? baseFacts(node)} selectInterface={interfaceSelector(ctx, hooks)} />
                 </div>
             );
         }

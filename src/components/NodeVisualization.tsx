@@ -563,6 +563,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     const drawerTabsById = buildDrawerTabs(ctx, {
         edges: topologyEdges.filter(
             (edge) => placedNodeById.has(edge.source) && placedNodeById.has(edge.target)),
+        isDrawn: (id) => placedNodeById.has(id),
         labelFor: (id) => {
             const placed = placedNodeById.get(id);
             return placed ? placed.descriptor.present(placed.item, ctx).label : id;

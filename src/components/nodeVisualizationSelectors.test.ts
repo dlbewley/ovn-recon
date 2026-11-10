@@ -42,7 +42,7 @@ describe('nodeVisualizationSelectors fixture coverage', () => {
         expect(connectionInfo.brIntPorts.map((port) => port.name)).toEqual(['ovn-k8s-mp0', 'ovn-k8s-mp1']);
     });
 
-    it('associates routes by table id and next-hop interface while deduping duplicates', () => {
+    it('associates running routes by table id and next-hop interface', () => {
         const nns = loadFixture('vrf-mixed-routes');
         const vrf = findInterfaceByName(nns, 'vrf-blue');
 

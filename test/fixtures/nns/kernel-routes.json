@@ -1,0 +1,83 @@
+{
+  "apiVersion": "nmstate.io/v1beta1",
+  "kind": "NodeNetworkState",
+  "metadata": {
+    "name": "worker-routes"
+  },
+  "status": {
+    "currentState": {
+      "interfaces": [
+        {
+          "name": "ens3",
+          "type": "ethernet",
+          "state": "up",
+          "controller": "br-ex",
+          "mac-address": "02:00:00:00:00:03"
+        },
+        {
+          "name": "ens4",
+          "type": "ethernet",
+          "state": "up",
+          "mac-address": "02:00:00:00:00:04",
+          "ipv4": {
+            "enabled": true,
+            "dhcp": true,
+            "address": [
+              { "ip": "198.51.100.20", "prefix-length": 24 }
+            ]
+          }
+        },
+        {
+          "name": "br-ex",
+          "type": "ovs-bridge",
+          "state": "up",
+          "bridge": {
+            "port": [
+              { "name": "br-ex" },
+              { "name": "ens3" }
+            ]
+          }
+        },
+        {
+          "name": "br-ex",
+          "type": "ovs-interface",
+          "state": "up",
+          "controller": "br-ex",
+          "mac-address": "02:00:00:00:00:03",
+          "ipv4": {
+            "enabled": true,
+            "address": [
+              { "ip": "192.0.2.10", "prefix-length": 24 }
+            ]
+          },
+          "ipv6": {
+            "enabled": true,
+            "address": [
+              { "ip": "2001:db8:1::10", "prefix-length": 64 }
+            ]
+          }
+        }
+      ],
+      "routes": {
+        "running": [
+          { "destination": "203.0.113.0/24", "next-hop-address": "192.0.2.253", "next-hop-interface": "br-ex", "metric": 200, "table-id": 254 },
+          { "destination": "198.51.100.0/24", "next-hop-address": "0.0.0.0", "next-hop-interface": "ens4", "metric": 100, "source": "198.51.100.20", "table-id": 254 },
+          { "destination": "0.0.0.0/0", "next-hop-address": "198.51.100.1", "next-hop-interface": "ens4", "metric": 100, "table-id": 254 },
+          { "destination": "203.0.113.0/24", "next-hop-address": "192.0.2.254", "next-hop-interface": "br-ex", "metric": 20, "weight": 1, "table-id": 254 },
+          { "destination": "2001:db8:2::/64", "next-hop-address": "2001:db8:1::2", "next-hop-interface": "br-ex", "metric": 1024, "table-id": 254 },
+          { "destination": "192.0.2.0/24", "next-hop-address": "0.0.0.0", "next-hop-interface": "br-ex", "metric": 48, "source": "192.0.2.10", "table-id": 254 },
+          { "destination": "203.0.113.0/24", "next-hop-address": "198.51.100.254", "next-hop-interface": "ens4", "metric": 20, "weight": 1, "table-id": 254 },
+          { "destination": "::/0", "next-hop-address": "2001:db8:1::1", "next-hop-interface": "br-ex", "metric": 48, "table-id": 254 },
+          { "destination": "203.0.113.64/26", "next-hop-address": "192.0.2.252", "next-hop-interface": "br-ex", "metric": 20, "mtu": 1400, "table-id": 254 },
+          { "destination": "0.0.0.0/0", "next-hop-address": "192.0.2.1", "next-hop-interface": "br-ex", "metric": 48, "table-id": 254 },
+          { "destination": "2001:db8:1::/64", "next-hop-address": "::", "next-hop-interface": "br-ex", "metric": 48, "table-id": 254 },
+          { "destination": "198.51.100.0/24", "next-hop-address": "0.0.0.0", "next-hop-interface": "ens4", "table-id": 100 },
+          { "destination": "0.0.0.0/0", "next-hop-address": "198.51.100.1", "next-hop-interface": "ens4", "metric": 100, "table-id": 100 }
+        ],
+        "config": [
+          { "destination": "0.0.0.0/0", "next-hop-address": "198.51.100.1", "next-hop-interface": "ens4", "table-id": 100 }
+        ]
+      }
+    }
+  }
+}

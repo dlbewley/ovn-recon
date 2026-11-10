@@ -5,7 +5,8 @@ import { buildGraphContext } from './context';
 import { descriptorFor } from './descriptors';
 import { nodeKindRegistry } from './registry';
 import { buildNodeViewModel } from './viewModel';
-import { Fact, NodeKind } from './types';
+import { Fact, KernelRoutesTable, NodeKind } from './types';
+import { buildKernelRouteTables, routeTablesVia } from '../components/kernelRoutes';
 import {
     ClusterUserDefinedNetwork, NodeNetworkConfigurationEnactment, NodeNetworkState, RouteAdvertisements
 } from '../types';
@@ -137,11 +138,33 @@ describe('facts builders', () => {
             expect((fact.value as { text: string }[]).map((v) => v.text)).toContain('ens224');
         });
 
-        it('VRF routes carry the full route sentence', () => {
+        it('VRF routes are a kernel route table of the VRF\'s own table', () => {
             const fact = byLabel(factsFor('vrf', vrf), 'Routes');
             expect(fact.provenance).toBe('observed');
-            expect((fact.value as { text: string }[]).map((v) => v.text))
-                .toContain('0.0.0.0/0 via 192.0.2.1 dev br-ex');
+            const value = fact.value as KernelRoutesTable;
+            expect(value.table).toBe('kernel-routes');
+            expect(value.viaInterface).toBeUndefined();
+            expect(value.routes.map((route) => route.destination).sort())
+                .toEqual(['0.0.0.0/0', '169.254.0.16/32', '169.254.0.3/32', '172.30.0.0/16']);
+            expect(value.routes.find((route) => route.destination === '0.0.0.0/0')).toMatchObject({
+                nextHopAddress: '192.0.2.1', nextHopInterface: 'br-ex', tableId: 5775
+            });
+        });
+
+        it('a bridge lists the routes leaving through it, from every table', () => {
+            const brEx = ctx.interfaces.find((i) => i.name === 'br-ex' && i.type === 'ovs-bridge')!;
+            const fact = byLabel(factsFor('interface', brEx, 'bridge' as NodeKind), 'Routes via this interface');
+            expect(fact.provenance).toBe('observed');
+            expect(fact.hint).toContain('next-hop-interface is br-ex');
+            const value = fact.value as KernelRoutesTable;
+            expect(value).toMatchObject({ table: 'kernel-routes', viaInterface: 'br-ex' });
+            const tables = routeTablesVia(buildKernelRouteTables(value.routes), 'br-ex');
+            expect(tables.map((table) => table.tableId)).toEqual([254, 5775]);
+        });
+
+        it('an interface no route leaves through has no routes fact', () => {
+            const facts = factsFor('interface', vlan, 'vlan' as NodeKind);
+            expect(facts.some((f) => f.label === 'Routes via this interface')).toBe(false);
         });
     });
 

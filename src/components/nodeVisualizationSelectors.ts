@@ -740,19 +740,109 @@ const vrfPortNames = (vrfInterface: Interface): Set<string> => new Set<string>(
             : []
 );
 
+/**
+ * One kernel route as NodeNetworkState reports it under routes.running
+ * (ovn-recon-dp7.2). On OpenShift 4.22 an entry carries destination, metric,
+ * mtu, next-hop-address, next-hop-interface, source, state, table-id and
+ * vrf-name -- and no protocol. Fields stay absent when the entry omits them;
+ * nothing is defaulted here. `state` is not carried: no table shows it yet.
+ */
+export interface NnsRoute {
+    destination: string;
+    nextHopAddress?: string;
+    nextHopInterface?: string;
+    metric?: number;
+    tableId?: number;
+    vrfName?: string;
+    /** Preferred source address. */
+    source?: string;
+    mtu?: number;
+    /** Multipath next-hop weight, when reported. */
+    weight?: number;
+}
+
+const toNumberValue = (value: unknown): number | undefined => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number(value);
+    return undefined;
+};
+
+const normalizeRunningRoute = (route: unknown): NnsRoute | null => {
+    if (!route || typeof route !== 'object') return null;
+    const raw = route as Record<string, unknown>;
+    const destination = toStringValue(raw.destination ?? raw.dst);
+    if (!destination) return null;
+    const entry: NnsRoute = { destination };
+    const nextHopAddress = toStringValue(raw['next-hop-address'] ?? raw.nextHopAddress ?? raw.gateway ?? raw.via);
+    const nextHopInterface = getRouteNextHopInterface(raw);
+    const metric = toNumberValue(raw.metric);
+    const tableId = toNumberValue(getRouteTableId(raw));
+    const vrfName = toStringValue(raw['vrf-name']);
+    const source = toStringValue(raw.source);
+    const mtu = toNumberValue(raw.mtu);
+    const weight = toNumberValue(raw.weight);
+    if (nextHopAddress !== undefined) entry.nextHopAddress = nextHopAddress;
+    if (nextHopInterface !== undefined) entry.nextHopInterface = nextHopInterface;
+    if (metric !== undefined) entry.metric = metric;
+    if (tableId !== undefined) entry.tableId = tableId;
+    if (vrfName !== undefined) entry.vrfName = vrfName;
+    if (source !== undefined) entry.source = source;
+    if (mtu !== undefined) entry.mtu = mtu;
+    if (weight !== undefined) entry.weight = weight;
+    return entry;
+};
+
+const runningRoutesByNns = new WeakMap<NodeNetworkState, NnsRoute[]>();
+
+/**
+ * Every route the kernel holds, from routes.running only: routes.config is
+ * what nmstate was asked to apply, not what the node routes by. Every table
+ * is included. Exact duplicates collapse; entries differing in any field --
+ * metric included -- stay apart. Cached per resource object, like the walk above.
+ */
+export const getRunningRoutes = (nns: NodeNetworkState): NnsRoute[] => {
+    const cached = runningRoutesByNns.get(nns);
+    if (cached) return cached;
+    const currentState = nns?.status?.currentState as Record<string, unknown> | undefined;
+    const routes = currentState?.routes as Record<string, unknown> | unknown[] | undefined;
+    const list = Array.isArray(routes)
+        ? routes
+        : (routes && typeof routes === 'object' ? (routes as Record<string, unknown>).running : undefined)
+            ?? currentState?.['routes.running'];
+    const seen = new Set<string>();
+    const result = (Array.isArray(list) ? list : [])
+        .map(normalizeRunningRoute)
+        .filter((route): route is NnsRoute => {
+            if (route === null) return false;
+            const key = JSON.stringify(route);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    if (nns) runningRoutesByNns.set(nns, result);
+    return result;
+};
+
+/** Kernel routes in a VRF's own route table, or leaving through one of its ports. */
 export const getVrfRoutesForInterface = (
     vrfInterface: Interface,
     nns: NodeNetworkState
-): VrfAssociatedRoute[] => {
-    const vrfTableId = toStringValue(vrfInterface.vrf?.['route-table-id']);
+): NnsRoute[] => {
+    const vrfTableId = toNumberValue(vrfInterface.vrf?.['route-table-id']);
     const vrfPorts = vrfPortNames(vrfInterface);
 
-    return collectNnsRoutes(nns).filter((route) => {
-        const byTable = vrfTableId ? route.tableId === vrfTableId : false;
+    return getRunningRoutes(nns).filter((route) => {
+        const byTable = vrfTableId !== undefined && route.tableId === vrfTableId;
         const byPort = route.nextHopInterface ? vrfPorts.has(route.nextHopInterface) : false;
         return byTable || byPort;
     });
 };
+
+/** Kernel routes, from every table, whose next-hop interface is this device. */
+export const getRoutesViaInterface = (interfaceName: string, nns: NodeNetworkState): NnsRoute[] =>
+    interfaceName
+        ? getRunningRoutes(nns).filter((route) => route.nextHopInterface === interfaceName)
+        : [];
 
 const DEFAULT_ROUTES = new Set(['0.0.0.0/0', '::/0']);
 

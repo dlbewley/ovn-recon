@@ -1,6 +1,7 @@
 import * as React from 'react';
 
 import type { GraphContext as GraphContextLike } from './context';
+import type { NnsRoute } from '../components/nodeVisualizationSelectors';
 import {
     ClusterUserDefinedNetwork,
     UserDefinedNetwork
@@ -97,15 +98,29 @@ export interface FactItem {
     href?: string;
 }
 
+/**
+ * A table-valued fact (ovn-recon-dp7.2): rows that a dedicated component in
+ * facts.tsx renders in place of a list. Still data, so builders stay pure and
+ * testable; `table` names the component. Add a member per new table kind.
+ */
+export interface KernelRoutesTable {
+    table: 'kernel-routes';
+    routes: NnsRoute[];
+    /** Show only routes with a next hop through this device. */
+    viaInterface?: string;
+}
+
+export type FactTable = KernelRoutesTable;
+
 export interface Fact {
     label: string;
-    value: string | FactItem[];
+    value: string | FactItem[] | FactTable;
     /** Renders the whole value as a link to this resource. */
     ref?: ResourceRef;
     provenance: Provenance;
     /** Why we believe this. Required in practice for anything inferred. */
     hint?: string;
-    /** Rendered when a list value is empty; an empty list without one is omitted. */
+    /** Rendered when a list or table value is empty; an empty one without it is omitted. */
     emptyText?: string;
 }
 
