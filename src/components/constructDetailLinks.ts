@@ -60,6 +60,23 @@ export const constructDetailPath = (
     `/ovn-recon/ovn/${encodeURIComponent(node)}/${kind}/${encodeURIComponent(name)}${detailSearch(options)}`;
 
 /**
+ * The name of the same construct in another node's zone. OVN-Kubernetes names
+ * per-node constructs after their node: the node switch (`cnv-1`), the
+ * external switch (`ext_cnv-1`), the gateway router (`GR_cnv-1`) and their
+ * user-defined-network counterparts (`ext_<network>_cnv-1`,
+ * `GR_<network>_cnv-1`, `<network>_cnv-1`). Those names follow the node;
+ * cluster-wide names (`join`, `transit_switch`, `ovn_cluster_router`, ...)
+ * are the same in every zone and are returned unchanged.
+ */
+export const constructNameForNode = (name: string, fromNode: string, toNode: string): string => {
+    if (!fromNode || fromNode === toNode) return name;
+    if (name === fromNode) return toNode;
+    const suffix = `_${fromNode}`;
+    if (name.endsWith(suffix)) return `${name.slice(0, -suffix.length)}_${toNode}`;
+    return name;
+};
+
+/**
  * The zone a cluster-view construct's detail link targets: the construct's
  * own node when that node is one of its zones, otherwise the first zone, the
  * representative-zone rule the drawer's Config tab uses. A filtered cluster

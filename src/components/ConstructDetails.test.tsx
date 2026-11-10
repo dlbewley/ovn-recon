@@ -267,16 +267,29 @@ describe('ConstructDetails', () => {
     });
 
     describe('zones', () => {
-        it('moves to the same construct under another node, and says when that zone has no such row', async () => {
+        it("moves a node-named construct to the selected node's own copy", async () => {
             mockNodeNetworkStates.push({ metadata: { name: 'cnv-2' } }, { metadata: { name: 'cnv-1' } });
             await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=ports');
             const select = container.querySelector<HTMLSelectElement>('select[aria-label="Node database"]')!;
             expect([...select.options].map((option) => option.value)).toEqual(['cnv-1', 'cnv-2']);
 
             await setValue(select, 'cnv-2');
-            expect(current().pathname).toBe('/ovn-recon/ovn/cnv-2/switch/cnv-1');
+            expect(current().pathname).toBe('/ovn-recon/ovn/cnv-2/switch/cnv-2');
             expect(current().search).toBe('?tab=ports');
             expect(current().navigationType).toBe(NavigationType.Push);
+            expect(container.querySelector('[data-testid="construct-not-in-zone"]')).toBeNull();
+        });
+
+        it('keeps a cluster-wide name when moving to another node', async () => {
+            mockNodeNetworkStates.push({ metadata: { name: 'cnv-2' } }, { metadata: { name: 'cnv-1' } });
+            await renderAt('/ovn-recon/ovn/cnv-1/switch/transit_switch');
+            const select = container.querySelector<HTMLSelectElement>('select[aria-label="Node database"]')!;
+            await setValue(select, 'cnv-2');
+            expect(current().pathname).toBe('/ovn-recon/ovn/cnv-2/switch/transit_switch');
+        });
+
+        it('says when the zone has no such row', async () => {
+            await renderAt('/ovn-recon/ovn/cnv-2/switch/cnv-1?tab=ports');
             expect(container.querySelector('[data-testid="construct-not-in-zone"]')?.textContent).toContain(
                 'node cnv-2',
             );

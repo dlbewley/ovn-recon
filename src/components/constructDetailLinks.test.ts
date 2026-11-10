@@ -1,6 +1,7 @@
 import {
     clusterLadderPath,
     constructDetailPath,
+    constructNameForNode,
     detailHrefFor,
     detailSearch,
     detailZoneFor,
@@ -27,6 +28,31 @@ describe('constructDetailPath', () => {
     it('omits the default tab', () => {
         expect(detailSearch({ tab: 'overview' })).toBe('');
         expect(detailSearch({})).toBe('');
+    });
+});
+
+describe('constructNameForNode', () => {
+    it.each([
+        ['cnv-1', 'cnv-3'],
+        ['ext_cnv-1', 'ext_cnv-3'],
+        ['GR_cnv-1', 'GR_cnv-3'],
+        ['GR_cluster_udn_example.p.cudn_cnv-1', 'GR_cluster_udn_example.p.cudn_cnv-3'],
+        ['ext_cluster_udn_example.p.cudn_cnv-1', 'ext_cluster_udn_example.p.cudn_cnv-3'],
+        ['demo.mirror_example.l3.udn_cnv-1', 'demo.mirror_example.l3.udn_cnv-3'],
+    ])('follows the node: %s -> %s', (name, expected) => {
+        expect(constructNameForNode(name, 'cnv-1', 'cnv-3')).toBe(expected);
+    });
+
+    it.each(['join', 'transit_switch', 'ovn_cluster_router', 'cluster_udn_machinenet_ovn_localnet_switch', 'cnv-10'])(
+        'keeps cluster-wide or unrelated name %s',
+        (name) => {
+            expect(constructNameForNode(name, 'cnv-1', 'cnv-3')).toBe(name);
+        },
+    );
+
+    it('is unchanged when the node is unchanged or unknown', () => {
+        expect(constructNameForNode('cnv-1', 'cnv-1', 'cnv-1')).toBe('cnv-1');
+        expect(constructNameForNode('cnv-1', '', 'cnv-3')).toBe('cnv-1');
     });
 });
 
