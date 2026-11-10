@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dlbewley/ovn-recon/collector/api/lookup-response.schema.json",
+  "title": "LookupResponse",
+  "description": "Payload from GET /api/v1/lookup/{kind}/{value}: every row, in every stored zone snapshot, that holds the queried address or name. The value travels in the path (a CIDR's slash encoded as %2F or literal); nothing is read from a query string. Hits are never merged: the same address in another zone, or in another network of the same zone, is another hit.",
+  "type": "object",
+  "required": [
+    "query",
+    "hits",
+    "total",
+    "limit",
+    "truncated",
+    "zones",
+    "warnings"
+  ],
+  "properties": {
+    "query": {
+      "description": "The request as the collector read it.",
+      "type": "object",
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "ip",
+            "mac",
+            "cidr",
+            "name"
+          ]
+        },
+        "value": {
+          "description": "Normalised: an address in canonical text form, a CIDR masked to its network, a MAC in lower-case colon form, a name trimmed of surrounding space.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "hits": {
+      "description": "Best match first: by matchType in the order exact, containment, within, substring; among containment matches the longest stored prefix first; then by node, table and row name. Cut to `limit`.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "node",
+          "table",
+          "rowUuid",
+          "network",
+          "matchedField",
+          "matchedValue",
+          "matchType",
+          "snapshotGeneratedAt"
+        ],
+        "properties": {
+          "node": {
+            "description": "The zone: the node whose snapshot holds the row.",
+            "type": "string"
+          },
+          "table": {
+            "description": "The northbound table of the row.",
+            "type": "string",
+            "enum": [
+              "Logical_Switch",
+              "Logical_Router",
+              "Logical_Switch_Port",
+              "Logical_Router_Port",
+              "NAT",
+              "Logical_Router_Static_Route",
+              "Load_Balancer"
+            ]
+          },
+          "rowUuid": {
+            "description": "The row's uuid in that zone's database.",
+            "type": "string"
+          },
+          "rowName": {
+            "description": "The row's name column. Absent for NAT and Logical_Router_Static_Route, which have none.",
+            "type": "string"
+          },
+          "construct": {
+            "description": "The logical switch or router the row belongs to: the switch that lists a port, the router that lists a port, NAT rule or static route, or the row itself when it is a switch or router. Absent for a load balancer (attached to many) and for a row nothing in the zone references.",
+            "type": "object",
+            "required": [
+              "kind",
+              "name",
+              "uuid"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "switch",
+                  "router"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "uuid": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "network": {
+            "description": "The k8s.ovn.org/network identity: `default`, `cluster_udn_<name>` or `<namespace>_<name>`. Read from the row's external_ids (k8s.ovn.org/network, else the network of k8s.ovn.org/owner-controller), else from its construct, else `default`.",
+            "type": "string"
+          },
+          "owner": {
+            "description": "The Kubernetes object the row's external_ids name; absent when they name none. `Pod` for a pod's switch port, the k8s.ovn.org/kind of a load balancer (`Service`), otherwise the row's k8s.ovn.org/owner-type with k8s.ovn.org/name as written.",
+            "type": "object",
+            "required": [
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "namespace": {
+                "description": "Absent for a cluster-scoped owner and for an owner type whose name format the collector does not split.",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "matchedField": {
+            "description": "The field that matched, as the path of the value in the snapshot row. A row is one hit however many of its fields match; the best match type wins.",
+            "type": "string",
+            "enum": [
+              "name",
+              "addresses",
+              "dynamicAddresses",
+              "portSecurity",
+              "networks",
+              "mac",
+              "externalIp",
+              "logicalIp",
+              "externalMac",
+              "ipPrefix",
+              "vips",
+              "otherConfig.subnet",
+              "otherConfig.ipv6_prefix",
+              "externalIds.namespace",
+              "externalIds.k8s.ovn.org/network"
+            ]
+          },
+          "matchedValue": {
+            "description": "The matched value as stored: one address entry, one network, one VIP key, the name.",
+            "type": "string"
+          },
+          "matchType": {
+            "description": "`exact`: the stored address, CIDR or name equals the query. `containment`: a stored CIDR contains the queried address or CIDR. `within`: the stored address or CIDR lies inside the queried CIDR (cidr lookups). `substring`: the stored name contains the queried text (name lookups).",
+            "type": "string",
+            "enum": [
+              "exact",
+              "containment",
+              "within",
+              "substring"
+            ]
+          },
+          "snapshotGeneratedAt": {
+            "description": "When the zone's snapshot was collected: how old this answer is.",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "total": {
+      "description": "Every matching row, including the ones cut by `limit`.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "limit": {
+      "description": "The most hits a response carries.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "truncated": {
+      "description": "True when `total` exceeds `limit`.",
+      "type": "boolean"
+    },
+    "zones": {
+      "description": "The zone snapshots that were searched, by node name. A node missing here was not searched; `warnings` says why.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "node",
+          "snapshotGeneratedAt",
+          "sourceHealth"
+        ],
+        "properties": {
+          "node": {
+            "type": "string"
+          },
+          "snapshotGeneratedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sourceHealth": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "description": "`ZONE_NOT_CACHED`: a node whose zone has no stored snapshot. `LOOKUP_CACHE_DISABLED`: the collector probes live but keeps no cache, so there is nothing to search.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

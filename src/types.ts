@@ -688,6 +688,138 @@ export interface ClusterLogicalTopology {
     warnings: LogicalTopologyWarning[];
 }
 
+// Lookup contract: the response of GET /api/v1/lookup/{kind}/{value}, which
+// answers "where is this address or name?" across every stored zone snapshot
+// (ovn-recon-tpp.1). Mirrors collector/internal/snapshot/lookup_types.go and
+// collector/api/lookup-response.schema.json; src/lookupContract.test.ts
+// checks the value lists below against the schema.
+
+/** What a lookup value is. `name` is a case-insensitive substring. */
+export const LOOKUP_KINDS = ['ip', 'mac', 'cidr', 'name'] as const;
+export type LookupKind = (typeof LOOKUP_KINDS)[number];
+
+/**
+ * How a stored value matched, best first (the order hits arrive in):
+ * `exact` the stored address, CIDR or name equals the query; `containment`
+ * a stored CIDR contains the queried address or CIDR, so the row is about a
+ * range the query falls in; `within` the stored address or CIDR lies inside
+ * the queried CIDR; `substring` the stored name contains the queried text.
+ */
+export const LOOKUP_MATCH_TYPES = ['exact', 'containment', 'within', 'substring'] as const;
+export type LookupMatchType = (typeof LOOKUP_MATCH_TYPES)[number];
+
+/** The northbound table of a hit's row, as OVN spells it. */
+export const LOOKUP_TABLES = [
+    'Logical_Switch',
+    'Logical_Router',
+    'Logical_Switch_Port',
+    'Logical_Router_Port',
+    'NAT',
+    'Logical_Router_Static_Route',
+    'Load_Balancer',
+] as const;
+export type LookupTable = (typeof LOOKUP_TABLES)[number];
+
+/** The field that matched, as the path of the value in the snapshot row. */
+export const LOOKUP_FIELDS = [
+    'name',
+    'addresses',
+    'dynamicAddresses',
+    'portSecurity',
+    'networks',
+    'mac',
+    'externalIp',
+    'logicalIp',
+    'externalMac',
+    'ipPrefix',
+    'vips',
+    'otherConfig.subnet',
+    'otherConfig.ipv6_prefix',
+    'externalIds.namespace',
+    'externalIds.k8s.ovn.org/network',
+] as const;
+export type LookupField = (typeof LOOKUP_FIELDS)[number];
+
+export const LOOKUP_CONSTRUCT_KINDS = ['switch', 'router'] as const;
+export type LookupConstructKind = (typeof LOOKUP_CONSTRUCT_KINDS)[number];
+
+export interface LookupQuery {
+    kind: LookupKind;
+    /** Normalised by the collector: a CIDR masked to its network, a MAC in
+     * lower-case colon form, a name trimmed. */
+    value: string;
+}
+
+/** The logical switch or router a row belongs to (or is). */
+export interface LookupConstruct {
+    kind: LookupConstructKind;
+    name: string;
+    uuid: string;
+}
+
+/** The Kubernetes object a row's external_ids name. */
+export interface LookupOwner {
+    /** `Pod` for a pod's switch port, `Service` for a load balancer, else
+     * the row's `k8s.ovn.org/owner-type`. */
+    kind: string;
+    /** Absent for a cluster-scoped owner and for an owner type whose name
+     * format the collector does not split. */
+    namespace?: string;
+    name: string;
+}
+
+/**
+ * One matching row in one zone. The same address in another zone, or in
+ * another network of the same zone, is another hit: user-defined network
+ * subnets may overlap, so hits are never merged and none is "the" answer.
+ */
+export interface LookupHit {
+    /** The zone: the node whose snapshot holds the row. */
+    node: string;
+    table: LookupTable;
+    rowUuid: string;
+    /** Absent for the tables without a name column (NAT, static routes). */
+    rowName?: string;
+    /** Absent for a load balancer (attached to many switches and routers)
+     * and for a row nothing in the zone references. */
+    construct?: LookupConstruct;
+    /** The `k8s.ovn.org/network` identity: `default`, `cluster_udn_<name>`
+     * or `<namespace>_<name>`. */
+    network: string;
+    /** Present only when the row's external_ids name an owner. */
+    owner?: LookupOwner;
+    matchedField: LookupField;
+    /** The matched value as stored: one address entry, one network, one VIP
+     * key, the name. */
+    matchedValue: string;
+    matchType: LookupMatchType;
+    /** When the zone's snapshot was collected: how old this answer is. */
+    snapshotGeneratedAt: string;
+}
+
+/** One zone snapshot that was searched. */
+export interface LookupZone {
+    node: string;
+    snapshotGeneratedAt: string;
+    sourceHealth: string;
+}
+
+export interface LookupResponse {
+    query: LookupQuery;
+    /** Best match first, then by node, table and row name; cut to `limit`. */
+    hits: LookupHit[];
+    /** Every matching row, including the ones cut by `limit`. */
+    total: number;
+    limit: number;
+    /** True when `total` exceeds `limit`. */
+    truncated: boolean;
+    /** The zones that were searched. A lookup reads stored snapshots only
+     * and never collects, so a node missing here was not searched (see
+     * `warnings`: `ZONE_NOT_CACHED`, `LOOKUP_CACHE_DISABLED`). */
+    zones: LookupZone[];
+    warnings: LogicalTopologyWarning[];
+}
+
 export interface OvnRecon extends K8sResourceCommon {
     spec?: {
         collector?: {
