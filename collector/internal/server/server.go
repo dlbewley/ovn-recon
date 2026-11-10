@@ -26,6 +26,13 @@ const includeParam = "include"
 
 const sectionsPathUsage = "expected /api/v1/sections/<section>[,<section>]/snapshots[/<node>]"
 
+// lookupPrefix roots the address and name lookup:
+// /api/v1/lookup/<kind>/<value>. Like the sections route, every argument is
+// in the path, because the console drops query strings (ovn-recon-e2b.12).
+const lookupPrefix = "/api/v1/lookup/"
+
+const lookupPathUsage = "expected /api/v1/lookup/<ip|mac|cidr|name>/<value>"
+
 // aggregateConcurrency bounds parallel zone collection so an aggregate
 // request cannot fan out unbounded pod execs.
 const aggregateConcurrency = 4
@@ -107,6 +114,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle(snapshotsAggregatePath, withGzip(http.HandlerFunc(s.handleSnapshotsAggregate)))
 	mux.Handle(snapshotsPrefix, withGzip(http.HandlerFunc(s.handleSnapshotByNode)))
 	mux.Handle(sectionsPrefix, withGzip(http.HandlerFunc(s.handleSectionsPath)))
+	mux.Handle(lookupPrefix, withGzip(http.HandlerFunc(s.handleLookup)))
 	return mux
 }
 
