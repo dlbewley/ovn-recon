@@ -15,6 +15,7 @@ import { serviceOf } from './serviceIndex';
 import { SERVICE_PAGE_SIZE } from './ServiceTables';
 import { detailHrefFor } from './constructDetailLinks';
 import { EndpointSliceLike } from './serviceIndex';
+import { openInfoPopover } from './drawerKitTestUtils';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 
@@ -98,6 +99,64 @@ describe('ConstructDrawerBody', () => {
             root.render(<ConstructDrawerBody construct={construct!} model={model} database={database} />);
         });
     };
+
+    describe('layout kit (ovn-recon-dp7.1)', () => {
+        it('opens with the identity header: name, kind, state and context chips', () => {
+            act(() => {
+                root.render(
+                    <ConstructDrawerBody
+                        construct={{ ...byName('GR_cnv-1')!, enabled: true }}
+                        model={model}
+                        database={database}
+                        nodeHref={(node) => `/ovn-recon/ovn/${node}`}
+                    />,
+                );
+            });
+            const identity = container.querySelector('[data-testid="construct-identity"]')!;
+            expect(identity.querySelector('h3')?.textContent).toBe('GR_cnv-1');
+            expect(identity.querySelector('[data-testid="drawer-identity-kind"]')?.textContent).toBe('Gateway router');
+            expect(identity.querySelector('[data-testid="drawer-identity-state"]')?.textContent).toContain('Enabled');
+            expect(identity.querySelector('a[href="/ovn-recon/ovn/cnv-1"]')?.textContent).toBe('Node cnv-1');
+            expect(identity.textContent).toContain('Network Default cluster network');
+            // The facts no longer repeat what the header says.
+            const terms = [...container.querySelectorAll('[data-testid="fact-rows"] dt')].map((dt) => dt.textContent);
+            ['Role', 'Network', 'Node', 'Admin state', 'OVN name', 'UUID'].forEach((term) => expect(terms).not.toContain(term));
+            // One-line counts first, then the tables at full width.
+            expect(terms).toEqual(['Load balancers', 'NAT rules (74)', 'Static routes (3)']);
+            // One line per fact: a horizontal list.
+            expect(container.querySelector('dl[aria-label="Overview"]')?.classList.contains('pf-m-horizontal')).toBe(true);
+        });
+
+        it('folds the UUID, and the OVN name when the header shortens it, into Identifiers with copy buttons', () => {
+            const udnRouter = 'cluster_udn_example.p.cudn_transit_router';
+            render(udnRouter);
+            const construct = byName(udnRouter)!;
+            expect(container.querySelector('[data-testid="construct-identity"] h3')?.textContent).toBe('transit_router');
+            const toggle = container.querySelector<HTMLButtonElement>('[data-testid="identifiers"] button')!;
+            expect(toggle.getAttribute('aria-expanded')).toBe('false');
+            act(() => toggle.click());
+            const terms = [...container.querySelectorAll('[data-testid="identifier-rows"] dt')].map((dt) => dt.textContent);
+            expect(terms).toEqual(['OVN name', 'UUID']);
+            const identifiers = container.querySelector('[data-testid="identifier-rows"]')!.textContent;
+            expect(identifiers).toContain(udnRouter);
+            expect(identifiers).toContain(construct.uuid);
+            expect(container.querySelector('button[aria-label="Copy UUID"]')).not.toBeNull();
+            expect(container.querySelector('button[aria-label="Copy OVN name"]')).not.toBeNull();
+        });
+
+        it('leaves the OVN name out of Identifiers when the header already shows it', () => {
+            render('GR_cnv-1');
+            const toggle = container.querySelector<HTMLButtonElement>('[data-testid="identifiers"] button')!;
+            act(() => toggle.click());
+            const terms = [...container.querySelectorAll('[data-testid="identifier-rows"] dt')].map((dt) => dt.textContent);
+            expect(terms).toEqual(['UUID']);
+        });
+
+        it('gives a switch subnet a copy button', () => {
+            render('cnv-1');
+            expect(container.querySelector('button[aria-label="Copy 10.131.0.0/23"]')).not.toBeNull();
+        });
+    });
 
     it('folds per-pod SNAT on a gateway router into one row that expands to the pods', () => {
         renderWithDatabase('GR_cnv-1');
@@ -205,16 +264,19 @@ describe('ConstructDrawerBody', () => {
         expect(text).toContain('chassis-b (priority 1)');
     });
 
-    it('shows the admin state only when the NB row sets it', () => {
+    it('shows the admin state only when the NB row sets it, as the header\'s status label', () => {
         const base = byName('ovn_cluster_router')!;
         render('ovn_cluster_router');
-        expect(container.textContent).not.toContain('Admin state');
+        const state = () => container.querySelector('[data-testid="drawer-identity-state"]');
+        expect(state()).toBeNull();
 
         act(() => {
             root.render(<ConstructDrawerBody construct={{ ...base, enabled: false }} model={model} />);
         });
-        expect(container.textContent).toContain('Admin state');
-        expect(container.textContent).toContain('Disabled');
+        expect(state()?.textContent).toContain('Disabled');
+        expect(state()?.classList.contains('pf-m-danger')).toBe(true);
+        // The header holds it now; the facts no longer repeat it.
+        expect(container.textContent).not.toContain('Admin state');
     });
 
     it('counts references to tables not yet collected', () => {
@@ -743,7 +805,7 @@ describe('ConstructDrawerBody Ports tab', () => {
         renderConstruct('ovn_cluster_router', { onSelectConstruct: jest.fn() });
         expect(tabLabels()).not.toContain('Ports');
         expect(selectedTab()).toBe('Overview');
-        expect(container.textContent).toContain('OVN name');
+        expect(container.querySelector('[data-testid="identifiers"]')).not.toBeNull();
 
         // And back to a switch returns to Ports.
         renderConstruct('join', { onSelectConstruct: jest.fn() });
@@ -809,8 +871,15 @@ describe('ConstructDrawerBody Services tab', () => {
     const rowsOf = (table: string) => [
         ...container.querySelectorAll(`table[aria-label="${table}"] tr[data-testid^="rule-row-"]`),
     ];
+    // A Service cell shows the name with its namespace on a second line
+    // (ovn-recon-dp7.9 item 3); the tests still name rows "namespace/name".
+    const serviceLabel = (cell: Element | null | undefined): string => {
+        const name = cell?.querySelector('[data-testid="service-name"]')?.textContent;
+        const namespace = cell?.querySelector('[data-testid="service-namespace"]')?.textContent;
+        return name && namespace ? `${namespace}/${name}` : cell?.textContent ?? '';
+    };
     const rowOf = (table: string, label: string) =>
-        rowsOf(table).find((row) => row.querySelector('td[data-label="Service"]')?.textContent === label);
+        rowsOf(table).find((row) => serviceLabel(row.querySelector('td[data-label="Service"]')) === label);
     const cellsOf = (row: Element): Record<string, Element> =>
         Object.fromEntries([...row.querySelectorAll('td[data-label]')].map((cell) => [cell.getAttribute('data-label'), cell]));
     const sectionText = (section: 'node' | 'cluster') =>
@@ -897,17 +966,24 @@ describe('ConstructDrawerBody Services tab', () => {
         expect(fetchSnapshot).not.toHaveBeenCalled();
     });
 
-    it('states the split on the Overview in the Services tab\'s words', () => {
+    it('states the split on the Overview in the Services tab\'s words', async () => {
         renderConstruct('cnv-1');
         const value = overviewValue('Load balancers');
         expect(value).toMatch(/^22 here · \d+ cluster-wide · \d+ VIPs without endpoints$/);
         expect(value).not.toContain('not collected');
-        // The per-group detail moved to the tooltip.
-        expect(container.querySelector('[data-testid="load-balancer-split"]')?.getAttribute('title')).toMatch(
-            /^22 direct · \d+ via clusterLBGroup · 0 via clusterSwitchLBGroup$/,
-        );
+        // The per-group detail sits behind an info button (ovn-recon-dp7.1).
+        const info = container.querySelector<HTMLButtonElement>('button[aria-label="More about the load balancer counts"]');
+        expect(await openInfoPopover(info!)).toMatch(/^22 direct · \d+ via clusterLBGroup · 0 via clusterSwitchLBGroup$/);
         clickTab('Services');
-        expect(container.querySelector('[data-testid="services-summary"]')?.textContent).toBe(`Load balancers: ${value}`);
+        // The tab names both units: the Services and the VIPs they hold
+        // (ovn-recon-dp7.9 item 4).
+        const [, here, cluster, vips] = /^(\d+) here · (\d+) cluster-wide · (\d+) VIPs without endpoints$/.exec(value)!;
+        const summary = container.querySelector('[data-testid="services-summary"]')?.textContent ?? '';
+        const match = /^Load balancers: (\d+) here · (\d+) cluster-wide · (\d+) Services? \((\d+) VIPs\) without endpoints$/.exec(summary);
+        expect(match).not.toBeNull();
+        expect([match![1], match![2], match![4]]).toEqual([here, cluster, vips]);
+        const checkbox = container.querySelector<HTMLInputElement>('#services-without-endpoints')!;
+        expect(checkbox.closest('.pf-v6-c-check')?.textContent).toBe(`No endpoints (${match![3]} Services)`);
 
         renderConstruct('GR_cnv-1');
         clickTab('Overview');
@@ -943,7 +1019,7 @@ describe('ConstructDrawerBody Services tab', () => {
 
         const nodeRows = rowsOf(NODE_TABLE);
         expect(nodeRows).toHaveLength(here.size);
-        expect(new Set(nodeRows.map((row) => cellsOf(row).Service.textContent))).toEqual(here);
+        expect(new Set(nodeRows.map((row) => serviceLabel(cellsOf(row).Service)))).toEqual(here);
         // Collapsed: only its count, no table.
         expect(container.querySelector(`table[aria-label="${CLUSTER_TABLE}"]`)).toBeNull();
         const nodeSection = container.querySelector('[data-testid="services-section-node"]')!;
@@ -966,7 +1042,8 @@ describe('ConstructDrawerBody Services tab', () => {
         expect(rows).toHaveLength(1);
         const cells = cellsOf(rows[0]);
         const link = cells.Service.querySelector('a');
-        expect(link?.textContent).toBe('default/kubernetes');
+        expect(link?.textContent).toBe('kubernetes');
+        expect(cells.Service.querySelector('[data-testid="service-namespace"]')?.textContent).toBe('default');
         expect(link?.getAttribute('href')).toBe('/k8s/ns/default/core~v1~Service/kubernetes');
         expect(cells.Type.textContent).toBe('ClusterIP (inferred)');
         expect(cells.Ports.textContent).toBe('443/TCP');
@@ -1091,7 +1168,7 @@ describe('ConstructDrawerBody Services tab', () => {
         expect(links).toEqual(backends.map((_, index) => `openshift-kube-apiserver/kube-apiserver-ctrl-${index}`));
     });
 
-    it('says quietly when the EndpointSlices cannot be read, and keeps the addresses', () => {
+    it('says quietly when the EndpointSlices cannot be read, and keeps the addresses', async () => {
         mockSlices.set('ovn-recon-fixture/dual-stack-echo', {
             loaded: true,
             slices: [],
@@ -1106,7 +1183,8 @@ describe('ConstructDrawerBody Services tab', () => {
         expect(note?.textContent).toBe(
             "Backends on other nodes could not be resolved: the Service's EndpointSlices could not be read.",
         );
-        expect(note?.getAttribute('title')).toBe('endpointslices.discovery.k8s.io is forbidden');
+        const info = note?.querySelector<HTMLButtonElement>('button[aria-label="More about the EndpointSlice error"]');
+        expect(await openInfoPopover(info!)).toBe('endpointslices.discovery.k8s.io is forbidden');
         expect(container.querySelectorAll('[data-testid="service-backend"]')).toHaveLength(4);
         expect(container.querySelectorAll('[data-testid="service-backend"] a')).toHaveLength(0);
     });
@@ -1137,7 +1215,7 @@ describe('ConstructDrawerBody Services tab', () => {
 
         select('Filter by type', 'LoadBalancer');
         expect(rowsOf(NODE_TABLE)).toHaveLength(0);
-        expect(rowsOf(CLUSTER_TABLE).map((row) => cellsOf(row).Service.textContent)).toContain(
+        expect(rowsOf(CLUSTER_TABLE).map((row) => serviceLabel(cellsOf(row).Service))).toContain(
             'demo-cl-frr-01/frr-bgp-demo-frr1',
         );
         select('Filter by type', '');
@@ -1151,23 +1229,60 @@ describe('ConstructDrawerBody Services tab', () => {
                 .map((row) => `${serviceOf(row)!.namespace}/${serviceOf(row)!.name}`),
         );
         expect(udpHere.has('openshift-dns/dns-default')).toBe(true);
-        expect(new Set(rowsOf(NODE_TABLE).map((row) => cellsOf(row).Service.textContent))).toEqual(udpHere);
+        expect(new Set(rowsOf(NODE_TABLE).map((row) => serviceLabel(cellsOf(row).Service)))).toEqual(udpHere);
         select('Filter by protocol', '');
 
         select('Filter by namespace', 'openshift-dns');
-        expect(rowsOf(NODE_TABLE).map((row) => cellsOf(row).Service.textContent)).toEqual(['openshift-dns/dns-default']);
+        expect(rowsOf(NODE_TABLE).map((row) => serviceLabel(cellsOf(row).Service))).toEqual(['openshift-dns/dns-default']);
         select('Filter by namespace', '');
 
         const checkbox = container.querySelector<HTMLInputElement>('#services-without-endpoints')!;
-        const withoutCount = Number(/\((\d+)\)/.exec(checkbox.closest('.pf-v6-c-check')?.textContent ?? '')?.[1]);
+        const withoutCount = Number(/\((\d+) Services?\)/.exec(checkbox.closest('.pf-v6-c-check')?.textContent ?? '')?.[1]);
         act(() => {
             checkbox.click();
         });
         const idle = [...rowsOf(NODE_TABLE), ...rowsOf(CLUSTER_TABLE)];
-        expect(idle).toHaveLength(withoutCount);
+        // The facet counts Services; a Service may have a row in each section.
+        expect(new Set(idle.map((row) => serviceLabel(cellsOf(row).Service))).size).toBe(withoutCount);
         expect(idle.every((row) => /No endpoints|without endpoints/.test(cellsOf(row).Backends.textContent ?? ''))).toBe(true);
         expandRow(idle[0]);
         expect(container.textContent).toContain('the Service has no ready endpoints, and OVN rejects connections to this VIP');
+    });
+
+    /**
+     * Explanations are popovers (ovn-recon-dp7.1): a title attribute may still
+     * carry the full form of one shortened identifier (a chassis id, a port
+     * name, a load balancer list), never a sentence.
+     */
+    it('keeps every explanation out of title attributes, on every tab', () => {
+        ['GR_cnv-1', 'cnv-1', 'join', 'ovn_cluster_router', udnSwitch].forEach((name) => {
+            renderConstruct(name);
+            tabLabels()
+                .filter((label): label is string => Boolean(label) && label !== 'Config')
+                .forEach((label) => {
+                    clickTab(label);
+                    if (label === 'Services') {
+                        if (container.querySelector('[data-testid="services-section-cluster"]')) toggleSection('cluster');
+                        const first = rowsOf(NODE_TABLE)[0];
+                        if (first) expandRow(first);
+                    }
+                    const titled = [...container.querySelectorAll('[title]')]
+                        .map((element) => element.getAttribute('title') ?? '')
+                        .filter((title) => / /.test(title));
+                    expect({ name, label, titled }).toEqual({ name, label, titled: [] });
+                });
+        });
+    });
+
+    it('puts the namespace on a second line under the Service name (ovn-recon-dp7.9 item 3)', () => {
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        const cell = cellsOf(rowOf(NODE_TABLE, 'openshift-dns/dns-default')!).Service;
+        expect(cell.querySelector('[data-testid="service-name"]')?.textContent).toBe('dns-default');
+        const namespace = cell.querySelector<HTMLElement>('[data-testid="service-namespace"]')!;
+        expect(namespace.tagName).toBe('DIV');
+        expect(namespace.textContent).toBe('openshift-dns');
+        expect(namespace.style.color).toContain('subtle');
     });
 
     it('sorts by a column', () => {
@@ -1728,7 +1843,7 @@ describe('ConstructDrawerBody policy plane', () => {
             expect(container.querySelector('[data-testid="port-acl-cap"]')?.textContent).toBe('… and 11 more');
         });
 
-        it('does not link a policy whose network role is unknown in the zone', () => {
+        it('does not link a policy whose network role is unknown in the zone', async () => {
             const unknownRole: LogicalDatabase = {
                 ...secondary,
                 logicalSwitches: [{ ...secondary.logicalSwitches[0], externalIds: { 'k8s.ovn.org/network': network } }],
@@ -1743,7 +1858,9 @@ describe('ConstructDrawerBody policy plane', () => {
             const policyGroup = groupRows().find((row) => row.textContent?.includes('demo-mirror/restrict'))!;
             expect(policyGroup.textContent?.startsWith('NetworkPolicy')).toBe(true);
             expect(hrefs(policyGroup).some((href) => href.includes('NetworkPolicy/'))).toBe(false);
-            expect(policyGroup.querySelector('[title*="MultiNetworkPolicy"]')).not.toBeNull();
+            // Why not is behind an info button now (ovn-recon-dp7.1), not a title.
+            const info = policyGroup.querySelector<HTMLButtonElement>('button[aria-label^="More about the owner"]');
+            expect(await openInfoPopover(info!)).toContain('MultiNetworkPolicy');
         });
     });
 });

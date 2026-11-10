@@ -601,4 +601,104 @@ describe('NodeVisualization drawer', () => {
             expect(panel!.querySelector('.pf-v6-c-drawer__head')).not.toBeNull();
         });
     });
+
+    /**
+     * The layout kit on the physical drawer (ovn-recon-dp7.1, dp7.9 items 2
+     * and 5): the same identity header as the logical drawer, one line per
+     * fact, explanations behind info buttons, and the bridge's ports by role.
+     */
+    describe('layout kit', () => {
+        const panel = () => container.querySelector('.pf-v6-c-drawer__panel')!;
+
+        it('opens with the identity header: name, kind, state label and node chip', () => {
+            renderPrimary();
+            clickNode('br-ex (ovs-bridge)');
+            const head = panel().querySelector('.pf-v6-c-drawer__head')!;
+            expect(head.querySelector('h2')?.textContent).toBe('br-ex');
+            expect(head.querySelector('[data-testid="drawer-identity-kind"]')?.textContent).toBe('ovs-bridge');
+            const state = head.querySelector('[data-testid="drawer-identity-state"]')!;
+            expect(state.textContent).toContain('up');
+            expect(state.classList.contains('pf-m-success')).toBe(true);
+            expect(head.querySelector('a[href="/k8s/cluster/core~v1~Node/worker-1"]')?.textContent).toBe('Node worker-1');
+            // The header holds the state; no State row repeats it.
+            const terms = [...panel().querySelectorAll('dt')].map((dt) => dt.textContent);
+            expect(terms).not.toContain('State');
+        });
+
+        it('marks a VRF\'s network chip inferred when the network was matched by name', () => {
+            renderPrimary();
+            clickNode('example-p-cudn (VRF)');
+            const chip = [...panel().querySelectorAll('.pf-v6-c-drawer__head a')]
+                .find((a) => a.textContent?.startsWith('Network'));
+            expect(chip?.textContent).toBe('Network example-p-cudn · inferred');
+        });
+
+        it('keeps every explanation out of title attributes, for every node kind', () => {
+            renderPrimary();
+            toggle('show-hidden-columns-toggle');
+            const titles = nodeGroups().map((g) => g.querySelector('title')?.textContent ?? '');
+            titles.forEach((title) => {
+                clickNode(title);
+                ['Overview', 'Relationships'].forEach((tab) => {
+                    selectTab(tab);
+                    const titled = [...panel().querySelectorAll('[title]')]
+                        .map((element) => element.getAttribute('title') ?? '')
+                        .filter((value) => / /.test(value));
+                    expect({ title, tab, titled }).toEqual({ title, tab, titled: [] });
+                });
+            });
+        });
+
+        it('puts hints and edge rules behind keyboard-reachable info buttons', () => {
+            renderPrimary();
+            clickNode('example-p-cudn (VRF)');
+            const hint = panel().querySelector('button[aria-label="More about br-int Ports"]');
+            expect(hint?.tagName).toBe('BUTTON');
+            expect(panel().querySelectorAll('[data-testid="inferred-label"]').length).toBeGreaterThan(0);
+            selectTab('Relationships');
+            expect(panel().querySelectorAll('button[aria-label^="More about the link to"]').length).toBeGreaterThan(0);
+        });
+
+        it('renders a one-item list as a value and gives a single MAC a copy button', () => {
+            renderPrimary();
+            clickNode('ens192 (ethernet)');
+            expect(panel().querySelector('button[aria-label="Copy 02:00:00:00:00:01"]')).not.toBeNull();
+            clickNode('physnet (OVN Bridge Mapping)');
+            const referenced = [...panel().querySelectorAll('dt')].find((dt) => dt.textContent === 'Referenced by CUDNs');
+            const value = referenced!.parentElement!.querySelector('dd')!;
+            expect(value.textContent).toBe('machinenet');
+            expect(value.querySelector('ul, li')).toBeNull();
+        });
+
+        it('groups a bridge\'s ports by role, every port still listed', () => {
+            renderPrimary();
+            clickNode('br-ex (ovs-bridge)');
+            const value = (term: string) =>
+                [...panel().querySelectorAll('dt')].find((dt) => dt.textContent?.startsWith(term))
+                    ?.parentElement?.querySelector('dd')?.textContent;
+            expect(value('Uplink')).toBe('ens192');
+            expect(value('Internal Port')).toContain('br-ex');
+            expect(value('Internal Port')).toContain('192.0.2.72');
+            expect(value('Patch Ports')).toBe(
+                'CUDN example-p-cudnpatch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int'
+                + 'cluster default networkpatch-br-ex_worker-1-to-br-int'
+            );
+            expect(value('Bridge Mappings')).toBe('physnet');
+            expect([...panel().querySelectorAll('dt')].map((dt) => dt.textContent)).not.toContain('Ports');
+        });
+
+        it('keeps the route tables to Destination, Gateway and Interface, the rest in the row (dp7.9 item 2)', () => {
+            renderPrimary();
+            clickNode('example-p-cudn (VRF)');
+            const table = panel().querySelector('[data-testid="kernel-route-table"] table')!;
+            const headers = [...table.querySelectorAll('thead th')].map((th) => th.textContent).filter(Boolean);
+            expect(headers).toEqual(['Row expansion', 'Destination', 'Gateway', 'Interface']);
+            const toggleButton = table.querySelector<HTMLButtonElement>('tbody button[aria-expanded="false"]')!;
+            act(() => toggleButton.click());
+            const detail = table.querySelector('[data-testid="kernel-route-detail"]');
+            expect(detail?.textContent).toContain('MTU');
+            // A table takes the full width under its term, not the value column.
+            expect(table.closest('[data-wide="true"]')).not.toBeNull();
+        });
+    });
 });

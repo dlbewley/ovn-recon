@@ -43,6 +43,7 @@ import {
 } from './serviceIndex';
 import { useKubeService, useServiceEndpointSlices, useServiceNetworks } from './useServiceReads';
 import { getResourcePath } from '../topology/links';
+import { InfoPopover } from './drawerKit';
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
 const WRAP_ANYWHERE: React.CSSProperties = { overflowWrap: 'anywhere' };
@@ -104,17 +105,25 @@ const VipClassChip: React.FC<{ vipClass: VipClass; inferred: boolean; reason?: s
     inferred,
     reason,
 }) => (
-    <Label
-        isCompact
-        color={CLASS_COLORS[vipClass]}
-        variant={inferred ? 'outline' : 'filled'}
-        title={`${vipClass}, ${inferred ? 'inferred' : 'declared'}${reason ? `: ${reason}` : ''}`}
-        data-testid="vip-class"
-        data-basis={inferred ? 'inferred' : 'declared'}
-    >
-        {vipClass}
-        {inferred && <span className="pf-v6-screen-reader"> (inferred)</span>}
-    </Label>
+    <>
+        <Label
+            isCompact
+            color={CLASS_COLORS[vipClass]}
+            variant={inferred ? 'outline' : 'filled'}
+            data-testid="vip-class"
+            data-basis={inferred ? 'inferred' : 'declared'}
+        >
+            {vipClass}
+            {inferred && <span className="pf-v6-screen-reader"> (inferred)</span>}
+        </Label>
+        {reason && (
+            <InfoPopover
+                subject={`the ${vipClass} type`}
+                header={inferred ? 'Inferred' : undefined}
+                hint={`${vipClass}, ${inferred ? 'inferred' : 'declared'}: ${reason}`}
+            />
+        )}
+    </>
 );
 
 const ClassChips: React.FC<{ group: ServiceGroupView }> = ({ group }) =>
@@ -139,20 +148,32 @@ const PortChips: React.FC<{ group: ServiceGroupView }> = ({ group }) =>
         </LabelGroup>
     );
 
+/**
+ * The Service's name, linked, with its namespace on a subtle second line
+ * (ovn-recon-dp7.9 item 3): "namespace/name" in one run wrapped long
+ * operator Service names onto three or four lines.
+ */
 const ServiceName: React.FC<{ group: ServiceGroupView }> = ({ group }) =>
     group.service && group.service.kind === 'Service' ? (
-        <Link
-            to={getResourcePath({
-                apiVersion: 'v1',
-                kind: 'Service',
-                namespace: group.service.namespace,
-                name: group.service.name,
-            })}
-            title={group.loadBalancers.map((row) => row.name).join('\n')}
-            style={BREAK_WORD}
-        >
-            <LabelText label={group.label} />
-        </Link>
+        <>
+            <span data-testid="service-name">
+                <Link
+                    to={getResourcePath({
+                        apiVersion: 'v1',
+                        kind: 'Service',
+                        namespace: group.service.namespace,
+                        name: group.service.name,
+                    })}
+                    title={group.loadBalancers.map((row) => row.name).join('\n')}
+                    style={BREAK_WORD}
+                >
+                    {group.service.name}
+                </Link>
+            </span>
+            <div style={{ ...SUBTLE, fontSize: '0.875em', ...BREAK_WORD }} data-testid="service-namespace">
+                {group.service.namespace}
+            </div>
+        </>
     ) : (
         <code style={BREAK_WORD}>
             <LabelText label={group.label} />
@@ -169,12 +190,8 @@ const BackendsCell: React.FC<{ group: ServiceGroupView }> = ({ group }) => {
             {group.vipsWithoutEndpoints > 0 && (
                 <>
                     {' '}
-                    <Label
-                        isCompact
-                        color="yellow"
-                        title={`${group.vipsWithoutEndpoints} of ${group.vips.length} VIPs have no endpoints`}
-                    >
-                        {`${group.vipsWithoutEndpoints} without endpoints`}
+                    <Label isCompact color="yellow">
+                        {`${group.vipsWithoutEndpoints} of ${plural(group.vips.length, 'VIP')} without endpoints`}
                     </Label>
                 </>
             )}
@@ -236,15 +253,12 @@ const BackendOwner: React.FC<{
     }
     if (!declared) return null;
     return (
-        <span
-            data-testid="backend-pod"
-            data-basis="declared"
-            title={`Declared by EndpointSlice ${declared.slice ?? ''}`.trim()}
-        >
+        <span data-testid="backend-pod" data-basis="declared">
             <PodRef namespace={declared.namespace} pod={declared.pod} />
             <span style={SUBTLE}>
                 {declared.node ? ` on ${declared.node}` : ''} · declared
             </span>
+            <InfoPopover subject={`the backend ${declared.pod}`} hint={`Declared by EndpointSlice ${declared.slice ?? ''}`.trim()} />
         </span>
     );
 };
@@ -370,8 +384,9 @@ const ServiceDetail: React.FC<ServiceDetailProps> = ({ group, ownerOf, databaseN
                 </div>
             )}
             {slices?.error && (
-                <div style={SUBTLE} className="pf-u-mb-sm" data-testid="backend-slices-error" title={slices.error}>
+                <div style={SUBTLE} className="pf-u-mb-sm" data-testid="backend-slices-error">
                     Backends on other nodes could not be resolved: the Service&apos;s EndpointSlices could not be read.
+                    <InfoPopover subject="the EndpointSlice error" hint={slices.error} />
                 </div>
             )}
             <div>
@@ -652,7 +667,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
                     <ToolbarItem alignSelf="center">
                         <Checkbox
                             id="services-without-endpoints"
-                            label={`No endpoints (${counts.withoutEndpoints})`}
+                            label={`No endpoints (${plural(counts.servicesWithoutEndpoints, 'Service')})`}
                             isChecked={withoutEndpoints}
                             onChange={(_event, checked) => setWithoutEndpoints(checked)}
                         />
@@ -660,7 +675,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
                 </ToolbarContent>
             </Toolbar>
             <div className="pf-u-mb-xs" data-testid="services-summary">
-                Load balancers: {splitSummaryText(attachment)}
+                Load balancers: {splitSummaryText(attachment, counts.servicesWithoutEndpoints)}
             </div>
             <div className="pf-u-mb-sm" style={SUBTLE} data-testid="services-basis">
                 {split.total > 0 && (

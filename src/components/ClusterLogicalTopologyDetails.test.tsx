@@ -183,13 +183,16 @@ describe('ClusterLogicalTopologyDetails', () => {
 
         // The tab strip is the same shared strip the physical drawer uses, and
         // it sits flush under the head rather than inside the padded body
-        // (ovn-recon-mow).
+        // (ovn-recon-mow), with only the identity header (ovn-recon-dp7.1)
+        // between them.
         const tablist = panel!.querySelector('[role="tablist"]');
         expect(tablist).not.toBeNull();
         expect(tablist!.closest('.pf-v6-c-drawer__body')).toBeNull();
         const strip = tablist!.closest('.ovn-drawer-tab-strip');
         expect(strip).not.toBeNull();
-        expect(strip!.previousElementSibling?.classList.contains('pf-v6-c-drawer__head')).toBe(true);
+        const identity = strip!.previousElementSibling;
+        expect(identity?.getAttribute('data-testid')).toBe('construct-identity');
+        expect(identity?.previousElementSibling?.classList.contains('pf-v6-c-drawer__head')).toBe(true);
     });
     /**
      * select=KIND:NAME on the cluster page (ovn-recon-s3t.16): restored on the

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Title, Switch, Flex, FlexItem, Button, FormSelect, FormSelectOption } from '@patternfly/react-core';
+import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Switch, Flex, FlexItem, Button, FormSelect, FormSelectOption } from '@patternfly/react-core';
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { useNavigate } from 'react-router';
 
@@ -11,6 +11,8 @@ import { buildGraphContext, GraphContext } from '../topology/context';
 import { FOOT_GRID_ROLES, interfacesWithRole, roleOf } from '../topology/classify';
 import { buildDrawerTabs, getDrawerTabs } from '../topology/drawerTabs';
 import DrawerTabStrip from './DrawerTabStrip';
+import { DrawerIdentity } from './drawerKit';
+import { physicalIdentity } from '../topology/drawerIdentity';
 import { edgeKey, findDuplicateIds, resolveNodeId as resolveId } from '../topology/ids';
 import {
     DrawerTabId, NodeViewModel
@@ -783,25 +785,9 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     const panelContent = (
         <DrawerPanelContent isResizable widths={{ default: 'width_33' }}>
             <DrawerHead>
-                <Flex direction={{ default: 'column' }}>
-                    <FlexItem>
-                        <Flex alignItems={{ default: 'alignItemsCenter' }} spaceItems={{ default: 'spaceItemsSm' }}>
-                            <FlexItem>
-                                <span style={{ display: 'inline-flex' }}>
-                                    {activeNode ? drawerIcon(activeNode) : null}
-                                </span>
-                            </FlexItem>
-                            <FlexItem>
-                                <Title headingLevel="h2" size="xl">
-                                    {activeNode?.title}
-                                </Title>
-                            </FlexItem>
-                        </Flex>
-                    </FlexItem>
-                    <FlexItem>
-                        {activeNode?.subtitle && <span style={{ color: 'var(--pf-t--global--text--color--subtle)', fontSize: '0.9em' }}>{activeNode.subtitle}</span>}
-                    </FlexItem>
-                </Flex>
+                {activeNode && (
+                    <DrawerIdentity icon={drawerIcon(activeNode)} {...physicalIdentity(activeNode, ctx)} />
+                )}
                 <DrawerActions>
                     <DrawerCloseButton onClick={handlePopoverClose} />
                 </DrawerActions>

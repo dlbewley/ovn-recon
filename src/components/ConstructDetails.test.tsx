@@ -130,7 +130,7 @@ describe('ConstructDetails', () => {
             expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Ports', 'Policy', 'Services', 'Config']);
             expect(activeTab()).toBe('Overview');
             // The overview is the drawer's, without the drawer's own link in.
-            expect(container.textContent).toContain('OVN name');
+            expect(container.querySelector('[data-testid="identifiers"]')).not.toBeNull();
             expect(container.querySelector('[data-testid="open-details"]')).toBeNull();
         });
 
@@ -207,7 +207,7 @@ describe('ConstructDetails', () => {
             // The overview renders from the ladder snapshot; only the ACL line,
             // which reads the section, names the failure.
             expect(container.textContent).not.toContain('Section rows failed to load');
-            expect(container.textContent).toContain('OVN name');
+            expect(container.querySelector('[data-testid="identifiers"]')).not.toBeNull();
             expect(container.querySelector('[data-testid="policy-error"]')).not.toBeNull();
         });
     });

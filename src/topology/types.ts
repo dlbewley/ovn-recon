@@ -96,6 +96,8 @@ export interface FactItem {
     text: string;
     ref?: ResourceRef;
     href?: string;
+    /** A second, subtle line under the item: the raw name behind a label, or an address. */
+    detail?: string;
 }
 
 /**

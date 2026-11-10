@@ -735,18 +735,33 @@ export interface ServiceFacetCounts {
     classes: Map<VipClass, number>;
     protocols: Map<string, number>;
     namespaces: Map<string, number>;
+    /** Rows (a Service per section) with a VIP that has no endpoints. */
     withoutEndpoints: number;
+    /** Distinct Services with a VIP that has no endpoints: the unit the
+     * "No endpoints" facet and the summary name (ovn-recon-dp7.9 item 4). */
+    servicesWithoutEndpoints: number;
 }
 
 export const serviceFacetCounts = (groups: readonly ServiceGroupView[]): ServiceFacetCounts => {
     const bump = <K>(map: Map<K, number>, key: K) => map.set(key, (map.get(key) ?? 0) + 1);
-    const counts: ServiceFacetCounts = { classes: new Map(), protocols: new Map(), namespaces: new Map(), withoutEndpoints: 0 };
+    const counts: ServiceFacetCounts = {
+        classes: new Map(),
+        protocols: new Map(),
+        namespaces: new Map(),
+        withoutEndpoints: 0,
+        servicesWithoutEndpoints: 0,
+    };
+    const idle = new Set<string>();
     for (const group of groups) {
         group.classes.forEach(({ vipClass }) => bump(counts.classes, vipClass));
         group.protocols.forEach((protocol) => bump(counts.protocols, protocol));
         if (group.service) bump(counts.namespaces, group.service.namespace);
-        if (group.vipsWithoutEndpoints > 0) counts.withoutEndpoints += 1;
+        if (group.vipsWithoutEndpoints > 0) {
+            counts.withoutEndpoints += 1;
+            idle.add(group.label);
+        }
     }
+    counts.servicesWithoutEndpoints = idle.size;
     return counts;
 };
 
@@ -775,14 +790,22 @@ export const summarizeSplit = (attachment: LoadBalancerAttachment): ServiceSplit
 /**
  * The line the Services tab and the Overview share: "22 here · 320
  * cluster-wide · 12 VIPs without endpoints" (load balancer counts). With
- * nothing programmed it keeps saying which groups are empty.
+ * nothing programmed it keeps saying which groups are empty. The Services
+ * tab, whose facet counts Services, passes how many Services those VIPs
+ * belong to, and the line names both units: "4 Services (12 VIPs) without
+ * endpoints" (ovn-recon-dp7.9 item 4).
  */
-export const splitSummaryText = (attachment: LoadBalancerAttachment): string => {
+export const splitSummaryText = (attachment: LoadBalancerAttachment, servicesWithoutEndpoints?: number): string => {
     const split = summarizeSplit(attachment);
     if (split.total === 0) return attachmentSummaryText(summarizeAttachment(attachment));
     const parts = [`${split.here} here`, `${split.clusterWide} cluster-wide`];
     if (split.vipsWithoutEndpoints > 0) {
-        parts.push(`${split.vipsWithoutEndpoints} VIP${split.vipsWithoutEndpoints === 1 ? '' : 's'} without endpoints`);
+        const vips = `${split.vipsWithoutEndpoints} VIP${split.vipsWithoutEndpoints === 1 ? '' : 's'}`;
+        parts.push(
+            servicesWithoutEndpoints !== undefined && servicesWithoutEndpoints > 0
+                ? `${servicesWithoutEndpoints} Service${servicesWithoutEndpoints === 1 ? '' : 's'} (${vips}) without endpoints`
+                : `${vips} without endpoints`,
+        );
     }
     return parts.join(' · ');
 };

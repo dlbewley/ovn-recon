@@ -1,7 +1,5 @@
 import * as React from 'react';
-import {
-    Button, DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm
-} from '@patternfly/react-core';
+import { Button } from '@patternfly/react-core';
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
 import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import * as yaml from 'js-yaml';
@@ -12,7 +10,11 @@ import { useIsDarkTheme } from '../components/useIsDarkTheme';
 import type { Finding } from '../insights/types';
 import { FindingsSection } from '../insights/ui/FindingsViews';
 import { GraphContext } from './context';
-import { baseFacts, FactList, ProvenanceLabel } from './facts';
+import {
+    FactRow, FactRows, IdentifiersSection, InferredLabel, InfoPopover, ValueList
+} from '../components/drawerKit';
+import { physicalIdentifiers } from './drawerIdentity';
+import { baseFacts, FactList } from './facts';
 import { resolveInterfaceRef } from './ids';
 import { nodeKindRegistry } from './registry';
 import { DrawerTabDefinition, DrawerTabId } from './types';
@@ -93,27 +95,27 @@ interface Neighbor {
 /**
  * Each neighbour says WHY the line exists (ovn-recon-s3t.30): the rationale
  * names the fields the edge was read from, and an inferred edge wears the same
- * chip an inferred fact does. The rule slug and kind survive as a tooltip.
+ * chip an inferred fact does. The rule slug and kind sit behind an info button.
  */
-const neighborGroup = (title: string, neighbors: Neighbor[], hooks: DrawerTabHooks) => (
-    <DescriptionListGroup>
-        <DescriptionListTerm>{title}</DescriptionListTerm>
-        <DescriptionListDescription>
-            <ul className="pf-v6-c-list">
-                {neighbors.map(({ id, edge }, index) => (
-                    <li key={`${id}-${edge.rule}-${index}`}>
-                        <Button variant="link" isInline onClick={() => hooks.onSelectNode(id)}>
-                            {hooks.labelFor(id)}
-                        </Button>
-                        <ProvenanceLabel provenance={edge.provenance} hint={`${edge.rule} (${edge.kind})`} />
-                        <div style={{ ...subtle, fontSize: '0.9em' }} title={`${edge.rule} (${edge.kind})`}>
-                            {edge.rationale}
-                        </div>
-                    </li>
-                ))}
-            </ul>
-        </DescriptionListDescription>
-    </DescriptionListGroup>
+const neighborRow = (title: string, neighbors: Neighbor[], hooks: DrawerTabHooks) => (
+    <FactRow term={title}>
+        <ValueList
+            items={neighbors.map(({ id, edge }, index) => (
+                <div key={`${id}-${edge.rule}-${index}`} data-testid="neighbor">
+                    <Button variant="link" isInline onClick={() => hooks.onSelectNode(id)}>
+                        {hooks.labelFor(id)}
+                    </Button>
+                    {edge.provenance === 'inferred' && <InferredLabel />}
+                    <InfoPopover
+                        subject={`the link to ${hooks.labelFor(id)}`}
+                        hint={`${edge.rule} (${edge.kind})`}
+                        header={edge.provenance === 'inferred' ? 'Inferred' : undefined}
+                    />
+                    <div style={{ ...subtle, fontSize: '0.9em' }}>{edge.rationale}</div>
+                </div>
+            ))}
+        />
+    </FactRow>
 );
 
 export const buildDrawerTabs = (
@@ -129,6 +131,7 @@ export const buildDrawerTabs = (
                 <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
                     <FindingsSection findings={hooks.findingsFor?.(node.id) ?? []} />
                     <FactList facts={facts ?? baseFacts(node)} selectInterface={interfaceSelector(ctx, hooks)} />
+                    <IdentifiersSection identifiers={physicalIdentifiers(node)} />
                 </div>
             );
         }
@@ -151,10 +154,10 @@ export const buildDrawerTabs = (
                     {upstream.length === 0 && downstream.length === 0 ? (
                         <span style={subtle}>No relationships derived for this node.</span>
                     ) : (
-                        <DescriptionList isCompact>
-                            {upstream.length > 0 && neighborGroup('Upstream', upstream, hooks)}
-                            {downstream.length > 0 && neighborGroup('Downstream', downstream, hooks)}
-                        </DescriptionList>
+                        <FactRows ariaLabel="Relationships">
+                            {upstream.length > 0 && neighborRow('Upstream', upstream, hooks)}
+                            {downstream.length > 0 && neighborRow('Downstream', downstream, hooks)}
+                        </FactRows>
                     )}
                 </div>
             );
