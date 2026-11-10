@@ -13,7 +13,7 @@ import { fetchCollectorLookup, fetchCollectorSnapshot } from './collectorApi';
 import { podAddressIndex } from './routerRules';
 import { serviceOf } from './serviceIndex';
 import { SERVICE_PAGE_SIZE } from './ServiceTables';
-import { LookupHit, LookupResponse } from '../types';
+import { EndpointSliceLike } from './serviceIndex';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 
@@ -30,7 +30,8 @@ jest.mock('@patternfly/react-code-editor', () => ({
 }));
 
 // The drawer loads the optional sections itself; only the request is faked.
-// The Services tab looks backends on other nodes up through the collector.
+// The Services tab must never call the collector lookup (ovn-recon-dp7.6:
+// one request per address was too dear); the mock proves it.
 jest.mock('./collectorApi', () => ({
     ...jest.requireActual('./collectorApi'),
     fetchCollectorSnapshot: jest.fn(),
@@ -39,18 +40,26 @@ jest.mock('./collectorApi', () => ({
 const fetchSnapshot = fetchCollectorSnapshot as jest.MockedFunction<typeof fetchCollectorSnapshot>;
 const fetchLookup = fetchCollectorLookup as jest.MockedFunction<typeof fetchCollectorLookup>;
 
-// The Services tab's two Kubernetes reads (the SDK does not load under jest):
-// the cluster Network config, and one Service while its row is expanded.
+// The Services tab's Kubernetes reads (the SDK does not load under jest): the
+// cluster Network config, and, while a row is expanded, its Service and its
+// EndpointSlices.
 const mockServiceNetworks: { value: { serviceNetworks: string[]; loaded: boolean; error?: string } } = {
     value: { serviceNetworks: ['172.30.0.0/16', 'fd02::/112'], loaded: true },
 };
 const mockKubeServices = new Map<string, unknown>();
+const mockSlices = new Map<string, { slices: unknown[]; loaded: boolean; error?: string }>();
+// Called as (namespace, name, labelKey); the tests read the label off the calls.
+const mockSliceWatch = jest.fn(
+    (...args: [string, string, string]) => mockSlices.get(`${args[0]}/${args[1]}`) ?? { slices: [], loaded: false },
+);
 jest.mock('./useServiceReads', () => ({
     useServiceNetworks: () => mockServiceNetworks.value,
     useKubeService: (namespace: string, name: string) => {
         const service = mockKubeServices.get(`${namespace}/${name}`);
         return service ? { service, loaded: true } : { loaded: false };
     },
+    useServiceEndpointSlices: (namespace: string, name: string, labelKey: string) =>
+        mockSliceWatch(namespace, name, labelKey),
 }));
 
 const database = (cnv1 as unknown as LogicalTopologySnapshot).database as LogicalDatabase;
@@ -692,7 +701,8 @@ describe('ConstructDrawerBody Services tab', () => {
     beforeEach(() => {
         fetchSnapshot.mockReset();
         fetchLookup.mockReset();
-        fetchLookup.mockImplementation((_kind, value) => Promise.resolve(lookupOf(value, [])));
+        mockSliceWatch.mockClear();
+        mockSlices.clear();
         mockKubeServices.clear();
         mockServiceNetworks.value = { serviceNetworks: ['172.30.0.0/16', 'fd02::/112'], loaded: true };
         container = document.createElement('div');
@@ -770,24 +780,23 @@ describe('ConstructDrawerBody Services tab', () => {
             }),
         );
     };
-    const lookupOf = (address: string, hits: Array<Partial<LookupHit>>): LookupResponse => ({
-        query: { kind: 'ip', value: address },
-        hits: hits.map((hit) => ({
-            node: 'cnv-2',
-            table: 'Logical_Switch_Port',
-            rowUuid: 'lsp-1',
-            network: 'default',
-            matchedField: 'addresses',
-            matchedValue: address,
-            matchType: 'exact',
-            snapshotGeneratedAt: '2026-11-10T00:00:00Z',
-            ...hit,
-        })) as LookupHit[],
-        total: hits.length,
-        limit: 200,
-        truncated: false,
-        zones: [],
-        warnings: [],
+    /** A default-controller EndpointSlice: [pod, address, node] per endpoint. */
+    const endpointSlice = (
+        name: string,
+        addressType: 'IPv4' | 'IPv6',
+        port: number,
+        endpoints: Array<[string, string, string]>,
+        namespace = 'ovn-recon-fixture',
+    ): EndpointSliceLike => ({
+        // The watch's label selector is the hook's job; the mock hands these back.
+        metadata: { name, namespace },
+        addressType,
+        ports: [{ name: 'http', port, protocol: 'TCP' }],
+        endpoints: endpoints.map(([pod, address, node]) => ({
+            addresses: [address],
+            targetRef: { kind: 'Pod', name: pod, namespace },
+            nodeName: node,
+        })),
     });
     const setFilter = (value: string) => {
         const input = container.querySelector<HTMLInputElement>('input[aria-label="Filter services"]');
@@ -929,7 +938,7 @@ describe('ConstructDrawerBody Services tab', () => {
         expect(cellsOf(frr).Ports.textContent).toMatch(/\d+ more$/);
     });
 
-    it('shows a backend in this zone with its pod beside the address', () => {
+    it('shows a backend in this zone with its pod beside the address, with no request', () => {
         renderConstruct('cnv-1');
         clickTab('Services');
         toggleSection('cluster');
@@ -943,27 +952,22 @@ describe('ConstructDrawerBody Services tab', () => {
         const link = backend.querySelector('a')!;
         expect(link.textContent).toBe(`${owner.namespace}/${owner.pod}`);
         expect(link.getAttribute('href')).toBe(`/k8s/ns/${owner.namespace}/core~v1~Pod/${owner.pod}`);
-        // In-zone owners need no lookup.
-        expect(fetchLookup).not.toHaveBeenCalledWith('ip', '10.131.0.6');
+        expect(backend.querySelector('[data-testid="backend-pod"]')?.getAttribute('data-basis')).toBe('zone');
+        // Every backend resolved from this zone's ports: no slice read.
+        expect(mockSliceWatch).not.toHaveBeenCalled();
+        expect(fetchLookup).not.toHaveBeenCalled();
     });
 
-    it('looks backends on other nodes up on expand, and resolves an address on two ports to nothing', async () => {
-        fetchLookup.mockImplementation((_kind, value) =>
-            Promise.resolve(
-                value === '10.129.4.200'
-                    ? lookupOf(value, [
-                        { owner: { kind: 'Pod', namespace: 'ovn-recon-fixture', name: 'echo-a' } },
-                        // The same port again through another field.
-                        { matchedField: 'portSecurity', owner: { kind: 'Pod', namespace: 'ovn-recon-fixture', name: 'echo-a' } },
-                    ])
-                    : value === '10.130.0.200'
-                        ? lookupOf(value, [
-                            { rowUuid: 'lsp-a', owner: { kind: 'Pod', namespace: 'blue', name: 'one' } },
-                            { rowUuid: 'lsp-b', node: 'cnv-3', owner: { kind: 'Pod', namespace: 'green', name: 'two' } },
-                        ])
-                        : lookupOf(value, []),
-            ),
-        );
+    it("resolves backends on other nodes from the Service's EndpointSlices, one list per expanded row", () => {
+        mockSlices.set('ovn-recon-fixture/dual-stack-echo', {
+            loaded: true,
+            slices: [
+                // Several slices per Service, and both families.
+                endpointSlice('dual-stack-echo-a', 'IPv4', 8080, [['echo-a', '10.129.4.200', 'cnv-2']]),
+                endpointSlice('dual-stack-echo-b', 'IPv4', 8080, [['echo-b', '10.130.0.200', 'cnv-3']]),
+                endpointSlice('dual-stack-echo-v6', 'IPv6', 8080, [['echo-a', 'fd01:0:0:5:0:0:0:c8', 'cnv-2']]),
+            ],
+        });
         renderConstruct('cnv-1');
         clickTab('Services');
         toggleSection('cluster');
@@ -971,40 +975,84 @@ describe('ConstructDrawerBody Services tab', () => {
         const row = rowOf(CLUSTER_TABLE, 'ovn-recon-fixture/dual-stack-echo')!;
         expect(cellsOf(row).VIPs.textContent).toBe('2');
         expect(cellsOf(row).Type.textContent).toBe('ClusterIP (inferred)');
-        expect(fetchLookup).not.toHaveBeenCalled();
+        expect(mockSliceWatch).not.toHaveBeenCalled();
 
         expandRow(row);
-        await act(async () => undefined);
-        expect(fetchLookup.mock.calls.map(([, value]) => value).sort()).toEqual([
-            '10.129.4.200',
-            '10.130.0.200',
-            'fd01:0:0:5::c8',
-            'fd01:0:0:6::c8',
-        ]);
+        // One label-selected list for the row, never a request per backend.
+        expect(new Set(mockSliceWatch.mock.calls.map((call) => call.join(' ')))).toEqual(
+            new Set(['ovn-recon-fixture dual-stack-echo kubernetes.io/service-name']),
+        );
         const lines = [...container.querySelectorAll('[data-testid="service-backend"]')];
         const line = (backend: string) => lines.find((candidate) => candidate.querySelector('code')?.textContent === backend)!;
-        expect(line('10.129.4.200:8080').textContent).toBe('10.129.4.200:8080 ovn-recon-fixture/echo-a on cnv-2');
-        expect(line('10.130.0.200:8080').querySelector('a')).toBeNull();
-        expect(line('[fd01:0:0:5::c8]:8080').querySelector('a')).toBeNull();
+        expect(line('10.129.4.200:8080').textContent).toBe('10.129.4.200:8080 ovn-recon-fixture/echo-a on cnv-2 · declared');
+        expect(line('10.130.0.200:8080').querySelector('[data-testid="backend-pod"]')?.getAttribute('data-basis')).toBe(
+            'declared',
+        );
+        expect(line('[fd01:0:0:5::c8]:8080').textContent).toContain('ovn-recon-fixture/echo-a on cnv-2');
+        // No endpoint names it: a bare address, and no warning.
+        expect(line('[fd01:0:0:6::c8]:8080').textContent?.trim()).toBe('[fd01:0:0:6::c8]:8080');
+        expect(container.querySelector('[data-testid="backend-slices-error"]')).toBeNull();
+        expect(fetchLookup).not.toHaveBeenCalled();
 
-        // Collapse and expand again: answered from the tab's cache.
+        // Collapsed, the watch is gone: rendering again does not ask.
         expandRow(row);
-        expandRow(row);
-        await act(async () => undefined);
-        expect(fetchLookup).toHaveBeenCalledTimes(4);
+        const calls = mockSliceWatch.mock.calls.length;
+        setFilter('dual-stack-echo ');
+        expect(mockSliceWatch.mock.calls.length).toBe(calls);
     });
 
-    it('says when backends on other nodes could not be looked up', async () => {
-        fetchLookup.mockRejectedValue(new Error('Collector request failed (404)'));
+    it('resolves host-network backends, whose addresses are nodes, to their pods', () => {
+        const backends = database.loadBalancers!
+            .find((row) => row.name === 'Service_default/kubernetes_TCP_node_router+switch_cnv-1')!
+            .vips['172.30.0.1:443'].split(',');
+        mockSlices.set('default/kubernetes', {
+            loaded: true,
+            slices: [
+                endpointSlice(
+                    'kubernetes',
+                    'IPv4',
+                    6443,
+                    backends.map((backend, index) => [`kube-apiserver-ctrl-${index}`, backend.split(':')[0], `ctrl-${index}`]),
+                    'openshift-kube-apiserver',
+                ),
+            ],
+        });
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        expandRow(rowOf(NODE_TABLE, 'default/kubernetes')!);
+        const links = [...container.querySelectorAll('[data-testid="service-backend"] a')].map((link) => link.textContent);
+        expect(links).toEqual(backends.map((_, index) => `openshift-kube-apiserver/kube-apiserver-ctrl-${index}`));
+    });
+
+    it('says quietly when the EndpointSlices cannot be read, and keeps the addresses', () => {
+        mockSlices.set('ovn-recon-fixture/dual-stack-echo', {
+            loaded: true,
+            slices: [],
+            error: 'endpointslices.discovery.k8s.io is forbidden',
+        });
         renderConstruct('cnv-1');
         clickTab('Services');
         toggleSection('cluster');
         setFilter('dual-stack-echo');
         expandRow(rowOf(CLUSTER_TABLE, 'ovn-recon-fixture/dual-stack-echo')!);
-        await act(async () => undefined);
-        const note = container.querySelector('[data-testid="backend-lookup-error"]');
-        expect(note?.textContent).toBe('4 backends on other nodes could not be looked up.');
-        expect(note?.getAttribute('title')).toBe('Collector request failed (404)');
+        const note = container.querySelector('[data-testid="backend-slices-error"]');
+        expect(note?.textContent).toBe(
+            "Backends on other nodes could not be resolved: the Service's EndpointSlices could not be read.",
+        );
+        expect(note?.getAttribute('title')).toBe('endpointslices.discovery.k8s.io is forbidden');
+        expect(container.querySelectorAll('[data-testid="service-backend"]')).toHaveLength(4);
+        expect(container.querySelectorAll('[data-testid="service-backend"] a')).toHaveLength(0);
+    });
+
+    it('shows the slices are being read until they arrive', () => {
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        toggleSection('cluster');
+        setFilter('dual-stack-echo');
+        expandRow(rowOf(CLUSTER_TABLE, 'ovn-recon-fixture/dual-stack-echo')!);
+        expect(container.querySelector('[data-testid="backend-slices-loading"]')?.textContent).toContain(
+            "Reading the Service's EndpointSlices",
+        );
     });
 
     it('narrows by type, protocol, namespace and missing endpoints', () => {

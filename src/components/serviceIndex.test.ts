@@ -1,15 +1,17 @@
-import { LoadBalancerRow, LogicalDatabase, LogicalTopologySnapshot, LookupHit } from '../types';
+import { LoadBalancerRow, LogicalDatabase, LogicalTopologySnapshot } from '../types';
 import {
     attachmentSummaryText,
     declaredVipClass,
     groupServices,
     hasServicesSection,
+    endpointOwnerResolver,
+    EndpointSliceLike,
+    endpointSliceQueryFor,
     inferVipClass,
-    isLookupAddress,
+    isIpAddress,
     KubeServiceLike,
     loadBalancersFor,
     parseVip,
-    podOwnerFromLookup,
     scopeOf,
     sectionOf,
     serviceFacetCounts,
@@ -772,45 +774,91 @@ describe('serviceIndex one row per Service (dp7.6)', () => {
         });
     });
 
-    describe('podOwnerFromLookup', () => {
-        const hit = (overrides: Partial<LookupHit>): LookupHit => ({
-            node: 'node-b',
-            table: 'Logical_Switch_Port',
-            rowUuid: 'lsp-1',
-            rowName: 'shop_web-1',
-            network: 'default',
-            owner: { kind: 'Pod', namespace: 'shop', name: 'web-1' },
-            matchedField: 'addresses',
-            matchedValue: '10.130.0.9',
-            matchType: 'exact',
-            snapshotGeneratedAt: '2026-11-10T00:00:00Z',
-            ...overrides,
+    describe('EndpointSlice backends', () => {
+        const slice = (overrides: EndpointSliceLike & { name: string }): EndpointSliceLike => {
+            const { name, ...rest } = overrides;
+            return {
+                metadata: { name, namespace: 'shop', labels: { 'kubernetes.io/service-name': 'web' } },
+                addressType: 'IPv4',
+                ports: [{ name: 'https', port: 8443, protocol: 'TCP' }],
+                ...rest,
+            };
+        };
+        const pod = (name: string, address: string, node = 'node-b') => ({
+            addresses: [address],
+            targetRef: { kind: 'Pod', name, namespace: 'shop' },
+            nodeName: node,
         });
 
-        it('names the pod of the one switch port holding the address', () => {
-            expect(podOwnerFromLookup({ hits: [hit({}), hit({ matchedField: 'portSecurity' })] })).toEqual({
-                namespace: 'shop',
-                pod: 'web-1',
-                node: 'node-b',
-                port: 'shop_web-1',
+        it('matches each backend address and port across several slices and both families', () => {
+            const resolve = endpointOwnerResolver([
+                slice({ name: 'web-a', endpoints: [pod('web-1', '10.129.0.5', 'node-a')] }),
+                slice({ name: 'web-b', endpoints: [pod('web-2', '10.130.0.9')] }),
+                slice({
+                    name: 'web-v6',
+                    addressType: 'IPv6',
+                    endpoints: [pod('web-1', 'fd01:0:0:5:0:0:0:98', 'node-a')],
+                }),
+            ]);
+            expect(resolve('10.129.0.5:8443', 'tcp')).toEqual({ namespace: 'shop', pod: 'web-1', node: 'node-a', slice: 'web-a' });
+            expect(resolve('10.130.0.9:8443', 'tcp')?.pod).toBe('web-2');
+            // The bracketed OVN spelling meets the slice's long form.
+            expect(resolve('[fd01:0:0:5::98]:8443', 'tcp')).toMatchObject({ pod: 'web-1', slice: 'web-v6' });
+        });
+
+        it('needs the port and protocol to match, and treats a port without a number as every port', () => {
+            const resolve = endpointOwnerResolver([
+                slice({ name: 'web-a', endpoints: [pod('web-1', '10.129.0.5')] }),
+                slice({ name: 'dns', ports: [{ port: null, protocol: 'UDP' }], endpoints: [pod('dns-1', '10.128.0.5')] }),
+            ]);
+            expect(resolve('10.129.0.5:8080', 'tcp')).toBeUndefined();
+            expect(resolve('10.129.0.5:8443', 'udp')).toBeUndefined();
+            expect(resolve('10.128.0.5:5353', 'udp')?.pod).toBe('dns-1');
+            expect(resolve('10.128.0.5:5353', 'tcp')).toBeUndefined();
+        });
+
+        it('resolves a host-network backend to its pod, and nothing for an unnamed or doubly claimed address', () => {
+            const resolve = endpointOwnerResolver([
+                slice({
+                    name: 'api',
+                    ports: [{ port: 6443, protocol: 'TCP' }],
+                    // Host network: the address is the node's, the target the pod.
+                    endpoints: [{ addresses: ['192.0.2.11'], targetRef: { kind: 'Pod', name: 'kube-apiserver-a', namespace: 'openshift-kube-apiserver' }, nodeName: 'ctrl-a' }],
+                }),
+                slice({ name: 'web-a', endpoints: [pod('web-1', '10.129.0.5'), pod('web-9', '10.129.0.5')] }),
+                slice({ name: 'manual', endpoints: [{ addresses: ['10.131.0.7'] }] }),
+            ]);
+            expect(resolve('192.0.2.11:6443', 'tcp')).toMatchObject({ namespace: 'openshift-kube-apiserver', pod: 'kube-apiserver-a', node: 'ctrl-a' });
+            expect(resolve('10.129.0.5:8443', 'tcp')).toBeUndefined();
+            expect(resolve('10.131.0.7:8443', 'tcp')).toBeUndefined();
+            expect(resolve('10.250.0.1:8443', 'tcp')).toBeUndefined();
+        });
+
+        it("reads a user-defined network's mirrors and only that network's", () => {
+            const udnLb = lb({ uuid: 'u', name: 'cluster_udn_blue_Service_shop/web_TCP_cluster', externalIds: { 'k8s.ovn.org/kind': 'Service', 'k8s.ovn.org/owner': 'shop/web', 'k8s.ovn.org/network': 'cluster_udn_blue' } });
+            expect(endpointSliceQueryFor([udnLb])).toEqual({ labelKey: 'k8s.ovn.org/service-name', network: 'cluster_udn_blue' });
+            expect(endpointSliceQueryFor([lb({ uuid: 'd', name: 'Service_shop/web_TCP_cluster' })])).toEqual({
+                labelKey: 'kubernetes.io/service-name',
             });
-            // Containment hits (routes, subnets) say nothing about an owner.
-            expect(
-                podOwnerFromLookup({ hits: [hit({}), hit({ table: 'Logical_Router_Static_Route', matchType: 'containment' })] })?.pod,
-            ).toBe('web-1');
+            const mirror = (name: string, network: string, address: string) =>
+                slice({
+                    name,
+                    metadata: { name, namespace: 'shop', labels: { 'k8s.ovn.org/service-name': 'web' }, annotations: { 'k8s.ovn.org/endpointslice-network': network } },
+                    endpoints: [pod('web-1', address)],
+                });
+            const resolve = endpointOwnerResolver(
+                [mirror('web-blue', 'cluster_udn_blue', '10.200.0.5'), mirror('web-green', 'cluster_udn_green', '10.201.0.5')],
+                'cluster_udn_blue',
+            );
+            expect(resolve('10.200.0.5:8443', 'tcp')?.slice).toBe('web-blue');
+            expect(resolve('10.201.0.5:8443', 'tcp')).toBeUndefined();
         });
 
-        it('resolves to nothing for two ports, a non-pod port or no port', () => {
-            expect(podOwnerFromLookup({ hits: [hit({}), hit({ rowUuid: 'lsp-2', node: 'node-c' })] })).toBeUndefined();
-            expect(podOwnerFromLookup({ hits: [hit({ owner: undefined })] })).toBeUndefined();
-            expect(podOwnerFromLookup({ hits: [] })).toBeUndefined();
-        });
-
-        it('looks up addresses, not templates or prefixes', () => {
-            expect(isLookupAddress('10.130.0.9')).toBe(true);
-            expect(isLookupAddress('fd01::5')).toBe(true);
-            expect(isLookupAddress('^shop_tmpl_TCP_32000_v4')).toBe(false);
-            expect(isLookupAddress('10.130.0.0/24')).toBe(false);
+        it('looks only at IP backends', () => {
+            expect(isIpAddress('10.130.0.9')).toBe(true);
+            expect(isIpAddress('fd01::5')).toBe(true);
+            expect(isIpAddress('^shop_tmpl_TCP_32000_v4')).toBe(false);
+            expect(isIpAddress('10.130.0.0/24')).toBe(false);
         });
     });
 

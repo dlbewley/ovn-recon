@@ -15,18 +15,19 @@ import {
 } from '@patternfly/react-core';
 
 import { LogicalDatabase } from '../types';
-import { fetchCollectorLookup } from './collectorApi';
 import { podAddressIndex, PodAddressOwner } from './routerRules';
 import RuleTable, { RuleColumn } from './RuleTable';
 import {
     DIRECT_SOURCE,
     groupServices,
-    isLookupAddress,
+    EndpointOwner,
+    endpointOwnerResolver,
+    EndpointSliceQuery,
+    endpointSliceQueryFor,
+    isIpAddress,
     KubeServiceLike,
     LoadBalancerAttachment,
     parseVip,
-    podOwnerFromLookup,
-    RemotePodOwner,
     scopeOf,
     ServiceFacets,
     serviceFacetCounts,
@@ -40,7 +41,7 @@ import {
     VipClass,
     vipClassContext,
 } from './serviceIndex';
-import { useKubeService, useServiceNetworks } from './useServiceReads';
+import { useKubeService, useServiceEndpointSlices, useServiceNetworks } from './useServiceReads';
 import { getResourcePath } from '../topology/links';
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
@@ -183,81 +184,61 @@ const PodRef: React.FC<{ namespace: string; pod: string }> = ({ namespace, pod }
 
 // ------------------------------------------------ backend resolution
 
-type LookupState =
-    | { status: 'pending' }
-    | { status: 'resolved'; owner: RemotePodOwner }
-    | { status: 'none' }
-    | { status: 'error'; message: string };
+type SliceResolver = (backend: string, protocol: string) => EndpointOwner | undefined;
 
-interface BackendLookups {
-    /** Look up each address not asked for before. */
-    request: (addresses: readonly string[]) => void;
-    stateOf: (address: string) => LookupState | undefined;
+/** The Service's EndpointSlices as an expanded row sees them. */
+interface SliceState {
+    /** Set once the slices have loaded. */
+    resolve?: SliceResolver;
+    loaded: boolean;
+    error?: string;
 }
 
 /**
- * Collector lookups for backends the zone's own database does not resolve,
- * issued when a row is expanded, one per address for the life of the tab.
+ * Watches the Service's EndpointSlices while it is mounted (the row is
+ * expanded) and hands the resolver to its children. One list per row,
+ * stopped on collapse.
  */
-const useBackendLookups = (): BackendLookups => {
-    const cache = React.useRef(new Map<string, LookupState>());
-    const mounted = React.useRef(true);
-    const [, setVersion] = React.useState(0);
-    React.useEffect(() => {
-        mounted.current = true;
-        return () => {
-            mounted.current = false;
-        };
-    }, []);
-
-    const request = React.useCallback((addresses: readonly string[]) => {
-        const fresh = addresses.filter((address) => !cache.current.has(address));
-        if (fresh.length === 0) return;
-        for (const address of fresh) {
-            cache.current.set(address, { status: 'pending' });
-            fetchCollectorLookup('ip', address)
-                .then((response): LookupState => {
-                    const owner = podOwnerFromLookup(response);
-                    return owner ? { status: 'resolved', owner } : { status: 'none' };
-                })
-                .catch((error: unknown): LookupState => ({
-                    status: 'error',
-                    message: error instanceof Error ? error.message : String(error),
-                }))
-                .then((state) => {
-                    cache.current.set(address, state);
-                    if (mounted.current) setVersion((version) => version + 1);
-                });
-        }
-        setVersion((version) => version + 1);
-    }, []);
-
-    return { request, stateOf: (address) => cache.current.get(address) };
+const EndpointSliceOwners: React.FC<{
+    namespace: string;
+    name: string;
+    query: EndpointSliceQuery;
+    children: (state: SliceState) => React.ReactNode;
+}> = ({ namespace, name, query, children }) => {
+    const { slices, loaded, error } = useServiceEndpointSlices(namespace, name, query.labelKey);
+    const resolve = React.useMemo(() => endpointOwnerResolver(slices, query.network), [slices, query.network]);
+    return <>{children({ resolve: loaded && !error ? resolve : undefined, loaded, error })}</>;
 };
 
-/** A backend's pod: from this zone's ports first, else from a lookup. */
+/**
+ * A backend's pod: this zone's ports first, as before; then the Service's
+ * EndpointSlices, which declare it (and resolve host-network backends,
+ * whose address is a node's). Neither: the address stands alone.
+ */
 const BackendOwner: React.FC<{
-    address: string;
     local?: PodAddressOwner;
-    lookups: BackendLookups;
+    declared?: EndpointOwner;
     databaseNode?: string;
-}> = ({ address, local, lookups, databaseNode }) => {
+}> = ({ local, declared, databaseNode }) => {
     if (local) {
         return (
-            <span data-testid="backend-pod">
+            <span data-testid="backend-pod" data-basis="zone">
                 <PodRef namespace={local.namespace} pod={local.pod} />
                 {databaseNode && <span style={SUBTLE}> on {databaseNode}</span>}
             </span>
         );
     }
-    const state = lookups.stateOf(address);
-    if (!state || state.status === 'none') return DASH;
-    if (state.status === 'pending') return <Spinner size="sm" aria-label={`Looking up ${address}`} />;
-    if (state.status === 'error') return <span style={SUBTLE} title={state.message}>—</span>;
+    if (!declared) return null;
     return (
-        <span data-testid="backend-pod">
-            <PodRef namespace={state.owner.namespace} pod={state.owner.pod} />
-            <span style={SUBTLE}> on {state.owner.node}</span>
+        <span
+            data-testid="backend-pod"
+            data-basis="declared"
+            title={`Declared by EndpointSlice ${declared.slice ?? ''}`.trim()}
+        >
+            <PodRef namespace={declared.namespace} pod={declared.pod} />
+            <span style={SUBTLE}>
+                {declared.node ? ` on ${declared.node}` : ''} · declared
+            </span>
         </span>
     );
 };
@@ -310,49 +291,38 @@ const rejectNote = (vip: ServiceVipView): string =>
 const sourceText = (sources: string[]): string =>
     sources.map((source) => (source === DIRECT_SOURCE ? 'set directly' : `via ${source}`)).join(', ');
 
-/**
- * Every VIP of the row with its class and backends, each backend's address
- * beside its pod; then the load balancer rows and session affinity.
- */
-const ServiceDetail: React.FC<{
+interface ServiceDetailProps {
     group: ServiceGroupView;
     ownerOf: (address: string) => PodAddressOwner | undefined;
-    lookups: BackendLookups;
     databaseNode?: string;
     onDeclared: (label: string, service: KubeServiceLike) => void;
     sourcesOf: (uuid: string) => string[];
-}> = ({ group, ownerOf, lookups, databaseNode, onDeclared, sourcesOf }) => {
-    const { request } = lookups;
-    React.useEffect(() => {
-        const remote = new Set<string>();
-        for (const vip of group.vips) {
-            for (const backend of vip.backends) {
-                const { address } = parseVip(backend);
-                if (isLookupAddress(address) && !ownerOf(address)) remote.add(address);
-            }
-        }
-        request([...remote]);
-    }, [group, ownerOf, request]);
+}
 
-    const affinity = group.loadBalancers.map((row) => row.options?.affinity_timeout).find(Boolean);
-    const failed = new Set(
-        group.vips.flatMap((vip) =>
-            vip.backends
-                .map((backend) => parseVip(backend).address)
-                .filter((address) => lookups.stateOf(address)?.status === 'error'),
-        ),
+/** True when some backend of the row is an address this zone's ports do not hold. */
+const needsEndpointSlices = (group: ServiceGroupView, ownerOf: ServiceDetailProps['ownerOf']): boolean =>
+    group.vips.some((vip) =>
+        vip.backends.some((backend) => {
+            const { address } = parseVip(backend);
+            return isIpAddress(address) && !ownerOf(address);
+        }),
     );
-    const firstError = [...failed].map((address) => lookups.stateOf(address)).find((state) => state?.status === 'error');
 
-    return (
+/**
+ * Every VIP of the row with its class and backends, each backend's address
+ * beside its pod; then the load balancer rows and session affinity. Backends
+ * the zone's ports resolve cost nothing; the rest are matched against the
+ * Service's EndpointSlices, read once while the row stays open.
+ */
+const ServiceDetail: React.FC<ServiceDetailProps> = ({ group, ownerOf, databaseNode, onDeclared, sourcesOf }) => {
+    const affinity = group.loadBalancers.map((row) => row.options?.affinity_timeout).find(Boolean);
+    const service = group.service?.kind === 'Service' ? group.service : undefined;
+    const query = React.useMemo(() => endpointSliceQueryFor(group.loadBalancers), [group.loadBalancers]);
+
+    const body = (slices?: SliceState) => (
         <div style={{ width: 0, minWidth: '100%' }} data-testid="service-detail">
-            {group.service?.kind === 'Service' && (
-                <DeclaredService
-                    namespace={group.service.namespace}
-                    name={group.service.name}
-                    label={group.label}
-                    onRead={onDeclared}
-                />
+            {service && (
+                <DeclaredService namespace={service.namespace} name={service.name} label={group.label} onRead={onDeclared} />
             )}
             <div className="pf-u-mt-sm">
                 {group.vips.map((vip) => (
@@ -371,14 +341,13 @@ const ServiceDetail: React.FC<{
                                 <div style={SUBTLE}>{rejectNote(vip)}</div>
                             ) : (
                                 vip.backends.map((backend) => {
-                                    const { address } = parseVip(backend);
+                                    const local = ownerOf(parseVip(backend).address);
                                     return (
                                         <div key={backend} data-testid="service-backend">
                                             <code style={WRAP_ANYWHERE}>{backend}</code>{' '}
                                             <BackendOwner
-                                                address={address}
-                                                local={ownerOf(address)}
-                                                lookups={lookups}
+                                                local={local}
+                                                declared={local ? undefined : slices?.resolve?.(backend, vip.protocol)}
                                                 databaseNode={databaseNode}
                                             />
                                         </div>
@@ -389,11 +358,14 @@ const ServiceDetail: React.FC<{
                     </div>
                 ))}
             </div>
-            {firstError?.status === 'error' && (
-                // The collector helper's message lists every path it tried:
-                // too long for the drawer, so it is the tooltip.
-                <div style={SUBTLE} className="pf-u-mb-sm" data-testid="backend-lookup-error" title={firstError.message}>
-                    {plural(failed.size, 'backend')} on other nodes could not be looked up.
+            {slices && !slices.loaded && !slices.error && (
+                <div style={SUBTLE} className="pf-u-mb-sm" data-testid="backend-slices-loading">
+                    <Spinner size="sm" aria-label="Reading EndpointSlices" /> Reading the Service&apos;s EndpointSlices…
+                </div>
+            )}
+            {slices?.error && (
+                <div style={SUBTLE} className="pf-u-mb-sm" data-testid="backend-slices-error" title={slices.error}>
+                    Backends on other nodes could not be resolved: the Service&apos;s EndpointSlices could not be read.
                 </div>
             )}
             <div>
@@ -411,6 +383,14 @@ const ServiceDetail: React.FC<{
                 </div>
             )}
         </div>
+    );
+
+    return service && needsEndpointSlices(group, ownerOf) ? (
+        <EndpointSliceOwners namespace={service.namespace} name={service.name} query={query}>
+            {body}
+        </EndpointSliceOwners>
+    ) : (
+        body()
     );
 };
 
@@ -553,7 +533,6 @@ export const ServicesView: React.FC<ServicesViewProps> = ({ attachment, database
     const split = React.useMemo(() => summarizeSplit(attachment), [attachment]);
     const counts = React.useMemo(() => serviceFacetCounts(groups), [groups]);
     const ownerOf = React.useMemo(() => podAddressIndex(database), [database]);
-    const lookups = useBackendLookups();
     const sourcesByUuid = React.useMemo(() => {
         const map = new Map<string, string[]>();
         for (const loadBalancer of attachment.direct) map.set(loadBalancer.uuid, [DIRECT_SOURCE]);
@@ -594,7 +573,6 @@ export const ServicesView: React.FC<ServicesViewProps> = ({ attachment, database
         <ServiceDetail
             group={group}
             ownerOf={ownerOf}
-            lookups={lookups}
             databaseNode={databaseNode}
             onDeclared={onDeclared}
             sourcesOf={sourcesOf}

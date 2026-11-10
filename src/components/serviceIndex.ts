@@ -1,4 +1,4 @@
-import { LoadBalancerGroupRow, LoadBalancerRow, LogicalDatabase, LookupHit } from '../types';
+import { LoadBalancerGroupRow, LoadBalancerRow, LogicalDatabase } from '../types';
 import { comparePrefixes, ParsedPrefix, parsePrefix, prefixContains } from './ipPrefix';
 
 /**
@@ -787,34 +787,117 @@ export const splitSummaryText = (attachment: LoadBalancerAttachment): string => 
     return parts.join(' · ');
 };
 
-// ---------------------------------------------- backends on other nodes
+// ------------------------------------------------- backends to pods
 
-/** A backend's pod as the collector lookup found it in some zone. */
-export interface RemotePodOwner {
-    namespace: string;
-    pod: string;
-    /** The zone (node) whose snapshot holds the port. */
-    node: string;
-    port?: string;
+/** external_ids key naming a user-defined network's load balancer. */
+export const NETWORK_EXTERNAL_ID = 'k8s.ovn.org/network';
+/** The default EndpointSlice controller's Service label. */
+export const SERVICE_NAME_LABEL = 'kubernetes.io/service-name';
+/** ovn-kubernetes' mirrored EndpointSlices for a primary user-defined
+ * network carry this label instead, with the network in an annotation
+ * (endpointslice_mirror_controller.go, release-4.22). */
+export const MIRRORED_SERVICE_NAME_LABEL = 'k8s.ovn.org/service-name';
+export const MIRRORED_NETWORK_ANNOTATION = 'k8s.ovn.org/endpointslice-network';
+
+/** The fields of a discovery.k8s.io/v1 EndpointSlice the backends need. */
+export interface EndpointSliceLike {
+    metadata?: {
+        name?: string;
+        namespace?: string;
+        labels?: Record<string, string>;
+        annotations?: Record<string, string>;
+    };
+    addressType?: string;
+    ports?: Array<{ name?: string; port?: number | null; protocol?: string }> | null;
+    endpoints?: Array<{
+        addresses?: string[];
+        targetRef?: { kind?: string; name?: string; namespace?: string };
+        nodeName?: string;
+    }> | null;
+}
+
+/** Which EndpointSlices hold a row's backends. */
+export interface EndpointSliceQuery {
+    /** The label whose value is the Service name. */
+    labelKey: string;
+    /** A user-defined network: only its mirrors count. */
+    network?: string;
 }
 
 /**
- * The pod behind an address, from a lookup response: the one
- * Logical_Switch_Port that holds the address exactly, when a Pod owns it.
- * Hits on several fields of one row count once; two ports (the same address
- * on two networks, or a pod and something else) resolve to nothing, as the
- * zone's own index does.
+ * Default-network load balancers balance to the addresses the default
+ * EndpointSlice controller lists; a user-defined network's balance to the
+ * pods' addresses on that network, which ovn-kubernetes mirrors into slices
+ * of its own, labelled by Service and annotated with the network.
  */
-export const podOwnerFromLookup = (response: { hits: readonly LookupHit[] }): RemotePodOwner | undefined => {
-    const ports = new Map<string, LookupHit>();
-    for (const hit of response.hits) {
-        if (hit.table === 'Logical_Switch_Port' && hit.matchType === 'exact') ports.set(`${hit.node}|${hit.rowUuid}`, hit);
-    }
-    if (ports.size !== 1) return undefined;
-    const [hit] = [...ports.values()];
-    if (hit.owner?.kind !== 'Pod' || !hit.owner.namespace) return undefined;
-    return { namespace: hit.owner.namespace, pod: hit.owner.name, node: hit.node, port: hit.rowName };
+export const endpointSliceQueryFor = (loadBalancers: readonly LoadBalancerRow[]): EndpointSliceQuery => {
+    const network = loadBalancers
+        .map((row) => row.externalIds?.[NETWORK_EXTERNAL_ID])
+        .find((value) => value !== undefined && value !== '' && value !== 'default');
+    return network ? { labelKey: MIRRORED_SERVICE_NAME_LABEL, network } : { labelKey: SERVICE_NAME_LABEL };
 };
 
-/** True for a backend address worth a lookup: an IP, not a template. */
-export const isLookupAddress = (address: string): boolean => parsePrefix(address) !== null && !address.includes('/');
+/** A backend's pod as the Service's EndpointSlices declare it. */
+export interface EndpointOwner {
+    namespace: string;
+    pod: string;
+    /** The endpoint's nodeName, when set. */
+    node?: string;
+    /** The EndpointSlice that names it. */
+    slice?: string;
+}
+
+/**
+ * Resolve OVN backends ("ip:port", protocol) to the pods the slices name.
+ * The address and the slice port must both match; a port without a number
+ * means every port. Any number of slices, either family. An address and port
+ * two different pods claim resolves to nothing. Only endpoints whose
+ * targetRef is a Pod count; with `network` set, only that network's mirrors.
+ * A backend no endpoint names resolves to nothing: OVN's backends are
+ * legitimately a subset (readiness, externalTrafficPolicy Local on
+ * node-scoped rows), so that is not a finding.
+ */
+export const endpointOwnerResolver = (
+    slices: readonly EndpointSliceLike[],
+    network?: string,
+): ((backend: string, protocol: string) => EndpointOwner | undefined) => {
+    const exact = new Map<string, EndpointOwner | null>();
+    const anyPort = new Map<string, EndpointOwner | null>();
+    const put = (map: Map<string, EndpointOwner | null>, key: string, owner: EndpointOwner) => {
+        const seen = map.get(key);
+        if (seen === undefined) map.set(key, owner);
+        else if (seen !== null && (seen.namespace !== owner.namespace || seen.pod !== owner.pod)) map.set(key, null);
+    };
+    for (const slice of slices) {
+        if (network !== undefined && slice.metadata?.annotations?.[MIRRORED_NETWORK_ANNOTATION] !== network) continue;
+        for (const endpoint of slice.endpoints ?? []) {
+            const ref = endpoint.targetRef;
+            if (ref?.kind !== 'Pod' || !ref.name) continue;
+            const owner: EndpointOwner = {
+                namespace: ref.namespace ?? slice.metadata?.namespace ?? '',
+                pod: ref.name,
+                node: endpoint.nodeName,
+                slice: slice.metadata?.name,
+            };
+            for (const address of endpoint.addresses ?? []) {
+                const key = addressKey(address);
+                for (const port of slice.ports ?? []) {
+                    const protocol = (port.protocol ?? 'TCP').toLowerCase();
+                    if (port.port == null) put(anyPort, `${key}|${protocol}`, owner);
+                    else put(exact, `${key}|${port.port}|${protocol}`, owner);
+                }
+            }
+        }
+    }
+    return (backend, protocol) => {
+        const { address, port } = parseVip(backend);
+        const key = addressKey(address);
+        const proto = protocol.toLowerCase();
+        const hit = port !== undefined ? exact.get(`${key}|${port}|${proto}`) : undefined;
+        if (hit !== undefined) return hit ?? undefined;
+        return anyPort.get(`${key}|${proto}`) ?? undefined;
+    };
+};
+
+/** True for a backend address that is an IP, not a template variable. */
+export const isIpAddress = (address: string): boolean => parsePrefix(address) !== null && !address.includes('/');

@@ -1,13 +1,14 @@
 import * as React from 'react';
 import { K8sResourceCommon, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 
-import { KubeServiceLike } from './serviceIndex';
+import { EndpointSliceLike, KubeServiceLike } from './serviceIndex';
 
 /**
- * The Kubernetes reads behind the Services tab's VIP classes (ovn-recon-dp7.6).
- * Both watch ONE object: the cluster Network config while the tab is open,
- * and a Service while its row is expanded. There is deliberately no
- * cluster-wide Service watch; a cluster can hold thousands.
+ * The Kubernetes reads behind the Services tab (ovn-recon-dp7.6): the
+ * cluster Network config while the tab is open, and, while a row is
+ * expanded, that Service and its EndpointSlices (one label-selected list in
+ * its namespace). There is deliberately no cluster-wide or namespace-wide
+ * standing watch; a cluster can hold thousands of Services.
  */
 
 interface NetworkConfig extends K8sResourceCommon {
@@ -68,5 +69,34 @@ export const useKubeService = (namespace: string, name: string): KubeServiceResu
             error: errorText(error),
         }),
         [service, loaded, error],
+    );
+};
+
+export interface EndpointSlicesResult {
+    slices: EndpointSliceLike[];
+    loaded: boolean;
+    error?: string;
+}
+
+/**
+ * One Service's EndpointSlices: a list by label (a Service can have several
+ * slices, one per address family at least), watched while the caller is
+ * mounted. `labelKey` is kubernetes.io/service-name for the default network,
+ * k8s.ovn.org/service-name for a user-defined network's mirrors.
+ */
+export const useServiceEndpointSlices = (namespace: string, name: string, labelKey: string): EndpointSlicesResult => {
+    const [slices, loaded, error] = useK8sWatchResource<(EndpointSliceLike & K8sResourceCommon)[]>({
+        groupVersionKind: { group: 'discovery.k8s.io', version: 'v1', kind: 'EndpointSlice' },
+        namespace,
+        isList: true,
+        selector: { matchLabels: { [labelKey]: name } },
+    });
+    return React.useMemo(
+        () => ({
+            slices: loaded && !error && Array.isArray(slices) ? slices : [],
+            loaded,
+            error: errorText(error),
+        }),
+        [slices, loaded, error],
     );
 };
