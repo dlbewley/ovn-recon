@@ -26,7 +26,8 @@
             "NodeNetworkStateDetails": "./components/NodeNetworkStateDetails",
             "NodeLogicalTopologyDetails": "./components/NodeLogicalTopologyDetails",
             "ClusterLogicalTopologyDetails": "./components/ClusterLogicalTopologyDetails",
-            "ConstructDetails": "./components/ConstructDetails"
+            "ConstructDetails": "./components/ConstructDetails",
+            "NetworkDetails": "./components/NetworkDetails"
         },
         "dependencies": {
             "@console/pluginAPI": ">=4.22.0-0"

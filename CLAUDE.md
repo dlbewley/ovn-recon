@@ -84,7 +84,7 @@ Prereleases containing `-` in the tag (e.g. `v1.0.1-beta.1`) do **not** update t
 
 ### Plugin (`src/`)
 
-The plugin registers five route-based modules in `console-extensions.json`, reached from a single *Networking → OVN Recon* entry:
+The plugin registers six route-based modules in `console-extensions.json`, reached from a single *Networking → OVN Recon* entry:
 
 | Route | Module | Purpose |
 |---|---|---|
@@ -93,6 +93,8 @@ The plugin registers five route-based modules in `console-extensions.json`, reac
 | `/ovn-recon/ovn` | `ClusterLogicalTopologyDetails` | Logical OVN topology merged across node zones (collector-gated) |
 | `/ovn-recon/ovn/:name` | `NodeLogicalTopologyDetails` | Logical OVN topology of one node's zone (collector-gated) |
 | `/ovn-recon/ovn/:node/:kind/:name` | `ConstructDetails` | One logical switch or router from one node's zone: tabbed, full-width tables; `?tab=`, `?q=`, `?port=` (collector-gated) |
+| `/ovn-recon/networks` | `NetworkDetails` | Every CUDN, UDN and NAD-only network, with nodes wired |
+| `/ovn-recon/networks/cudn/:name`, `/ovn-recon/networks/udn/:namespace/:name`, `/ovn-recon/networks/nad/:namespace/:name` | `NetworkDetails` | One network: spec summary, network-scope findings, per-node placement matrix (`networkPageModel.ts`) |
 
 Every logical route is `exact: true`, so the node ladder route cannot claim the construct page's longer path. Both ladder pages take `?select=KIND:NAME` (`useSelectParam.ts`); the construct page's breadcrumbs and the drawer's "Open details" links (`constructDetailLinks.ts`) use it and the page route.
 
