@@ -10,6 +10,7 @@ import {
     Flex,
     FlexItem,
     Label,
+    LabelGroup,
     SearchInput,
     Spinner,
     Title,
@@ -28,6 +29,7 @@ import {
     describeSearched,
     describeSearchQuery,
     detectSearchQuery,
+    jumpTargets,
     readSearchParam,
     SearchCoverage,
     SearchLink,
@@ -35,7 +37,9 @@ import {
     SearchPlace,
     SearchQuery,
     SearchResult,
+    searchGroupAnchorId,
     withSearchParam,
+    ZoneCount,
 } from './clusterSearchModel';
 import { networkResourceRef } from './logicalClassification';
 import { networkDisplayName, networkKindBadge } from './LogicalLadderView';
@@ -82,6 +86,7 @@ const plural = (count: number, noun: string): string => `${count} ${noun}${count
 
 const MATCH_TYPE_LABEL: Partial<Record<SearchMatch['type'], string>> = {
     within: 'inside the searched CIDR',
+    prefix: 'starts with the text',
     substring: 'contains the text',
 };
 
@@ -141,8 +146,62 @@ const OwnerCell: React.FC<{ owner: SearchResult['owner'] }> = ({ owner }) => {
     );
 };
 
+/** Where a Service VIP is programmed, out of the zones searched, and where it is not. */
+const ZoneCountLine: React.FC<{ zones: ZoneCount }> = ({ zones }) => (
+    <>
+        <div data-testid="search-zone-count">Programmed in {zones.found} of {plural(zones.searched, 'zone')}</div>
+        {zones.missing.length > 0 && (
+            <div style={{ ...SUBTLE, ...WRAP_ANYWHERE }}>
+                not in {zones.missing.join(', ')}
+                {zones.incomplete && ' (or cut from the answer: the collector returned only its first matches)'}
+            </div>
+        )}
+    </>
+);
+
+/**
+ * The rows a folded result stands for, each with its own places and links.
+ * Built only when open: a Service on a large cluster has hundreds.
+ */
+const MemberList: React.FC<{ result: SearchResult; noun: string }> = ({ result, noun }) => {
+    const [expanded, setExpanded] = React.useState(false);
+    const members = result.members ?? [];
+    const what = result.kind === 'service-vip' ? 'load balancer row' : 'row';
+    return (
+        <ExpandableSection
+            isExpanded={expanded}
+            onToggle={(_event, next) => setExpanded(next)}
+            toggleText={expanded ? `Hide the ${plural(members.length, what)}` : `Show the ${plural(members.length, what)}`}
+            data-testid="search-members"
+        >
+            {expanded && members.map((member) => (
+                <div key={member.key} data-testid="search-member" style={{ marginBottom: 8 }}>
+                    <div style={WRAP_ANYWHERE}>{member.title}</div>
+                    {member.match.value !== result.match.value && (
+                        <div style={{ ...SUBTLE, ...WRAP_ANYWHERE }}>{member.match.field} {member.match.value}</div>
+                    )}
+                    <div style={SUBTLE}>
+                        <PlaceList places={member.places} noun={noun} />
+                    </div>
+                    {member.links.map((link) => (
+                        <div key={link.href}><SearchLinkAnchor link={link} /></div>
+                    ))}
+                </div>
+            ))}
+        </ExpandableSection>
+    );
+};
+
+const nodesSummary = (places: SearchPlace[], noun: string): string => {
+    const names = places.map((place) => place.node);
+    const shown = names.slice(0, PLACE_LIMIT).join(', ');
+    const rest = names.length - PLACE_LIMIT;
+    return `On ${plural(names.length, noun)}: ${shown}${rest > 0 ? ` and ${rest} more` : ''}`;
+};
+
 const ResultRow: React.FC<{ result: SearchResult }> = ({ result }) => {
     const typeLabel = MATCH_TYPE_LABEL[result.match.type];
+    const noun = result.source === 'collector' ? 'zone' : 'node';
     return (
         <Tr data-testid="search-result" data-source={result.source}>
             <Td dataLabel="Found">
@@ -158,11 +217,26 @@ const ResultRow: React.FC<{ result: SearchResult }> = ({ result }) => {
                         <Label isCompact>{typeLabel}</Label>
                     </>
                 )}
+                {result.ports && result.ports.length > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                        <LabelGroup numLabels={8} isCompact aria-label="Ports">
+                            {result.ports.map((port) => <Label key={port} isCompact color="blue">{port}</Label>)}
+                        </LabelGroup>
+                    </div>
+                )}
             </Td>
             <Td dataLabel="Network"><NetworkCell result={result} /></Td>
             <Td dataLabel="Owner"><OwnerCell owner={result.owner} /></Td>
             <Td dataLabel="Where">
-                <PlaceList places={result.places} noun={result.source === 'collector' ? 'zone' : 'node'} />
+                {result.zones && <ZoneCountLine zones={result.zones} />}
+                {result.members ? (
+                    <>
+                        {!result.zones && <div style={WRAP_ANYWHERE}>{nodesSummary(result.places, 'node')}</div>}
+                        <MemberList result={result} noun={noun} />
+                    </>
+                ) : (
+                    <PlaceList places={result.places} noun={noun} />
+                )}
                 {result.links.map((link) => (
                     <div key={link.href}><SearchLinkAnchor link={link} /></div>
                 ))}
@@ -323,6 +397,7 @@ const Results: React.FC<{ results: ClusterSearchResults; stateError?: string; se
 }) => {
     const what = describeSearchQuery(results.query);
     const nothingDirect = results.resultCount === 0;
+    const targets = jumpTargets(results);
     // The covering groups are the whole answer when nothing matched directly,
     // so they open; under direct results they stay out of the way.
     const [coveringOpen, setCoveringOpen] = React.useState<boolean | null>(null);
@@ -354,8 +429,34 @@ const Results: React.FC<{ results: ClusterSearchResults; stateError?: string; se
                 </p>
             )}
 
+            {targets.length > 0 && (
+                <nav aria-label="Result groups" data-testid="search-jump-list" style={{ marginTop: 12 }}>
+                    <span style={SUBTLE}>Jump to: </span>
+                    {targets.map((target, index) => (
+                        <React.Fragment key={target.id}>
+                            {index > 0 && <span style={SUBTLE}> · </span>}
+                            <Button
+                                variant="link"
+                                isInline
+                                onClick={() => {
+                                    if (target.id === searchGroupAnchorId('covering')) setCoveringOpen(true);
+                                    document.getElementById(target.id)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+                                }}
+                            >
+                                {target.label} ({target.count})
+                            </Button>
+                        </React.Fragment>
+                    ))}
+                </nav>
+            )}
+
             {results.groups.map((group) => (
-                <div key={group.kind} data-testid={`search-group-${group.kind}`} style={{ marginTop: 16 }}>
+                <div
+                    key={group.kind}
+                    id={searchGroupAnchorId(group.kind)}
+                    data-testid={`search-group-${group.kind}`}
+                    style={{ marginTop: 16 }}
+                >
                     <Title headingLevel="h4" size="md">
                         {group.label} <span style={{ ...SUBTLE, fontWeight: 'normal' }}>({group.results.length})</span>
                     </Title>
@@ -371,7 +472,7 @@ const Results: React.FC<{ results: ClusterSearchResults; stateError?: string; se
             ))}
 
             {results.covering.length > 0 && (
-                <div data-testid="search-covering" style={{ marginTop: 16 }}>
+                <div id={searchGroupAnchorId('covering')} data-testid="search-covering" style={{ marginTop: 16 }}>
                     <ExpandableSection
                         isExpanded={coveringExpanded}
                         onToggle={(_event, next) => setCoveringOpen(next)}
