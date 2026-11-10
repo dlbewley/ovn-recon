@@ -144,27 +144,3 @@ jobs:
       with:
         generate_release_notes: true
         prerelease: ${{ contains(github.ref_name, '-') }}
-        # Carried on every release while the storedVersions migrator is still
-        # in the operator; remove this block together with the migrator.
-        # Tracked in beads ovn-recon-0cl.
-        body: |
-          > [!WARNING]
-          > **The retired `v1alpha1` OvnRecon API version is no longer declared on the CRD. Upgrade through v1.0.4 or v1.0.5 first.**
-          >
-          > `v1alpha1` has been unusable since v0.3.1-b2; v1.0.4 and v1.0.5 kept it declared
-          > only so they could clear it from the CRD's `status.storedVersions` on clusters
-          > installed at v0.2.2 or earlier. The normal OLM upgrade path passes through those
-          > releases, so no action is needed. Jumping from v1.0.3 or older straight to this
-          > release, bypassing the upgrade graph (for example by applying the CRD with
-          > `make install` or `oc apply`), fails with `risk of data loss updating
-          > "ovnrecons.recon.bewley.net": new CRD removes version v1alpha1 that is listed as a
-          > stored version`. Run the migration by hand and retry; under OLM also delete the
-          > failed InstallPlan so it re-resolves:
-          >
-          > ```
-          > oc get ovnrecons.recon.bewley.net -A -o yaml | oc replace -f -
-          > oc patch crd ovnrecons.recon.bewley.net --subresource=status --type=merge -p '{"status":{"storedVersions":["v1beta1"]}}'
-          > oc delete installplan -n <operator-namespace> <failed-installplan>
-          > ```
-          >
-          > Details in OPERATOR.md.

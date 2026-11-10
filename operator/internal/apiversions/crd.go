@@ -21,9 +21,9 @@ limitations under the License.
 // unserved from v0.3.1-b2. Its Go types were removed in v1.0.3-a5
 // (ovn-recon-dtq), which stalled OLM upgrades on clusters that still listed
 // it in status.storedVersions, so v1.0.4 and v1.0.5 declared it again as an
-// unserved placeholder while a startup migration (internal/storagemigration)
-// cleared the stale entry (ovn-recon-crv). The placeholder was dropped in
-// ovn-recon-5uj; the CRD now declares v1beta1 alone.
+// unserved placeholder while a startup migration cleared the stale entry
+// (ovn-recon-crv). The placeholder was dropped in ovn-recon-5uj and the
+// migration removed in ovn-recon-0cl; the CRD now declares v1beta1 alone.
 package apiversions
 
 const (
