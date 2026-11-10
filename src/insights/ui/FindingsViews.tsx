@@ -1,11 +1,12 @@
 import * as React from 'react';
-import { Icon, Label, Switch, Title } from '@patternfly/react-core';
+import { Icon, Switch, Title } from '@patternfly/react-core';
 import { ExclamationTriangleIcon, ExternalLinkAltIcon, InfoCircleIcon } from '@patternfly/react-icons';
 import { Link } from 'react-router';
 
 import { consoleHrefForRef, refLabel } from '../links';
 import { countBySeverity, highestSeverity, SeverityCounts } from '../selectors';
 import type { Evidence, Finding, Severity } from '../types';
+import { InferredLabel } from '../../components/drawerKit';
 
 /**
  * Severity presentation shared by every findings surface (ovn-recon-7i6.1).
@@ -124,9 +125,7 @@ const FindingEntry: React.FC<{ finding: Finding }> = ({ finding }) => {
                         <li key={`${index}-${evidence.fact}`}>
                             {evidence.fact}
                             {evidence.inferred && (
-                                <Label isCompact color="orange" title={evidence.inferred} style={{ marginLeft: '0.5em' }}>
-                                    inferred
-                                </Label>
+                                <InferredLabel />
                             )}
                             {evidence.inferred && (
                                 <div style={{ ...subtle, fontSize: '0.85em' }}>Inferred: {evidence.inferred}</div>

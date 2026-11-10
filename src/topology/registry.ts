@@ -375,6 +375,99 @@ const getBridgePortNames = (raw: Interface | undefined): string[] => {
         .filter(Boolean);
 };
 
+/** nmstate types of a port that carries the bridge's traffic off the node. */
+const UPLINK_TYPES = new Set(['ethernet', 'bond', 'vlan', 'team']);
+
+/** A bridge's ports by role (ovn-recon-dp7.1): every port lands in exactly one. */
+export interface BridgePortGroups {
+    uplinks: string[];
+    /** The bridge's own internal port, named as the bridge is. */
+    internal?: string;
+    /** Network patch ports on this bridge, as parsed from their names. */
+    patches: NetworkPatchPort[];
+    other: string[];
+}
+
+export const groupBridgePorts = (raw: Interface, ctx: GraphContext): BridgePortGroups => {
+    // The bridge's own port list, then any port that names the bridge as its
+    // controller but is missing from that list (nmstate can leave an
+    // OVN-created patch port out of bridge.port), so no port goes unlisted.
+    const listed = getBridgePortNames(raw);
+    const byController = ctx.interfaces
+        .filter((iface) => iface !== raw && (iface.controller || iface.master) === raw.name)
+        .map((iface) => iface.name);
+    const names = [...new Set([...listed, ...byController])];
+    const patchByName = new Map(
+        getNetworkPatchPorts(ctx.interfaces)
+            .filter((port) => port.bridge === raw.name)
+            .map((port) => [port.portName, port])
+    );
+    const groups: BridgePortGroups = { uplinks: [], patches: [], other: [] };
+    names.forEach((name) => {
+        const patch = patchByName.get(name);
+        const iface = ctx.interfaces.find((candidate) => candidate.name === name);
+        if (name === raw.name) groups.internal = name;
+        else if (patch) groups.patches.push(patch);
+        else if (iface && UPLINK_TYPES.has(iface.type)) groups.uplinks.push(name);
+        else groups.other.push(name);
+    });
+    return groups;
+};
+
+/** What a patch pair is for, without the bridge: the drawer is the bridge's. */
+const patchNetworkItem = (port: NetworkPatchPort, ctx: GraphContext): FactItem => {
+    const suffix = port.form === 'localnet' ? ' (localnet)' : '';
+    if (port.isDefaultNetwork) return { text: `cluster default network${suffix}`, detail: port.portName };
+    const cudnName = resolvePatchPortCudn(port, ctx.cudns);
+    if (cudnName) return { text: `CUDN ${cudnName}${suffix}`, ref: cudnRef(cudnName), detail: port.portName };
+    return { text: `network ${port.networkName}${suffix}`, detail: port.portName };
+};
+
+/**
+ * A bridge's ports grouped by role, where a flat list of raw names used to
+ * be: the uplink, the bridge's own internal port with its address, the patch
+ * ports labelled with the network each serves, and the rest. Then the bridge
+ * mappings that name the bridge.
+ */
+const bridgePortFacts = (raw: Interface, ctx: GraphContext): Fact[] => {
+    const groups = groupBridgePorts(raw, ctx);
+    const internal = groups.internal
+        ? ctx.interfaces.find((iface) => iface.name === groups.internal && iface !== raw)
+            ?? ctx.interfaces.find((iface) => iface.name === groups.internal)
+        : undefined;
+    const internalAddresses = internal ? getIpv4Addresses(internal) : [];
+    const mappings = ctx.bridgeMappings.filter((mapping) => mapping.bridge === raw.name);
+    const hasPorts = groups.uplinks.length + groups.patches.length + groups.other.length > 0 || Boolean(groups.internal);
+    if (!hasPorts) {
+        return [{ label: 'Ports', value: [], provenance: 'observed', emptyText: 'No bridge ports reported in NNS.' }];
+    }
+    return [
+        { label: 'Uplink', value: groups.uplinks.map((text) => ({ text })), provenance: 'observed' },
+        ...(groups.internal
+            ? [{
+                label: 'Internal Port',
+                value: [{
+                    text: groups.internal,
+                    detail: internalAddresses.length > 0 ? internalAddresses.join(', ') : '(no address)'
+                }],
+                provenance: 'observed'
+            } as Fact]
+            : []),
+        {
+            label: 'Patch Ports',
+            value: groups.patches.map((port) => patchNetworkItem(port, ctx)),
+            provenance: 'inferred',
+            hint: PATCHED_NETWORKS_HINT
+        },
+        { label: 'Other Ports', value: groups.other.map((text) => ({ text })), provenance: 'observed' },
+        {
+            label: 'Bridge Mappings',
+            value: mappings.map((mapping) => ({ text: mapping.localnet })),
+            provenance: 'observed'
+        }
+    ];
+};
+
 /**
  * Type rows link to the console's API resource reference page for the kind --
  * the version-proof 'learn more' (ovn-recon-s3t.39). Interface-family kinds
@@ -447,6 +540,11 @@ const PATCH_NAME_RULE =
     `a CUDN's network is ${CUDN_NETWORK_PREFIX}<name> with dashes written as dots. `
     + 'The naming is an OVN-Kubernetes implementation detail and the dash-to-dot step '
     + 'cannot be undone, so a port name that fits two CUDNs is matched to neither.';
+
+const PATCHED_NETWORKS_HINT =
+    'Read out of the patch port names on the provider side: a pair naming no network is the '
+    + 'cluster default network\'s, <network>_ovn_localnet_port is a Localnet network\'s, and '
+    + PATCH_NAME_RULE;
 
 /**
  * The patch pair(s) OVN-Kubernetes built for a CUDN on this node.
@@ -694,7 +792,9 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
         facts: (node, ctx) => {
             const raw = node.raw as Interface | undefined;
             const facts: Fact[] = [
-                ...baseFacts(node, 'observed', NNS_API),
+                // The oper state is the identity header's status label
+                // (ovn-recon-dp7.1), so it is not repeated as a fact.
+                ...baseFacts(node, 'observed', NNS_API).filter((fact) => fact.label !== 'State'),
                 ...configuredByFacts(getPoliciesClaimingInterface(raw?.name || '', ctx.enactments), ctx)
             ];
             if (raw?.type === 'vlan' && raw?.vlan) {
@@ -767,12 +867,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                 facts.push(...lldpFacts(nic), ...hardwareIdentityFacts(nic));
             }
             if (raw?.type === 'linux-bridge' || raw?.type === 'ovs-bridge') {
-                facts.push({
-                    label: 'Ports',
-                    value: getBridgePortNames(raw).map((text) => ({ text })),
-                    provenance: 'observed',
-                    emptyText: 'No bridge ports reported in NNS.'
-                });
+                facts.push(...bridgePortFacts(raw, ctx));
             }
             facts.push(...routesViaFacts(raw, ctx));
             return facts;
@@ -1268,9 +1363,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     label: 'Patched Networks',
                     value: getNetworkPatchPorts(ctx.interfaces).map((port) => patchedNetworkItem(port, ctx)),
                     provenance: 'inferred',
-                    hint: 'Read out of the patch port names on the provider side: a pair naming no network is the '
-                        + 'cluster default network\'s, <network>_ovn_localnet_port is a Localnet network\'s, and '
-                        + PATCH_NAME_RULE
+                    hint: PATCHED_NETWORKS_HINT
                 },
                 ...(internalPort
                     ? [{

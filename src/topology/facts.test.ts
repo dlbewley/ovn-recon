@@ -3,7 +3,7 @@ import path from 'path';
 
 import { buildGraphContext } from './context';
 import { descriptorFor } from './descriptors';
-import { nodeKindRegistry } from './registry';
+import { groupBridgePorts, nodeKindRegistry } from './registry';
 import { buildNodeViewModel } from './viewModel';
 import { Fact, KernelRoutesTable, NodeKind } from './types';
 import { buildKernelRouteTables, routeTablesVia } from '../components/kernelRoutes';
@@ -132,8 +132,8 @@ describe('facts builders', () => {
             expect(vlanFact.value).toEqual([{ text: 'Base: ens224' }, { text: 'ID: 456' }]);
         });
 
-        it('a bridge lists its ports with an explicit empty state available', () => {
-            const fact = byLabel(factsFor('interface', bridge, 'bridge' as NodeKind), 'Ports');
+        it('a bridge groups its ports by role (ovn-recon-dp7.1)', () => {
+            const fact = byLabel(factsFor('interface', bridge, 'bridge' as NodeKind), 'Uplink');
             expect(fact.provenance).toBe('observed');
             expect((fact.value as { text: string }[]).map((v) => v.text)).toContain('ens224');
         });
@@ -419,5 +419,61 @@ describe('facts builders', () => {
         allFacts
             .filter((fact) => fact.provenance === 'inferred')
             .forEach((fact) => expect(fact.hint?.length ?? 0).toBeGreaterThan(10));
+    });
+
+    describe('bridge ports by role (ovn-recon-dp7.1, dp7.9 item 5)', () => {
+        const brEx = ctx.interfaces.find((i) => i.name === 'br-ex' && i.type === 'ovs-bridge')!;
+        const brExFacts = () => factsFor('interface', brEx, 'bridge' as NodeKind);
+        const items = (fact: Fact) => fact.value as { text: string; detail?: string; ref?: unknown }[];
+
+        it('keeps every port reachable, each in exactly one group', () => {
+            const groups = groupBridgePorts(brEx, ctx);
+            const grouped = [
+                ...groups.uplinks,
+                ...(groups.internal ? [groups.internal] : []),
+                ...groups.patches.map((port) => port.portName),
+                ...groups.other
+            ];
+            expect(grouped.sort()).toEqual([
+                'br-ex', 'ens192', 'patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int', 'patch-br-ex_worker-1-to-br-int'
+            ]);
+            expect(new Set(grouped).size).toBe(grouped.length);
+        });
+
+        it('names the uplink and the internal port with its addresses', () => {
+            const facts = brExFacts();
+            expect(items(byLabel(facts, 'Uplink'))).toEqual([{ text: 'ens192' }]);
+            const internal = items(byLabel(facts, 'Internal Port'));
+            expect(internal).toHaveLength(1);
+            expect(internal[0].text).toBe('br-ex');
+            expect(internal[0].detail).toContain('192.0.2.72');
+            expect(facts.some((fact) => fact.label === 'Ports')).toBe(false);
+            expect(facts.some((fact) => fact.label === 'Other Ports')).toBe(true);
+            expect(items(byLabel(facts, 'Other Ports'))).toEqual([]);
+        });
+
+        it('labels each patch port with the network it serves, inferred from its name, keeping the raw name', () => {
+            const patches = byLabel(brExFacts(), 'Patch Ports');
+            expect(patches.provenance).toBe('inferred');
+            expect(patches.hint).toContain('Read out of the patch port names');
+            expect(items(patches)).toEqual([
+                {
+                    text: 'CUDN example-p-cudn',
+                    ref: { apiVersion: 'k8s.ovn.org/v1', kind: 'ClusterUserDefinedNetwork', name: 'example-p-cudn' },
+                    detail: 'patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int'
+                },
+                { text: 'cluster default network', detail: 'patch-br-ex_worker-1-to-br-int' }
+            ]);
+        });
+
+        it('lists the bridge mappings that name the bridge', () => {
+            expect(items(byLabel(brExFacts(), 'Bridge Mappings'))).toEqual([{ text: 'physnet' }]);
+            const vmdata = factsFor('interface', bridge, 'bridge' as NodeKind);
+            expect(items(byLabel(vmdata, 'Bridge Mappings'))).toEqual([{ text: 'physnet-vmdata' }]);
+            expect(items(byLabel(vmdata, 'Patch Ports'))[0]).toMatchObject({
+                text: 'CUDN vlan-1924 (localnet)',
+                detail: 'patch-cluster_udn_vlan.1924_ovn_localnet_port-to-br-int'
+            });
+        });
     });
 });

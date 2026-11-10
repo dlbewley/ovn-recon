@@ -29,7 +29,19 @@ import {
     LadderPort,
     switchPortTypeLabel,
 } from './logicalLadderModel';
-import { edgeLabel, networkDisplayName, roleLabel } from './LogicalLadderView';
+import { edgeLabel, networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
+import { constructIdentifiers, constructIdentity } from './constructIdentity';
+import {
+    CopyValue,
+    DrawerIdentity,
+    FactRow,
+    FactRows,
+    IdentifiersSection,
+    InfoPopover,
+    isCopyableAddress,
+    ValueList,
+    WideFactRow,
+} from './drawerKit';
 import { configPayloadFor, ovnKindFor } from './ovnKindRegistry';
 import {
     describeOwner,
@@ -307,16 +319,23 @@ const LoadBalancerOverview: React.FC<{ construct: LadderConstruct; services: Ser
         return (
             <>
                 {loadBalancerSummary(construct.loadBalancerCount, construct.loadBalancerGroupCount)}{' '}
-                <span style={SUBTLE_TEXT} title={services.status === 'absent' ? services.error : undefined}>
+                <span style={SUBTLE_TEXT}>
                     ({services.status === 'loading' ? 'loading…' : NOT_COLLECTED})
                 </span>
+                {services.status === 'absent' && services.error && (
+                    <InfoPopover subject="the load balancer rows" hint={services.error} />
+                )}
             </>
         );
     }
     return (
-        <span title={attachmentSummaryText(summarizeAttachment(services.attachment))} data-testid="load-balancer-split">
-            {splitSummaryText(services.attachment)}
-        </span>
+        <>
+            <span data-testid="load-balancer-split">{splitSummaryText(services.attachment)}</span>
+            <InfoPopover
+                subject="the load balancer counts"
+                hint={attachmentSummaryText(summarizeAttachment(services.attachment))}
+            />
+        </>
     );
 };
 
@@ -355,9 +374,8 @@ const hasAclLine = (construct: LadderConstruct, policy: PolicyState): boolean =>
 };
 
 /** A summary line's term, linked to its detail tab when the page exists. */
-const TabTerm: React.FC<{ href?: string; children: React.ReactNode }> = ({ href, children }) => (
-    <DescriptionListTerm>{href ? <Link to={href}>{children}</Link> : children}</DescriptionListTerm>
-);
+const tabTerm = (href: string | undefined, text: string): React.ReactNode =>
+    href ? <Link to={href}>{text}</Link> : text;
 
 export const OverviewBody: React.FC<DrawerBodyProps> = ({
     construct,
@@ -372,7 +390,6 @@ export const OverviewBody: React.FC<DrawerBodyProps> = ({
     detailHref,
     surface = 'drawer',
 }) => {
-    const networkRef = networkResourceRef(construct.network);
     const seamNode = SEAM_ROLES.has(construct.role) ? construct.node ?? fallbackNode : undefined;
     const routerPortNameByUuid = React.useMemo(
         () => new Map((database?.logicalRouterPorts ?? []).map((port) => [port.uuid, port.name])),
@@ -381,7 +398,14 @@ export const OverviewBody: React.FC<DrawerBodyProps> = ({
     const gatewayPortName = (uuid: string) => routerPortNameByUuid.get(uuid);
     const hasLoadBalancers = construct.loadBalancerCount > 0 || construct.loadBalancerGroupCount > 0;
     const routesHref = detailHref?.('routes');
+    const natTerm = `NAT rules (${construct.natRules.length})`;
+    const routesTerm = `Static routes (${construct.staticRouteRules.length})`;
+    const workloadTerm = `Workload ports (${construct.podPortCount})`;
 
+    // Role, network, node and admin state are the identity header's
+    // (ovn-recon-dp7.1); the OVN name and UUID fold into Identifiers. The
+    // detail page has a header of its own without the admin state, so it
+    // keeps that line.
     return (
         <>
         {detailHref && surface === 'drawer' && (
@@ -389,186 +413,108 @@ export const OverviewBody: React.FC<DrawerBodyProps> = ({
                 <Link to={detailHref()}>Open details</Link>
             </div>
         )}
-        <DescriptionList isCompact>
-            <DescriptionListGroup>
-                <DescriptionListTerm>Role</DescriptionListTerm>
-                <DescriptionListDescription>{roleLabel(construct.role)}</DescriptionListDescription>
-            </DescriptionListGroup>
-            <DescriptionListGroup>
-                <DescriptionListTerm>Network</DescriptionListTerm>
-                <DescriptionListDescription>
-                    {networkRef ? (
-                        <Link to={getResourcePath(networkRef)}>{networkDisplayName(construct.network)}</Link>
-                    ) : (
-                        networkDisplayName(construct.network)
-                    )}
-                    {construct.topology ? ` (${construct.topology})` : ''}
-                </DescriptionListDescription>
-            </DescriptionListGroup>
-            {construct.node && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>Node</DescriptionListTerm>
-                    <DescriptionListDescription>
-                        {nodeHref
-                            ? <Link to={nodeHref(construct.node)}>{construct.node}</Link>
-                            : construct.node}
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
+        <FactRows ariaLabel="Overview">
+            {surface === 'page' && construct.enabled !== undefined && (
+                <FactRow term="Admin state">
+                    {construct.enabled
+                        ? <Label isCompact status="success">Enabled</Label>
+                        : <Label isCompact status="danger">Disabled</Label>}
+                </FactRow>
             )}
             {physicalHref && seamNode && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>Physical topology</DescriptionListTerm>
-                    <DescriptionListDescription>
-                        <Link to={physicalHref(seamNode)}>
-                            {construct.role === 'localnet-switch'
-                                ? `Bridge mapping on ${seamNode}`
-                                : `br-ex on ${seamNode}`}
-                        </Link>
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term="Physical topology">
+                    <Link to={physicalHref(seamNode)}>
+                        {construct.role === 'localnet-switch'
+                            ? `Bridge mapping on ${seamNode}`
+                            : `br-ex on ${seamNode}`}
+                    </Link>
+                </FactRow>
             )}
             {construct.zones && construct.zones.length > 0 && (totalNodes ?? 0) > 1 && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>Present on nodes</DescriptionListTerm>
-                    <DescriptionListDescription>
-                        {construct.zones.length === totalNodes
-                            ? `All nodes (${totalNodes})`
-                            : [...construct.zones].sort().join(', ')}
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
-            )}
-            <DescriptionListGroup>
-                <DescriptionListTerm>OVN name</DescriptionListTerm>
-                <DescriptionListDescription><code>{construct.name}</code></DescriptionListDescription>
-            </DescriptionListGroup>
-            <DescriptionListGroup>
-                <DescriptionListTerm>UUID</DescriptionListTerm>
-                <DescriptionListDescription><code>{construct.uuid}</code></DescriptionListDescription>
-            </DescriptionListGroup>
-            {construct.enabled !== undefined && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>Admin state</DescriptionListTerm>
-                    <DescriptionListDescription>
-                        {construct.enabled
-                            ? <Label isCompact color="green">Enabled</Label>
-                            : <Label isCompact color="red">Disabled</Label>}
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term="Present on nodes">
+                    {construct.zones.length === totalNodes
+                        ? `All nodes (${totalNodes})`
+                        : [...construct.zones].sort().join(', ')}
+                </FactRow>
             )}
             {construct.gatewayPorts.length > 0 && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>Gateway ports</DescriptionListTerm>
-                    <DescriptionListDescription>
-                        <GatewayPortList
-                            placements={construct.gatewayPorts}
-                            nodeForChassis={nodeForChassis}
-                            nodeHref={nodeHref}
-                        />
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term="Gateway ports">
+                    <GatewayPortList
+                        placements={construct.gatewayPorts}
+                        nodeForChassis={nodeForChassis}
+                        nodeHref={nodeHref}
+                    />
+                </FactRow>
             )}
             {construct.bridge && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>OVS bridge</DescriptionListTerm>
-                    <DescriptionListDescription><code>{construct.bridge}</code></DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term="OVS bridge"><code>{construct.bridge}</code></FactRow>
             )}
             {construct.subnet && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>Subnet</DescriptionListTerm>
-                    <DescriptionListDescription>{construct.subnet}</DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term="Subnet">
+                    {isCopyableAddress(construct.subnet) ? <CopyValue value={construct.subnet} /> : construct.subnet}
+                </FactRow>
             )}
             {construct.managementPort && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>Management port</DescriptionListTerm>
-                    <DescriptionListDescription><code>{construct.managementPort}</code></DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term="Management port"><code>{construct.managementPort}</code></FactRow>
             )}
             {construct.remotePeers.length > 0 && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>Tunnels to</DescriptionListTerm>
-                    <DescriptionListDescription>{construct.remotePeers.join(', ')}</DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term="Tunnels to">{construct.remotePeers.join(', ')}</FactRow>
             )}
             {construct.localnetPorts.length > 0 && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>Localnet ports</DescriptionListTerm>
-                    <DescriptionListDescription>
-                        {construct.localnetPorts.map((port) => <div key={port}><code>{port}</code></div>)}
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
-            )}
-            {construct.podPortCount > 0 && (
-                <DescriptionListGroup>
-                    <TabTerm href={detailHref?.('ports')}>Workload ports ({construct.podPortCount})</TabTerm>
-                    <DescriptionListDescription>
-                        <WorkloadPortList construct={construct} />
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
-            )}
-            {construct.natRules.length > 0 && (
-                <DescriptionListGroup>
-                    <TabTerm href={routesHref}>NAT rules ({construct.natRules.length})</TabTerm>
-                    <DescriptionListDescription>
-                        <NatRuleTable
-                            nats={construct.natRules}
-                            database={database}
-                            gatewayPortName={gatewayPortName}
-                            openAll={routesHref ? { href: routesHref, count: construct.natRules.length } : undefined}
-                        />
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
-            )}
-            {construct.staticRouteRules.length > 0 && (
-                <DescriptionListGroup>
-                    <TabTerm href={routesHref}>Static routes ({construct.staticRouteRules.length})</TabTerm>
-                    <DescriptionListDescription>
-                        <StaticRouteTable
-                            routes={construct.staticRouteRules}
-                            routerName={construct.name}
-                            database={database}
-                            nodeHref={nodeHref}
-                            openAll={routesHref ? { href: routesHref, count: construct.staticRouteRules.length } : undefined}
-                        />
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term="Localnet ports">
+                    <ValueList items={construct.localnetPorts.map((port) => <code key={port}>{port}</code>)} />
+                </FactRow>
             )}
             {construct.policyCount > 0 && (
-                <DescriptionListGroup>
-                    <TabTerm href={routesHref}>Routing policies</TabTerm>
-                    <DescriptionListDescription>
-                        {construct.policyCount}{' '}
-                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>({NOT_COLLECTED})</span>
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term={tabTerm(routesHref, 'Routing policies')} termText="Routing policies">
+                    {construct.policyCount}{' '}
+                    <span style={SUBTLE_TEXT}>({NOT_COLLECTED})</span>
+                </FactRow>
             )}
             {hasAclLine(construct, policy) && (
-                <DescriptionListGroup>
-                    <TabTerm href={detailHref?.('policy')}>ACLs</TabTerm>
-                    <DescriptionListDescription>
-                        <AclOverview construct={construct} policy={policy} />
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term={tabTerm(detailHref?.('policy'), 'ACLs')} termText="ACLs">
+                    <AclOverview construct={construct} policy={policy} />
+                </FactRow>
             )}
             {hasLoadBalancers && (
-                <DescriptionListGroup>
-                    <TabTerm href={detailHref?.('services')}>Load balancers</TabTerm>
-                    <DescriptionListDescription>
-                        <LoadBalancerOverview construct={construct} services={services} />
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term={tabTerm(detailHref?.('services'), 'Load balancers')} termText="Load balancers">
+                    <LoadBalancerOverview construct={construct} services={services} />
+                </FactRow>
             )}
             {construct.qosRuleCount > 0 && (
-                <DescriptionListGroup>
-                    <DescriptionListTerm>QoS rules</DescriptionListTerm>
-                    <DescriptionListDescription>
-                        {construct.qosRuleCount}{' '}
-                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>({NOT_COLLECTED})</span>
-                    </DescriptionListDescription>
-                </DescriptionListGroup>
+                <FactRow term="QoS rules">
+                    {construct.qosRuleCount}{' '}
+                    <span style={SUBTLE_TEXT}>({NOT_COLLECTED})</span>
+                </FactRow>
             )}
-        </DescriptionList>
+            {construct.natRules.length > 0 && (
+                <WideFactRow term={tabTerm(routesHref, natTerm)} termText={natTerm}>
+                    <NatRuleTable
+                        nats={construct.natRules}
+                        database={database}
+                        gatewayPortName={gatewayPortName}
+                        openAll={routesHref ? { href: routesHref, count: construct.natRules.length } : undefined}
+                    />
+                </WideFactRow>
+            )}
+            {construct.staticRouteRules.length > 0 && (
+                <WideFactRow term={tabTerm(routesHref, routesTerm)} termText={routesTerm}>
+                    <StaticRouteTable
+                        routes={construct.staticRouteRules}
+                        routerName={construct.name}
+                        database={database}
+                        nodeHref={nodeHref}
+                        openAll={routesHref ? { href: routesHref, count: construct.staticRouteRules.length } : undefined}
+                    />
+                </WideFactRow>
+            )}
+            {construct.podPortCount > 0 && (
+                <WideFactRow term={tabTerm(detailHref?.('ports'), workloadTerm)} termText={workloadTerm}>
+                    <WorkloadPortList construct={construct} />
+                </WideFactRow>
+            )}
+        </FactRows>
+        <IdentifiersSection identifiers={constructIdentifiers(construct)} />
         </>
     );
 };
@@ -721,8 +667,14 @@ export const OwnerName: React.FC<{ owner?: OvnOwner; roleOf: NetworkRoleResolver
     if (!description.name) return <span style={SUBTLE_TEXT}>—</span>;
     if (description.target) return <Link to={description.target.path}>{description.name}</Link>;
     return (
-        <span title={description.kindUnresolved ? 'NetworkPolicy or MultiNetworkPolicy: the network role is unknown in this zone' : undefined}>
+        <span>
             {description.name}
+            {description.kindUnresolved && (
+                <InfoPopover
+                    subject={`the owner ${description.name}`}
+                    hint="NetworkPolicy or MultiNetworkPolicy: the network role is unknown in this zone"
+                />
+            )}
         </span>
     );
 };
@@ -890,7 +842,12 @@ const PortPolicy: React.FC<{
                                         {showTier && <div style={SUBTLE_TEXT}>tier {acl.tier}</div>}
                                     </Td>
                                     <Td dataLabel="Direction" modifier="wrap">
-                                        <span title={DIRECTION_HINTS[acl.direction]}>{acl.direction}</span>
+                                        <span>
+                                            {acl.direction}
+                                            {DIRECTION_HINTS[acl.direction] && (
+                                                <InfoPopover subject={acl.direction} hint={DIRECTION_HINTS[acl.direction]} />
+                                            )}
+                                        </span>
                                     </Td>
                                     <Td dataLabel="Action">
                                         <Label isCompact color={ACTION_COLORS[acl.action] ?? 'grey'}>{acl.action}</Label>
@@ -1411,7 +1368,14 @@ export const useSectionStates = (
  * structure as the physical drawer (ovn-recon-mow); wrapping the whole thing
  * in a padded body inset the strip and made the two drawers read differently.
  */
-const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = (props) => {
+const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps & {
+    /**
+     * The identity header (ovn-recon-dp7.1): the name, kind, state and
+     * context chips, above the tabs. Default on; a page whose DrawerHead
+     * renders the same DrawerIdentity turns it off.
+     */
+    showIdentity?: boolean;
+}> = ({ showIdentity = true, ...props }) => {
     // The active tab survives selection changes — hopping between constructs
     // via the Relationships tab must keep you on Relationships, matching the
     // physical drawer. A freshly opened drawer starts at Overview because the
@@ -1434,6 +1398,15 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps> = (props) => {
 
     return (
         <>
+            {showIdentity && (
+                <div className="pf-u-px-lg pf-u-pb-sm" data-testid="construct-identity">
+                    <DrawerIdentity
+                        headingLevel="h3"
+                        icon={roleIcon(props.construct.role)}
+                        {...constructIdentity(props.construct, props.nodeHref)}
+                    />
+                </div>
+            )}
             <DrawerTabStrip<ConstructTabId>
                 tabs={tabs}
                 activeKey={effectiveTab}

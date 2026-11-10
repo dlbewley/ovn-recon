@@ -754,6 +754,7 @@ describe('serviceIndex one row per Service (dp7.6)', () => {
             expect(Object.fromEntries(counts.protocols)).toEqual({ tcp: 7, udp: 1 });
             expect(counts.namespaces.get('shop')).toBe(5);
             expect(counts.withoutEndpoints).toBe(1);
+            expect(counts.servicesWithoutEndpoints).toBe(1);
         });
     });
 
@@ -762,6 +763,9 @@ describe('serviceIndex one row per Service (dp7.6)', () => {
             const attachment = loadBalancersFor(splitSwitch, splitDatabase())!;
             expect(summarizeSplit(attachment)).toEqual({ here: 4, clusterWide: 4, total: 8, vipsWithoutEndpoints: 2 });
             expect(splitSummaryText(attachment)).toBe('4 here · 4 cluster-wide · 2 VIPs without endpoints');
+            // The Services tab names both units (ovn-recon-dp7.9 item 4).
+            expect(splitSummaryText(attachment, 1)).toBe('4 here · 4 cluster-wide · 1 Service (2 VIPs) without endpoints');
+            expect(splitSummaryText(attachment, 2)).toBe('4 here · 4 cluster-wide · 2 Services (2 VIPs) without endpoints');
             expect(splitSummaryText(loadBalancersFor(splitRouter, splitDatabase())!)).toBe(
                 '3 here · 3 cluster-wide · 2 VIPs without endpoints',
             );

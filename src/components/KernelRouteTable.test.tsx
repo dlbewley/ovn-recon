@@ -149,4 +149,23 @@ describe('KernelRouteTable', () => {
         const metrics = bodyRows().map((row) => Number(cellText(row, 'Metric')));
         expect(metrics).toEqual([...metrics].sort((a, b) => a - b));
     });
+
+    describe('narrow (ovn-recon-dp7.9 item 2)', () => {
+        it('shows Destination, Gateway and Interface, and folds Metric, Source and MTU into the row', () => {
+            render(<KernelRouteTable routes={mainRoutes} narrow />);
+            expect(headers().filter((header) => header !== 'Row expansion')).toEqual(['Destination', 'Gateway', 'Interface']);
+            const withMetric = bodyRows().find((row) => row.querySelector('button[aria-expanded="false"]'));
+            expect(withMetric).toBeDefined();
+            act(() => withMetric!.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click());
+            const detail = container.querySelector('[data-testid="kernel-route-detail"]');
+            expect(detail).not.toBeNull();
+            expect(detail!.textContent).toMatch(/Metric|Source|MTU/);
+        });
+
+        it('keeps the full columns without the flag', () => {
+            render(<KernelRouteTable routes={mainRoutes} />);
+            expect(headers()).toEqual(expect.arrayContaining(['Destination', 'Gateway', 'Interface', 'Metric']));
+            expect(container.querySelector('button[aria-expanded]')).toBeNull();
+        });
+    });
 });
