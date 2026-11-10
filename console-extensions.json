@@ -110,5 +110,171 @@
                 "/ovn-recon"
             ]
         }
+    },
+    {
+        "type": "console.flag/hookProvider",
+        "properties": {
+            "handler": {
+                "$codeRef": "ConsoleIntegrationFlags.useConsoleIntegrationFlags"
+            }
+        }
+    },
+    {
+        "type": "console.tab/horizontalNav",
+        "properties": {
+            "model": {
+                "version": "v1",
+                "kind": "Node"
+            },
+            "page": {
+                "name": "OVN Recon",
+                "href": "ovn-recon"
+            },
+            "component": {
+                "$codeRef": "NodeOvnReconTab"
+            }
+        },
+        "flags": {
+            "required": [
+                "OVN_RECON_RESOURCE_TABS"
+            ]
+        }
+    },
+    {
+        "type": "console.tab/horizontalNav",
+        "properties": {
+            "model": {
+                "group": "k8s.ovn.org",
+                "version": "v1",
+                "kind": "ClusterUserDefinedNetwork"
+            },
+            "page": {
+                "name": "OVN Recon",
+                "href": "ovn-recon"
+            },
+            "component": {
+                "$codeRef": "NetworkOvnReconTab.ClusterUserDefinedNetworkTab"
+            }
+        },
+        "flags": {
+            "required": [
+                "OVN_RECON_RESOURCE_TABS"
+            ]
+        }
+    },
+    {
+        "type": "console.tab/horizontalNav",
+        "properties": {
+            "model": {
+                "group": "k8s.ovn.org",
+                "version": "v1",
+                "kind": "UserDefinedNetwork"
+            },
+            "page": {
+                "name": "OVN Recon",
+                "href": "ovn-recon"
+            },
+            "component": {
+                "$codeRef": "NetworkOvnReconTab.UserDefinedNetworkTab"
+            }
+        },
+        "flags": {
+            "required": [
+                "OVN_RECON_RESOURCE_TABS"
+            ]
+        }
+    },
+    {
+        "type": "console.tab/horizontalNav",
+        "properties": {
+            "model": {
+                "group": "k8s.cni.cncf.io",
+                "version": "v1",
+                "kind": "NetworkAttachmentDefinition"
+            },
+            "page": {
+                "name": "OVN Recon",
+                "href": "ovn-recon"
+            },
+            "component": {
+                "$codeRef": "NetworkOvnReconTab.NetworkAttachmentDefinitionTab"
+            }
+        },
+        "flags": {
+            "required": [
+                "OVN_RECON_RESOURCE_TABS"
+            ]
+        }
+    },
+    {
+        "type": "console.action/resource-provider",
+        "properties": {
+            "model": {
+                "version": "v1",
+                "kind": "Node"
+            },
+            "provider": {
+                "$codeRef": "ResourceActions.useNodeActions"
+            }
+        },
+        "flags": {
+            "required": [
+                "OVN_RECON_RESOURCE_ACTIONS"
+            ]
+        }
+    },
+    {
+        "type": "console.action/resource-provider",
+        "properties": {
+            "model": {
+                "group": "k8s.ovn.org",
+                "version": "v1",
+                "kind": "ClusterUserDefinedNetwork"
+            },
+            "provider": {
+                "$codeRef": "ResourceActions.useClusterUserDefinedNetworkActions"
+            }
+        },
+        "flags": {
+            "required": [
+                "OVN_RECON_RESOURCE_ACTIONS"
+            ]
+        }
+    },
+    {
+        "type": "console.action/resource-provider",
+        "properties": {
+            "model": {
+                "group": "k8s.ovn.org",
+                "version": "v1",
+                "kind": "UserDefinedNetwork"
+            },
+            "provider": {
+                "$codeRef": "ResourceActions.useUserDefinedNetworkActions"
+            }
+        },
+        "flags": {
+            "required": [
+                "OVN_RECON_RESOURCE_ACTIONS"
+            ]
+        }
+    },
+    {
+        "type": "console.action/resource-provider",
+        "properties": {
+            "model": {
+                "group": "k8s.cni.cncf.io",
+                "version": "v1",
+                "kind": "NetworkAttachmentDefinition"
+            },
+            "provider": {
+                "$codeRef": "ResourceActions.useNetworkAttachmentDefinitionActions"
+            }
+        },
+        "flags": {
+            "required": [
+                "OVN_RECON_RESOURCE_ACTIONS"
+            ]
+        }
     }
 ]

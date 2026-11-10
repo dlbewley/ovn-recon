@@ -45,6 +45,10 @@ func explicitDefaultsCR(name string) *reconv1beta1.OvnRecon {
 					Level:     "info",
 					AccessLog: reconv1beta1.AccessLogSpec{Enabled: false},
 				},
+				Integration: reconv1beta1.ConsolePluginIntegrationSpec{
+					ResourceTabs:    boolPtr(false),
+					ResourceActions: boolPtr(false),
+				},
 			},
 			Collector: reconv1beta1.CollectorSpec{
 				Enabled:         boolPtr(true),
@@ -96,6 +100,7 @@ func TestEmptySpecRendersSameAsExplicitDefaults(t *testing.T) {
 		"ConsolePlugin":                 {DesiredConsolePlugin(bare), DesiredConsolePlugin(explicit)},
 		"collector enabled":             {collectorFeatureEnabled(bare), collectorFeatureEnabled(explicit)},
 		"console plugin enabled":        {consolePluginEnabledFor(bare), consolePluginEnabledFor(explicit)},
+		"console integration":           {consolePluginIntegrationFor(bare), consolePluginIntegrationFor(explicit)},
 		"cache wants PVC":               {collectorCacheWantsPVC(bare), collectorCacheWantsPVC(explicit)},
 		"cache claim name":              {collectorCacheClaimNameFor(bare), collectorCacheClaimNameFor(explicit)},
 		"operator log/event policy":     {policiesOf(bare), policiesOf(explicit)},

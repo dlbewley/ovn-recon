@@ -25,6 +25,10 @@ spec:
   # consolePlugin:
   #   enabled: false            # deploy without registering in the console
   #   image: {repository: ..., tag: ...}
+  #   integration:              # additions to console pages OVN Recon does not
+  #     resourceTabs: true      # own; both off by default. An "OVN Recon" tab and
+  #     resourceActions: true   # an "Open in OVN Recon" action on Node, CUDN, UDN
+  #                             # and NAD pages.
   # collector:
   #   enabled: false            # disable the collector and logical views
   #   probeNamespaces: [openshift-ovn-kubernetes, openshift-frr-k8s]

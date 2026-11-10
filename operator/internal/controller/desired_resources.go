@@ -176,6 +176,17 @@ func consolePluginEnabledFor(ovnRecon *reconv1beta1.OvnRecon) bool {
 	return true
 }
 
+// consolePluginIntegrationFor resolves the switches for what the plugin adds
+// to console pages it does not own. Both default OFF: an install or upgrade
+// must not change the Node or network pages until an administrator opts in.
+func consolePluginIntegrationFor(ovnRecon *reconv1beta1.OvnRecon) reconv1beta1.EffectiveConsolePluginIntegration {
+	integration := ovnRecon.Spec.ConsolePlugin.Integration
+	return reconv1beta1.EffectiveConsolePluginIntegration{
+		ResourceTabs:    integration.ResourceTabs != nil && *integration.ResourceTabs,
+		ResourceActions: integration.ResourceActions != nil && *integration.ResourceActions,
+	}
+}
+
 // Cache storage modes. The empty string reads as auto for CRs whose spec
 // omits the storage object (the CRD default never materialized).
 const (

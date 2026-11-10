@@ -196,6 +196,27 @@ spec:
                           version, so the plugin upgrades in lockstep with the operator.
                         type: string
                     type: object
+                  integration:
+                    description: |-
+                      Integration controls what OVN Recon adds to console pages it does not
+                      own, such as the Node and network details pages. Every switch is off
+                      by default, so installing or upgrading the plugin changes nothing on
+                      those pages until an administrator opts in. The switches are
+                      cluster-wide: they apply to every console user.
+                    properties:
+                      resourceActions:
+                        description: |-
+                          ResourceActions adds an "Open in OVN Recon" action to the actions menu
+                          of Node, ClusterUserDefinedNetwork, UserDefinedNetwork and
+                          NetworkAttachmentDefinition resources. Defaults to false.
+                        type: boolean
+                      resourceTabs:
+                        description: |-
+                          ResourceTabs adds an "OVN Recon" tab to the Node,
+                          ClusterUserDefinedNetwork, UserDefinedNetwork and
+                          NetworkAttachmentDefinition details pages. Defaults to false.
+                        type: boolean
+                    type: object
                   logging:
                     description: Logging controls for the console plugin backend.
                     properties:
@@ -433,6 +454,28 @@ spec:
                         description: Image is the full plugin image reference the
                           Deployment runs.
                         type: string
+                      integration:
+                        description: |-
+                          Integration reports which contributions to other console pages are on.
+                          The plugin reads these values, not the spec; an operator that predates
+                          them leaves the field absent, which the plugin treats as all off.
+                          Optional in the schema so a status written by an older operator still
+                          validates while an upgrade rolls out.
+                        properties:
+                          resourceActions:
+                            description: |-
+                              ResourceActions reports whether the "Open in OVN Recon" action is added
+                              to resource action menus.
+                            type: boolean
+                          resourceTabs:
+                            description: |-
+                              ResourceTabs reports whether the "OVN Recon" tab is added to resource
+                              details pages.
+                            type: boolean
+                        required:
+                        - resourceActions
+                        - resourceTabs
+                        type: object
                       logLevel:
                         description: LogLevel of the plugin backend.
                         type: string

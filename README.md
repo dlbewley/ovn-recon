@@ -183,6 +183,26 @@ spec:
   instead of risking a volume-attach deadlock); a pre-created RWX claim
   keeps zero-gap rolling updates.
 
+### Console Integration (off by default)
+
+OVN Recon can add an **OVN Recon** tab and an **Open in OVN Recon** action to the console's own
+Node, ClusterUserDefinedNetwork, UserDefinedNetwork and NetworkAttachmentDefinition pages. Both
+are **off by default**, so installing or upgrading OVN Recon changes nothing on those pages. An
+administrator turns them on, for every console user at once, in the `OvnRecon` resource:
+
+```bash
+oc patch ovnrecon ovn-recon --type=merge -p '{
+  "spec": {
+    "consolePlugin": {
+      "integration": { "resourceTabs": true, "resourceActions": true }
+    }
+  }
+}'
+```
+
+Set either back to `false` to remove it. Users who may not read `OvnRecon` resources do not see
+the tabs or actions. See [OPERATOR.md](OPERATOR.md#console-integration) for details.
+
 ### Manual Installation
 
 Create the namespace, consoleplugin, service, and deployment from [manifests/manual/base](manifests/manual/base) without an operator.
