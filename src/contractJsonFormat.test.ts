@@ -5,12 +5,13 @@
 import { canonicalJson, contractJsonFiles, nonCanonicalFiles } from '../scripts/format-contract-json';
 
 describe('contract JSON formatting', () => {
-    it('covers both schemas and the fixture corpus', () => {
+    it('covers the schemas and the fixture corpus', () => {
         const files: string[] = contractJsonFiles();
         expect(files).toEqual(
             expect.arrayContaining([
                 'collector/api/logical-topology-snapshot.schema.json',
                 'collector/api/cluster-logical-topology.schema.json',
+                'collector/api/lookup-response.schema.json',
                 'collector/fixtures/snapshots/cnv-1.json',
                 'collector/fixtures/snapshots/default.json',
             ]),

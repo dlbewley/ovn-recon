@@ -168,7 +168,8 @@ describe('NodeLogicalTopologyDetails', () => {
         const panel = container.querySelector('.pf-v6-c-drawer__panel');
         expect(panel).not.toBeNull();
         expect(panel!.classList.contains('pf-m-resizable')).toBe(true);
-        expect(panel!.classList.contains('pf-m-width-33')).toBe(true);
+        // Half the page: five tabs and the Ports table fit at 1400px (ovn-recon-dp7.5).
+        expect(panel!.classList.contains('pf-m-width-50')).toBe(true);
         expect(panel!.querySelector('.pf-v6-c-drawer__splitter')).not.toBeNull();
         expect(panel!.querySelector('.pf-v6-c-card')).toBeNull();
         expect(panel!.querySelector('.pf-v6-c-drawer__body')).not.toBeNull();

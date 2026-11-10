@@ -734,13 +734,14 @@ const PortGroupTable: React.FC<{ groups: PortGroupRow[]; index: PolicyIndex; rol
     index,
     roleOf,
 }) => (
-    <Table aria-label="Port groups" variant="compact" borders={false}>
+    <DrawerTableWrap>
+    <Table aria-label="Port groups" variant="compact" borders={false} style={DRAWER_TABLE_STYLE}>
         <Thead>
             <Tr>
-                <Th>Owner type</Th>
-                <Th>Owner</Th>
-                <Th>Network</Th>
-                <Th>ACLs</Th>
+                <Th modifier="wrap">Owner type</Th>
+                <Th modifier="wrap">Owner</Th>
+                <Th modifier="wrap">Network</Th>
+                <Th modifier="wrap">ACLs</Th>
             </Tr>
         </Thead>
         <Tbody>
@@ -749,18 +750,19 @@ const PortGroupTable: React.FC<{ groups: PortGroupRow[]; index: PolicyIndex; rol
                 const qualifiers = ownerQualifiers(owner);
                 return (
                     <Tr key={group.uuid} data-testid={`port-group-${group.uuid}`}>
-                        <Td dataLabel="Owner type">{describeOwner(owner, roleOf).kind}</Td>
-                        <Td dataLabel="Owner">
+                        <Td dataLabel="Owner type" modifier="wrap">{describeOwner(owner, roleOf).kind}</Td>
+                        <Td dataLabel="Owner" modifier="breakWord">
                             <span title={`@${group.name}`}><OwnerName owner={owner} roleOf={roleOf} /></span>
                             {qualifiers && <span style={SUBTLE_TEXT}> ({qualifiers})</span>}
                         </Td>
-                        <Td dataLabel="Network"><OwnerNetwork owner={owner} /></Td>
+                        <Td dataLabel="Network" modifier="wrap"><OwnerNetwork owner={owner} /></Td>
                         <Td dataLabel="ACLs">{index.aclsByPortGroup.get(group.uuid)?.length ?? 0}</Td>
                     </Tr>
                 );
             })}
         </Tbody>
     </Table>
+    </DrawerTableWrap>
 );
 
 /**
@@ -811,7 +813,7 @@ const PortPolicy: React.FC<{ port: LadderPort; policy: PolicyState; databaseNode
     const showTier = new Set(acls.map((applied) => applied.acl.tier)).size > 1;
 
     return (
-        <div className="pf-u-mt-sm" data-testid="port-policy">
+        <div className="pf-u-mt-md" data-testid="port-policy">
             <div><strong>Port groups ({groups.length})</strong></div>
             {groups.length === 0 ? (
                 <div style={SUBTLE_TEXT}>This port is in no port group.</div>
@@ -822,14 +824,15 @@ const PortPolicy: React.FC<{ port: LadderPort; policy: PolicyState; databaseNode
             {acls.length === 0 ? (
                 <div style={SUBTLE_TEXT}>No ACL applies to this port.</div>
             ) : (
-                <Table aria-label="ACLs that apply to the port" variant="compact" borders={false}>
+                <DrawerTableWrap>
+                <Table aria-label="ACLs that apply to the port" variant="compact" borders={false} style={DRAWER_TABLE_STYLE}>
                     <Thead>
                         <Tr>
-                            <Th>Priority</Th>
-                            <Th>Direction</Th>
-                            <Th>Action</Th>
-                            <Th>Owner</Th>
-                            <Th>Match</Th>
+                            <Th modifier="wrap">Priority</Th>
+                            <Th modifier="wrap">Direction</Th>
+                            <Th modifier="wrap">Action</Th>
+                            <Th modifier="wrap">Owner</Th>
+                            <Th modifier="wrap">Match</Th>
                         </Tr>
                     </Thead>
                     <Tbody>
@@ -843,21 +846,21 @@ const PortPolicy: React.FC<{ port: LadderPort; policy: PolicyState; databaseNode
                                         {acl.priority}
                                         {showTier && <div style={SUBTLE_TEXT}>tier {acl.tier}</div>}
                                     </Td>
-                                    <Td dataLabel="Direction">
+                                    <Td dataLabel="Direction" modifier="wrap">
                                         <span title={DIRECTION_HINTS[acl.direction]}>{acl.direction}</span>
                                     </Td>
                                     <Td dataLabel="Action">
                                         <Label isCompact color={ACTION_COLORS[acl.action] ?? 'grey'}>{acl.action}</Label>
                                     </Td>
-                                    <Td dataLabel="Owner">
+                                    <Td dataLabel="Owner" modifier="breakWord">
                                         <span title={acl.name}>
                                             {description.kind} <OwnerName owner={owner} roleOf={roleOf} />
                                         </span>
                                         {qualifiers && <div style={SUBTLE_TEXT}>{qualifiers}</div>}
                                         {!group && <div style={SUBTLE_TEXT}>set on the switch</div>}
                                     </Td>
-                                    <Td dataLabel="Match">
-                                        <code style={{ overflowWrap: 'anywhere' }}>{acl.match}</code>
+                                    <Td dataLabel="Match" modifier="breakWord">
+                                        <code style={WRAP_ANYWHERE}>{acl.match}</code>
                                         <MatchReferences acl={acl} index={index} roleOf={roleOf} />
                                     </Td>
                                 </Tr>
@@ -865,6 +868,7 @@ const PortPolicy: React.FC<{ port: LadderPort; policy: PolicyState; databaseNode
                         })}
                     </Tbody>
                 </Table>
+                </DrawerTableWrap>
             )}
             {acls.length > shown.length && (
                 <div data-testid="port-acl-cap">… and {acls.length - shown.length} more</div>
@@ -873,11 +877,37 @@ const PortPolicy: React.FC<{ port: LadderPort; policy: PolicyState; databaseNode
     );
 };
 
+/** Long identifiers (MACs, IPs, OVN names, matches) break anywhere rather
+ * than widen the drawer. */
+const WRAP_ANYWHERE: React.CSSProperties = { overflowWrap: 'anywhere' };
+
+/**
+ * A drawer table's scroll boundary: any width the cells still cannot give up
+ * scrolls here, inside the drawer body, instead of widening the panel and
+ * pushing the page sideways (ovn-recon-dp7.5).
+ */
+const DrawerTableWrap: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <div className="ovn-drawer-table-wrap" style={{ maxWidth: '100%', minWidth: 0, overflowX: 'auto' }}>
+        {children}
+    </div>
+);
+
+/**
+ * Drawer tables run in a few hundred pixels; PatternFly's default 16px/24px
+ * cell insets alone cost a five-column ACL table 200px. Halving them keeps
+ * the tables, and the port's policy nested in an expanded row, inside the
+ * drawer (ovn-recon-dp7.5).
+ */
+const DRAWER_TABLE_STYLE = {
+    '--pf-v6-c-table--cell--Padding--base': 'var(--pf-t--global--spacer--sm)',
+    '--pf-v6-c-table--cell--first-last-child--PaddingInline': 'var(--pf-t--global--spacer--xs)',
+} as React.CSSProperties;
+
 /** One `<code>` entry per line, or a dash when the set is empty. */
 const CodeLines: React.FC<{ items?: string[] }> = ({ items }) =>
     items && items.length > 0 ? (
         <>
-            {items.map((item, index) => <div key={`${index}:${item}`}><code>{item}</code></div>)}
+            {items.map((item, index) => <div key={`${index}:${item}`}><code style={WRAP_ANYWHERE}>{item}</code></div>)}
         </>
     ) : (
         <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>—</span>
@@ -889,7 +919,7 @@ const PortName: React.FC<{ port: LadderPort }> = ({ port }) =>
             to={getResourcePath({ apiVersion: 'v1', kind: 'Pod', namespace: port.namespace, name: port.pod })}
             title={port.name}
         >
-            {port.namespace}/{port.pod}
+            {port.namespace}/<wbr />{port.pod}
         </Link>
     ) : (
         <code>{port.name}</code>
@@ -904,6 +934,100 @@ const PortState: React.FC<{ row: LogicalSwitchPortRow }> = ({ row }) => (
         {row.enabled === false && <> <Label isCompact color="red">Disabled</Label></>}
     </>
 );
+
+/**
+ * The first thing an expanded port shows: one line per fact, term left and
+ * value right, so the policy below starts within the first screen. Port
+ * security and the requested chassis live here rather than as table columns,
+ * which kept the table wider than the drawer (ovn-recon-dp7.5).
+ */
+const PortSummary: React.FC<{
+    port: LadderPort;
+    row: LogicalSwitchPortRow;
+    nodeForChassis?: (chassis: string) => string | undefined;
+    nodeHref?: (node: string) => string;
+}> = ({ port, row, nodeForChassis, nodeHref }) => {
+    const requestedChassis = row.options?.['requested-chassis'];
+    return (
+        <DescriptionList isHorizontal isCompact isFluid data-testid="port-summary" aria-label="Port summary">
+            <DescriptionListGroup>
+                <DescriptionListTerm>Addresses</DescriptionListTerm>
+                <DescriptionListDescription><CodeLines items={row.addresses} /></DescriptionListDescription>
+            </DescriptionListGroup>
+            <DescriptionListGroup>
+                <DescriptionListTerm>Port security</DescriptionListTerm>
+                <DescriptionListDescription><CodeLines items={row.portSecurity} /></DescriptionListDescription>
+            </DescriptionListGroup>
+            <DescriptionListGroup>
+                <DescriptionListTerm>State</DescriptionListTerm>
+                <DescriptionListDescription><PortState row={row} /></DescriptionListDescription>
+            </DescriptionListGroup>
+            <DescriptionListGroup>
+                <DescriptionListTerm>Requested chassis</DescriptionListTerm>
+                <DescriptionListDescription>
+                    {requestedChassis ? (
+                        <ChassisName chassisName={requestedChassis} nodeForChassis={nodeForChassis} nodeHref={nodeHref} />
+                    ) : (
+                        <span style={SUBTLE_TEXT}>—</span>
+                    )}
+                </DescriptionListDescription>
+            </DescriptionListGroup>
+            {port.namespace && port.pod && (
+                <DescriptionListGroup>
+                    <DescriptionListTerm>OVN name</DescriptionListTerm>
+                    <DescriptionListDescription><code style={WRAP_ANYWHERE}>{port.name}</code></DescriptionListDescription>
+                </DescriptionListGroup>
+            )}
+        </DescriptionList>
+    );
+};
+
+/** The port's raw NB row, folded away until asked for: it answers "what did
+ * OVN store?", not "what applies to this pod?" (ovn-recon-dp7.5). */
+const RawPortRow: React.FC<{ uuid: string; row: LogicalSwitchPortRow }> = ({ uuid, row }) => {
+    const isDarkTheme = useIsDarkTheme();
+    const [isOpen, setIsOpen] = React.useState(false);
+    const rawJson = JSON.stringify(row, null, 2);
+    const editorHeight = `${Math.min(400, 24 + rawJson.split('\n').length * 19)}px`;
+    return (
+        <div className="pf-u-mt-sm" data-testid="port-raw">
+            <Button
+                variant="link"
+                isInline
+                aria-expanded={isOpen}
+                aria-controls={`port-raw-${uuid}`}
+                onClick={() => setIsOpen((open) => !open)}
+            >
+                {isOpen ? 'Hide raw row' : 'Show raw row'}
+            </Button>
+            {isOpen && (
+                <div id={`port-raw-${uuid}`} className="pf-u-mt-sm">
+                    <CodeEditor
+                        isDarkTheme={isDarkTheme}
+                        isReadOnly
+                        code={rawJson}
+                        language={Language.json}
+                        height={editorHeight}
+                    />
+                </div>
+            )}
+        </div>
+    );
+};
+
+const MAC_ADDRESS = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i;
+
+/**
+ * What the table row shows of a port's addresses: the IPs, one per line,
+ * without the leading MAC that every entry repeats (the expanded summary
+ * keeps the full entries). Keywords such as "router" or "unknown" pass
+ * through as they are.
+ */
+export const rowAddresses = (addresses?: string[]): string[] =>
+    (addresses ?? []).flatMap((entry) => {
+        const [first, ...rest] = entry.trim().split(/\s+/);
+        return MAC_ADDRESS.test(first) && rest.length > 0 ? rest : [entry];
+    });
 
 const portMatches = (port: LadderPort, query: string): boolean => {
     if (port.name.toLowerCase().includes(query)) return true;
@@ -926,7 +1050,6 @@ const PortsBody: React.FC<DrawerBodyProps> = ({
     nodeHref,
     policy,
 }) => {
-    const isDarkTheme = useIsDarkTheme();
     const [filter, setFilter] = React.useState('');
     const [typeFilter, setTypeFilter] = React.useState(ALL_PORT_TYPES);
     const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
@@ -965,7 +1088,9 @@ const PortsBody: React.FC<DrawerBodyProps> = ({
             return next;
         });
 
-    const columns = ['Name', 'Type', 'Addresses', 'Port security', 'Up', 'Requested chassis'];
+    // Four columns fit the default drawer; port security and the requested
+    // chassis are in the expanded row's summary (ovn-recon-dp7.5).
+    const columns = ['Name', 'Type', 'Addresses', 'Up'];
 
     return (
         <>
@@ -999,20 +1124,17 @@ const PortsBody: React.FC<DrawerBodyProps> = ({
                     Logical_Switch_Port rows from node {databaseNode}
                 </div>
             )}
-            <Table aria-label="Switch ports" variant="compact" isExpandable>
+            <DrawerTableWrap>
+            <Table aria-label="Switch ports" variant="compact" isExpandable style={DRAWER_TABLE_STYLE}>
                 <Thead>
                     <Tr>
                         <Th screenReaderText="Row expansion" />
-                        {columns.map((column) => <Th key={column}>{column}</Th>)}
+                        {columns.map((column) => <Th key={column} modifier="wrap">{column}</Th>)}
                     </Tr>
                 </Thead>
                 {rows.map((port, rowIndex) => {
                     const isExpanded = expanded.has(port.uuid);
                     const row = port.row;
-                    const requestedChassis = row.options?.['requested-chassis'];
-                    const rawRow = rawRowFor(port);
-                    const rawJson = JSON.stringify(rawRow, null, 2);
-                    const editorHeight = `${Math.min(400, 24 + rawJson.split('\n').length * 19)}px`;
                     return (
                         <Tbody key={port.uuid} isExpanded={isExpanded}>
                             <Tr data-testid={`port-row-${port.uuid}`}>
@@ -1024,38 +1146,32 @@ const PortsBody: React.FC<DrawerBodyProps> = ({
                                         expandId: `port-${port.uuid}`,
                                     }}
                                 />
-                                <Td dataLabel="Name"><PortName port={port} /></Td>
-                                <Td dataLabel="Type">{switchPortTypeLabel(row)}</Td>
-                                <Td dataLabel="Addresses"><CodeLines items={row.addresses} /></Td>
-                                <Td dataLabel="Port security"><CodeLines items={row.portSecurity} /></Td>
-                                <Td dataLabel="Up"><PortState row={row} /></Td>
-                                <Td dataLabel="Requested chassis">
-                                    {requestedChassis ? (
-                                        <ChassisName
-                                            chassisName={requestedChassis}
-                                            nodeForChassis={nodeForChassis}
-                                            nodeHref={nodeHref}
-                                        />
-                                    ) : (
-                                        <span style={{ color: 'var(--pf-t--global--text--color--subtle)' }}>—</span>
-                                    )}
-                                </Td>
+                                <Td dataLabel="Name" modifier="breakWord"><PortName port={port} /></Td>
+                                <Td dataLabel="Type" modifier="fitContent">{switchPortTypeLabel(row)}</Td>
+                                <Td dataLabel="Addresses" modifier="fitContent"><CodeLines items={rowAddresses(row.addresses)} /></Td>
+                                <Td dataLabel="Up" modifier="fitContent"><PortState row={row} /></Td>
                             </Tr>
                             <Tr isExpanded={isExpanded}>
-                                <Td />
-                                <Td dataLabel="Details" colSpan={columns.length}>
+                                <Td dataLabel="Details" colSpan={columns.length + 1}>
                                     <ExpandableRowContent>
+                                        {/* Summary, then policy, then the raw row on request:
+                                            the order answers "what applies to this pod?" first
+                                            (ovn-recon-dp7.5). */}
                                         {isExpanded && (
-                                            <CodeEditor
-                                                isDarkTheme={isDarkTheme}
-                                                isReadOnly
-                                                code={rawJson}
-                                                language={Language.json}
-                                                height={editorHeight}
-                                            />
-                                        )}
-                                        {isExpanded && (
-                                            <PortPolicy port={port} policy={policy} databaseNode={databaseNode} />
+                                            // Zero width plus a full minimum: the
+                                            // details fill the row but add nothing
+                                            // to the table's own minimum width, so
+                                            // nested tables cannot widen it.
+                                            <div style={{ width: 0, minWidth: '100%' }}>
+                                                <PortSummary
+                                                    port={port}
+                                                    row={row}
+                                                    nodeForChassis={nodeForChassis}
+                                                    nodeHref={nodeHref}
+                                                />
+                                                <PortPolicy port={port} policy={policy} databaseNode={databaseNode} />
+                                                <RawPortRow uuid={port.uuid} row={rawRowFor(port)} />
+                                            </div>
                                         )}
                                     </ExpandableRowContent>
                                 </Td>
@@ -1073,6 +1189,7 @@ const PortsBody: React.FC<DrawerBodyProps> = ({
                     </Tbody>
                 )}
             </Table>
+            </DrawerTableWrap>
         </>
     );
 };
@@ -1172,7 +1289,8 @@ const ServicesBody: React.FC<DrawerBodyProps> = ({ services, databaseNode }) => 
                     Showing {rows.length} of {matches.length} VIPs; narrow the filter to see the rest.
                 </div>
             )}
-            <Table aria-label="Service load balancers" variant="compact" isExpandable>
+            <DrawerTableWrap>
+            <Table aria-label="Service load balancers" variant="compact" isExpandable style={DRAWER_TABLE_STYLE}>
                 <Thead>
                     <Tr>
                         <Th screenReaderText="Row expansion" />
@@ -1250,9 +1368,18 @@ const ServicesBody: React.FC<DrawerBodyProps> = ({ services, databaseNode }) => 
                     </Tbody>
                 )}
             </Table>
+            </DrawerTableWrap>
         </>
     );
 };
+
+/**
+ * The logical pages' default drawer width. A switch shows five tabs (about
+ * 430px of tab strip) and the Ports table; a third of the page at 1400px
+ * leaves about 340px, which overflowed the strip into scroll arrows. Half
+ * fits both; the drawer stays resizable (ovn-recon-dp7.5).
+ */
+export const LOGICAL_DRAWER_WIDTH = 'width_50' as const;
 
 type ConstructTabId = 'overview' | 'relationships' | 'ports' | 'services' | 'config';
 

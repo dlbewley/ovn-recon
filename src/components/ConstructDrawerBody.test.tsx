@@ -7,6 +7,7 @@ import { buildLadderModel } from './logicalLadderModel';
 import ConstructDrawerBody, {
     MAX_PORT_ACLS,
     MAX_SERVICE_ROWS,
+    rowAddresses,
 } from './ConstructDrawerBody';
 import { policyForPort, policyIndexFor } from './policyIndex';
 import { fetchCollectorSnapshot } from './collectorApi';
@@ -465,6 +466,24 @@ describe('ConstructDrawerBody Ports tab', () => {
 
     const portRows = () => [...container.querySelectorAll('tr[data-testid^="port-row-"]')];
 
+    const click = (element: Element | null | undefined) => {
+        expect(element).toBeTruthy();
+        act(() => {
+            element!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+    };
+
+    /** Expand the first row whose text includes `text`; returns its details row. */
+    const expandPort = (text: string) => {
+        const row = portRows().find((candidate) => candidate.textContent?.includes(text));
+        expect(row).toBeDefined();
+        click(row!.querySelector('button'));
+        return row!.nextElementSibling as HTMLElement;
+    };
+
+    const showRawRow = () =>
+        click([...container.querySelectorAll('button')].find((button) => button.textContent === 'Show raw row'));
+
     const setInputValue = (input: HTMLInputElement | HTMLSelectElement, value: string) => {
         act(() => {
             const prototype = input instanceof HTMLSelectElement
@@ -518,26 +537,38 @@ describe('ConstructDrawerBody Ports tab', () => {
             nodeForChassis: (chassis) => (chassis === chassisId ? 'cnv-1' : undefined),
         });
         clickTab('Ports');
-        const nodeLinks = container.querySelectorAll('tbody a[href="/ovn-recon/ovn/cnv-1"]');
-        expect(nodeLinks.length).toBeGreaterThan(0);
+        // The chassis is a fact of the expanded row, not a table column.
+        expect(container.querySelector('tbody a[href="/ovn-recon/ovn/cnv-1"]')).toBeNull();
+        const details = expandPort('openshift-storage/');
+        const nodeLinks = details.querySelectorAll('[data-testid="port-summary"] a[href="/ovn-recon/ovn/cnv-1"]');
+        expect(nodeLinks.length).toBe(1);
         expect(nodeLinks[0].getAttribute('title')).toBe(chassisId);
 
         renderConstruct('cnv-1');
         expect(container.querySelector('tbody a[href="/ovn-recon/ovn/cnv-1"]')).toBeNull();
-        expect(container.textContent).toContain('91bc7389…');
+        expect(container.querySelector('[data-testid="port-summary"]')?.textContent).toContain('91bc7389…');
     });
 
-    it('shows addresses, port security and the binding state per row', () => {
+    it('shows four columns that fit the drawer: name, type, IPs and the binding state', () => {
         renderConstruct('cnv-1');
         clickTab('Ports');
+        const headers = [...container.querySelectorAll('table[aria-label="Switch ports"] > thead th')]
+            .map((th) => th.textContent);
+        expect(headers).toEqual(['Row expansion', 'Name', 'Type', 'Addresses', 'Up']);
+
         const podRow = portRows().find((row) => row.textContent?.includes('openshift-storage/'));
         expect(podRow).toBeDefined();
-        const codes = [...podRow!.querySelectorAll('code')].map((code) => code.textContent);
-        // The pod's address appears twice: addresses and port_security.
-        const macAndIp = codes.find((code) => /^0a:58:/.test(code ?? ''));
-        expect(macAndIp).toBeDefined();
-        expect(codes.filter((code) => code === macAndIp)).toHaveLength(2);
+        const codes = [...podRow!.querySelectorAll('code')].map((code) => code.textContent ?? '');
+        // The row shows the IP without the MAC every entry repeats.
+        expect(codes.some((code) => /^\d+\.\d+\.\d+\.\d+$/.test(code))).toBe(true);
+        expect(codes.some((code) => code.startsWith('0a:58:'))).toBe(false);
         expect(podRow!.textContent).toContain('Up');
+
+        // The full entries, port security included, are in the expanded summary.
+        const summary = expandPort('openshift-storage/').querySelector('[data-testid="port-summary"]')!;
+        const summaryCodes = [...summary.querySelectorAll('code')].map((code) => code.textContent ?? '');
+        expect(summaryCodes.filter((code) => /^0a:58:\S+ \S+/.test(code)).length).toBeGreaterThanOrEqual(2);
+        expect(summary.textContent).toContain('Port security');
 
         renderConstruct('ext_cnv-1');
         const localnetRow = portRows().find((row) => row.textContent?.includes('localnet'));
@@ -575,7 +606,7 @@ describe('ConstructDrawerBody Ports tab', () => {
         expect(container.textContent).toContain('No ports match.');
     });
 
-    it('expands a row to the raw NB row and a port-groups placeholder', () => {
+    it('expands a row to a port-groups placeholder, with the raw NB row behind a toggle', () => {
         // The ladder database: no policy section, and no node to load it from.
         const ladderDatabase: LogicalDatabase = { ...database };
         delete ladderDatabase.acls;
@@ -585,12 +616,11 @@ describe('ConstructDrawerBody Ports tab', () => {
         clickTab('Ports');
         expect(container.querySelector('[data-testid="code-editor"]')).toBeNull();
 
-        const row = portRows().find((candidate) => candidate.textContent?.includes('tstor-cnv-3'))!;
-        const toggle = row.querySelector('button');
-        expect(toggle).not.toBeNull();
-        act(() => {
-            toggle!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        });
+        expandPort('tstor-cnv-3');
+        // Expanding shows the summary, not the raw row.
+        expect(container.querySelector('[data-testid="port-summary"]')).not.toBeNull();
+        expect(container.querySelector('[data-testid="code-editor"]')).toBeNull();
+        showRawRow();
         const editor = container.querySelector('[data-testid="code-editor"]');
         expect(editor).not.toBeNull();
         const raw = JSON.parse(editor!.textContent ?? '{}') as { name: string; up?: boolean; type?: string };
@@ -604,16 +634,14 @@ describe('ConstructDrawerBody Ports tab', () => {
     it('resets expanded rows when the selection moves and keeps the tab between switches', () => {
         renderConstruct('transit_switch', { onSelectConstruct: jest.fn() });
         clickTab('Ports');
-        act(() => {
-            portRows()[0].querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        });
-        expect(container.querySelector('[data-testid="code-editor"]')).not.toBeNull();
+        click(portRows()[0].querySelector('button'));
+        expect(container.querySelector('[data-testid="port-summary"]')).not.toBeNull();
 
         // Hop to another switch: still on Ports, nothing expanded.
         renderConstruct('join', { onSelectConstruct: jest.fn() });
         expect(selectedTab()).toBe('Ports');
         expect(portRows()).toHaveLength(switchRow('join').ports.length);
-        expect(container.querySelector('[data-testid="code-editor"]')).toBeNull();
+        expect(container.querySelector('[data-testid="port-summary"]')).toBeNull();
 
         // Hop to a router: no Ports tab, so Overview shows.
         renderConstruct('ovn_cluster_router', { onSelectConstruct: jest.fn() });
@@ -1033,6 +1061,36 @@ describe('ConstructDrawerBody policy plane', () => {
         expect(portPolicy()?.textContent).toMatch(/@a\d+ (NetworkPolicy|NetpolNamespace|Namespace) /);
     });
 
+    it('orders an expanded port as summary, then policy, then the raw row on request', () => {
+        renderConstruct('cnv-1');
+        clickTab('Ports');
+        expandPort('openshift-monitoring/alertmanager-main-1');
+
+        const summary = container.querySelector('[data-testid="port-summary"]');
+        const raw = container.querySelector('[data-testid="port-raw"]');
+        expect(summary).not.toBeNull();
+        expect(portPolicy()).not.toBeNull();
+        expect(raw).not.toBeNull();
+        const follows = (first: Element, second: Element) =>
+            Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+        expect(follows(summary!, portPolicy()!)).toBe(true);
+        expect(follows(portPolicy()!, raw!)).toBe(true);
+
+        // The summary answers the first questions; the raw row stays folded.
+        const terms = [...summary!.querySelectorAll('dt')].map((term) => term.textContent);
+        expect(terms).toEqual(['Addresses', 'Port security', 'State', 'Requested chassis', 'OVN name']);
+        expect(container.querySelector('[data-testid="code-editor"]')).toBeNull();
+        const toggle = [...raw!.querySelectorAll('button')].find((button) => button.textContent === 'Show raw row')!;
+        expect(toggle.getAttribute('aria-expanded')).toBe('false');
+        act(() => {
+            toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        expect(toggle.getAttribute('aria-expanded')).toBe('true');
+        expect(toggle.textContent).toBe('Hide raw row');
+        const editor = raw!.querySelector('[data-testid="code-editor"]');
+        expect(JSON.parse(editor!.textContent ?? '{}').name).toBe(policyPod);
+    });
+
     it('shows a port in a single group, and one in none', () => {
         renderConstruct('cnv-1');
         clickTab('Ports');
@@ -1294,5 +1352,18 @@ describe('ConstructDrawerBody policy plane', () => {
             expect(hrefs(policyGroup).some((href) => href.includes('NetworkPolicy/'))).toBe(false);
             expect(policyGroup.querySelector('[title*="MultiNetworkPolicy"]')).not.toBeNull();
         });
+    });
+});
+
+describe('rowAddresses', () => {
+    it('drops the leading MAC and keeps every IP, one per line', () => {
+        expect(rowAddresses(['0a:58:0a:83:00:1f 10.131.0.31'])).toEqual(['10.131.0.31']);
+        expect(rowAddresses(['0a:58:0a:83:00:1f 10.131.0.31 fd01:0:0:3::1f'])).toEqual(['10.131.0.31', 'fd01:0:0:3::1f']);
+    });
+
+    it('passes keywords and bare MACs through', () => {
+        expect(rowAddresses(['router'])).toEqual(['router']);
+        expect(rowAddresses(['unknown', '0a:58:0a:83:00:1f'])).toEqual(['unknown', '0a:58:0a:83:00:1f']);
+        expect(rowAddresses(undefined)).toEqual([]);
     });
 });

@@ -1,4 +1,10 @@
-import { ClusterLogicalTopology, LogicalTopologySnapshot, SnapshotSection } from '../types';
+import {
+    ClusterLogicalTopology,
+    LogicalTopologySnapshot,
+    LookupKind,
+    LookupResponse,
+    SnapshotSection,
+} from '../types';
 
 // The collector is reachable through several console proxy shapes depending
 // on console version and plugin proxy configuration; try each in order. Each
@@ -25,7 +31,33 @@ const orderedPrefixes = (): string[] =>
         ? [lastWorkingPrefix, ...COLLECTOR_PROXY_PREFIXES.filter((prefix) => prefix !== lastWorkingPrefix)]
         : [...COLLECTOR_PROXY_PREFIXES];
 
-const fetchFirst = async <T>(buildUrl: (prefix: string) => string): Promise<T> => {
+/**
+ * The collector received the request and refused it: `message` is its own
+ * explanation (for a lookup, why the value does not parse). Unlike a prefix
+ * that does not route, trying another prefix cannot help.
+ */
+export class CollectorRequestError extends Error {
+    readonly status: number;
+
+    constructor(status: number, message: string) {
+        super(message);
+        this.name = 'CollectorRequestError';
+        this.status = status;
+    }
+}
+
+interface FetchFirstOptions {
+    /**
+     * Statuses that are the collector's answer rather than a prefix that
+     * does not route; the request stops there with a CollectorRequestError.
+     */
+    refusedStatuses?: readonly number[];
+}
+
+const fetchFirst = async <T>(
+    buildUrl: (prefix: string) => string,
+    { refusedStatuses = [] }: FetchFirstOptions = {},
+): Promise<T> => {
     const attempts: string[] = [];
 
     for (const prefix of orderedPrefixes()) {
@@ -37,6 +69,11 @@ const fetchFirst = async <T>(buildUrl: (prefix: string) => string): Promise<T> =
                 },
             });
 
+            if (refusedStatuses.includes(response.status)) {
+                const reason = (await response.text()).trim();
+                throw new CollectorRequestError(response.status, reason || `HTTP ${response.status}`);
+            }
+
             if (!response.ok) {
                 attempts.push(`${url} -> HTTP ${response.status}`);
                 continue;
@@ -46,6 +83,7 @@ const fetchFirst = async <T>(buildUrl: (prefix: string) => string): Promise<T> =
             lastWorkingPrefix = prefix;
             return payload;
         } catch (error) {
+            if (error instanceof CollectorRequestError) throw error;
             const message = error instanceof Error ? error.message : String(error);
             attempts.push(`${url} -> ${message}`);
         }
@@ -98,4 +136,23 @@ export const fetchCollectorSnapshot = (
 export const fetchClusterTopology = (options: SnapshotFetchOptions = {}): Promise<ClusterLogicalTopology> => {
     const sections = sectionsPath(options.include);
     return fetchFirst((prefix) => `${prefix}${sections}/snapshots`);
+};
+
+/**
+ * Where an address or a name is, across every zone snapshot the collector
+ * has stored: `GET /lookup/<kind>/<value>` (ovn-recon-tpp.1). The collector
+ * answers from its cache and never collects for a lookup, so each hit and
+ * each entry of `zones` carries the age of the snapshot it came from.
+ *
+ * The value travels in the path, encoded, for the same reason sections do:
+ * the console drops query strings (see COLLECTOR_PROXY_PREFIXES). A CIDR's
+ * slash is sent as %2F; the console decodes it on the way and the collector
+ * reads either spelling.
+ *
+ * A value the collector cannot parse as the given kind rejects with a
+ * CollectorRequestError (status 400) whose message says why.
+ */
+export const fetchCollectorLookup = (kind: LookupKind, value: string): Promise<LookupResponse> => {
+    const encodedValue = encodeURIComponent(value.trim());
+    return fetchFirst((prefix) => `${prefix}/lookup/${kind}/${encodedValue}`, { refusedStatuses: [400] });
 };

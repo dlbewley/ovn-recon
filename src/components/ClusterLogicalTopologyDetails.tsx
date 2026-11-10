@@ -32,7 +32,7 @@ import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { fetchClusterTopology } from './collectorApi';
 import { mergeZones } from './logicalClusterModel';
 import { aggregateId } from './logicalLadderLayout';
-import ConstructDrawerBody from './ConstructDrawerBody';
+import ConstructDrawerBody, { LOGICAL_DRAWER_WIDTH } from './ConstructDrawerBody';
 import SnapshotJsonControls from './SnapshotJsonControls';
 import LogicalLadderView, { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
 import SnapshotStatusLine, { summarizeOvnZones } from './SnapshotStatusLine';
@@ -297,7 +297,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                 <Drawer isExpanded={selectedConstruct != null}>
                     <DrawerContent
                         panelContent={(
-                            <DrawerPanelContent isResizable widths={{ default: 'width_33' }} minSize="320px">
+                            <DrawerPanelContent isResizable widths={{ default: LOGICAL_DRAWER_WIDTH }} minSize="320px">
                                 {selectedConstruct && model && (
                                     <>
                                         <DrawerHead>
