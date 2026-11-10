@@ -6,7 +6,8 @@ import { act } from 'react';
 import * as yaml from 'js-yaml';
 
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
-import NodeVisualization from './NodeVisualization';
+import NodeVisualizationComponent from './NodeVisualization';
+import { routed } from './testRouter';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
@@ -58,6 +59,10 @@ const edgeEndpoints = (container: HTMLElement) =>
         x2: Number(line.getAttribute('x2')),
         y2: Number(line.getAttribute('y2'))
     }));
+
+// The view reads and writes ?select= through the router; the console provides
+// one in production.
+const NodeVisualization = routed(NodeVisualizationComponent);
 
 describe('NodeVisualization node placement', () => {
     let container: HTMLDivElement;

@@ -19,7 +19,6 @@ import {
     DrawerCloseButton,
     Flex,
     FlexItem,
-    TextInput,
     FormSelect,
     FormSelectOption,
     Button,
@@ -34,10 +33,17 @@ import { mergeZones } from './logicalClusterModel';
 import { aggregateId } from './logicalLadderLayout';
 import ConstructDrawerBody, { LOGICAL_DRAWER_WIDTH } from './ConstructDrawerBody';
 import SnapshotJsonControls from './SnapshotJsonControls';
-import LogicalLadderView, { networkDisplayName, roleIcon, roleLabel } from './LogicalLadderView';
+import LogicalLadderView, {
+    LadderSearch,
+    ladderSearchMatches,
+    networkDisplayName,
+    roleIcon,
+    roleLabel,
+} from './LogicalLadderView';
 import SnapshotStatusLine, { summarizeOvnZones } from './SnapshotStatusLine';
 import { useChassisNodeNames } from './useChassisNodeNames';
 import { freshnessFromAge, oldestSnapshotAgeMs } from './snapshotFreshness';
+import { constructSelectValue, findConstructBySelectValue, useSelectionDeepLink } from './useSelectParam';
 
 // Aggregate collection probes every zone, so refresh less eagerly than the
 // per-node view.
@@ -178,6 +184,21 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
         setSelectedUuid(uuid);
         setRevealRequest((current) => ({ uuid, nonce: (current?.nonce ?? 0) + 1 }));
     }, [model]);
+
+    // select=KIND:NAME in the URL (ovn-recon-s3t.16): restored through the
+    // same path as drawer navigation, written back on every selection change.
+    // Two networks can share a bridge-mapping name; the first match wins.
+    useSelectionDeepLink({
+        selected: selectedConstruct,
+        encode: constructSelectValue,
+        resolve: (value) => (model ? findConstructBySelectValue(model, value) : null),
+        apply: (construct) => selectConstructFromDrawer(construct.uuid),
+    });
+
+    const searchMatches = React.useMemo(
+        () => (model ? ladderSearchMatches(model, networkFilter, search) : []),
+        [model, networkFilter, search],
+    );
 
     const revealPosition = React.useCallback((position: { x: number; y: number }) => {
         const canvas = canvasRef.current;
@@ -356,12 +377,12 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
 
                                 <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }} alignItems={{ default: 'alignItemsCenter' }}>
                                     <FlexItem>
-                                        <TextInput
-                                            aria-label="Search constructs"
-                                            type="search"
-                                            placeholder="Search by name, role, node, or subnet"
+                                        <LadderSearch
                                             value={search}
-                                            onChange={(_event, value) => setSearch(value)}
+                                            onChange={setSearch}
+                                            matches={searchMatches}
+                                            selectedUuid={selectedUuid}
+                                            onReveal={selectConstructFromDrawer}
                                         />
                                     </FlexItem>
                                     <FlexItem>
