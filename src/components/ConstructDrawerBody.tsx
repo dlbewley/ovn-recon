@@ -60,10 +60,7 @@ import {
     hasServicesSection,
     LoadBalancerAttachment,
     loadBalancersFor,
-    serviceLabel,
-    ServiceVipRow,
-    serviceVipRowMatches,
-    serviceVipRows,
+    splitSummaryText,
     summarizeAttachment,
 } from './serviceIndex';
 import { useIsDarkTheme } from './useIsDarkTheme';
@@ -71,11 +68,9 @@ import { useOptionalSections } from './useOptionalSections';
 import { getResourcePath } from '../topology/links';
 import DrawerTabStrip from './DrawerTabStrip';
 import { NatRuleTable, StaticRouteTable } from './RouterRuleTables';
+import ServicesView from './ServiceTables';
 
 const MAX_LISTED_PORTS = 15;
-/** Services tab render cap: unlike ports per switch, Services per node are
- * unbounded (hundreds on a lab, thousands on a large cluster). */
-export const MAX_SERVICE_ROWS = 200;
 /** ACLs listed for one port before a more-note: a pod under many
  * NetworkPolicies collects one ACL per policy rule, protocol and peer block. */
 export const MAX_PORT_ACLS = 50;
@@ -285,8 +280,10 @@ const SUBTLE_TEXT: React.CSSProperties = { color: 'var(--pf-t--global--text--col
 
 /**
  * The Overview's "Load balancers" value. With the services section at hand
- * the references resolve to direct and per-group counts, plus the VIPs whose
- * Service has no endpoints; without it the bare reference counts remain.
+ * it reads as the Services tab's summary: load balancers here and
+ * cluster-wide, plus the VIPs whose Service has no endpoints, with the
+ * direct and per-group counts as a tooltip; without it the bare reference
+ * counts remain.
  */
 const LoadBalancerOverview: React.FC<{ construct: LadderConstruct; services: ServicesState }> = ({
     construct,
@@ -302,16 +299,10 @@ const LoadBalancerOverview: React.FC<{ construct: LadderConstruct; services: Ser
             </>
         );
     }
-    const summary = summarizeAttachment(services.attachment);
     return (
-        <>
-            <div>{attachmentSummaryText(summary)}</div>
-            {summary.vipsWithoutEndpoints > 0 && (
-                <div style={SUBTLE_TEXT}>
-                    {summary.vipsWithoutEndpoints} VIP{summary.vipsWithoutEndpoints === 1 ? '' : 's'} without endpoints
-                </div>
-            )}
-        </>
+        <span title={attachmentSummaryText(summarizeAttachment(services.attachment))} data-testid="load-balancer-split">
+            {splitSummaryText(services.attachment)}
+        </span>
     );
 };
 
@@ -1194,43 +1185,15 @@ const PortsBody: React.FC<DrawerBodyProps> = ({
     );
 };
 
-/** "cluster", or "node-local" with the exact scope and node as a tooltip. */
-const ScopeCell: React.FC<{ row: ServiceVipRow }> = ({ row }) => {
-    if (row.scope === 'cluster' || row.scope === 'unknown') return <>{row.scope}</>;
-    return <span title={`${row.scope}${row.node ? ` on ${row.node}` : ''}`}>node-local</span>;
-};
-
-const ServiceName: React.FC<{ row: ServiceVipRow }> = ({ row }) =>
-    row.service && row.service.kind === 'Service' ? (
-        <Link
-            to={getResourcePath({
-                apiVersion: 'v1',
-                kind: 'Service',
-                namespace: row.service.namespace,
-                name: row.service.name,
-            })}
-            title={row.loadBalancer.name}
-        >
-            {serviceLabel(row)}
-        </Link>
-    ) : (
-        <code>{serviceLabel(row)}</code>
-    );
-
 /**
- * The Service VIPs a switch or router sees: its direct load balancers plus
- * the members of every load balancer group it attaches, one row per VIP.
- * Rendering is capped after filtering because the row count follows the
- * cluster's Service count, not the node's size. Keyed by construct uuid from
- * the parent so expansion and the filter reset on a different construct.
+ * The Services tab: the load balancers a switch or router sees, one row per
+ * Service, split into what is set on this node and what is shared
+ * cluster-wide (ServiceTables.tsx, ovn-recon-dp7.6). Keyed by construct uuid
+ * from the parent so filters, sections and expansion reset on a different
+ * construct.
  */
 const ServicesBody: React.FC<DrawerBodyProps> = ({ services, databaseNode }) => {
-    const [filter, setFilter] = React.useState('');
-    const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
-    const attachment = services.status === 'ready' ? services.attachment : undefined;
-    const allRows = React.useMemo(() => (attachment ? serviceVipRows(attachment) : []), [attachment]);
-
-    if (!attachment) {
+    if (services.status !== 'ready') {
         return services.status === 'loading' ? (
             <div><Spinner size="md" aria-label="Loading services" /> Loading services…</div>
         ) : (
@@ -1238,8 +1201,8 @@ const ServicesBody: React.FC<DrawerBodyProps> = ({ services, databaseNode }) => 
         );
     }
 
-    const summary = summarizeAttachment(attachment);
-    if (allRows.length === 0) {
+    const summary = summarizeAttachment(services.attachment);
+    if (summary.total === 0) {
         return (
             <>
                 <div data-testid="services-empty">{attachmentSummaryText(summary)}.</div>
@@ -1251,126 +1214,7 @@ const ServicesBody: React.FC<DrawerBodyProps> = ({ services, databaseNode }) => 
         );
     }
 
-    const query = filter.trim().toLowerCase();
-    const matches = query === '' ? allRows : allRows.filter((row) => serviceVipRowMatches(row, query));
-    const rows = matches.slice(0, MAX_SERVICE_ROWS);
-
-    const toggle = (key: string) =>
-        setExpanded((current) => {
-            const next = new Set(current);
-            if (next.has(key)) next.delete(key);
-            else next.add(key);
-            return next;
-        });
-
-    const columns = ['Service', 'Protocol', 'VIP', 'Backends', 'Scope', 'Source'];
-
-    return (
-        <>
-            <Toolbar inset={{ default: 'insetNone' }} className="pf-u-pb-sm">
-                <ToolbarContent>
-                    <ToolbarItem>
-                        <TextInput
-                            aria-label="Filter services"
-                            type="search"
-                            placeholder={`Filter ${allRows.length} VIPs`}
-                            value={filter}
-                            onChange={(_event, value) => setFilter(value)}
-                        />
-                    </ToolbarItem>
-                </ToolbarContent>
-            </Toolbar>
-            <div className="pf-u-mb-sm" style={SUBTLE_TEXT}>
-                {attachmentSummaryText(summary)}
-                {databaseNode ? ` · Load_Balancer rows from node ${databaseNode}` : ''}
-            </div>
-            {matches.length > rows.length && (
-                <div className="pf-u-mb-sm" data-testid="services-cap">
-                    Showing {rows.length} of {matches.length} VIPs; narrow the filter to see the rest.
-                </div>
-            )}
-            <DrawerTableWrap>
-            <Table aria-label="Service load balancers" variant="compact" isExpandable style={DRAWER_TABLE_STYLE}>
-                <Thead>
-                    <Tr>
-                        <Th screenReaderText="Row expansion" />
-                        {columns.map((column) => <Th key={column}>{column}</Th>)}
-                    </Tr>
-                </Thead>
-                {rows.map((row, rowIndex) => {
-                    const isExpanded = expanded.has(row.key);
-                    const options = row.loadBalancer.options ?? {};
-                    const noEndpoints = row.vip !== '' && row.backends.length === 0;
-                    return (
-                        <Tbody key={row.key} isExpanded={isExpanded}>
-                            <Tr data-testid={`service-row-${row.key}`}>
-                                <Td
-                                    expand={{
-                                        rowIndex,
-                                        isExpanded,
-                                        onToggle: () => toggle(row.key),
-                                        expandId: `service-${rowIndex}`,
-                                    }}
-                                />
-                                <Td dataLabel="Service"><ServiceName row={row} /></Td>
-                                <Td dataLabel="Protocol">{row.protocol}</Td>
-                                <Td dataLabel="VIP">
-                                    {row.vip ? <code>{row.vip}</code> : <span style={SUBTLE_TEXT}>—</span>}
-                                </Td>
-                                <Td dataLabel="Backends">
-                                    {noEndpoints
-                                        ? <Label isCompact color="yellow">No endpoints</Label>
-                                        : row.backends.length}
-                                </Td>
-                                <Td dataLabel="Scope"><ScopeCell row={row} /></Td>
-                                <Td dataLabel="Source">{row.sources.join(', ')}</Td>
-                            </Tr>
-                            <Tr isExpanded={isExpanded}>
-                                <Td />
-                                <Td dataLabel="Details" colSpan={columns.length}>
-                                    <ExpandableRowContent>
-                                        {isExpanded && (
-                                            <>
-                                                <div><strong>Backends</strong></div>
-                                                {noEndpoints ? (
-                                                    <div style={SUBTLE_TEXT}>
-                                                        None: the Service has no ready endpoints
-                                                        {options.reject === 'true'
-                                                            ? ', and OVN rejects connections to this VIP.'
-                                                            : '.'}
-                                                    </div>
-                                                ) : (
-                                                    <CodeLines items={row.backends} />
-                                                )}
-                                                <div className="pf-u-mt-sm">
-                                                    <strong>Load balancer</strong>{' '}
-                                                    <code>{row.loadBalancer.name}</code>
-                                                </div>
-                                                {options.affinity_timeout && (
-                                                    <div>
-                                                        <strong>Session affinity</strong>{' '}
-                                                        {options.affinity_timeout}s
-                                                    </div>
-                                                )}
-                                            </>
-                                        )}
-                                    </ExpandableRowContent>
-                                </Td>
-                            </Tr>
-                        </Tbody>
-                    );
-                })}
-                {rows.length === 0 && (
-                    <Tbody>
-                        <Tr>
-                            <Td colSpan={columns.length + 1}>No services match.</Td>
-                        </Tr>
-                    </Tbody>
-                )}
-            </Table>
-            </DrawerTableWrap>
-        </>
-    );
+    return <ServicesView attachment={services.attachment} database={services.database} databaseNode={databaseNode} />;
 };
 
 /**

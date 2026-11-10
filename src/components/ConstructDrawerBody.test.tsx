@@ -6,11 +6,14 @@ import { LogicalDatabase, LogicalTopologySnapshot } from '../types';
 import { buildLadderModel } from './logicalLadderModel';
 import ConstructDrawerBody, {
     MAX_PORT_ACLS,
-    MAX_SERVICE_ROWS,
     rowAddresses,
 } from './ConstructDrawerBody';
 import { policyForPort, policyIndexFor } from './policyIndex';
-import { fetchCollectorSnapshot } from './collectorApi';
+import { fetchCollectorLookup, fetchCollectorSnapshot } from './collectorApi';
+import { podAddressIndex } from './routerRules';
+import { serviceOf } from './serviceIndex';
+import { SERVICE_PAGE_SIZE } from './ServiceTables';
+import { LookupHit, LookupResponse } from '../types';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 
@@ -27,11 +30,28 @@ jest.mock('@patternfly/react-code-editor', () => ({
 }));
 
 // The drawer loads the optional sections itself; only the request is faked.
+// The Services tab looks backends on other nodes up through the collector.
 jest.mock('./collectorApi', () => ({
     ...jest.requireActual('./collectorApi'),
     fetchCollectorSnapshot: jest.fn(),
+    fetchCollectorLookup: jest.fn(),
 }));
 const fetchSnapshot = fetchCollectorSnapshot as jest.MockedFunction<typeof fetchCollectorSnapshot>;
+const fetchLookup = fetchCollectorLookup as jest.MockedFunction<typeof fetchCollectorLookup>;
+
+// The Services tab's two Kubernetes reads (the SDK does not load under jest):
+// the cluster Network config, and one Service while its row is expanded.
+const mockServiceNetworks: { value: { serviceNetworks: string[]; loaded: boolean; error?: string } } = {
+    value: { serviceNetworks: ['172.30.0.0/16', 'fd02::/112'], loaded: true },
+};
+const mockKubeServices = new Map<string, unknown>();
+jest.mock('./useServiceReads', () => ({
+    useServiceNetworks: () => mockServiceNetworks.value,
+    useKubeService: (namespace: string, name: string) => {
+        const service = mockKubeServices.get(`${namespace}/${name}`);
+        return service ? { service, loaded: true } : { loaded: false };
+    },
+}));
 
 const database = (cnv1 as unknown as LogicalTopologySnapshot).database as LogicalDatabase;
 const model = buildLadderModel(database);
@@ -671,6 +691,10 @@ describe('ConstructDrawerBody Services tab', () => {
 
     beforeEach(() => {
         fetchSnapshot.mockReset();
+        fetchLookup.mockReset();
+        fetchLookup.mockImplementation((_kind, value) => Promise.resolve(lookupOf(value, [])));
+        mockKubeServices.clear();
+        mockServiceNetworks.value = { serviceNetworks: ['172.30.0.0/16', 'fd02::/112'], loaded: true };
         container = document.createElement('div');
         document.body.appendChild(container);
         root = createRoot(container);
@@ -702,7 +726,69 @@ describe('ConstructDrawerBody Services tab', () => {
             tab!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
     };
-    const serviceRows = () => [...container.querySelectorAll('tr[data-testid^="service-row-"]')];
+    const serviceRows = () => [...container.querySelectorAll('tr[data-testid^="rule-row-"]')];
+    const NODE_TABLE = 'Services on this node';
+    const CLUSTER_TABLE = 'Cluster-wide services';
+    const rowsOf = (table: string) => [
+        ...container.querySelectorAll(`table[aria-label="${table}"] tr[data-testid^="rule-row-"]`),
+    ];
+    const rowOf = (table: string, label: string) =>
+        rowsOf(table).find((row) => row.querySelector('td[data-label="Service"]')?.textContent === label);
+    const cellsOf = (row: Element): Record<string, Element> =>
+        Object.fromEntries([...row.querySelectorAll('td[data-label]')].map((cell) => [cell.getAttribute('data-label'), cell]));
+    const sectionText = (section: 'node' | 'cluster') =>
+        container.querySelector(`[data-testid="services-section-${section}"]`)?.textContent ?? '';
+    const toggleSection = (section: 'node' | 'cluster') => {
+        const button = container.querySelector(`[data-testid="services-section-${section}"]`)?.closest('button');
+        expect(button).toBeTruthy();
+        act(() => {
+            button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+    };
+    const expandRow = (row: Element) => {
+        act(() => {
+            row.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+    };
+    const select = (label: string, value: string) => {
+        const element = container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`);
+        expect(element).not.toBeNull();
+        act(() => {
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
+            setter?.call(element, value);
+            element!.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+    };
+    /** "namespace/name" of the load balancers set directly on a switch or router. */
+    const directServices = (name: string) => {
+        const row = [...database.logicalSwitches, ...database.logicalRouters].find((candidate) => candidate.name === name)!;
+        const byUuid = new Map(database.loadBalancers!.map((lb) => [lb.uuid, lb]));
+        return new Set(
+            (row.loadBalancer ?? []).map((uuid) => {
+                const owner = serviceOf(byUuid.get(uuid)!)!;
+                return `${owner.namespace}/${owner.name}`;
+            }),
+        );
+    };
+    const lookupOf = (address: string, hits: Array<Partial<LookupHit>>): LookupResponse => ({
+        query: { kind: 'ip', value: address },
+        hits: hits.map((hit) => ({
+            node: 'cnv-2',
+            table: 'Logical_Switch_Port',
+            rowUuid: 'lsp-1',
+            network: 'default',
+            matchedField: 'addresses',
+            matchedValue: address,
+            matchType: 'exact',
+            snapshotGeneratedAt: '2026-11-10T00:00:00Z',
+            ...hit,
+        })) as LookupHit[],
+        total: hits.length,
+        limit: 200,
+        truncated: false,
+        zones: [],
+        warnings: [],
+    });
     const setFilter = (value: string) => {
         const input = container.querySelector<HTMLInputElement>('input[aria-label="Filter services"]');
         expect(input).not.toBeNull();
@@ -735,15 +821,21 @@ describe('ConstructDrawerBody Services tab', () => {
         expect(fetchSnapshot).not.toHaveBeenCalled();
     });
 
-    it('replaces the not-collected note on the Overview with direct and per-group counts', () => {
+    it('states the split on the Overview in the Services tab\'s words', () => {
         renderConstruct('cnv-1');
         const value = overviewValue('Load balancers');
-        expect(value).toMatch(/^22 direct · \d+ via clusterLBGroup · 0 via clusterSwitchLBGroup/);
-        expect(value).toMatch(/\d+ VIPs without endpoints$/);
+        expect(value).toMatch(/^22 here · \d+ cluster-wide · \d+ VIPs without endpoints$/);
         expect(value).not.toContain('not collected');
+        // The per-group detail moved to the tooltip.
+        expect(container.querySelector('[data-testid="load-balancer-split"]')?.getAttribute('title')).toMatch(
+            /^22 direct · \d+ via clusterLBGroup · 0 via clusterSwitchLBGroup$/,
+        );
+        clickTab('Services');
+        expect(container.querySelector('[data-testid="services-summary"]')?.textContent).toBe(`Load balancers: ${value}`);
 
         renderConstruct('GR_cnv-1');
-        expect(overviewValue('Load balancers')).toMatch(/^22 direct · \d+ via clusterLBGroup · 0 via clusterRouterLBGroup/);
+        clickTab('Overview');
+        expect(overviewValue('Load balancers')).toMatch(/^22 here · \d+ cluster-wide/);
     });
 
     it('says a UDN switch sees no load balancers because its groups are empty', () => {
@@ -759,80 +851,266 @@ describe('ConstructDrawerBody Services tab', () => {
         expect(container.querySelector('table')).toBeNull();
     });
 
-    it('caps the rendered rows and says how many matched', () => {
+    it('lists one row per Service in two sections, node-scoped first and the cluster-wide one collapsed', () => {
         renderConstruct('cnv-1');
         clickTab('Services');
-        expect(serviceRows()).toHaveLength(MAX_SERVICE_ROWS);
-        const cap = container.querySelector('[data-testid="services-cap"]')?.textContent ?? '';
-        expect(cap).toMatch(new RegExp(`^Showing ${MAX_SERVICE_ROWS} of \\d+ VIPs; narrow the filter`));
-        expect(Number(/of (\d+) VIPs/.exec(cap)?.[1])).toBeGreaterThan(MAX_SERVICE_ROWS);
-        expect(container.textContent).toContain('Load_Balancer rows from node cnv-1');
+        const here = directServices('cnv-1');
+        expect(sectionText('node')).toBe(`On this node (cnv-1) · ${here.size} Services · 22 load balancers`);
+        const cluster = /^Cluster-wide \(shared by every node switch and gateway router\) · (\d+) Services · (\d+) load balancers$/.exec(
+            sectionText('cluster'),
+        );
+        expect(cluster).not.toBeNull();
+        const clusterServices = Number(cluster![1]);
+        // Far fewer rows than the VIPs the old table listed one by one.
+        const vipCount = database.loadBalancers!.reduce((sum, row) => sum + Object.keys(row.vips).length, 0);
+        expect(here.size + clusterServices).toBeLessThan(vipCount);
 
-        // A filter that brings the matches under the cap drops the notice.
-        setFilter('openshift-dns/');
-        expect(container.querySelector('[data-testid="services-cap"]')).toBeNull();
-        expect(serviceRows().length).toBeGreaterThan(0);
-        expect(serviceRows().length).toBeLessThan(MAX_SERVICE_ROWS);
+        const nodeRows = rowsOf(NODE_TABLE);
+        expect(nodeRows).toHaveLength(here.size);
+        expect(new Set(nodeRows.map((row) => cellsOf(row).Service.textContent))).toEqual(here);
+        // Collapsed: only its count, no table.
+        expect(container.querySelector(`table[aria-label="${CLUSTER_TABLE}"]`)).toBeNull();
+        const nodeSection = container.querySelector('[data-testid="services-section-node"]')!;
+        const clusterSection = container.querySelector('[data-testid="services-section-cluster"]')!;
+        expect(nodeSection.compareDocumentPosition(clusterSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+        toggleSection('cluster');
+        expect(clusterServices).toBeGreaterThan(SERVICE_PAGE_SIZE);
+        expect(rowsOf(CLUSTER_TABLE)).toHaveLength(SERVICE_PAGE_SIZE);
+        expect(container.querySelector('[data-testid="rule-table-pager"]')).not.toBeNull();
+        expect(container.textContent).not.toMatch(/narrow the filter/);
+        expect(container.textContent).toContain('Load_Balancer rows from node cnv-1');
     });
 
     it('finds the Service behind a VIP and links to it', () => {
         renderConstruct('cnv-1');
         clickTab('Services');
         setFilter('172.30.0.1:443');
-        const rows = serviceRows();
+        const rows = rowsOf(NODE_TABLE);
         expect(rows).toHaveLength(1);
-        const link = rows[0].querySelector('a');
+        const cells = cellsOf(rows[0]);
+        const link = cells.Service.querySelector('a');
         expect(link?.textContent).toBe('default/kubernetes');
         expect(link?.getAttribute('href')).toBe('/k8s/ns/default/core~v1~Service/kubernetes');
-        const cells = [...rows[0].querySelectorAll('td')].map((cell) => cell.textContent);
-        expect(cells.slice(2)).toEqual(['tcp', '172.30.0.1:443', '3', 'node-local', 'direct']);
-        expect(rows[0].querySelector('span[title]')?.getAttribute('title')).toBe('node_router+switch on cnv-1');
+        expect(cells.Type.textContent).toBe('ClusterIP (inferred)');
+        expect(cells.Ports.textContent).toBe('443/TCP');
+        expect(cells.VIPs.textContent).toBe('1');
+        expect(cells.Backends.textContent).toBe('3');
+        expect(sectionText('cluster')).toMatch(/· 0 of \d+ Services$/);
 
         setFilter('no-such-service');
         expect(serviceRows()).toHaveLength(0);
         expect(container.textContent).toContain('No services match.');
     });
 
-    it('filters by backend, and shows the node switch only its own variant of a per-node Service', () => {
+    it('folds a Service with several ports and protocols into one row that expands to every VIP', () => {
         renderConstruct('cnv-1');
         clickTab('Services');
-        setFilter('172.30.0.10:53');
-        // DNS is materialised per node: the switch sees node_switch rows
-        // (TCP and UDP), the gateway router the node_router ones.
-        expect(serviceRows().map((row) => row.querySelectorAll('td')[2].textContent).sort()).toEqual(['tcp', 'udp']);
-        const backend = database.loadBalancers!.find(
-            (row) => row.name === 'Service_openshift-dns/dns-default_UDP_node_switch_cnv-1',
-        )!.vips['172.30.0.10:53'];
-        setFilter(backend);
-        expect(serviceRows().some((row) => row.textContent?.includes('openshift-dns/dns-default'))).toBe(true);
+        // DNS is materialised per node: the switch sees its own node_switch
+        // rows, over TCP and UDP, as one row.
+        const dns = rowOf(NODE_TABLE, 'openshift-dns/dns-default')!;
+        expect(cellsOf(dns).Ports.textContent).toBe('53/TCP53/UDP9154/TCP');
+        expect(cellsOf(dns).VIPs.textContent).toBe('3');
+        expandRow(dns);
+        const vips = [...container.querySelectorAll('[data-testid="service-vip"]')];
+        expect(vips.map((vip) => vip.querySelector('code')?.textContent)).toEqual([
+            '172.30.0.10:53',
+            '172.30.0.10:53',
+            '172.30.0.10:9154',
+        ]);
+        expect(vips.map((vip) => vip.textContent).join('\n')).toContain('UDP');
+        const detail = container.querySelector('[data-testid="service-detail"]')!.textContent ?? '';
+        expect(detail).toContain('Service_openshift-dns/dns-default_UDP_node_switch_cnv-1');
+        expect(detail).toContain('(set directly)');
+
+        // A Service with many node ports collapses its chips.
+        const frr = rowOf(NODE_TABLE, 'demo-cl-frr-01/frr-bgp-demo-frr1')!;
+        expect(cellsOf(frr).Type.textContent).toBe('NodePort (inferred)');
+        expect(cellsOf(frr).Ports.textContent).toMatch(/\d+ more$/);
     });
 
-    it('expands a row to its backends and flags a VIP without endpoints', () => {
+    it('shows a backend in this zone with its pod beside the address', () => {
         renderConstruct('cnv-1');
         clickTab('Services');
-        setFilter('ovn-recon-fixture/dual-stack-echo');
-        const rows = serviceRows();
-        expect(rows.map((row) => row.querySelectorAll('td')[3].textContent)).toEqual([
-            '[fd02::fa0a]:8080',
-            '172.30.250.10:8080',
-        ]);
-        expect(rows[0].querySelectorAll('td')[6].textContent).toBe('clusterLBGroup');
-        act(() => {
-            rows[0].querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        });
-        expect(container.textContent).toContain('[fd01:0:0:5::c8]:8080');
-        expect(container.textContent).toContain('Service_ovn-recon-fixture/dual-stack-echo_TCP_cluster');
+        toggleSection('cluster');
+        setFilter('cert-manager/cert-manager-webhook');
+        const row = rowOf(CLUSTER_TABLE, 'cert-manager/cert-manager-webhook')!;
+        expandRow(row);
+        const owner = podAddressIndex(database)('10.131.0.6')!;
+        const backend = [...container.querySelectorAll('[data-testid="service-backend"]')].find((line) =>
+            line.querySelector('code')?.textContent?.startsWith('10.131.0.6:'),
+        )!;
+        const link = backend.querySelector('a')!;
+        expect(link.textContent).toBe(`${owner.namespace}/${owner.pod}`);
+        expect(link.getAttribute('href')).toBe(`/k8s/ns/${owner.namespace}/core~v1~Pod/${owner.pod}`);
+        // In-zone owners need no lookup.
+        expect(fetchLookup).not.toHaveBeenCalledWith('ip', '10.131.0.6');
+    });
 
-        const idle = database.loadBalancers!.find((row) => Object.values(row.vips).includes(''))!;
-        const idleVip = Object.entries(idle.vips).find(([, backends]) => backends === '')![0];
-        setFilter(idleVip);
-        const idleRow = serviceRows().find((row) => row.textContent?.includes('No endpoints'));
-        expect(idleRow).toBeDefined();
+    it('looks backends on other nodes up on expand, and resolves an address on two ports to nothing', async () => {
+        fetchLookup.mockImplementation((_kind, value) =>
+            Promise.resolve(
+                value === '10.129.4.200'
+                    ? lookupOf(value, [
+                        { owner: { kind: 'Pod', namespace: 'ovn-recon-fixture', name: 'echo-a' } },
+                        // The same port again through another field.
+                        { matchedField: 'portSecurity', owner: { kind: 'Pod', namespace: 'ovn-recon-fixture', name: 'echo-a' } },
+                    ])
+                    : value === '10.130.0.200'
+                        ? lookupOf(value, [
+                            { rowUuid: 'lsp-a', owner: { kind: 'Pod', namespace: 'blue', name: 'one' } },
+                            { rowUuid: 'lsp-b', node: 'cnv-3', owner: { kind: 'Pod', namespace: 'green', name: 'two' } },
+                        ])
+                        : lookupOf(value, []),
+            ),
+        );
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        toggleSection('cluster');
+        setFilter('dual-stack-echo');
+        const row = rowOf(CLUSTER_TABLE, 'ovn-recon-fixture/dual-stack-echo')!;
+        expect(cellsOf(row).VIPs.textContent).toBe('2');
+        expect(cellsOf(row).Type.textContent).toBe('ClusterIP (inferred)');
+        expect(fetchLookup).not.toHaveBeenCalled();
+
+        expandRow(row);
+        await act(async () => undefined);
+        expect(fetchLookup.mock.calls.map(([, value]) => value).sort()).toEqual([
+            '10.129.4.200',
+            '10.130.0.200',
+            'fd01:0:0:5::c8',
+            'fd01:0:0:6::c8',
+        ]);
+        const lines = [...container.querySelectorAll('[data-testid="service-backend"]')];
+        const line = (backend: string) => lines.find((candidate) => candidate.querySelector('code')?.textContent === backend)!;
+        expect(line('10.129.4.200:8080').textContent).toBe('10.129.4.200:8080 ovn-recon-fixture/echo-a on cnv-2');
+        expect(line('10.130.0.200:8080').querySelector('a')).toBeNull();
+        expect(line('[fd01:0:0:5::c8]:8080').querySelector('a')).toBeNull();
+
+        // Collapse and expand again: answered from the tab's cache.
+        expandRow(row);
+        expandRow(row);
+        await act(async () => undefined);
+        expect(fetchLookup).toHaveBeenCalledTimes(4);
+    });
+
+    it('says when backends on other nodes could not be looked up', async () => {
+        fetchLookup.mockRejectedValue(new Error('Collector request failed (404)'));
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        toggleSection('cluster');
+        setFilter('dual-stack-echo');
+        expandRow(rowOf(CLUSTER_TABLE, 'ovn-recon-fixture/dual-stack-echo')!);
+        await act(async () => undefined);
+        expect(container.querySelector('[data-testid="backend-lookup-error"]')?.textContent).toBe(
+            '4 backends on other nodes could not be looked up: Collector request failed (404)',
+        );
+    });
+
+    it('narrows by type, protocol, namespace and missing endpoints', () => {
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        toggleSection('cluster');
+        const allNode = rowsOf(NODE_TABLE).length;
+
+        select('Filter by type', 'NodePort');
+        expect(rowsOf(NODE_TABLE).length).toBeGreaterThan(0);
+        expect(rowsOf(NODE_TABLE).length).toBeLessThan(allNode);
+        expect(rowsOf(NODE_TABLE).every((row) => cellsOf(row).Type.textContent?.includes('NodePort'))).toBe(true);
+        // Node ports are per node: none is shared cluster-wide.
+        expect(rowsOf(CLUSTER_TABLE)).toHaveLength(0);
+
+        select('Filter by type', 'LoadBalancer');
+        expect(rowsOf(NODE_TABLE)).toHaveLength(0);
+        expect(rowsOf(CLUSTER_TABLE).map((row) => cellsOf(row).Service.textContent)).toContain(
+            'demo-cl-frr-01/frr-bgp-demo-frr1',
+        );
+        select('Filter by type', '');
+
+        select('Filter by protocol', 'udp');
+        // The Services whose load balancers set on the switch carry UDP.
+        const switchRow = database.logicalSwitches.find((row) => row.name === 'cnv-1')!;
+        const udpHere = new Set(
+            database.loadBalancers!
+                .filter((row) => switchRow.loadBalancer!.includes(row.uuid) && row.protocol === 'udp')
+                .map((row) => `${serviceOf(row)!.namespace}/${serviceOf(row)!.name}`),
+        );
+        expect(udpHere.has('openshift-dns/dns-default')).toBe(true);
+        expect(new Set(rowsOf(NODE_TABLE).map((row) => cellsOf(row).Service.textContent))).toEqual(udpHere);
+        select('Filter by protocol', '');
+
+        select('Filter by namespace', 'openshift-dns');
+        expect(rowsOf(NODE_TABLE).map((row) => cellsOf(row).Service.textContent)).toEqual(['openshift-dns/dns-default']);
+        select('Filter by namespace', '');
+
+        const checkbox = container.querySelector<HTMLInputElement>('#services-without-endpoints')!;
+        const withoutCount = Number(/\((\d+)\)/.exec(checkbox.closest('.pf-v6-c-check')?.textContent ?? '')?.[1]);
         act(() => {
-            idleRow!.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            checkbox.click();
         });
-        expect(container.textContent).toContain('the Service has no ready endpoints');
-        expect(container.textContent).toContain('OVN rejects connections to this VIP');
+        const idle = [...rowsOf(NODE_TABLE), ...rowsOf(CLUSTER_TABLE)];
+        expect(idle).toHaveLength(withoutCount);
+        expect(idle.every((row) => /No endpoints|without endpoints/.test(cellsOf(row).Backends.textContent ?? ''))).toBe(true);
+        expandRow(idle[0]);
+        expect(container.textContent).toContain('the Service has no ready endpoints, and OVN rejects connections to this VIP');
+    });
+
+    it('sorts by a column', () => {
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        const header = [...container.querySelectorAll(`table[aria-label="${NODE_TABLE}"] th button`)].find(
+            (button) => button.textContent === 'VIPs',
+        )!;
+        act(() => {
+            header.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        const ascending = rowsOf(NODE_TABLE).map((row) => Number(cellsOf(row).VIPs.textContent));
+        expect(ascending).toEqual([...ascending].sort((a, b) => a - b));
+        act(() => {
+            header.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        const descending = rowsOf(NODE_TABLE).map((row) => Number(cellsOf(row).VIPs.textContent));
+        expect(descending).toEqual([...descending].sort((a, b) => b - a));
+    });
+
+    it('reads the Service on expand and keeps its types declared', () => {
+        mockKubeServices.set('openshift-dns/dns-default', {
+            metadata: { name: 'dns-default', namespace: 'openshift-dns' },
+            spec: { type: 'ClusterIP', clusterIPs: ['172.30.0.10'], internalTrafficPolicy: 'Cluster' },
+        });
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        const typeOf = () => cellsOf(rowOf(NODE_TABLE, 'openshift-dns/dns-default')!).Type;
+        expect(typeOf().querySelector('[data-testid="vip-class"]')?.getAttribute('data-basis')).toBe('inferred');
+
+        expandRow(rowOf(NODE_TABLE, 'openshift-dns/dns-default')!);
+        expect(container.querySelector('[data-testid="service-declared"]')?.textContent).toBe('Declared type ClusterIP');
+        expect(typeOf().textContent).toBe('ClusterIP');
+        expect(typeOf().querySelector('[data-testid="vip-class"]')?.getAttribute('data-basis')).toBe('declared');
+
+        // Collapsed again, the row keeps what was read.
+        expandRow(rowOf(NODE_TABLE, 'openshift-dns/dns-default')!);
+        expect(container.querySelector('[data-testid="service-declared"]')).toBeNull();
+        expect(typeOf().textContent).toBe('ClusterIP');
+    });
+
+    it('says what the types rest on, including when the service network cannot be read', () => {
+        renderConstruct('cnv-1');
+        clickTab('Services');
+        expect(container.querySelector('[data-testid="services-basis"]')?.textContent).toContain(
+            'inferred from OVN and the service network 172.30.0.0/16, fd02::/112',
+        );
+
+        mockServiceNetworks.value = { serviceNetworks: [], loaded: true, error: 'networks.config.openshift.io "cluster" is forbidden' };
+        renderConstruct('GR_cnv-1');
+        expect(container.querySelector('[data-testid="services-basis"]')?.textContent).toContain(
+            'the cluster Network config could not be read (networks.config.openshift.io "cluster" is forbidden)',
+        );
+        // Without it the external addresses on the node's own subnet still
+        // read as external; the rest of the gateway router's rows as ClusterIP.
+        toggleSection('cluster');
+        select('Filter by type', 'LoadBalancer');
+        expect(rowsOf(CLUSTER_TABLE).length).toBeGreaterThan(0);
     });
 
     it('adds the referenced load balancer rows to the Config tab', () => {
@@ -882,9 +1160,9 @@ describe('ConstructDrawerBody Services tab', () => {
         expect(container.textContent).toContain('Loading services');
 
         await act(async () => resolve(cnv1 as unknown as LogicalTopologySnapshot));
-        expect(serviceRows()).toHaveLength(MAX_SERVICE_ROWS);
+        expect(rowsOf(NODE_TABLE)).toHaveLength(directServices('cnv-1').size);
         clickTab('Overview');
-        expect(overviewValue('Load balancers')).toMatch(/^22 direct · \d+ via clusterLBGroup/);
+        expect(overviewValue('Load balancers')).toMatch(/^22 here · \d+ cluster-wide/);
 
         // A construct that needs neither section (a router without load
         // balancers) costs no request.
@@ -893,7 +1171,7 @@ describe('ConstructDrawerBody Services tab', () => {
         // Back on a construct with load balancers on the same node: the rows
         // already loaded show at once while the request is repeated.
         renderConstruct('GR_cnv-1', { database: ladderDatabase, databaseNode: 'cnv-1', sectionsRefreshKey: 't1' });
-        expect(overviewValue('Load balancers')).toMatch(/^22 direct · \d+ via clusterLBGroup/);
+        expect(overviewValue('Load balancers')).toMatch(/^22 here · \d+ cluster-wide/);
         await act(async () => undefined);
         expect(fetchSnapshot).toHaveBeenCalledTimes(2);
 
