@@ -1,11 +1,13 @@
 import * as React from 'react';
 import { useParams, Link, useLocation } from 'react-router';
-import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem } from '@patternfly/react-core';
+import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem, ExpandableSection } from '@patternfly/react-core';
 import { DocumentTitle, K8sResourceCommon, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import NodeVisualization from './NodeVisualization';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements, SriovNetworkNodeState, Vtep } from '../types';
-import { NODE_VTEPS_ANNOTATION } from './nodeVisualizationSelectors';
+import { getRunningRoutes, NODE_VTEPS_ANNOTATION } from './nodeVisualizationSelectors';
+import { MAIN_TABLE_ID } from './kernelRoutes';
+import KernelRouteTable from './KernelRouteTable';
 
 /** Where the SR-IOV Network Operator keeps its per-node state. */
 const SRIOV_OPERATOR_NAMESPACE = 'openshift-sriov-network-operator';
@@ -143,6 +145,13 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
     } : null, [name]);
     const [sriovNodeState] = useK8sWatchResource<SriovNetworkNodeState>(sriovNodeStateWatchResource);
 
+    // The node's main routing table (ovn-recon-dp7.2): every table is in
+    // routes.running, but VRF tables belong to their VRF's drawer.
+    const mainRoutes = React.useMemo(
+        () => (nns ? getRunningRoutes(nns).filter((route) => route.tableId === MAIN_TABLE_ID) : []),
+        [nns]
+    );
+
     if (!name) {
         return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
     }
@@ -194,6 +203,15 @@ const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) 
                             View logical OVN topology for this node
                         </Link>
                     </p>
+                )}
+                {mainRoutes.length > 0 && (
+                    <ExpandableSection
+                        className="pf-u-mt-md"
+                        toggleText="Main routing table"
+                        data-testid="main-routing-table"
+                    >
+                        <KernelRouteTable routes={mainRoutes} ariaLabel="Main routing table" />
+                    </ExpandableSection>
                 )}
             </PageSection>
             <PageSection isFilled>

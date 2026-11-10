@@ -604,7 +604,7 @@ exports[`NodeVisualization rendered structure bonded-lldp, with neighbours shown
 
 exports[`NodeVisualization rendered structure drawer content for br-ex (ovs-bridge) 1`] = `
 {
-  "Overview": "br-exovs-bridgeOverviewRelationshipsConfigTypeovs-bridgeStateupPortsbr-exens192patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-intpatch-br-ex_worker-1-to-br-int",
+  "Overview": "br-exovs-bridgeOverviewRelationshipsConfigTypeovs-bridgeStateupPortsbr-exens192patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-intpatch-br-ex_worker-1-to-br-intRoutes via this interfaceTable 254 (main) · 3 routes · 1 defaultDestinationGatewayMetricMTU0.0.0.0/0 default192.0.2.148—169.254.0.1/32on-link——172.30.0.0/16169.254.0.4—1400Table 5775 · VRF example-p-cudn · 2 routes · 1 defaultDestinationGatewayMetricMTU0.0.0.0/0 default192.0.2.1—1400172.30.0.0/16169.254.0.4—1400",
   "Relationships": "br-exovs-bridgeOverviewRelationshipsConfigUpstreamens192ens192 is a port of br-ex: NodeNetworkState reports controller: br-ex.DownstreamphysnetBridge mapping physnet resolves to bridge br-ex: ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.example-p-cudnVRF example-p-cudn routes 0.0.0.0/0, 172.30.0.0/16 via br-ex: routes.running in table 5775 name next-hop-interface br-ex.br-intbr-int port patch-br-int-to-br-ex_cluster_udn_example.p.cudn_worker-1 patches to patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int, a port of br-ex: patch.peer on both ends in NodeNetworkState.example-p-cudninferredCUDN example-p-cudn reaches br-ex through patch port patch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int: the port is on br-ex and its name embeds cluster_udn_example.p.cudn, this CUDN's name with dashes written as dots. Inferred: the naming is an OVN-Kubernetes implementation detail, not something NodeNetworkState declares.",
 }
 `;
@@ -618,7 +618,7 @@ exports[`NodeVisualization rendered structure drawer content for ens192 (etherne
 
 exports[`NodeVisualization rendered structure drawer content for example-p-cudn (VRF) 1`] = `
 {
-  "Overview": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigTypeVRF InterfaceServes Primary Networkinferredexample-p-cudn (ClusterUserDefinedNetwork)MAC Address02:00:00:00:00:06Route Table5775Routes0.0.0.0/0 via 192.0.2.1 dev br-ex169.254.0.3/32 via 10.1.2.1 dev ovn-k8s-mp3169.254.0.16/32 via 0.0.0.0 dev ovn-k8s-mp3172.30.0.0/16 via 169.254.0.4 dev br-exbr-int Portsinferredovn-k8s-mp3 10.1.2.2/24",
+  "Overview": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigTypeVRF InterfaceServes Primary Networkinferredexample-p-cudn (ClusterUserDefinedNetwork)MAC Address02:00:00:00:00:06Route Table5775RoutesTable 5775 · VRF example-p-cudn · 4 routes · 1 defaultDestinationGatewayInterfaceMTU0.0.0.0/0 default192.0.2.1br-ex1400169.254.0.3/3210.1.2.1ovn-k8s-mp3—169.254.0.16/32on-linkovn-k8s-mp31400172.30.0.0/16169.254.0.4br-ex1400br-int Portsinferredovn-k8s-mp3 10.1.2.2/24",
   "Relationships": "example-p-cudnVRF InterfaceOverviewRelationshipsConfigUpstreambr-exVRF example-p-cudn routes 0.0.0.0/0, 172.30.0.0/16 via br-ex: routes.running in table 5775 name next-hop-interface br-ex.br-intovn-k8s-mp3 is a port of both br-int (controller: br-int) and VRF example-p-cudn (vrf.port).Downstreamexample-p-cudninferredPrimary CUDN example-p-cudn names this VRF; port ovn-k8s-mp3 address 10.1.2.2/24 lies inside its subnet 10.1.2.0/24. Inferred: NodeNetworkState does not record which network a VRF serves.",
 }
 `;

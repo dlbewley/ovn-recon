@@ -5,7 +5,9 @@ global.IS_REACT_ACT_ENVIRONMENT = true;
 
 // react-router 7 reaches for TextEncoder at import time; jsdom does not provide
 // it. The console supplies the router in production, so this matters only for
-// suites that render under a real MemoryRouter instead of mocking react-router.
+// suites that load the real react-router instead of mocking it: those rendering
+// under a MemoryRouter, and every suite that builds drawer facts, since route
+// tables render through RuleTable, which imports Link.
 if (typeof global.TextEncoder === 'undefined') {
     const { TextEncoder, TextDecoder } = require('util');
     global.TextEncoder = TextEncoder;

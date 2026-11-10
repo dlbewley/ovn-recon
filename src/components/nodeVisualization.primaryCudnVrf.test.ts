@@ -128,7 +128,7 @@ describe('VRF created by a Primary CUDN', () => {
         expect(routes).toHaveLength(4);
         expect(routes.map((r) => r.destination).sort()).toEqual(
             ['0.0.0.0/0', '169.254.0.16/32', '169.254.0.3/32', '172.30.0.0/16']);
-        routes.forEach((route) => expect(route.tableId).toBe('5775'));
+        routes.forEach((route) => expect(route.tableId).toBe(5775));
 
         const defaultRoute = routes.find((r) => r.destination === '0.0.0.0/0')!;
         expect(defaultRoute.nextHopInterface).toBe('br-ex');
