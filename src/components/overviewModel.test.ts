@@ -2,9 +2,12 @@ import fs from 'fs';
 import path from 'path';
 
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
+import { cudnRef, makeFinding, nodeRef } from '../insights/refs';
 import {
     filterNodeSummaries,
+    findingCountsByNode,
     formatCudnBreakdown,
+    groupFindingsByRule,
     nodeRole,
     summarizeFleet,
     summarizeNetworks,
@@ -108,5 +111,35 @@ describe('overviewModel', () => {
             expect(filterNodeSummaries(summaries, '  ')).toHaveLength(2);
             expect(filterNodeSummaries(summaries, 'nope')).toHaveLength(0);
         });
+    });
+});
+
+describe('findings helpers (ovn-recon-7i6.1)', () => {
+    const make = (ruleId: string, severity: 'warning' | 'info', node?: string) => makeFinding({
+        ruleId, severity,
+        subject: node
+            ? { kind: 'graph-node', node, graphNodeId: `iface:${ruleId}` }
+            : { kind: 'k8s', ref: cudnRef(`net-${ruleId}`) },
+        scope: node ? { node } : { network: cudnRef(`net-${ruleId}`) },
+        summary: `${ruleId} ${node ?? 'net'}`, evidence: [], remedy: { text: '', target: nodeRef('x') }
+    });
+
+    it('counts per node, leaving network-wide findings out', () => {
+        const counts = findingCountsByNode([make('a', 'warning', 'n1'), make('b', 'info', 'n1'), make('c', 'warning')]);
+        expect(Array.from(counts.entries())).toEqual([['n1', { warning: 1, info: 1, total: 2 }]]);
+    });
+
+    it('groups by rule, rules with warnings first, and links each entry to its subject', () => {
+        const groups = groupFindingsByRule(
+            [make('zeta', 'info', 'n2'), make('alpha', 'info', 'n1'), make('mid', 'warning')],
+            ['n2', 'n1'],
+            (ruleId) => ruleId.toUpperCase()
+        );
+        expect(groups.map((g) => [g.title, g.severity])).toEqual([['MID', 'warning'], ['ALPHA', 'info'], ['ZETA', 'info']]);
+        expect(groups[0].entries[0]).toEqual(expect.objectContaining({
+            where: 'network-wide',
+            link: expect.objectContaining({ to: '/ovn-recon/node-network-state/n1?select=cudn:net-mid' })
+        }));
+        expect(groups[1].entries[0].where).toBe('on n1');
     });
 });

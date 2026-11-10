@@ -54,6 +54,26 @@ Network-scope rules read `ctx.cluster` only; node and node-network rules read
 `ctx.node` only. The evaluator enforces this, which is what lets a node page and the
 overview share the network findings.
 
+## Surfaces (`ovn-recon-7i6.1`)
+
+The React side lives in `ui/`, apart from the pure engine:
+
+- `ui/useFindings.ts`: `useNodeFindings` (node page) and `useClusterFindings` (overview)
+  evaluate in a `useMemo` off the contexts the pages already build, never in graph
+  layout; `FindingsEvaluatorContext` lets a test supply an evaluator with extra rules;
+  `useHideInfoFindings` is the one "Hide info findings" toggle, kept in `localStorage`
+  with every read and write in try/catch.
+- `ui/FindingsViews.tsx`: severity icons (PatternFly status colours, info subdued), the
+  drawer's Findings section, the graph decorator and the toggle.
+- `ui/FindingsCard.tsx`: the overview card and its list grouped by rule.
+- `links.ts`: console paths for a `K8sRef`, and the `?select=` link to a finding's subject.
+
+**Surface gates** (`gates.ts`) hold back findings the engine reports correctly while a
+question about them is open. The rules and their tests are untouched; each gate is one
+line in `SURFACE_GATES`. Today there is one: `interface-down` on the EVPN interfaces of
+a network (its SVI, a port of the network's VRF, and its OVS-side port, recognised by
+resolving the device to a network that declares EVPN), pending `ovn-recon-7i6.2`.
+
 ## Adding a rule
 
 One file, two fixtures.

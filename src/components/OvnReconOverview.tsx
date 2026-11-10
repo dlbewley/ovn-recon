@@ -27,17 +27,23 @@ import {
     ClusterLogicalTopology,
     ClusterUserDefinedNetwork,
     NetworkAttachmentDefinition,
+    NodeNetworkConfigurationEnactment,
     NodeNetworkState,
     RouteAdvertisements,
     UserDefinedNetwork,
 } from '../types';
 import ClusterSearch from './ClusterSearch';
+import FindingsCard from '../insights/ui/FindingsCard';
+import { describeCounts, SeverityCountsInline } from '../insights/ui/FindingsViews';
+import { useClusterFindings, useHideInfoFindings, visibleFindings } from '../insights/ui/useFindings';
+import { nodePagePath } from '../insights/links';
 import { fetchClusterTopology } from './collectorApi';
 import { freshnessFromAge, oldestSnapshotAgeMs } from './snapshotFreshness';
 import SnapshotStatusLine from './SnapshotStatusLine';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import {
     filterNodeSummaries,
+    findingCountsByNode,
     formatCudnBreakdown,
     nodeRole,
     summarizeFleet,
@@ -66,6 +72,12 @@ const CONSOLE_LIST = {
     nad: '/k8s/all-namespaces/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition',
     ra: '/k8s/cluster/k8s.ovn.org~v1~RouteAdvertisements',
 };
+
+/** Stable empties: a fresh `[]` per render would re-evaluate every finding. */
+const NO_CUDNS: ClusterUserDefinedNetwork[] = [];
+const NO_UDNS: UserDefinedNetwork[] = [];
+const NO_NADS: NetworkAttachmentDefinition[] = [];
+const NO_ENACTMENTS: NodeNetworkConfigurationEnactment[] = [];
 
 const nnsResourcePath = (name: string): string =>
     `/k8s/cluster/nmstate.io~v1beta1~NodeNetworkState/${encodeURIComponent(name)}`;
@@ -97,6 +109,27 @@ const OvnReconOverview: React.FC = () => {
         groupVersionKind: { group: 'k8s.ovn.org', version: 'v1', kind: 'RouteAdvertisements' },
         isList: true,
     });
+    // The per-node record of which NNCP configured what, for the findings that read it
+    // (bond-degraded, nnce-failing), as the node page watches it. Without nmstate, or
+    // without permission, the watch yields nothing and those rules stay quiet.
+    const [enactments] = useK8sWatchResource<NodeNetworkConfigurationEnactment[]>({
+        groupVersionKind: { group: 'nmstate.io', version: 'v1beta1', kind: 'NodeNetworkConfigurationEnactment' },
+        isList: true,
+    });
+
+    // Findings across the cluster (ovn-recon-7i6.1): network rules once, node rules on
+    // every node. Any list that is missing or refused reads as empty.
+    const allFindings = useClusterFindings({
+        nodeNetworkStates,
+        nodeNetworkStatesLoaded: nnsLoaded && !nnsError,
+        cudns: Array.isArray(cudns) ? cudns : NO_CUDNS,
+        udns: Array.isArray(udns) ? udns : NO_UDNS,
+        nads: Array.isArray(nads) ? nads : NO_NADS,
+        enactments: Array.isArray(enactments) ? enactments : NO_ENACTMENTS,
+    });
+    const [hideInfo, setHideInfo] = useHideInfoFindings();
+    const findings = React.useMemo(() => visibleFindings(allFindings, hideInfo), [allFindings, hideInfo]);
+    const findingCounts = React.useMemo(() => findingCountsByNode(findings), [findings]);
 
     // Collector envelope for the first card. Only asked for when the gate is
     // on; a disabled collector has no card at all rather than a broken one.
@@ -162,7 +195,9 @@ const OvnReconOverview: React.FC = () => {
     const fleet = React.useMemo(() => summarizeFleet(summaries), [summaries]);
     const visible = React.useMemo(() => filterNodeSummaries(summaries, query), [summaries, query]);
 
-    const columns = ['Node', 'Role', 'Interfaces', 'Bridges', 'Mappings', 'LLDP', 'Views'];
+    const nodeNames = React.useMemo(() => summaries.map((summary) => summary.name), [summaries]);
+
+    const columns = ['Node', 'Role', 'Findings', 'Interfaces', 'Bridges', 'Mappings', 'LLDP', 'Views'];
     const showLogical = gateLoaded && collectorEnabled;
     const cudnBreakdown = formatCudnBreakdown(networks.cudnsByTopology);
 
@@ -189,6 +224,17 @@ const OvnReconOverview: React.FC = () => {
 
             <PageSection>
                 <Gallery hasGutter minWidths={{ default: '280px' }}>
+                    <GalleryItem>
+                        <FindingsCard
+                            findings={findings}
+                            allFindings={allFindings}
+                            hideInfo={hideInfo}
+                            onHideInfoChange={setHideInfo}
+                            nodeNames={nodeNames}
+                            loaded={nnsLoaded || Boolean(nnsError)}
+                            unavailable={nnsError ? 'NodeNetworkStates could not be read, so node findings are unknown.' : undefined}
+                        />
+                    </GalleryItem>
                     {showLogical && (
                         <GalleryItem>
                             <Card isFullHeight data-testid="overview-collector-card">
@@ -316,6 +362,16 @@ const OvnReconOverview: React.FC = () => {
                                             <Link to={`/ovn-recon/node-network-state/${encodeURIComponent(node.name)}`}>{node.name}</Link>
                                         </Td>
                                         <Td dataLabel="Role">{rolesByNode.get(node.name) ?? ''}</Td>
+                                        <Td dataLabel="Findings" data-testid={`overview-findings-${node.name}`}>
+                                            {findingCounts.has(node.name) && (
+                                                <Link
+                                                    to={nodePagePath(node.name)}
+                                                    aria-label={`${describeCounts(findingCounts.get(node.name)!)} on ${node.name}`}
+                                                >
+                                                    <SeverityCountsInline counts={findingCounts.get(node.name)!} />
+                                                </Link>
+                                            )}
+                                        </Td>
                                         <Td dataLabel="Interfaces">{node.interfacesUp} up / {node.interfacesTotal}</Td>
                                         <Td dataLabel="Bridges">{node.bridges.join(', ')}</Td>
                                         <Td dataLabel="Mappings">{node.bridgeMappings}</Td>

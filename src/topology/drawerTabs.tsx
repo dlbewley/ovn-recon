@@ -9,6 +9,8 @@ import * as yaml from 'js-yaml';
 import type { InterfaceSelector } from '../components/KernelRouteTable';
 import { TopologyEdge } from '../components/nodeVisualizationModel';
 import { useIsDarkTheme } from '../components/useIsDarkTheme';
+import type { Finding } from '../insights/types';
+import { FindingsSection } from '../insights/ui/FindingsViews';
 import { GraphContext } from './context';
 import { baseFacts, FactList, ProvenanceLabel } from './facts';
 import { resolveInterfaceRef } from './ids';
@@ -41,6 +43,12 @@ export interface DrawerTabHooks {
      * absent, every resolvable node is treated as drawn.
      */
     isDrawn?: (id: string) => boolean;
+    /**
+     * The findings to show for a node (ovn-recon-7i6.1), already gated and filtered
+     * for the hide-info choice. When absent, or empty for a node, the Overview tab
+     * draws exactly what it did before.
+     */
+    findingsFor?: (id: string) => Finding[];
 }
 
 /**
@@ -119,6 +127,7 @@ export const buildDrawerTabs = (
             const facts = nodeKindRegistry[node.kind]?.facts?.(node, ctx);
             return (
                 <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
+                    <FindingsSection findings={hooks.findingsFor?.(node.id) ?? []} />
                     <FactList facts={facts ?? baseFacts(node)} selectInterface={interfaceSelector(ctx, hooks)} />
                 </div>
             );
