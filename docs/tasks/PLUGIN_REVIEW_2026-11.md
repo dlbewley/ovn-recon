@@ -114,7 +114,12 @@ trigger it (`ovn-recon-dp7.7`).
   switched from the `OvnRecon` resource and is off by default (`ovn-recon-zdt.7`).
 - On the physical view, selecting a node shrinks the graph to about two thirds, a deep
   link parks it off-centre, and closing the drawer leaves it offset
-  (`ovn-recon-dp7.10`). Dragging on the ladder selects its text (`ovn-recon-nt4.11`).
+  (`ovn-recon-dp7.10`).
+- A second correction: the b0 check also reported that dragging on the ladder selects
+  its text (`ovn-recon-nt4.11`). The maintainer could not reproduce it. It came from
+  one automated drag that pressed and released without moving in between, which a
+  mouse never does; closed as not a defect. Findings from browser automation that
+  involve scrolling or dragging need a human check before they are filed.
 - Small defects from the a9 check: the Policy tab's Match column is squeezed to about
   50 px (`ovn-recon-e2b.13`); the lookup reports only the first matching VIP of a load
   balancer row (`ovn-recon-tpp.9`); network page polish (`ovn-recon-nfs.7`).
@@ -414,6 +419,6 @@ last seventeen rows were added on 2026-11-10 and 2026-11-11.
 | Lookup returns only the first matching VIP of a load balancer row | bug | `ovn-recon-tpp.9` | P3 |
 | Network pages polish found on v1.0.6-a9 | task | `ovn-recon-nfs.7` | P3 |
 | Physical view: selection shrinks and displaces the graph | bug | `ovn-recon-dp7.10` | P2 |
-| Ladder: dragging selects its text | bug | `ovn-recon-nt4.11` | P3 |
+| Ladder: dragging selects its text *(closed, not a defect)* | bug | `ovn-recon-nt4.11` | P3 |
 | Stabilise and cut v1.0.6 from the b-series | task | `ovn-recon-xa7` | P1 |
 | Find in cluster: toolbar entry on the three graph pages | feature | `ovn-recon-tpp.5` | P2 |
