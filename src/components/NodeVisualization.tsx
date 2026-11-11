@@ -27,7 +27,9 @@ import { NodeStatusIcon } from '../topology/statusIcon';
 import { LegendButton, PhysicalLegend } from './GraphLegend';
 import { buildFlowGraph, flowPath } from '../topology/flowPath';
 import { useSelectionDeepLink } from './useSelectParam';
-import { shiftIfNeeded, svgMeetRegion, svgMeetScale, useKeepSelectionVisible, ViewportBox } from './canvasViewport';
+import {
+    narrowedViewBox, shiftIfNeeded, svgMeetRegion, svgMeetScale, useKeepSelectionVisible, ViewportBox
+} from './canvasViewport';
 import { countBySeverity, findingsForGraphNode } from '../insights/selectors';
 import type { Finding } from '../insights/types';
 import { describeCounts, FindingsBadge, findingsBadgeWidth, HideInfoSwitch } from '../insights/ui/FindingsViews';
@@ -52,6 +54,27 @@ const NO_VTEPS: Vtep[] = [];
 
 /** Pointer travel, in CSS pixels, before a press on the background counts as a pan rather than a click. */
 const PAN_DRAG_THRESHOLD_PX = 3;
+
+/**
+ * Marks the drawer content that holds the canvas, so the canvas can measure
+ * how much width the inline drawer panel beside it has taken (ovn-recon-dp7.10).
+ */
+const CANVAS_FRAME_ATTRIBUTE = 'data-canvas-frame'; // written on <DrawerContent> below
+
+/**
+ * The svg's size now and the width it has with the drawer closed: its own
+ * width plus whatever the drawer panel takes from the drawer main beside the
+ * content. Outside a drawer (or unlaid out) the two widths are the same.
+ */
+const measureCanvas = (svg: SVGSVGElement): { size: { width: number; height: number }; fullWidth: number } => {
+    const { width, height } = svg.getBoundingClientRect();
+    const content = svg.closest(`[${CANVAS_FRAME_ATTRIBUTE}]`);
+    const main = content?.parentElement;
+    const panelWidth = content && main
+        ? Math.max(0, main.getBoundingClientRect().width - content.getBoundingClientRect().width)
+        : 0;
+    return { size: { width, height }, fullWidth: width + panelWidth };
+};
 
 /** Corner radius of a node card. */
 const CARD_RADIUS = 6;
@@ -320,10 +343,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     );
 
     /**
-     * True once the user has panned, zoomed, or been centered by drawer
-     * navigation. Until then the viewBox tracks the canvas size, so toggling a
-     * column that GROWS the canvas (NADs, LLDP) does not clip the new content
-     * -- previously only the Reset button recovered from that.
+     * True once the user has panned or zoomed, or a selection panned the view
+     * to show its node. Until then the viewBox tracks the canvas size, so
+     * toggling a column that GROWS the canvas (NADs, LLDP) does not clip the
+     * new content -- previously only the Reset button recovered from that.
      */
     const userAdjustedView = React.useRef<boolean>(false);
     React.useEffect(() => {
@@ -332,6 +355,27 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
             setZoomLevel(1);
         }
     }, [calculatedHeight, width]);
+
+    /**
+     * The viewBox state is the view at the canvas's FULL width, the width it
+     * has with the drawer closed. The inline drawer narrows the svg; drawing
+     * the full viewBox into it would "meet"-fit the whole graph into what is
+     * left and shrink it (ovn-recon-dp7.10). It is drawn instead through
+     * narrowedViewBox: same corner, same scale, cut to the narrower width.
+     */
+    const [canvasWidths, setCanvasWidths] = React.useState<{ width: number; fullWidth: number }>(
+        { width: 0, fullWidth: 0 });
+    const displayedViewBoxOf = (state: ViewportBox): ViewportBox =>
+        narrowedViewBox(state, canvasWidths.width, canvasWidths.fullWidth);
+
+    /**
+     * Where the view was when the drawer opened, so closing it can put back a
+     * pan that only the selection made. Dropped the moment the user pans,
+     * zooms or resets: from then on the view is theirs and closing keeps it.
+     */
+    const viewBeforeSelection = React.useRef<{ x: number; y: number; userAdjusted: boolean } | null>(null);
+    /** True once keeping the selection visible has moved the view since the drawer opened. */
+    const selectionMovedView = React.useRef<boolean>(false);
 
 
     /**
@@ -432,13 +476,18 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     };
 
 
+    /** The user panned or zoomed: the view is theirs, and closing the drawer keeps it. */
+    const userTookTheView = () => {
+        userAdjustedView.current = true;
+        viewBeforeSelection.current = null;
+    };
+
     // Pan/Zoom handlers. Zoom matches the logical ladder views: additive
     // 0.1 steps clamped to [0.3, 2.5], applied about the viewport center —
     // one consistent feel across the physical and logical topology pages.
     const handleZoom = (direction: 1 | -1) => {
         if (!viewBox) return;
-        userAdjustedView.current = true;
-        releaseReveal.current();
+        userTookTheView();
 
         const newZoom = direction > 0
             ? Math.min(2.5, Number((zoomLevel + 0.1).toFixed(2)))
@@ -446,7 +495,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
 
         const newWidth = width / newZoom;
         const newHeight = calculatedHeight / newZoom;
-        const newX = viewBox.x + (viewBox.width - newWidth) / 2;
+        // About the centre of what is drawn, which beside the drawer is
+        // narrower than the full-width viewBox by the same factor.
+        const narrowing = displayedViewBoxOf(viewBox).width / viewBox.width;
+        const newX = viewBox.x + ((viewBox.width - newWidth) * narrowing) / 2;
         const newY = viewBox.y + (viewBox.height - newHeight) / 2;
 
         setViewBox({ x: newX, y: newY, width: newWidth, height: newHeight });
@@ -511,16 +563,16 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                 );
                 if (travelled < PAN_DRAG_THRESHOLD_PX) return;
             }
-            userAdjustedView.current = true;
-            releaseReveal.current();
+            userTookTheView();
             suppressBackgroundClick.current = true;
             const deltaX = event.clientX - panStart.x;
             const deltaY = event.clientY - panStart.y;
 
             if (svgContainerRef.current) {
                 const svgRect = svgContainerRef.current.getBoundingClientRect();
-                const scaleX = viewBox.width / svgRect.width;
-                const scaleY = viewBox.height / svgRect.height;
+                const displayed = displayedViewBoxOf(viewBox);
+                const scaleX = displayed.width / svgRect.width;
+                const scaleY = displayed.height / svgRect.height;
 
                 setViewBox({
                     x: viewBox.x - (deltaX * scaleX),
@@ -544,8 +596,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     const handleZoomOut = () => handleZoom(-1);
     const handleResetZoom = () => {
         // Back to the untouched state: the viewBox resumes tracking canvas growth.
+        // With the drawer open this is the default scale and corner too, the
+        // view drawn narrower beside it; there is no earlier pan left to restore.
         userAdjustedView.current = false;
-        releaseReveal.current();
+        viewBeforeSelection.current = null;
         setViewBox({ x: 0, y: 0, width, height: calculatedHeight });
         setZoomLevel(1);
     };
@@ -595,14 +649,48 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     };
 
     /**
-     * Keep the selection visible beside the inline drawer (ovn-recon-dp7.7):
-     * drawer navigation and deep links centre the node in the visible canvas
-     * and keep it centred while the drawer opens or is resized; a canvas click
-     * pans only when the node is not wholly visible. The visible region is
-     * what the svg actually shows: its viewBox fitted "meet" into its current
-     * size, which shows more than the viewBox along the roomier axis.
+     * Snapshot the view as the drawer opens, and on close put back a pan that
+     * only the selection made (ovn-recon-dp7.10). Declared before the
+     * keep-visible hook so the snapshot is taken before its pan lands.
      */
-    const keepVisible = useKeepSelectionVisible({
+    const drawerOpen = selectedPlacedNode !== undefined;
+    const drawerWasOpen = React.useRef<boolean>(false);
+    React.useEffect(() => {
+        if (drawerOpen === drawerWasOpen.current) return;
+        drawerWasOpen.current = drawerOpen;
+        if (drawerOpen) {
+            const current = viewBox ?? { x: 0, y: 0, width, height: calculatedHeight };
+            viewBeforeSelection.current = { x: current.x, y: current.y, userAdjusted: userAdjustedView.current };
+            selectionMovedView.current = false;
+            return;
+        }
+        const before = viewBeforeSelection.current;
+        const moved = selectionMovedView.current;
+        viewBeforeSelection.current = null;
+        selectionMovedView.current = false;
+        if (!before || !moved) return;
+        userAdjustedView.current = before.userAdjusted;
+        // A view nobody had touched goes back to the default, which also
+        // picks up any growth of the canvas while the drawer was open.
+        setViewBox((previous) => (before.userAdjusted && previous
+            ? { ...previous, x: before.x, y: before.y }
+            : { x: 0, y: 0, width, height: calculatedHeight }));
+    }, [drawerOpen]);
+
+    /**
+     * Keep the selection visible beside the inline drawer (ovn-recon-dp7.7,
+     * ovn-recon-dp7.10). Every selection -- a canvas click, a Relationships
+     * link, a deep link -- and every later resize of the canvas pans only when
+     * the node is not wholly visible, and then only as far as needed; the scale
+     * never changes. The visible region is what the svg actually shows: the
+     * narrowed viewBox fitted "meet" into its current size, which shows more
+     * than the viewBox along the roomier axis.
+     *
+     * The flow path is not fitted. Any pan that keeps the node visible is at
+     * least as long as the minimal one on each axis, so showing more of the
+     * path always costs extra movement, which the user asked us not to make.
+     */
+    const { setCanvas } = useKeepSelectionVisible({
         selectionKey: selectedPlacedNode ? selectedNodeId : null,
         getSelectionBox: () => (selectedNodeId ? nodeBoxOf(selectedNodeId) : null),
         adjustView: (compute) => {
@@ -610,37 +698,49 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
             if (!svg) return;
             // An svg not laid out yet (or in jsdom) reports no size; the
             // region helpers then treat the viewBox itself as what shows.
-            const { width: svgWidth, height: svgHeight } = svg.getBoundingClientRect();
-            const size = { width: svgWidth, height: svgHeight };
+            const { size, fullWidth } = measureCanvas(svg);
             setViewBox((previous) => {
                 const current = previous ?? { x: 0, y: 0, width, height: calculatedHeight };
-                const shift = compute(svgMeetRegion(current, size), 1 / svgMeetScale(current, size));
+                const shown = narrowedViewBox(current, size.width, fullWidth);
+                const shift = compute(svgMeetRegion(shown, size), 1 / svgMeetScale(shown, size));
                 return shiftIfNeeded(current, shift, (state, { dx, dy }) => {
                     userAdjustedView.current = true;
+                    selectionMovedView.current = true;
                     return { ...state, x: state.x + dx, y: state.y + dy };
                 });
             });
         },
     });
-    const releaseReveal = React.useRef(keepVisible.release);
-    releaseReveal.current = keepVisible.release;
-    const { setCanvas } = keepVisible;
-    const svgRef = React.useCallback((element: SVGSVGElement | null) => {
-        svgContainerRef.current = element;
-        setCanvas(element);
-    }, [setCanvas]);
 
     /**
-     * Pan the view to center a node, keeping the zoom. Only drawer navigation
-     * and deep links do this: a hyperlink changes the node under review
-     * invisibly, while a canvas click is on something the user can already
-     * see, and yanking the view then would be disorienting (a click pans only
-     * as far as needed to show the whole node).
+     * Track the canvas width against its full width. Measured synchronously
+     * when the drawer opens or closes, so the first frame beside the drawer
+     * is already at the right scale, and on every later resize (the drawer's
+     * splitter, the window).
      */
-    const centerViewOn = (id: string) => {
-        const box = nodeBoxOf(id);
-        if (box) keepVisible.reveal(id, box);
+    const [svgElement, setSvgElement] = React.useState<SVGSVGElement | null>(null);
+    const syncCanvasWidths = React.useRef<() => void>(() => undefined);
+    syncCanvasWidths.current = () => {
+        const svg = svgContainerRef.current;
+        if (!svg) return;
+        const { size, fullWidth } = measureCanvas(svg);
+        setCanvasWidths((previous) => (previous.width === size.width && previous.fullWidth === fullWidth
+            ? previous
+            : { width: size.width, fullWidth }));
     };
+    React.useLayoutEffect(() => syncCanvasWidths.current(), [drawerOpen]);
+    React.useEffect(() => {
+        if (!svgElement || typeof ResizeObserver === 'undefined') return undefined;
+        const observer = new ResizeObserver(() => syncCanvasWidths.current());
+        observer.observe(svgElement);
+        return () => observer.disconnect();
+    }, [svgElement]);
+
+    const svgRef = React.useCallback((element: SVGSVGElement | null) => {
+        svgContainerRef.current = element;
+        setSvgElement(element);
+        setCanvas(element);
+    }, [setCanvas]);
 
     // Rebuilt each render: the Relationships tab must see the edges of the
     // CURRENT view (lane toggles change them), and closures capture live state.
@@ -654,10 +754,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
             const placed = placedNodeById.get(id);
             return placed ? placed.descriptor.present(placed.item, ctx).label : id;
         },
-        onSelectNode: (id) => {
-            selectNode(id);
-            centerViewOn(id);
-        },
+        onSelectNode: selectNode,
         findingsFor
     });
 
@@ -707,9 +804,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
 
     /**
      * select=<canonical node id> in the URL (ovn-recon-s3t.16). A link restores
-     * through the same path as drawer navigation -- select, light the flow path,
-     * center -- once the canvas draws that node; an id it never draws (a stale
-     * link, or a lane that is toggled off) is ignored.
+     * through the same path as a click -- select, light the flow path, pan only
+     * if the node would be hidden (ovn-recon-dp7.10) -- once the canvas draws
+     * that node; an id it never draws (a stale link, or a lane that is toggled
+     * off) is ignored.
      */
     useSelectionDeepLink<string>({
         selected: selectedPlacedNode ? selectedNodeId : null,
@@ -718,7 +816,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         apply: (id) => {
             selectNode(id);
             setActivePopoverTab('overview');
-            centerViewOn(id);
         },
     });
 
@@ -871,7 +968,10 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
             <CardTitle>OVN Recon - Network Topology</CardTitle>
             <CardBody style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
                 <Drawer isExpanded={!!activeNode} isInline>
-                    <DrawerContent panelContent={activeNode ? panelContent : null}>
+                    <DrawerContent
+                        panelContent={activeNode ? panelContent : null}
+                        data-canvas-frame=""
+                    >
                         <DrawerContentBody style={{ padding: '12px 24px', overflow: 'auto' }}>
                             <Flex style={{ marginBottom: '16px', alignItems: 'center', gap: '16px' }}>
                                 <FlexItem>
@@ -939,7 +1039,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                                 ref={svgRef}
                                 width="100%"
                                 height={calculatedHeight}
-                                viewBox={viewBox ? `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}` : `0 0 ${width} ${calculatedHeight}`}
+                                viewBox={(({ x, y, width: w, height: h }) => `${x} ${y} ${w} ${h}`)(
+                                    displayedViewBoxOf(viewBox ?? { x: 0, y: 0, width, height: calculatedHeight }))}
                                 preserveAspectRatio="xMinYMin meet"
                                 style={{
                                     border: '1px solid var(--pf-t--global--border--color--default)',
