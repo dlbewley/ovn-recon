@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useParams, Link, useLocation } from 'react-router';
+import { useParams, Link, useLocation, useNavigate } from 'react-router';
 import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem, ExpandableSection, Flex, FlexItem } from '@patternfly/react-core';
 import { DocumentTitle, K8sResourceCommon, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import NodeVisualization from './NodeVisualization';
@@ -7,9 +7,12 @@ import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements, SriovNetworkNodeState, Vtep } from '../types';
 import { getRunningRoutes, NODE_VTEPS_ANNOTATION } from './nodeVisualizationSelectors';
 import { MAIN_TABLE_ID } from './kernelRoutes';
-import KernelRouteTable from './KernelRouteTable';
+import KernelRouteTable, { InterfaceSelector } from './KernelRouteTable';
 import { logicalViewPath, physicalViewPath } from './networkPageModel';
-import { readSelectParam } from './useSelectParam';
+import { readSelectParam, withSelectParam } from './useSelectParam';
+import { buildGraphContext } from '../topology/context';
+import { resolveInterfaceRef } from '../topology/ids';
+import { isDrawableNode } from '../topology/lanes';
 
 /** Where the SR-IOV Network Operator keeps its per-node state. */
 const SRIOV_OPERATOR_NAMESPACE = 'openshift-sriov-network-operator';
@@ -33,6 +36,7 @@ interface NodeNetworkStateBodyProps {
  */
 export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({ name, embedded = false }) => {
     const location = useLocation();
+    const navigate = useNavigate();
     const { enabled: ovnCollectorEnabled } = useOvnCollectorFeatureGate();
 
     const watchResource = React.useMemo(() => name ? {
@@ -148,6 +152,29 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({ name
         [nns]
     );
 
+    // An interface in the main routing table selects it in the graph below
+    // (ovn-recon-dp7.8): it writes ?select=, which NodeVisualization follows the
+    // way it follows any deep link, turning on a hidden lane when it must. One
+    // the graph never draws stays plain text.
+    const graphContext = React.useMemo(
+        () => (nns ? buildGraphContext({
+            nns, cudns, udns, nads, routeAdvertisements, enactments, vteps: vteps || undefined,
+            nodeVtepsAnnotation, sriovNodeState: sriovNodeState || undefined,
+        }) : null),
+        [nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation, sriovNodeState]
+    );
+    const selectInterface = React.useMemo<InterfaceSelector | undefined>(() => {
+        if (!graphContext) return undefined;
+        return (interfaceName) => {
+            const id = resolveInterfaceRef(interfaceName, graphContext);
+            if (!id || !isDrawableNode(graphContext, id)) return undefined;
+            return () => navigate(
+                { pathname: location.pathname, search: withSelectParam(location.search, id), hash: location.hash },
+                { replace: true, state: location.state },
+            );
+        };
+    }, [graphContext, navigate, location]);
+
     if (!loaded) {
         return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
     }
@@ -216,7 +243,11 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({ name
                         toggleText="Main routing table"
                         data-testid="main-routing-table"
                     >
-                        <KernelRouteTable routes={mainRoutes} ariaLabel="Main routing table" />
+                        <KernelRouteTable
+                            routes={mainRoutes}
+                            ariaLabel="Main routing table"
+                            selectInterface={selectInterface}
+                        />
                     </ExpandableSection>
                 )}
             </PageSection>

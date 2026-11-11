@@ -31,7 +31,8 @@ jest.mock('./useOvnCollectorFeatureGate', () => ({
 jest.mock('react-router', () => ({
     Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={String(to)}>{children}</a>,
     useParams: () => ({ name: 'worker-routes' }),
-    useLocation: () => ({ pathname: '/ovn-recon/node-network-state/worker-routes' }),
+    useLocation: () => ({ pathname: '/ovn-recon/node-network-state/worker-routes', search: '', hash: '' }),
+    useNavigate: () => jest.fn(),
 }));
 
 // The graph is covered by its own suites; here it only has to stay out of the way.

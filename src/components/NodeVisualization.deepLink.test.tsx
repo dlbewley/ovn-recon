@@ -39,12 +39,12 @@ describe('NodeVisualization deep-linked selection', () => {
         container.remove();
     });
 
-    const render = (entry: string) => {
+    const render = (entry: string, nns = 'primary-cudn-vrf.json') => {
         act(() => {
             root.render(
                 <TestRouter initialEntry={entry} onLocation={(record) => locations.push(record)}>
                     <NodeVisualization
-                        nns={fixture<NodeNetworkState>('nns', 'primary-cudn-vrf.json')}
+                        nns={fixture<NodeNetworkState>('nns', nns)}
                         cudns={fixture<ClusterUserDefinedNetwork[]>('cudn', 'primary-cudn-vrf.json')}
                         udns={[]} nads={[]} routeAdvertisements={[]}
                     />
@@ -77,6 +77,24 @@ describe('NodeVisualization deep-linked selection', () => {
         expect(drawerTitle()).toBeNull();
         expect(nodeGroup('ens192')).not.toBeNull();
         expect(dimmed()).toEqual([]);
+    });
+
+    it('turns on a hidden lane to select a node in it (ovn-recon-tpp.7)', () => {
+        const toggle = () => container.querySelector<HTMLInputElement>('#show-hidden-columns-toggle')!;
+        // An OVS internal port nmstate reports up sits in Logical Interfaces, hidden
+        // by default. (One reported state: ignore is drawn in no view at all.)
+        render('/ovn-recon/node-network-state/worker-1', 'basic-host.json');
+        expect(toggle().checked).toBe(false);
+        expect(nodeGroup('ovn-k8s-mp0')).toBeNull();
+        act(() => root.unmount());
+        root = createRoot(container);
+
+        render('/ovn-recon/node-network-state/worker-1?select=iface:ovn-k8s-mp0', 'basic-host.json');
+        expect(toggle().checked).toBe(true);
+        expect(nodeGroup('ovn-k8s-mp0')).not.toBeNull();
+        expect(drawerTitle()).toContain('ovn-k8s-mp0');
+        expect(dimmed()).not.toContain(nodeGroup('ovn-k8s-mp0'));
+        expect(current().search).toBe('?select=iface:ovn-k8s-mp0');
     });
 
     it('writes a click with replace, keeps other parameters, and removes it on close', () => {

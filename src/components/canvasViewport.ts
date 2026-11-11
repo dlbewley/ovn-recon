@@ -118,6 +118,27 @@ export const svgMeetScale = (viewBox: ViewportBox, size: { width: number; height
     return Math.min(size.width / viewBox.width, size.height / viewBox.height);
 };
 
+/**
+ * The view after a drag of (deltaX, deltaY) screen pixels, so the content follows
+ * the pointer one-for-one. viewBox is the state being panned; displayed is the box
+ * actually drawn through an svg of that size (narrowed when the drawer is open).
+ *
+ * "meet" draws both axes at ONE scale, so one content unit per pixel serves both.
+ * Dividing each axis by its own svg dimension (ovn-recon-d0q) was right only for
+ * the axis that limits the fit: with a canvas narrower than the content, the svg
+ * is width-limited and a vertical drag moved the graph about 0.8 times the pointer.
+ */
+export const pannedViewBox = <B extends ViewportBox>(
+    viewBox: B,
+    displayed: ViewportBox,
+    size: { width: number; height: number },
+    deltaX: number,
+    deltaY: number
+): B => {
+    const unitsPerPixel = 1 / svgMeetScale(displayed, size);
+    return { ...viewBox, x: viewBox.x - deltaX * unitsPerPixel, y: viewBox.y - deltaY * unitsPerPixel };
+};
+
 export interface KeepSelectionVisibleOptions {
     /** Identity of the current selection; null when nothing is selected. */
     selectionKey: string | null;

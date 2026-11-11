@@ -19,7 +19,7 @@ import {
 } from '../topology/types';
 import { buildNodeViewModel } from '../topology/viewModel';
 import { computeEdgeBow, computeNodeOrder, sortByRank } from './nodeVisualizationLayout';
-import { laneOrderingInput, layoutLanes, LaneViewState, PlacedNode } from '../topology/lanes';
+import { laneOrderingInput, laneViewRevealing, layoutLanes, LaneViewState, PlacedNode } from '../topology/lanes';
 import { descriptorFor, iconFor, NodeTypeId, NODE_TYPES, opaqueNodeIds } from '../topology/descriptors';
 import { edgeAppearance } from '../topology/edgeStyles';
 import { STATUS_STYLE, SURFACE } from '../topology/palette';
@@ -28,7 +28,7 @@ import { LegendButton, PhysicalLegend } from './GraphLegend';
 import { buildFlowGraph, flowPath } from '../topology/flowPath';
 import { useSelectionDeepLink } from './useSelectParam';
 import {
-    narrowedViewBox, shiftIfNeeded, svgMeetRegion, svgMeetScale, useKeepSelectionVisible, ViewportBox
+    narrowedViewBox, pannedViewBox, shiftIfNeeded, svgMeetRegion, svgMeetScale, useKeepSelectionVisible, ViewportBox
 } from './canvasViewport';
 import { countBySeverity, findingsForGraphNode } from '../insights/selectors';
 import type { Finding } from '../insights/types';
@@ -571,15 +571,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
             if (svgContainerRef.current) {
                 const svgRect = svgContainerRef.current.getBoundingClientRect();
                 const displayed = displayedViewBoxOf(viewBox);
-                const scaleX = displayed.width / svgRect.width;
-                const scaleY = displayed.height / svgRect.height;
-
-                setViewBox({
-                    x: viewBox.x - (deltaX * scaleX),
-                    y: viewBox.y - (deltaY * scaleY),
-                    width: viewBox.width,
-                    height: viewBox.height
-                });
+                setViewBox(pannedViewBox(viewBox, displayed, svgRect, deltaX, deltaY));
             }
 
             setPanStart({ x: event.clientX, y: event.clientY });
@@ -806,13 +798,23 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
      * select=<canonical node id> in the URL (ovn-recon-s3t.16). A link restores
      * through the same path as a click -- select, light the flow path, pan only
      * if the node would be hidden (ovn-recon-dp7.10) -- once the canvas draws
-     * that node; an id it never draws (a stale link, or a lane that is toggled
-     * off) is ignored.
+     * that node. An id in a lane that is toggled off (an OVS internal port in
+     * Logical Interfaces, ovn-recon-tpp.7) turns that lane on first and resolves
+     * on the next render, once the node is drawn with its edges; an id no view
+     * draws (a stale link) is ignored.
      */
     useSelectionDeepLink<string>({
         selected: selectedPlacedNode ? selectedNodeId : null,
         encode: (id) => id,
-        resolve: (id) => (placedNodeById.has(id) ? id : null),
+        resolve: (id) => {
+            if (placedNodeById.has(id)) return id;
+            const reveal = laneViewRevealing(ctx, laneView, id);
+            if (reveal) {
+                setShowHiddenColumns(reveal.showHiddenColumns);
+                setShowNads(reveal.showNads);
+            }
+            return null;
+        },
         apply: (id) => {
             selectNode(id);
             setActivePopoverTab('overview');

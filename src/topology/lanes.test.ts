@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { buildGraphContext, GraphContext } from './context';
-import { laneOrderingInput, layoutLanes, LaneViewState, PlacedNode } from './lanes';
+import { laneOrderingInput, laneViewRevealing, layoutLanes, LaneViewState, PlacedNode } from './lanes';
 import { descriptorFor } from './descriptors';
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
 
@@ -175,5 +175,22 @@ describe('ordering input is derived from the same table', () => {
 
         expect(hidden.nodeIds).toEqual([]);
         expect(shown.nodeIds.length).toBe(ctx.nads.length);
+    });
+});
+
+/** A deep link to a node behind a lane toggle (ovn-recon-tpp.7). */
+describe('laneViewRevealing', () => {
+    const basicHost = buildGraphContext({ nns: fixture<NodeNetworkState>('nns', 'basic-host.json') });
+
+    it('turns on hidden columns for a port in the Logical Interfaces lane', () => {
+        expect(laneViewRevealing(basicHost, VIEW, 'iface:ovn-k8s-mp0')).toEqual({ ...VIEW, showHiddenColumns: true });
+    });
+
+    it('changes nothing for a node already drawn, or one no view draws', () => {
+        expect(laneViewRevealing(ctx, VIEW, 'iface:ens192')).toBeNull();
+        expect(laneViewRevealing(basicHost, { ...VIEW, showHiddenColumns: true }, 'iface:ovn-k8s-mp0')).toBeNull();
+        expect(laneViewRevealing(ctx, VIEW, 'iface:no-such-nic')).toBeNull();
+        // Reported state: ignore, so classified unmanaged: in no lane at all.
+        expect(laneViewRevealing(ctx, VIEW, 'iface:ovn-k8s-mp0')).toBeNull();
     });
 });
