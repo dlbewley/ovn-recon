@@ -161,3 +161,30 @@ oc exec -n "$APP_NAMESPACE" deployment/"$APP_NAME" -- \
 oc get consoleplugin "$APP_NAME" -o yaml
 oc rollout status deployment/console -n openshift-console
 ```
+
+## Playbook: Console Views
+
+**No OVN Recon tab or action on a Node, CUDN, UDN or NAD page.** Console
+integration is off by default. Check what the operator resolved:
+
+```bash
+oc get ovnrecon ovn-recon -o jsonpath='{.status.effective.consolePlugin.integration}'
+```
+
+Turn the switches on under `spec.consolePlugin.integration` (see
+[OPERATOR.md](../OPERATOR.md#console-integration)). The plugin reads these
+values from the `OvnRecon` resource in the browser, so a user who may not read
+that resource sees neither tabs nor actions. Reload the console page if they do
+not appear after a change.
+
+**"Failed to load module" right after an upgrade.** A console tab that was open
+while the plugin was upgraded can fail to load an OVN Recon page. Reload the
+browser tab.
+
+**Search says the result is partial.** OVN objects are searched by the
+collector. When it is disabled or unreachable, the search covers only each
+node's NodeNetworkState. See the collector playbook above.
+
+**A link opens a view with nothing selected.** The `?select=` value names an
+object that no longer exists, or one in a lane that is hidden (turn on **Show
+hidden columns** or **Show Net Attach Defs** on the physical view).

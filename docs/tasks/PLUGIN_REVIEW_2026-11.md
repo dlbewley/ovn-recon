@@ -30,6 +30,95 @@ Visual polish (a calmer palette, a legend, one toolbar, honest loading states) a
 routing/BGP view round it out. The MCP server stays, but behind the UI work it shares a
 backend with.
 
+## Progress: 2026-11-11, v1.0.6-a6 to b0
+
+Twenty PRs merged in the two days after this review and shipped in v1.0.6-a6 through
+b0. Every row below was checked in a signed-in console unless it says otherwise.
+
+| Bead | What shipped | State |
+|---|---|---|
+| `ovn-recon-dp7.3` | Router NAT folded by intent with pod links, static routes as a sortable table with annotated next hops, and a shared `RuleTable` shell | Closed; confirmed in the console |
+| `ovn-recon-dp7.5` | Ports table fits the drawer, expanded row leads with policy, raw row behind a toggle, drawer opens at half width | Closed; confirmed in the console |
+| `ovn-recon-nt4.5` | Ladder edge labels wrap inside their band; names keep their role suffix | Closed; checked in the console |
+| `ovn-recon-tpp.1` | Collector lookup endpoint for an IP, MAC, CIDR or name across every cached zone | Closed; checked by port-forward, through the plugin's nginx hop and from a console tab |
+| `ovn-recon-0cl` | storedVersions migrator and its RBAC removed from the operator | Closed |
+| `ovn-recon-dp7.2` | Kernel routes as tables in the VRF drawer, "Routes via this interface" on interface drawers, and a main routing table on the node page that marks which default route is in use | Closed; checked in the console (a7) |
+| `ovn-recon-dp7.6` | Services tab: one row per Service, the node's own load balancers first, the cluster-wide ones collapsed, facets, and backends resolved to pods from EndpointSlices | Closed; checked in the console (a7) |
+| `ovn-recon-s3t.16` | `select=` in the URL on all three graph pages, written with replace | Closed; checked in the console (a7) |
+| `ovn-recon-nt4.6` | Ladder search matches the labels it shows; Enter selects the first match, with a count and next/previous | Closed; checked in the console (a7) |
+| `ovn-recon-4b9` | NUL byte removed from `logicalLadderLayout.ts` | Closed |
+| `ovn-recon-dp7.7` | Drawers render beside the graph, not over it; the selection stays visible after a deep link, a search or a click | Closed; checked in the console (a8) |
+| `ovn-recon-tpp.2` | "Find in cluster" on the overview: exact hits first, covering routes folded, links that open the right view with the object selected | Closed; checked in the console (a8) |
+| `ovn-recon-7i6.4` | Findings engine and eight physical rules, no UI yet | Closed; nothing to see until the surfaces land |
+| `ovn-recon-e2b.8` | Construct detail page per switch and router: Overview, Relationships, paginated Ports with policy columns, a Policy tab (ACLs, port groups, address sets), Services, Routes and NAT, Config | Closed; checked in the console (a8, a9) |
+| `ovn-recon-7i6.1` | Findings on the overview (card and node column), as badges on graph nodes, and at the top of the physical drawer with evidence and a remedy | Closed; checked in the console (a9) |
+| `ovn-recon-nfs.1`, `ovn-recon-nfs.2` | Networks list and a page per CUDN, UDN and NAD, with "wired on N of M nodes" and a per-node placement table | Closed; checked in the console (a9) |
+| `ovn-recon-tpp.8` | Search folds a Service VIP to one row with its zone count, and ranks exact names first | Closed; checked in the console (a9) |
+| `ovn-recon-dp7.1` | Drawer layout kit on both drawers: identity header, one-line facts, popover explanations, an Identifiers section, bridge ports grouped by role | Closed; checked in the console (b0) |
+| `ovn-recon-nt4.1`, `ovn-recon-nt4.2` | Neutral node cards with colour kept for state, a network palette without status hues, and a legend on all three graph pages | Closed; checked in the console (b0, light theme). The legend's wording still needs review |
+| `ovn-recon-zdt.7`, `ovn-recon-zdt.1`, `ovn-recon-zdt.2` | An OVN Recon tab and an "Open in OVN Recon" action on Node, CUDN, UDN and NAD pages, behind two `OvnRecon` switches that default to off | Closed. With the switches unset the resource reported both off and the deployed manifest gated all eight extensions; with both on, the tab appears on all four kinds and the action in a Node's menu (b0) |
+
+**What the review missed: the Services tab.** The review never opened it, and no bead
+redesigned it; only its 200-row cap was due to be lifted on the construct detail page.
+Measured on one node switch:
+
+- 345 load balancers flatten to 541 VIP rows for 328 Services. The tab shows the first
+  200, alphabetically.
+- 319 of the 345 arrive through the cluster-wide group that every node switch and
+  gateway router attaches. About 440 of the 541 rows are therefore the same on every
+  construct; only about 100 say anything about the one selected.
+- Two Services take 56 rows each. Nothing says whether a VIP is a ClusterIP, a NodePort
+  or an external address. Backends are bare `ip:port` lines.
+
+`ovn-recon-dp7.6` covered it and shipped in a7: 328 Service rows instead of 541 VIP
+rows, the node's own 19 Services first, the 315 cluster-wide ones collapsed to a count,
+type and "no endpoints" facets, and backends resolved to pods. Backends come from one
+EndpointSlice read per expanded row, not the collector lookup, which would have cost a
+request per address.
+
+**A correction to this review.** It reported that opening the Ports tab scrolled the
+whole page sideways. That was wrong. The reviewing tool scrolls an element into view
+before clicking it, and PatternFly's overlay drawer lets such a scroll move the whole
+page. With plain mouse clicks and keyboard traversal the page stays put, which is why
+the fix's author could not reproduce it. The over-wide table, the raw JSON and the tab
+overflow were real, and the fix stands. The underlying hazard is still worth closing,
+because find-in-page, assistive technology, tests and any future scroll-to-row code can
+trigger it (`ovn-recon-dp7.7`).
+
+**Other things learned.**
+
+- A lookup for one pod address returned 33 hits, 30 of them static routes that merely
+  contain it. The search UI has to lead with exact hits (`ovn-recon-tpp.2`).
+- Labels still overlap where several edges fan out inside one band of the cluster view
+  (`ovn-recon-nt4.10`).
+- Each lookup takes about 1.2 seconds through the console on ten nodes. That is fine
+  for search on Enter, too slow for anything per-row (`ovn-recon-tpp.4`).
+- **The drawer now hides what was just selected.** After a deep link or a search
+  Enter on the ladder, the selected card sits entirely under the half-width drawer;
+  on the physical page the right-hand lanes sit under it too. Search results and
+  findings will send people straight into this, so `ovn-recon-dp7.7` is now P2:
+  render the drawer inline and reveal within the canvas that is left.
+- Smaller drawer polish from the a7 check is collected on `ovn-recon-dp7.9` and
+  `ovn-recon-dp7.8`.
+- Search needs two refinements seen on a8: one ClusterIP returned 40 rows (the same
+  VIP once per load balancer per zone), and a name search ranked 30 substring matches
+  above the ten interfaces with exactly that name (`ovn-recon-tpp.8`).
+- One finding rule is undecided: the EVPN interfaces of a network are down on every
+  node of the lab. Until it is known whether that is normal, the findings surfaces
+  hide `interface-down` for them (`ovn-recon-7i6.2`).
+- The network pages surfaced two more rule candidates, awaiting a decision: a network
+  whose `NetworkCreated` condition is False, and a bridge NAD naming a bridge that
+  exists on no node (`ovn-recon-7i6.2`).
+- Adding tabs and actions to pages OVN Recon does not own changes the console's
+  primary control surface. The rule for that epic is now: every such extension is
+  switched from the `OvnRecon` resource and is off by default (`ovn-recon-zdt.7`).
+- On the physical view, selecting a node shrinks the graph to about two thirds, a deep
+  link parks it off-centre, and closing the drawer leaves it offset
+  (`ovn-recon-dp7.10`). Dragging on the ladder selects its text (`ovn-recon-nt4.11`).
+- Small defects from the a9 check: the Policy tab's Match column is squeezed to about
+  50 px (`ovn-recon-e2b.13`); the lookup reports only the first matching VIP of a load
+  balancer row (`ovn-recon-tpp.9`); network page polish (`ovn-recon-nfs.7`).
+
 ## What to keep doing
 
 - **The lane layout.** Physical-to-logical, left to right, is the product's signature.
@@ -48,7 +137,7 @@ backend with.
 | Gateway router drawer | First screen is Role, Network, Node, OVN name, UUID. NAT shows 10 of 119 rows as `snat <node IP> ⇄ <pod IP>` plus "… and 109 more". Static routes wrap as free text. | `ovn-recon-dp7.1`, `ovn-recon-dp7.3` |
 | VRF drawer | Kernel routes are bullets; `via 0.0.0.0` instead of "on-link"; the default route is not called out; interfaces are not links. | `ovn-recon-dp7.2` |
 | All physical drawers | One-item lists render as bullets; explanations only in native `title` tooltips; links reload the whole console. | `ovn-recon-dp7.1`, `ovn-recon-s3t.18` |
-| Ports tab | Opening it scrolls the page sideways and clips the drawer. The expanded row leads with a 19-line raw JSON editor; the port groups and policies come after. Five tabs overflow the strip. | `ovn-recon-dp7.5` |
+| Ports tab | The table is far wider than the drawer and its columns are clipped. The expanded row leads with a 19-line raw JSON editor; the port groups and policies come after. Five tabs overflow the strip. *(Corrected 2026-11-10: the review first said the page itself scrolled sideways. That was caused by the reviewing tool, not the app; see Progress.)* | `ovn-recon-dp7.5`, `ovn-recon-dp7.7` |
 | Physical graph | Every kind is a saturated fill, so color says nothing about state. No legend. | `ovn-recon-nt4.1`, `ovn-recon-nt4.2` |
 | Ladder | Network bands use PatternFly's danger red and warning gold, so a healthy network reads as broken. Edge labels collide across bands. Names lose their distinguishing suffix. | `ovn-recon-nt4.1`, `ovn-recon-nt4.5` |
 | Ladder search | "node switch" matches nothing on a page full of "Node switch" labels (it searches the raw role id). Matches below the fold stay there. | `ovn-recon-nt4.6` |
@@ -212,15 +301,22 @@ has shipped), `ovn-recon-e2b.2`, `.7`, `.10`, `ovn-recon-s3t.19`, `.27`, `.55`,
 
 ## Suggested order
 
-**Now** (the next two or three prereleases): the bugs (`dp7.5`, `nt4.6`, `nt4.4`,
-`nt4.5`); the drawer kit and the two tables (`dp7.1`, `dp7.2`, `dp7.3`); the findings
-mechanism with the first physical rules (`7i6.1`, `7i6.2`); the construct detail page
-(`e2b.8`, already fully designed and now unblocked).
+Revised 2026-11-11 after v1.0.6-b0. Done or in b0: the drawer tables, fixes and layout
+kit (`dp7.1` to `dp7.3`, `dp7.5` to `dp7.7`), deep links and search (`s3t.16`, `tpp.1`,
+`tpp.2`, `tpp.8`), the detail page (`e2b.8`), the findings engine and surfaces (`7i6.4`,
+`7i6.1`), network pages (`nfs.1`, `nfs.2`), the palette and legend (`nt4.1`, `nt4.2`),
+gated console tabs and actions (`zdt.7`, `zdt.1`, `zdt.2`), and the ladder fixes
+(`nt4.5`, `nt4.6`, `4b9`).
 
-**Next:** deep-linkable selection, the lookup endpoint and search (`s3t.16`, `tpp.1`,
-`tpp.2`); network pages (`nfs.1`, `nfs.2`, `nfs.3`); console tabs, kebab actions and the
-link-out registry (`zdt.1`, `zdt.2`, `zdt.4`); the workload network path (`zdt.3`);
-the palette, legend and toolbar (`nt4.1` to `nt4.3`); the rendering decision (`nt4.7`).
+**Before a 1.0.6 release** (stabilise, add nothing; checklist on `ovn-recon-xa7`): fix
+the defects a new user would meet first (`dp7.10`, `e2b.13`, `nfs.7`, `tpp.9`, `dp7.8`);
+test the upgrade from 1.0.5 on the stable channel; let a release candidate sit for a
+day or two. b0 has been checked in a console and the README screenshots are new.
+
+**Next cycle:** the default network page (`nfs.3`) and the logical rules (`7i6.3`); the
+workload network path and link-out registry (`zdt.3`, `zdt.4`); loading states and the
+status endpoint (`nt4.4`, `1zx`); one toolbar (`nt4.3`); the rendering decision
+(`nt4.7`).
 
 **Later:** BGP (`az0`), Network Observability links and metrics (`vqd`), the overview
 redesign once its parts exist (`nt4.9`), route matching (`tpp.3`), then MCP.
@@ -228,7 +324,10 @@ redesign once its parts exist (`nt4.9`), route matching (`tpp.3`), then MCP.
 ## Decisions for Dale
 
 1. **Seed rules and severities** for Insights (`ovn-recon-7i6.2`, `ovn-recon-7i6.3`):
-   keep, drop or change each row.
+   *decided 2026-11-10.* Nine physical and five logical rules ship as warnings. Not
+   findings: a Localnet mapping on only some nodes, a second default route, Service
+   VIPs without endpoints, an unreferenced mapping, and the stale router-policy
+   leftover. Info findings are shown by default and can be hidden.
 2. **Rendering foundation** (`ovn-recon-nt4.7`): adopt react-topology as the spike
    recommended, or add containers to the custom renderer.
 3. **Wording reviews** flagged on `dp7.2`, `dp7.3`, `nfs.3` and `az0.3`: masquerade
@@ -245,40 +344,41 @@ redesign once its parts exist (`nt4.9`), route matching (`tpp.3`), then MCP.
 ## Initial Beads Backlog Mapping
 
 New epics and children (all `OPEN` as of 2026-11-09). Beads re-parented from older
-epics are marked *(moved)*.
+epics are marked *(moved)*. Rows marked *(done)* were updated on 2026-11-10; the
+last seventeen rows were added on 2026-11-10 and 2026-11-11.
 
 | Work Item | Type | Issue ID | Priority |
 |---|---|---|---|
 | **Drawer redesign** | epic | `ovn-recon-dp7` | P1 |
 | Drawer layout kit: identity header, horizontal facts, popover hints, copyable identifiers | feature | `ovn-recon-dp7.1` | P1 |
-| Kernel route tables as tables | feature | `ovn-recon-dp7.2` | P1 |
-| Logical routers: NAT grouped by intent, static routes as a table | feature | `ovn-recon-dp7.3` | P1 |
+| Kernel route tables as tables *(done)* | feature | `ovn-recon-dp7.2` | P1 |
+| Logical routers: NAT grouped by intent, static routes as a table *(done)* | feature | `ovn-recon-dp7.3` | P1 |
 | Address book: resolve IPs and MACs to owners | feature | `ovn-recon-dp7.4` | P2 |
-| Ports tab overflow; expanded row leads with raw JSON | bug | `ovn-recon-dp7.5` | P1 |
+| Ports tab overflow; expanded row leads with raw JSON *(done)* | bug | `ovn-recon-dp7.5` | P1 |
 | Reachable networks for a selected interface *(moved)* | feature | `ovn-recon-s3t.14` | P2 |
 | Consolidate links onto the SDK ResourceLink *(moved)* | task | `ovn-recon-s3t.18` | P3 |
 | Concept explanations per node and edge kind *(moved)* | feature | `ovn-recon-s3t.33` | P3 |
 | **Insights** | epic | `ovn-recon-7i6` | P1 |
-| Findings model, rule registry and four surfaces | feature | `ovn-recon-7i6.1` | P1 |
-| Seed rules, physical and Kubernetes side | feature | `ovn-recon-7i6.2` | P1 |
-| Seed rules, logical side | feature | `ovn-recon-7i6.3` | P2 |
+| Findings surfaces: drawer, badges, node table, overview card | feature | `ovn-recon-7i6.1` | P1 |
+| Confirmed rules, physical and Kubernetes side | feature | `ovn-recon-7i6.2` | P1 |
+| Confirmed rules, logical side | feature | `ovn-recon-7i6.3` | P2 |
 | Best practices and anti-patterns *(moved)* | feature | `ovn-recon-s3t.35` | P2 |
 | **Visual polish** | epic | `ovn-recon-nt4` | P2 |
 | Neutral node styling and a safe network palette | feature | `ovn-recon-nt4.1` | P2 |
 | Legend | feature | `ovn-recon-nt4.2` | P2 |
 | One view toolbar | feature | `ovn-recon-nt4.3` | P2 |
 | Loading and error states | bug | `ovn-recon-nt4.4` | P2 |
-| Ladder label collisions and name truncation | bug | `ovn-recon-nt4.5` | P2 |
-| Ladder search ignores displayed role labels | bug | `ovn-recon-nt4.6` | P2 |
+| Ladder label collisions and name truncation *(done)* | bug | `ovn-recon-nt4.5` | P2 |
+| Ladder search ignores displayed role labels *(done)* | bug | `ovn-recon-nt4.6` | P2 |
 | Decide the rendering foundation | task | `ovn-recon-nt4.7` | P2 |
 | "Failed to load module" after a plugin upgrade | bug | `ovn-recon-nt4.8` | P3 |
 | Overview redesign | feature | `ovn-recon-nt4.9` | P2 |
 | Collector status endpoint *(moved)* | feature | `ovn-recon-1zx` | P2 |
 | **Find anything** | epic | `ovn-recon-tpp` | P2 |
-| Collector: path-based lookup endpoint | feature | `ovn-recon-tpp.1` | P2 |
-| Search UI | feature | `ovn-recon-tpp.2` | P2 |
+| Collector: path-based lookup endpoint *(done)* | feature | `ovn-recon-tpp.1` | P2 |
+| Search UI *(done)* | feature | `ovn-recon-tpp.2` | P2 |
 | Which route carries this address? | feature | `ovn-recon-tpp.3` | P3 |
-| Deep-linkable selection in all three views *(moved, broadened)* | feature | `ovn-recon-s3t.16` | P2 |
+| Deep-linkable selection in all three views *(moved, broadened, done)* | feature | `ovn-recon-s3t.16` | P2 |
 | **Network pages** | epic | `ovn-recon-nfs` | P2 |
 | Network page shell and overview networks table | feature | `ovn-recon-nfs.1` | P2 |
 | Per-node placement matrix | feature | `ovn-recon-nfs.2` | P2 |
@@ -300,3 +400,20 @@ epics are marked *(moved)*.
 | Research: FRR-K8s read model on 4.22 | task | `ovn-recon-az0.1` | P2 |
 | BGP sessions in the physical view | feature | `ovn-recon-az0.2` | P2 |
 | Route provenance and advertised prefixes | feature | `ovn-recon-az0.3` | P3 |
+| Services tab: one row per Service, node-local first, facets, resolved backends *(done)* | feature | `ovn-recon-dp7.6` | P1 |
+| Ladder: labels of a fan of edges overlap inside one band | bug | `ovn-recon-nt4.10` | P3 |
+| `logicalLadderLayout.ts` contains a raw NUL byte *(done)* | task | `ovn-recon-4b9` | P3 |
+| Overlay drawer hides the selected object and can shift the page *(done)* | bug | `ovn-recon-dp7.7` | P2 |
+| Lookup: in-memory index of cached snapshots | task | `ovn-recon-tpp.4` | P3 |
+| Link interface cells in the main routing table to the graph | feature | `ovn-recon-dp7.8` | P2 |
+| Drawer polish found on v1.0.6-a7 | task | `ovn-recon-dp7.9` | P3 |
+| Findings engine: model, rule registry and evaluator, no UI *(done)* | feature | `ovn-recon-7i6.4` | P1 |
+| Search results: one row per Service VIP, exact names first *(done)* | bug | `ovn-recon-tpp.8` | P2 |
+| CR toggle for console integration: fields, feature flags, gating | feature | `ovn-recon-zdt.7` | P2 |
+| Policy tab: Match column squeezed | bug | `ovn-recon-e2b.13` | P2 |
+| Lookup returns only the first matching VIP of a load balancer row | bug | `ovn-recon-tpp.9` | P3 |
+| Network pages polish found on v1.0.6-a9 | task | `ovn-recon-nfs.7` | P3 |
+| Physical view: selection shrinks and displaces the graph | bug | `ovn-recon-dp7.10` | P2 |
+| Ladder: dragging selects its text | bug | `ovn-recon-nt4.11` | P3 |
+| Stabilise and cut v1.0.6 from the b-series | task | `ovn-recon-xa7` | P1 |
+| Find in cluster: toolbar entry on the three graph pages | feature | `ovn-recon-tpp.5` | P2 |
