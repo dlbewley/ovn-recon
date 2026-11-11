@@ -99,6 +99,19 @@ export const svgMeetRegion = (viewBox: ViewportBox, size: { width: number; heigh
     return { x: viewBox.x, y: viewBox.y, width: size.width / scale, height: size.height / scale };
 };
 
+/**
+ * The viewBox to draw through a canvas the inline drawer has narrowed from
+ * fullWidth to canvasWidth (ovn-recon-dp7.10): the same top-left corner and
+ * the same scale as the full-width canvas, cut to the width that is left.
+ * Without this, "meet" fits the whole viewBox into the narrower svg and the
+ * graph shrinks every time the drawer opens. Height is untouched: the drawer
+ * does not change the canvas height.
+ */
+export const narrowedViewBox = (viewBox: ViewportBox, canvasWidth: number, fullWidth: number): ViewportBox =>
+    (canvasWidth > 0 && fullWidth > canvasWidth
+        ? { ...viewBox, width: (viewBox.width * canvasWidth) / fullWidth }
+        : viewBox);
+
 /** Screen pixels per content unit for that same svg mapping. */
 export const svgMeetScale = (viewBox: ViewportBox, size: { width: number; height: number }): number => {
     if (size.width <= 0 || size.height <= 0 || viewBox.width <= 0 || viewBox.height <= 0) return 1;

@@ -358,7 +358,7 @@ describe('NodeVisualization drawer', () => {
                 .toBeGreaterThan(0);
         });
 
-        it('centers the view on a node reached via Relationships, but not on canvas clicks', () => {
+        it('does not move the view for a visible node reached via Relationships or a canvas click', () => {
             renderPrimary();
             // The canvas svg is the one drawing node rects; every other svg in the
             // document is an icon.
@@ -374,22 +374,14 @@ describe('NodeVisualization drawer', () => {
                 .find((b) => (b.textContent ?? '').trim() === 'br-ex')!;
             act(() => { neighbor.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
 
-            // The view panned so the target node sits at the center, zoom kept.
-            const target = nodeGroups()
-                .find((g) => g.querySelector('title')?.textContent === 'br-ex (ovs-bridge)')!;
-            const [, nodeX, nodeY] = target.getAttribute('transform')!
-                .match(/translate\(([\d.-]+), ([\d.-]+)\)/)!.map(Number);
-            const [viewX, viewY, viewWidth, viewHeight] = svg().getAttribute('viewBox')!
-                .split(' ').map(Number);
-            expect(viewX + viewWidth / 2).toBeCloseTo(nodeX + 80, 0);   // itemWidth / 2
-            expect(viewY + viewHeight / 2).toBeCloseTo(nodeY + 40, 0);  // itemHeight / 2
-            expect(`${viewWidth} ${viewHeight}`)
-                .toBe(beforeNavigation!.split(' ').slice(2).join(' '));
+            // br-ex is already on screen, so the view stays exactly where it
+            // was: no centring (ovn-recon-dp7.10). Off-screen targets are
+            // covered in NodeVisualization.reveal.test.tsx.
+            expect(drawerTitle()).toBe('br-ex');
+            expect(svg().getAttribute('viewBox')).toBe(beforeNavigation);
 
-            // A canvas click selects without yanking the view.
-            const panned = svg().getAttribute('viewBox');
             clickNode('ens192 (ethernet)');
-            expect(svg().getAttribute('viewBox')).toBe(panned);
+            expect(svg().getAttribute('viewBox')).toBe(beforeNavigation);
         });
 
         it('shows an explicit empty state when no relationships are derived', () => {

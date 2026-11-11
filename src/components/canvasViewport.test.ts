@@ -2,6 +2,7 @@ import {
     centreShift,
     containShift,
     isBoxVisible,
+    narrowedViewBox,
     svgMeetRegion,
     svgMeetScale,
     translateScaleRegion,
@@ -47,5 +48,19 @@ describe('canvasViewport geometry', () => {
         expect(svgMeetRegion(viewBox, { width: 2000, height: 400 })).toEqual({ x: 10, y: 20, width: 4000, height: 800 });
         // Not laid out: the viewBox itself.
         expect(svgMeetRegion(viewBox, { width: 0, height: 0 })).toEqual(viewBox);
+    });
+
+    it('keeps the scale of a meet-fitted svg the inline drawer narrows (ovn-recon-dp7.10)', () => {
+        const viewBox = { x: 40, y: 30, width: 1600, height: 800 };
+        const full = { width: 1300, height: 800 };
+        const narrowed = { width: 860, height: 800 };
+        const drawn = narrowedViewBox(viewBox, narrowed.width, full.width);
+        // Same corner and height, cut to the width that is left ...
+        expect(drawn).toEqual({ x: 40, y: 30, width: 1600 * 860 / 1300, height: 800 });
+        // ... so the screen scale is what the full-width canvas had.
+        expect(svgMeetScale(drawn, narrowed)).toBeCloseTo(svgMeetScale(viewBox, full), 10);
+        // Drawer closed, or nothing measured yet: unchanged.
+        expect(narrowedViewBox(viewBox, 1300, 1300)).toBe(viewBox);
+        expect(narrowedViewBox(viewBox, 0, 0)).toBe(viewBox);
     });
 });
