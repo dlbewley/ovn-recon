@@ -1,5 +1,7 @@
 import { GraphContext } from './context';
+import { FOOT_GRID_ROLES, roleOf } from './classify';
 import { AnyNodeTypeDescriptor, descriptorsInLane } from './descriptors';
+import { resolveNodeId } from './ids';
 
 /**
  * The lanes of the physical topology graph, as one ordered table.
@@ -275,3 +277,52 @@ export const laneOrderingInput = (
     });
     return { lanes, groupRankById };
 };
+
+/**
+ * The view that draws a node the current view hides behind a lane toggle, or null
+ * when the current view already draws it or no toggle would (an unknown id, the
+ * catch-all grid, an LLDP neighbour, whose toggle is offered only with LLDP data).
+ *
+ * A deep link (?select=) can name a node in a lane that is toggled off: an OVS
+ * internal port such as ovn-k8s-mp0 sits in the Logical Interfaces lane, hidden by
+ * default. The physical view turns on the lane this returns and then applies the
+ * selection, instead of opening with nothing selected.
+ */
+export const laneViewRevealing = (
+    ctx: GraphContext,
+    view: LaneViewState,
+    id: string
+): LaneViewState | null => {
+    const holds = (items: unknown[], descriptor: AnyNodeTypeDescriptor): boolean =>
+        items.some((item) => descriptor.id(item, ctx) === id);
+    const lane = LANES.find((candidate) => !candidate.customLayout && descriptorsInLane(candidate.id)
+        .some((descriptor) => holds(descriptor.items(ctx), descriptor)));
+    if (!lane) return null;
+    const draws = (candidate: LaneViewState): boolean => {
+        const contents = laneContents(lane, ctx, candidate);
+        const count = contents.reduce((n, c) => n + c.items.length, 0);
+        return lane.visible(ctx, candidate, count)
+            && contents.some(({ descriptor, items }) => holds(items, descriptor));
+    };
+    if (draws(view)) return null;
+    // Fewest toggles first, so a link turns on only what it needs.
+    const candidates: LaneViewState[] = [
+        { ...view, showHiddenColumns: true },
+        { ...view, showNads: true },
+        { ...view, showHiddenColumns: true, showNads: true },
+    ];
+    return candidates.find(draws) ?? null;
+};
+
+/**
+ * Whether the physical view draws this id in its default view or behind a lane
+ * toggle a deep link turns on (laneViewRevealing): a laned node, or an interface
+ * in the catch-all grid at the foot of the canvas. For links from outside the
+ * canvas, such as the node page's main routing table (ovn-recon-dp7.8), which
+ * should stay plain text when following them would select nothing.
+ */
+export const isDrawableNode = (ctx: GraphContext, id: string): boolean =>
+    LANES.some((lane) => !lane.customLayout && descriptorsInLane(lane.id)
+        .some((descriptor) => descriptor.items(ctx).some((item) => descriptor.id(item, ctx) === id)))
+    || ctx.interfaces.some((iface) =>
+        FOOT_GRID_ROLES.includes(roleOf(iface, ctx)) && resolveNodeId(iface, iface.type, ctx) === id);
