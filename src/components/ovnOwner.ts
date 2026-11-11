@@ -1,4 +1,5 @@
 import { LogicalDatabase } from '../types';
+import type { LinkTarget } from '../linkOut/registry';
 import { getProjectPath, getResourcePath } from '../topology/links';
 import { DEFAULT_NETWORK } from './logicalClassification';
 
@@ -192,6 +193,24 @@ export const ownerTarget = (owner: OvnOwner | undefined, roleOf?: NetworkRoleRes
     }
     return undefined;
 };
+
+/**
+ * The owner's Kubernetes object as a link-out target (ovn-recon-zdt.4): the
+ * registry picks the page, so a NetworkPolicy opens on whichever plugin owns
+ * that page in this console. A namespace opens as its Project.
+ */
+export const ownerLinkTarget = (target: OwnerTarget): LinkTarget =>
+    target.kind === 'Namespace' && !target.namespace
+        ? { type: 'namespace', name: target.name }
+        : {
+            type: 'resource',
+            ref: {
+                apiVersion: target.apiVersion,
+                kind: target.kind,
+                name: target.name,
+                ...(target.namespace ? { namespace: target.namespace } : {}),
+            },
+        };
 
 /** The console path of the owner's Kubernetes object, when it has one. */
 export const ownerLink = (owner: OvnOwner | undefined, roleOf?: NetworkRoleResolver): string | undefined =>

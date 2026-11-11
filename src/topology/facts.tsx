@@ -4,7 +4,8 @@ import {
     CopyValue, FactRow, FactRows, InferredLabel, InfoPopover, isCopyableAddress, ValueList, WideFactRow
 } from '../components/drawerKit';
 import { InterfaceSelector, KernelRouteTable } from '../components/KernelRouteTable';
-import { getResourcePath } from './links';
+import { ConsoleLink } from '../linkOut/LinkOut';
+import { LinkTarget, resourceTarget } from '../linkOut/registry';
 import { Fact, FactItem, FactTable, NodeViewModel, Provenance } from './types';
 
 /**
@@ -40,10 +41,20 @@ const subtle: React.CSSProperties = { color: 'var(--pf-t--global--text--color--s
 const renderText = (text: string): React.ReactNode =>
     isCopyableAddress(text) ? <CopyValue value={text} /> : text;
 
+const LINK_CLASS = 'pf-v6-c-button pf-m-link pf-m-inline';
+
+/** Where a fact item links: all three forms go through the link-out registry. */
+const itemTarget = (item: FactItem): LinkTarget | undefined => {
+    if (item.target) return item.target;
+    if (item.ref) return resourceTarget(item.ref);
+    return item.href ? { type: 'path', path: item.href } : undefined;
+};
+
 const renderItem = (item: FactItem) => {
-    const href = item.ref ? getResourcePath(item.ref) : item.href;
-    const main = href
-        ? <a href={href} className="pf-v6-c-button pf-m-link pf-m-inline">{item.text}</a>
+    const target = itemTarget(item);
+    // No page for the target on this console: the text alone, as any other value.
+    const main = target
+        ? <ConsoleLink target={target} className={LINK_CLASS}>{item.text}</ConsoleLink>
         : renderText(item.text);
     if (!item.detail) return main;
     return (
@@ -96,7 +107,7 @@ const renderValue = (fact: Fact, hooks: FactRenderHooks) => {
     }
     if (typeof fact.value === 'string') {
         return fact.ref
-            ? <a href={getResourcePath(fact.ref)} className="pf-v6-c-button pf-m-link pf-m-inline">{fact.value}</a>
+            ? <ConsoleLink target={resourceTarget(fact.ref)} className={LINK_CLASS}>{fact.value}</ConsoleLink>
             : renderText(fact.value);
     }
     if (fact.value.length === 0) {

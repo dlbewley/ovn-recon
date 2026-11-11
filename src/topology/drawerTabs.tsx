@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { Button } from '@patternfly/react-core';
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
-import { ExternalLinkAltIcon } from '@patternfly/react-icons';
 import * as yaml from 'js-yaml';
 
 import type { InterfaceSelector } from '../components/KernelRouteTable';
@@ -9,6 +8,9 @@ import { TopologyEdge } from '../components/nodeVisualizationModel';
 import { useIsDarkTheme } from '../components/useIsDarkTheme';
 import type { Finding } from '../insights/types';
 import { FindingsSection } from '../insights/ui/FindingsViews';
+import { ConsoleLink, LinkOutProvider, SecondaryLinks } from '../linkOut/LinkOut';
+import { LinkTarget, resourceTarget } from '../linkOut/registry';
+import { Interface } from '../types';
 import { GraphContext } from './context';
 import {
     FactRow, FactRows, IdentifiersSection, InferredLabel, InfoPopover, ValueList
@@ -17,7 +19,7 @@ import { physicalIdentifiers } from './drawerIdentity';
 import { baseFacts, FactList } from './facts';
 import { resolveInterfaceRef } from './ids';
 import { nodeKindRegistry } from './registry';
-import { DrawerTabDefinition, DrawerTabId } from './types';
+import { DrawerTabDefinition, DrawerTabId, NodeViewModel } from './types';
 
 /**
  * The three drawer tabs (ovn-recon-s3t.13).
@@ -25,8 +27,9 @@ import { DrawerTabDefinition, DrawerTabId } from './types';
  * Overview is the facts -- Summary was a near-strict subset of Details, so the
  * split earned nothing and is gone. Relationships lists the selected node's
  * neighbors as clickable entries that move the selection, turning the drawer
- * from a leaf view into a navigation instrument. Config is the YAML plus the
- * console resource link.
+ * from a leaf view into a navigation instrument. Config is the YAML. Overview
+ * and Config both end with the links out to the console pages that own the
+ * selection, resolved by the link-out registry.
  */
 export const DRAWER_TAB_IDS: DrawerTabId[] = ['overview', 'relationships', 'config'];
 
@@ -87,6 +90,66 @@ const ThemedYamlEditor: React.FC<{ code: string }> = ({ code }) => {
     );
 };
 
+/** Kinds whose raw item is one interface of the node's NodeNetworkState. */
+const NNS_BACKED_KINDS = new Set(['interface', 'vrf', 'ovn-mapping', 'other']);
+
+/**
+ * The console page that owns the selection (ovn-recon-zdt.4). A network or a
+ * NAD is its own resource. An interface, a VRF and a bridge mapping are entries
+ * in the node's NodeNetworkState, so that is the resource they open.
+ */
+export const ownerTarget = (node: NodeViewModel, ctx: GraphContext): LinkTarget | undefined => {
+    if (node.resourceRef) return resourceTarget(node.resourceRef);
+    const nodeName = ctx.nns?.metadata?.name;
+    return nodeName && NNS_BACKED_KINDS.has(node.kind)
+        ? resourceTarget({ apiVersion: 'nmstate.io/v1beta1', kind: 'NodeNetworkState', name: nodeName })
+        : undefined;
+};
+
+/** Pages beside the owner: nmstate's topology for an interface, Physical networks for a mapping. */
+export const elsewhereTarget = (node: NodeViewModel, ctx: GraphContext): LinkTarget | undefined => {
+    const nodeName = ctx.nns?.metadata?.name;
+    if (node.kind === 'interface') {
+        const raw = node.raw as Interface | undefined;
+        return nodeName && raw?.name && raw.type
+            ? { type: 'node-interface', node: nodeName, name: raw.name, interfaceType: raw.type }
+            : undefined;
+    }
+    if (node.kind === 'ovn-mapping' && typeof node.raw?.localnet === 'string') {
+        return { type: 'physical-network', name: node.raw.localnet };
+    }
+    return undefined;
+};
+
+/**
+ * The foot of the Overview and Config tabs: where else in the console this
+ * selection lives. Every link is in-app and absent when its page is not there.
+ */
+const ElsewhereLinks: React.FC<{ node: NodeViewModel; ctx: GraphContext }> = ({ node, ctx }) => {
+    const owner = ownerTarget(node, ctx);
+    const elsewhere = elsewhereTarget(node, ctx);
+    if (!owner && !elsewhere) return null;
+    return (
+        <div
+            data-testid="elsewhere-links"
+            style={{
+                flex: '0 0 auto',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '0 1em',
+                padding: 'var(--pf-t--global--spacer--md)',
+                borderTop: '1px solid var(--pf-t--global--border--color--default)',
+                backgroundColor: 'var(--pf-t--global--background--color--primary--default)'
+            }}
+        >
+            <ConsoleLink target={owner} hideWhenAbsent data-testid="owner-link">View resource in console</ConsoleLink>
+            {elsewhere?.type === 'physical-network'
+                ? <ConsoleLink target={elsewhere} hideWhenAbsent>Open in Physical networks</ConsoleLink>
+                : <SecondaryLinks target={elsewhere} />}
+        </div>
+    );
+};
+
 interface Neighbor {
     id: string;
     edge: TopologyEdge;
@@ -128,11 +191,14 @@ export const buildDrawerTabs = (
         render: (node) => {
             const facts = nodeKindRegistry[node.kind]?.facts?.(node, ctx);
             return (
-                <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
-                    <FindingsSection findings={hooks.findingsFor?.(node.id) ?? []} />
-                    <FactList facts={facts ?? baseFacts(node)} selectInterface={interfaceSelector(ctx, hooks)} />
-                    <IdentifiersSection identifiers={physicalIdentifiers(node)} />
-                </div>
+                <LinkOutProvider>
+                    <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
+                        <FindingsSection findings={hooks.findingsFor?.(node.id) ?? []} />
+                        <FactList facts={facts ?? baseFacts(node)} selectInterface={interfaceSelector(ctx, hooks)} />
+                        <IdentifiersSection identifiers={physicalIdentifiers(node)} />
+                    </div>
+                    <ElsewhereLinks node={node} ctx={ctx} />
+                </LinkOutProvider>
             );
         }
     },
@@ -167,44 +233,21 @@ export const buildDrawerTabs = (
         id: 'config',
         title: 'Config',
         render: (node) => (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-                {node.raw && (
-                    <>
-                        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-t--global--border--color--default)' }}>
-                            <ThemedYamlEditor code={yaml.dump(node.raw)} />
-                        </div>
-                        <div style={{ flex: '0 0 auto', padding: 'var(--pf-t--global--spacer--md)', backgroundColor: 'var(--pf-t--global--background--color--primary--default)' }}>
-                            <ExternalLinkAltIcon style={{ marginRight: 'var(--pf-t--global--spacer--sm)' }} />
-                            <a
-                                href={(() => {
-                                    if (node.resourceRef) {
-                                        const resourceId = node.resourceRef.apiVersion
-                                            ? `${node.resourceRef.apiVersion.replace('/', '~')}~${node.resourceRef.kind}`
-                                            : node.resourceRef.kind;
-                                        const base = node.resourceRef.namespace
-                                            ? `/k8s/ns/${node.resourceRef.namespace}`
-                                            : '/k8s/cluster';
-                                        return `${window.location.origin}${base}/${resourceId}/${node.resourceRef.name}/yaml`;
-                                    }
-                                    const namespace = node.raw?.metadata?.namespace;
-                                    const resourceId = node.kind === 'other' || node.kind === 'interface' || node.kind === 'ovn-mapping'
-                                        ? 'nodenetworkstates.nmstate.io'
-                                        : 'clusteruserdefinednetworks.k8s.cni.cncf.io';
-                                    const base = namespace ? `/k8s/ns/${namespace}` : '/k8s/cluster';
-                                    return `${window.location.origin}${base}/${resourceId}/${node.raw.metadata?.name}/yaml`;
-                                })()}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                View Resource in Console
-                            </a>
-                        </div>
-                    </>
-                )}
-                {!node.raw && (
-                    <span style={{ fontSize: '0.9em', color: 'var(--pf-t--global--text--color--subtle)', padding: '16px' }}>No YAML content available.</span>
-                )}
-            </div>
+            <LinkOutProvider>
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+                    {node.raw && (
+                        <>
+                            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', borderBottom: '1px solid var(--pf-t--global--border--color--default)' }}>
+                                <ThemedYamlEditor code={yaml.dump(node.raw)} />
+                            </div>
+                            <ElsewhereLinks node={node} ctx={ctx} />
+                        </>
+                    )}
+                    {!node.raw && (
+                        <span style={{ fontSize: '0.9em', color: 'var(--pf-t--global--text--color--subtle)', padding: '16px' }}>No YAML content available.</span>
+                    )}
+                </div>
+            </LinkOutProvider>
         )
     }
 });

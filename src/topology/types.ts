@@ -6,6 +6,7 @@ import {
     ClusterUserDefinedNetwork,
     UserDefinedNetwork
 } from '../types';
+import type { LinkTarget } from '../linkOut/registry';
 
 /**
  * The kinds of thing the physical topology graph can draw.
@@ -91,11 +92,16 @@ export interface NodeViewModel {
  */
 export type Provenance = 'observed' | 'declared' | 'inferred';
 
-/** One entry of a list-valued fact. `ref` links to a resource, `href` anywhere else. */
+/**
+ * One entry of a list-valued fact. `ref` links to a resource, `href` to a console
+ * path built elsewhere, and `target` to whatever the link-out registry resolves it
+ * to on this console (nothing, when the page is not there).
+ */
 export interface FactItem {
     text: string;
     ref?: ResourceRef;
     href?: string;
+    target?: LinkTarget;
     /** A second, subtle line under the item: the raw name behind a label, or an address. */
     detail?: string;
 }

@@ -24,7 +24,7 @@ describe('physical identity header (ovn-recon-dp7.1)', () => {
             name: 'br-ex',
             kind: 'ovs-bridge',
             state: { text: 'up', status: 'success' },
-            chips: [{ kind: 'Node', value: 'worker-1', href: '/k8s/cluster/core~v1~Node/worker-1' }]
+            chips: [{ kind: 'Node', value: 'worker-1', target: { type: 'resource', ref: { apiVersion: 'v1', kind: 'Node', name: 'worker-1' } } }]
         });
     });
 
@@ -36,7 +36,10 @@ describe('physical identity header (ovn-recon-dp7.1)', () => {
         expect(identity.chips?.[1]).toEqual({
             kind: 'Network',
             value: 'example-p-cudn',
-            href: '/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/example-p-cudn',
+            target: {
+                type: 'resource',
+                ref: { apiVersion: 'k8s.ovn.org/v1', kind: 'ClusterUserDefinedNetwork', name: 'example-p-cudn' }
+            },
             inferred: true
         });
     });

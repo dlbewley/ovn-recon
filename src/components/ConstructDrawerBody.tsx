@@ -45,6 +45,7 @@ import {
 import { configPayloadFor, ovnKindFor } from './ovnKindRegistry';
 import {
     describeOwner,
+    ownerLinkTarget,
     networkOfController,
     networkRoleResolverFor,
     NetworkRoleResolver,
@@ -72,7 +73,8 @@ import {
 } from './serviceIndex';
 import { useIsDarkTheme } from './useIsDarkTheme';
 import { useOptionalSections } from './useOptionalSections';
-import { getResourcePath } from '../topology/links';
+import { ConsoleLink, LinkOutProvider } from '../linkOut/LinkOut';
+import { resourceTarget } from '../linkOut/registry';
 import DrawerTabStrip from './DrawerTabStrip';
 import { NatRuleTable, StaticRouteTable } from './RouterRuleTables';
 import ServicesView, { Surface } from './ServiceTables';
@@ -279,8 +281,8 @@ const WorkloadPortList: React.FC<{ construct: LadderConstruct }> = ({ construct 
             {shown.map((port) => (
                 <div key={port.name}>
                     {port.namespace && port.pod ? (
-                        <Link
-                            to={getResourcePath({
+                        <ConsoleLink
+                            target={resourceTarget({
                                 apiVersion: 'v1',
                                 kind: 'Pod',
                                 namespace: port.namespace,
@@ -288,7 +290,7 @@ const WorkloadPortList: React.FC<{ construct: LadderConstruct }> = ({ construct 
                             })}
                         >
                             {port.namespace}/{port.pod}
-                        </Link>
+                        </ConsoleLink>
                     ) : (
                         <code>{port.name}</code>
                     )}
@@ -649,11 +651,7 @@ export const OwnerNetwork: React.FC<{ owner?: OvnOwner }> = ({ owner }) => {
         return owner?.controller ? <code>{owner.controller}</code> : <span style={SUBTLE_TEXT}>—</span>;
     }
     const ref = networkResourceRef(network);
-    return ref ? (
-        <Link to={getResourcePath(ref)}>{networkDisplayName(network)}</Link>
-    ) : (
-        <>{networkDisplayName(network)}</>
-    );
+    return <ConsoleLink target={ref && resourceTarget(ref)}>{networkDisplayName(network)}</ConsoleLink>;
 };
 
 /**
@@ -665,7 +663,9 @@ export const OwnerNetwork: React.FC<{ owner?: OvnOwner }> = ({ owner }) => {
 export const OwnerName: React.FC<{ owner?: OvnOwner; roleOf: NetworkRoleResolver }> = ({ owner, roleOf }) => {
     const description = describeOwner(owner, roleOf);
     if (!description.name) return <span style={SUBTLE_TEXT}>—</span>;
-    if (description.target) return <Link to={description.target.path}>{description.name}</Link>;
+    if (description.target) {
+        return <ConsoleLink target={ownerLinkTarget(description.target)}>{description.name}</ConsoleLink>;
+    }
     return (
         <span>
             {description.name}
@@ -915,12 +915,12 @@ const CodeLines: React.FC<{ items?: string[] }> = ({ items }) =>
 
 const PortName: React.FC<{ port: LadderPort }> = ({ port }) =>
     port.namespace && port.pod ? (
-        <Link
-            to={getResourcePath({ apiVersion: 'v1', kind: 'Pod', namespace: port.namespace, name: port.pod })}
+        <ConsoleLink
+            target={resourceTarget({ apiVersion: 'v1', kind: 'Pod', namespace: port.namespace, name: port.pod })}
             title={port.name}
         >
             {port.namespace}/<wbr />{port.pod}
-        </Link>
+        </ConsoleLink>
     ) : (
         <code>{port.name}</code>
     );
@@ -1396,8 +1396,11 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps & {
         (activeTab === 'ports' && !showPorts) || (activeTab === 'services' && !showServices) ? 'overview' : activeTab;
     const bodyProps: DrawerBodyProps = { ...props, services, policy };
 
+    // One read of what the console has loaded, shared by every link below
+    // (ovn-recon-zdt.4): owners, networks, pods and Services all resolve
+    // through the link-out registry.
     return (
-        <>
+        <LinkOutProvider>
             {showIdentity && (
                 <div className="pf-u-px-lg pf-u-pb-sm" data-testid="construct-identity">
                     <DrawerIdentity
@@ -1420,7 +1423,7 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps & {
                 {effectiveTab === 'services' && <ServicesBody key={props.construct.uuid} {...bodyProps} />}
                 {effectiveTab === 'config' && <ConfigBody {...bodyProps} />}
             </DrawerPanelBody>
-        </>
+        </LinkOutProvider>
     );
 };
 

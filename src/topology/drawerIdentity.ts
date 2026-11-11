@@ -3,7 +3,7 @@ import { interfaceStateStatus } from '../components/drawerKit';
 import { findPrimaryNetworkForVrf } from '../components/nodeVisualizationSelectors';
 import { Interface } from '../types';
 import { GraphContext } from './context';
-import { getResourcePath } from './links';
+import { resourceTarget } from '../linkOut/registry';
 import { nodeKindRegistry } from './registry';
 import { AttachmentNode, NodeViewModel, ResourceRef } from './types';
 
@@ -33,22 +33,22 @@ const networkChip = (node: NodeViewModel, ctx: GraphContext): ContextChip | unde
         // network's own status is declared.
         const inferred = !primary.signals.includes('status');
         return primary.kind === 'cudn'
-            ? { kind: 'Network', value: primary.name, href: getResourcePath(cudnRef(primary.name)), inferred }
+            ? { kind: 'Network', value: primary.name, target: resourceTarget(cudnRef(primary.name)), inferred }
             : {
                 kind: 'Network',
                 value: `${primary.namespace}/${primary.name}`,
-                href: getResourcePath(udnRef(primary.namespace ?? 'default', primary.name)),
+                target: resourceTarget(udnRef(primary.namespace ?? 'default', primary.name)),
                 inferred
             };
     }
     if (node.kind === 'attachment') {
         const attachment = node.raw as AttachmentNode | undefined;
         if (attachment?.cudn) {
-            return { kind: 'Network', value: attachment.cudn, href: getResourcePath(cudnRef(attachment.cudn)) };
+            return { kind: 'Network', value: attachment.cudn, target: resourceTarget(cudnRef(attachment.cudn)) };
         }
         if (attachment?.udn) {
             const { namespace, name } = attachment.udn;
-            return { kind: 'Network', value: `${namespace}/${name}`, href: getResourcePath(udnRef(namespace, name)) };
+            return { kind: 'Network', value: `${namespace}/${name}`, target: resourceTarget(udnRef(namespace, name)) };
         }
     }
     return undefined;
@@ -71,7 +71,7 @@ export const physicalIdentity = (
             ? { text: rawState, status: interfaceStateStatus(rawState) }
             : undefined,
         chips: [
-            ...(nodeName ? [{ kind: 'Node', value: nodeName, href: getResourcePath(nodeRef(nodeName)) }] : []),
+            ...(nodeName ? [{ kind: 'Node', value: nodeName, target: resourceTarget(nodeRef(nodeName)) }] : []),
             ...(network ? [network] : [])
         ]
     };

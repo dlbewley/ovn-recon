@@ -2,7 +2,7 @@ import type { DrawerIdentityProps, Identifier } from './drawerKit';
 import { DEFAULT_NETWORK, networkResourceRef } from './logicalClassification';
 import { LadderConstruct } from './logicalLadderModel';
 import { networkDisplayName, roleLabel } from './LogicalLadderView';
-import { getResourcePath } from '../topology/links';
+import { resourceTarget } from '../linkOut/registry';
 
 /**
  * The logical drawer's identity header and Identifiers as data
@@ -44,7 +44,7 @@ export const constructIdentity = (
             {
                 kind: 'Network',
                 value: `${networkDisplayName(construct.network)}${construct.topology ? ` (${construct.topology})` : ''}`,
-                to: networkRef ? getResourcePath(networkRef) : undefined,
+                target: networkRef ? resourceTarget(networkRef) : undefined,
             },
         ],
     };
