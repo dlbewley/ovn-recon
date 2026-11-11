@@ -1,60 +1,132 @@
-# Node Visualization Summary
+# Physical Node Visualization
 
-> [!WARNING]
-> **This document predates the v1.0.2 visualization rework and is stale.**
-> The implementation it describes — seven hand-built columns, per-type render
-> branches, an unused `nads` prop — no longer exists. The current architecture
-> is a descriptor table (`src/topology/descriptors.tsx`) feeding a lane layout
-> (`src/topology/lanes.ts`), typed relationship edges
-> (`src/components/nodeVisualizationModel.ts`), and a drawer built from facts
-> with provenance (`src/topology/registry.ts`). Trust the code and its module
-> comments over this page. A rewrite is tracked as ovn-recon-s3t.22 and lands
-> with the container-layout rework (ovn-recon-s3t.21).
+This document explains the **physical topology view** at
+`/ovn-recon/node-network-state/:name`: what it draws, where each thing comes
+from, and how far to trust each line. Its logical-view counterpart is
+[readme-logical-visualization.md](readme-logical-visualization.md).
 
-This document outlines the items represented in the `NodeVisualization` component, including their data sources and the relationships between them.
+<a href="img/physical-topology.png"><img src="img/physical-topology.png" width="80%" alt="Physical topology of a node" /></a>
 
-## Data Sources
+## What the view is for
 
-The visualization is driven by three main props passed to the component:
+One node's network as **nmstate** reports it, read left to right from the wire
+to the workloads: physical interfaces, what is built on them (bonds, VLANs,
+bridges), the names OVN uses for those bridges, and the networks and namespaces
+that ride on them. It answers "which networks does this NIC carry?" and "what
+is this network standing on, on this node?".
 
-1.  **`nns` (NodeNetworkState)**: The primary source for network interface status and OVN configuration on the node.
-2.  **`cudns` (ClusterUserDefinedNetwork)**: A list of cluster-wide network definitions.
-3.  **`nads` (NetworkAttachmentDefinition)**: *Note: Passed as a prop but currently unused in the visualization logic.*
+The view stops where OVN-Kubernetes takes over. What OVN builds inside its
+northbound database (logical switches, routers, ports) is the logical view.
 
-## Visualized Items (Columns)
+## Data sources
 
-The visualization is organized into 7 distinct layers (columns), processed from left to right:
+Everything is read from the Kubernetes API with live watches. No agent runs on
+the node.
 
-| Layer | Item Type | Source Field | Description |
-| :--- | :--- | :--- | :--- |
-| **1** | **Physical Interfaces** | `nns.status.currentState.interfaces` | Interfaces with `type: 'ethernet'`. |
-| **2** | **Bonds** | `nns.status.currentState.interfaces` | Interfaces with `type: 'bond'`. |
-| **3** | **Bridges** | `nns.status.currentState.interfaces` | Interfaces with `type: 'linux-bridge'`, `ovs-bridge`, or `ovs-interface` (if acting as a controller). |
-| **4** | **Logical Interfaces** | `nns.status.currentState.interfaces` | `ovs-interface` types that are not bridges. |
-| **5** | **OVN Bridge Mappings** | `nns.status.currentState.ovn['bridge-mappings']` | Maps OVN local networks to physical bridges. |
-| **6** | **Networks (CUDNs)** | `cudns` prop | Represents the `ClusterUserDefinedNetwork` resources. |
-| **7** | **Attachments** | `cudn.status.conditions` | Represents Namespaces attached to a network. Parsed from the `NetworkCreated` condition message in the CUDN status. |
+| Resource | Used for |
+|---|---|
+| `NodeNetworkState` of the viewed node | Interfaces, bonds, VLANs, VXLAN devices, bridges and their ports, VRFs, LLDP neighbours, kernel routes, OVN bridge mappings |
+| `NodeNetworkState` of every node | The host selector, and findings that need the whole cluster |
+| `ClusterUserDefinedNetwork`, `UserDefinedNetwork` | The Networks lane and the namespaces attached to each network |
+| `NetworkAttachmentDefinition` | The NADs lane, the network a NAD belongs to, SR-IOV resource names |
+| `RouteAdvertisements` | Which networks a VRF advertises |
+| `NodeNetworkConfigurationEnactment` | Which NNCP configured an interface, and failing policies |
+| `SriovNetworkNodeState` | Virtual function pools and drivers. Optional |
+| `VTEP`, and the viewed `Node`'s `k8s.ovn.org/vteps` annotation | EVPN tunnel endpoints. Optional |
 
-## Relationships (Connectors)
+A resource whose CRD is absent is skipped; the view draws what it has.
 
-The lines drawn between nodes represent the following relationships:
+## Lanes
 
-### 1. Interface Hierarchy (Layer 1-4)
-*   **Source**: `interface.controller` or `interface.master`
-*   **Target**: The name of another interface.
-*   **Meaning**: Represents physical ports belonging to a bond, or interfaces attached to a bridge.
+Nodes sit in fixed lanes, in this order. A lane appears only when it has
+something in it, unless noted.
 
-### 2. Bridge to OVN Mapping (Layer 3 -> 5)
-*   **Source**: `mapping.bridge` (from OVN bridge mappings)
-*   **Target**: The Bridge interface name.
-*   **Meaning**: Connects the OVN logical network configuration to the actual OVS/Linux bridge on the node.
+| Lane | Holds | Notes |
+|---|---|---|
+| LLDP Neighbors | The device at the far end of each cable | Behind the **Show LLDP neighbors** toggle, offered only when LLDP data exists |
+| Physical Interfaces | Ethernet devices | |
+| Virtual Functions | SR-IOV virtual functions present on the host | |
+| Bonds | Bond interfaces | |
+| VLAN Interfaces | VLAN and VXLAN devices | |
+| Bridges | Linux and OVS bridges, and under an **Integration** heading the OVN integration bridge | The integration bridge is derived from its ports; nmstate does not report it as a bridge |
+| Logical Interfaces | OVS internal ports | Hidden unless **Show hidden columns** is on |
+| Bridge Mappings and VRFs | The names OVN uses for a bridge, and VRF devices | One lane with two headings |
+| Networks | CUDNs and UDNs | |
+| Attachments | The namespaces attached to each network | Always shown |
+| NADs | NetworkAttachmentDefinitions | Behind the **Show Net Attach Defs** toggle |
 
-### 3. CUDN to OVN Mapping (Layer 6 -> 5)
-*   **Source**: `cudn.spec.network.localNet.physicalNetworkName`
-*   **Target**: `mapping.localnet` (from OVN bridge mappings)
-*   **Meaning**: Links the Cluster User Defined Network to the specific OVN physical network name it uses.
+Interfaces that fit no lane (loopback, the Geneve tunnel device) are listed in
+an **Other Interfaces** grid below the lanes.
 
-### 4. Attachment to CUDN (Layer 7 -> 6)
-*   **Source**: Derived from CUDN status (Namespace name).
-*   **Target**: `cudn.metadata.name`
-*   **Meaning**: Shows which Namespaces are currently attached to or using a specific Cluster User Defined Network.
+## What a line means
+
+Every edge has a **kind**, which the stroke shows and the legend explains:
+
+| Kind | Meaning | Example |
+|---|---|---|
+| membership | The source is a port of, or a member of, the target | A NIC is a port of a bridge; a management port belongs to a VRF; a namespace is attached to a network |
+| layering | Traffic is carried on the target | A VLAN interface on its base interface |
+| reference | A name for the same thing, or a declaration about it. Nothing flows through | A Localnet network names a physical network; a bridge mapping names a bridge; a VRF serves a Primary network |
+| peer | Two devices at opposite ends of a link | An LLDP neighbour |
+
+Every edge and every drawer fact also carries a **provenance**:
+
+- **observed**: read directly from the node's state.
+- **declared**: stated by a resource's spec or status.
+- **inferred**: matched by a convention such as a name or an ID. Inferred
+  items carry an `inferred` label, and the label explains the rule that made
+  the match.
+
+The drawer's **Relationships** tab lists the selected node's edges with the
+rule and the fields each was read from.
+
+## Using the view
+
+- **Select** a node to light up the path through it and open its drawer. The
+  drawer sits beside the graph, which adjusts to keep the selection visible.
+
+  <a href="img/physical-topology-selection.png"><img src="img/physical-topology-selection.png" width="80%" alt="A selected network with its path highlighted and its drawer open" /></a>
+
+- **Link** to a selection: the URL carries `?select=`, for example
+  `?select=iface:br-ex`, `?select=vrf:blue`, `?select=cudn:blue`,
+  `?select=udn:ns1/blue` or `?select=nad:ns1/blue`. An unknown value is
+  ignored.
+- **Toolbar**: host selector, the lane toggles above, zoom, **Reset view**,
+  and **Legend**.
+- **Main routing table**, above the graph, lists the node's main kernel table
+  and marks which default route is in use when there is more than one.
+
+## The drawer
+
+Three tabs:
+
+- **Overview**: findings first (see below), then the node's facts. Route
+  tables appear where they apply: a VRF shows its own table, and an interface
+  or bridge shows the routes that leave through it. Bonds show their mode and
+  members, SR-IOV devices their virtual functions, and networks their
+  topology, role, subnets and namespaces.
+- **Relationships**: every edge of the selected node as a link that moves the
+  selection.
+- **Config**: the underlying resource as YAML.
+
+## Findings
+
+The view flags what looks broken, such as a Localnet network whose physical
+network no node maps to a bridge. A finding shows as a badge on the graph node,
+at the top of that node's drawer with its evidence and a suggested remedy, and
+on the overview page.
+
+The rules, and the list of things deliberately not flagged, are in
+[src/insights/README.md](src/insights/README.md).
+
+## Where the code lives
+
+| Concern | Module |
+|---|---|
+| Lanes | `src/topology/lanes.ts` |
+| Node kinds and the edges each emits | `src/topology/descriptors.tsx` |
+| Edge kinds and provenance | `src/components/nodeVisualizationModel.ts` |
+| Relationship selectors | `src/components/nodeVisualizationSelectors.ts` |
+| Drawer facts | `src/topology/registry.ts`, `src/topology/facts.tsx` |
+| Kernel route ordering | `src/components/kernelRoutes.ts` |
+| Rendering | `src/components/NodeVisualization.tsx` |

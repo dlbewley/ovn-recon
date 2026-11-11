@@ -11,12 +11,16 @@ NNCP), while the logical view shows what **OVN-Kubernetes builds inside the
 OVN northbound database** (logical switches, routers, ports — things created
 by the Kubernetes API through UDN/CUDN CRs and the cluster network itself).
 
-Data comes from the optional **ovn-collector** service, which transcribes six
-NB tables per node (`Logical_Switch`, `Logical_Switch_Port`, `Logical_Router`,
-`Logical_Router_Port`, `NAT`, `Logical_Router_Static_Route`) into a
+Data comes from the **ovn-collector** service, which transcribes northbound
+tables per node into a
 [versioned snapshot contract](collector/api/logical-topology-snapshot.schema.json).
-The collector is a faithful transcriber; all interpretation described below
-happens in the frontend.
+The ladder is drawn from `Logical_Switch`, `Logical_Switch_Port`,
+`Logical_Router`, `Logical_Router_Port`, `NAT`, `Logical_Router_Static_Route`,
+`Gateway_Chassis` and `NB_Global`. Two larger sections are fetched only when a
+drawer or page needs them: **policy** (`ACL`, `Port_Group`, `Address_Set`) and
+**services** (`Load_Balancer`, `Load_Balancer_Group`). The collector is a
+faithful transcriber; all interpretation described below happens in the
+frontend.
 
 ## Zones: why there is a per-node view at all
 
@@ -133,25 +137,68 @@ One quirk worth knowing: OVN-Kubernetes mangles network names into OVN object
 names by replacing dashes with dots — CUDN `example-p-cudn` appears in
 construct names as `example.p.cudn`.
 
+<a href="img/logical-topology.png"><img src="img/logical-topology.png" width="80%" alt="Logical OVN topology of one node" /></a>
+
+## Finding a construct
+
+- **Search** in the toolbar matches what the cards show: name, role label
+  ("Node switch"), network, node and subnet. Cards that do not match are
+  dimmed. Press Enter to select the first match; the arrows step through the
+  rest and show a count.
+- **Link** to a selection: the URL carries `?select=KIND:NAME`, for example
+  `?select=switch:join` or `?select=router:GR_node-1`. An unknown value is
+  ignored.
+- **Find in cluster**, on the overview page, searches every node's snapshot
+  for an IP address, CIDR, MAC or name and opens the right ladder with the
+  owning switch or router selected.
+- **Legend**, in the toolbar, explains the card kinds, edge styles and status
+  colours.
+
 ## The drawer
 
-Selecting any card opens a drawer with three tabs, mirroring the physical
-view's drawer:
+Selecting any card opens a drawer beside the ladder. Its tabs mirror the
+physical view's drawer:
 
-- **Overview** — the construct's full detail: role, network (linked to the
-  owning `ClusterUserDefinedNetwork` / `UserDefinedNetwork` CR), node
-  (linked to that node's logical view from the cluster page), zone
-  provenance, subnet, NAT rules (`snat 192.168.4.72 ⇄ 10.131.0.6`), static
-  routes (`0.0.0.0/0 → 192.168.4.1`), tunnel peers, and a filterable list of
-  workload ports where each pod port links to its Pod.
-- **Relationships** — the construct's connections as navigation: each peer
-  is a link that moves the selection (expanding its aggregate group when
-  collapsed), annotated with the edge's role and addresses.
-- **Config** — the construct's raw northbound rows (its router/switch row
-  plus the ports, NAT, and static routes it references), assembled by an
-  OVN kind registry from one representative node's snapshot. Kinds the
-  model does not yet cover degrade to the model's own view of the
-  construct.
+- **Overview**: role, network (linked to the owning
+  `ClusterUserDefinedNetwork` or `UserDefinedNetwork`), node, subnet, gateway
+  ports, and counts for ACLs and load balancers. On a router, **NAT rules**
+  are grouped by intent: the per-pod SNAT rows that share an external IP fold
+  into one row such as "118 logical IPs in 10.131.0.0/23", which expands to
+  the pods; `dnat` and `dnat_and_snat` rows are never folded. **Static
+  routes** are a sortable table with the default route tagged and each next
+  hop annotated with the port or router it lands on.
+- **Relationships**: each connection as a link that moves the selection,
+  annotated with the edge's role and addresses.
+- **Ports** (switches): one row per logical switch port with its addresses
+  and state. Expanding a pod's port shows the port groups it belongs to and
+  the ACLs that apply to it, each attributed to its `NetworkPolicy` or
+  `MultiNetworkPolicy`. The raw row is behind **Show raw row**.
+- **Services**: one row per Service. The load balancers set on this construct
+  come first; the cluster-wide ones that every node switch and gateway router
+  shares are collapsed to a count. Expanding a Service shows its VIPs and
+  resolves each backend to its pod.
+- **Config**: the construct's raw northbound rows.
+
+**Open details** leads to the construct's own page.
+
+<a href="img/logical-topology-router.png"><img src="img/logical-topology-router.png" width="80%" alt="A gateway router's drawer with NAT rules and static routes" /></a>
+
+## The construct detail page
+
+`/ovn-recon/ovn/:node/:kind/:name` shows one switch or router from one node's
+zone at full width, for the row sets a drawer can only summarise. `kind` is
+`switch` or `router`.
+
+- Tabs: Overview, Relationships, Ports, Policy, Services, Routes and NAT,
+  Config. A tab appears only where it applies.
+- **Policy** (switches) has three views: ACLs, port groups and address sets,
+  with filters for direction, action and owner type.
+- **Routes and NAT** (routers) lists every static route and NAT rule, with a
+  switch between grouped and one row per rule.
+- Tables sort, filter and page. `?tab=`, `?q=` and `?port=` in the URL restore
+  the tab, the filter and an expanded port.
+- The node selector shows the same construct in another node's zone. A
+  northbound database is per zone, so the rows can differ.
 
 The toolbar's **View JSON** control shows and downloads the raw cached
 collector payload — the selected node's snapshot on the per-node page (and

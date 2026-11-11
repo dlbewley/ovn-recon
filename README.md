@@ -10,9 +10,9 @@
 </div>
 <div align="right">
 <p align="center"><b>Screenshots</b></p>
-<a href="img/nns-visualization.png"><img src="img/nns-visualization.png" width="25%" /></a>
-<a href="img/nns-visualization-2.png"><img src="img/nns-visualization-2.png" width="25%" /></a>
-<a href="img/nns-visualization-3.png"><img src="img/nns-visualization-3.png" width="25%" /></a>
+<a href="img/physical-topology.png"><img src="img/physical-topology.png" width="25%" alt="Physical topology of a node" /></a>
+<a href="img/logical-topology-router.png"><img src="img/logical-topology-router.png" width="25%" alt="Logical OVN topology with a gateway router selected" /></a>
+<a href="img/overview-search-findings.png"><img src="img/overview-search-findings.png" width="25%" alt="Overview with cluster search and findings" /></a>
 </div>
 
 <br clear="all"/>
@@ -23,10 +23,14 @@ Blog post: [OVN Recon: Making OpenShift Networking Connections](https://guifreel
 
 ## Feature Highlights
 
-- **Physical topology view**: Per-node graph of host interfaces, bridges, OVN bridge mappings, VRFs, CUDNs/UDNs, attachments, and NAD relationships.
-- **LLDP-aware interface context**: Optional LLDP neighbors column in the node visualization, shown via toggle when LLDP is enabled and neighbor data is present.
-- **Logical topology views**: Cluster-scoped (`/ovn-recon/ovn`) and node-scoped (`/ovn-recon/ovn/:name`) ladder views of the logical OVN constructs — switches, routers, NAT, and routes per network — backed by the optional collector service. See [readme-logical-visualization.md](readme-logical-visualization.md).
-- **Operator-managed lifecycle**: Recommended installation via OVN Recon Operator with automatic console plugin enablement and collector wiring.
+- **Physical topology view**: per-node graph of host interfaces, bonds, VLANs, bridges, OVN bridge mappings, VRFs, CUDNs/UDNs, attached namespaces and NADs, with LLDP neighbours, SR-IOV virtual functions and EVPN devices where present. Kernel routes are shown as tables. See [readme-visualization.md](readme-visualization.md).
+- **Logical topology views**: cluster-scoped and node-scoped ladder views of the logical OVN constructs per network, with drawers for NAT, static routes, ports, policy and Services, and a full-width detail page per switch and router. See [readme-logical-visualization.md](readme-logical-visualization.md).
+- **Network pages**: every CUDN, UDN and NAD in one list, and a page per network that says on which nodes it is wired.
+- **Find in cluster**: search an IP address, CIDR, MAC or name across every node and open the result in the right view.
+- **Findings**: flags what looks broken, such as a Localnet network whose physical network no node maps to a bridge, with the evidence and a suggested remedy.
+- **Shareable views**: the selected object is kept in the page URL, so any view can be linked to.
+- **Optional console integration**: an OVN Recon tab and action on the console's own Node and network pages, off by default.
+- **Operator-managed lifecycle**: recommended installation via the OVN Recon Operator with automatic console plugin enablement and collector wiring.
 
 ## Kubernetes Resource Dependencies
 
@@ -40,6 +44,9 @@ OVN Recon visualizes the following Kubernetes Custom Resources:
 - **RouteAdvertisements** - Cluster-scoped route advertisement policy objects used for VRF-to-network relationships.
 - **VTEP** - Cluster-scoped EVPN tunnel endpoint pool. Used to say which VTEP a node's VXLAN device and EVPN bridge belong to, and which EVPN networks ride on it. Optional: absent on clusters without EVPN.
 - **Node** - Only the node being viewed, and only its `k8s.ovn.org/vteps` annotation, which records the address OVN-Kubernetes discovered for each VTEP on that node. Optional.
+- **NodeNetworkConfigurationEnactment** - Shows which NodeNetworkConfigurationPolicy configured an interface and whether a policy is failing on the node. Optional.
+- **SriovNetworkNodeState** - Virtual function pools and drivers on a node. Optional: absent on clusters without the SR-IOV operator.
+- **Service and EndpointSlice** - Read only when a Service row is expanded in the logical view's Services tab, to show its type and resolve backends to pods.
 - **OvnRecon** - Operator custom resource that controls plugin/collector deployment and logical topology feature gating.
 
 The plugin watches these resources in real-time and renders interactive physical/logical topology views to show how interfaces, bridges, networks, routes, and attachments are connected.
@@ -56,9 +63,15 @@ The plugin watches these resources in real-time and renders interactive physical
     search is kept in the page URL (`/ovn-recon?q=10.131.0.70`), so it can be bookmarked and linked to.
     OVN objects are searched by the collector; with the collector disabled the search still covers every
     node's NodeNetworkState and says the result is partial.
+  - **Findings**: a card counts warnings across the cluster and lists them by rule; each links to the object it is about.
+- **Networks**: `/ovn-recon/networks` lists every CUDN, UDN and NAD with the number of nodes it is wired on. A network's page
+  (`/ovn-recon/networks/cudn/:name`, `/udn/:namespace/:name`, `/nad/:namespace/:name`) shows its summary and a per-node placement table.
 - **Physical view**: `/ovn-recon/node-network-state/:name`
 - **Cluster logical OVN view**: `/ovn-recon/ovn` (shown when the collector feature gate is enabled)
 - **Node logical OVN view**: `/ovn-recon/ovn/:name` (shown when the collector feature gate is enabled)
+- **Switch or router detail page**: `/ovn-recon/ovn/:node/:kind/:name`, reached from a drawer's **Open details** link.
+- **Linking to a selection**: selecting an object adds `?select=` to the URL (for example `?select=iface:br-ex` on the physical view or
+  `?select=switch:join` on a logical view). Opening that URL selects the object again.
 
 In the physical node graph:
 - LLDP neighbors are rendered in a dedicated optional column left of physical interfaces.
@@ -202,6 +215,8 @@ oc patch ovnrecon ovn-recon --type=merge -p '{
 
 Set either back to `false` to remove it. Users who may not read `OvnRecon` resources do not see
 the tabs or actions. See [OPERATOR.md](OPERATOR.md#console-integration) for details.
+
+<a href="img/console-node-tab.png"><img src="img/console-node-tab.png" width="60%" alt="The OVN Recon tab on a Node details page" /></a>
 
 ### Manual Installation
 
