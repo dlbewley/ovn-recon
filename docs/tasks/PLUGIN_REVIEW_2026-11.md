@@ -1,6 +1,6 @@
 # OVN Recon: plugin review and roadmap (November 2026)
 
-Status: proposal (2026-11-09). Reviewed against v1.0.6-a5 on a 10-node OpenShift 4.22
+Status: in progress; the first round shipped in v1.0.6 (see Progress). Proposed 2026-11-09. Reviewed against v1.0.6-a5 on a 10-node OpenShift 4.22
 lab cluster, plus the code on `main` at `5b14640`.
 
 ## Summary
@@ -247,8 +247,9 @@ pages where they exist.
 **The console itself** lets a plugin add tabs to resource pages
 (`console.tab/horizontalNav` on Node, Pod, NAD, CUDN, UDN, NetworkPolicy and more) and
 kebab actions (`console.action/resource-provider`). NetObserv already uses the former on
-Node, CUDN and UDN. OVN Recon uses neither today; it is reachable from one menu entry
-(`ovn-recon-zdt`).
+Node, CUDN and UDN. At the time of the review OVN Recon used neither. Since v1.0.6 it
+adds a tab and an "Open in OVN Recon" action on Node, CUDN, UDN and NAD pages, each
+switched from the `OvnRecon` resource and off by default (`ovn-recon-zdt`).
 
 **Metrics** are cheap to add but narrower than they look: OpenShift's node-exporter
 excludes `br-ex`, `br-int`, bonds and OVN management ports by default, so only physical
@@ -326,13 +327,16 @@ in the main routing table (`dp7.8`), and the drawer polish that is left (`dp7.9`
 upgrade from 1.0.5 on the stable channel was not exercised before the release; check it
 on the first cluster that follows that channel.
 
-**Next cycle:** the default network page (`nfs.3`) and the logical rules (`7i6.3`); the
-workload network path and link-out registry (`zdt.3`, `zdt.4`); loading states and the
-status endpoint (`nt4.4`, `1zx`); one toolbar (`nt4.3`); the rendering decision
-(`nt4.7`).
+**Next cycle:** the link-out registry and the Network Observability links (`zdt.4`,
+`vqd.1`), the one goal of this review with nothing shipped yet, and now checkable
+because the lab has Network Observability installed; the logical rules (`7i6.3`); the
+default network page (`nfs.3`); the workload network path (`zdt.3`); loading states and
+the status endpoint (`nt4.4`, `1zx`); one toolbar (`nt4.3`); the rendering decision
+(`nt4.7`). The FRR-K8s research (`az0.1`) only reads and can run alongside any of them.
 
-**Later:** BGP (`az0`), Network Observability links and metrics (`vqd`), the overview
-redesign once its parts exist (`nt4.9`), route matching (`tpp.3`), then MCP.
+**Later:** the rest of BGP (`az0.2`, `az0.3`), the remaining traffic and health work
+(`vqd.2` to `vqd.4`), the overview redesign once its parts exist (`nt4.9`), route
+matching (`tpp.3`), then MCP.
 
 ## Decisions for Dale
 
@@ -340,7 +344,11 @@ redesign once its parts exist (`nt4.9`), route matching (`tpp.3`), then MCP.
    *decided 2026-11-10.* Nine physical and five logical rules ship as warnings. Not
    findings: a Localnet mapping on only some nodes, a second default route, Service
    VIPs without endpoints, an unreferenced mapping, and the stale router-policy
-   leftover. Info findings are shown by default and can be hidden.
+   leftover. Info findings are shown by default and can be hidden. Still open on
+   `ovn-recon-7i6.2`: whether EVPN interfaces that are down on every node are normal
+   (the findings surfaces hide `interface-down` for them until that is known), and
+   whether two more candidates become rules: a network whose `NetworkCreated` condition
+   is False, and a bridge NAD naming a bridge that exists on no node.
 2. **Rendering foundation** (`ovn-recon-nt4.7`): adopt react-topology as the spike
    recommended, or add containers to the custom renderer.
 3. **Wording reviews** flagged on `dp7.2`, `dp7.3`, `nfs.3` and `az0.3`: masquerade
@@ -358,12 +366,13 @@ redesign once its parts exist (`nt4.9`), route matching (`tpp.3`), then MCP.
 
 New epics and children (all `OPEN` as of 2026-11-09). Beads re-parented from older
 epics are marked *(moved)*. Rows marked *(done)* were updated on 2026-11-10; the
-last seventeen rows were added on 2026-11-10 and 2026-11-11.
+rows from the Services tab onward were added on 2026-11-10 and 2026-11-11. The last
+21 rows are open beads that predate this review or were filed during the work.
 
 | Work Item | Type | Issue ID | Priority |
 |---|---|---|---|
 | **Drawer redesign** | epic | `ovn-recon-dp7` | P1 |
-| Drawer layout kit: identity header, horizontal facts, popover hints, copyable identifiers | feature | `ovn-recon-dp7.1` | P1 |
+| Drawer layout kit: identity header, horizontal facts, popover hints, copyable identifiers *(done)* | feature | `ovn-recon-dp7.1` | P1 |
 | Kernel route tables as tables *(done)* | feature | `ovn-recon-dp7.2` | P1 |
 | Logical routers: NAT grouped by intent, static routes as a table *(done)* | feature | `ovn-recon-dp7.3` | P1 |
 | Address book: resolve IPs and MACs to owners | feature | `ovn-recon-dp7.4` | P2 |
@@ -372,13 +381,13 @@ last seventeen rows were added on 2026-11-10 and 2026-11-11.
 | Consolidate links onto the SDK ResourceLink *(moved)* | task | `ovn-recon-s3t.18` | P3 |
 | Concept explanations per node and edge kind *(moved)* | feature | `ovn-recon-s3t.33` | P3 |
 | **Insights** | epic | `ovn-recon-7i6` | P1 |
-| Findings surfaces: drawer, badges, node table, overview card | feature | `ovn-recon-7i6.1` | P1 |
+| Findings surfaces: drawer, badges, node table, overview card *(done)* | feature | `ovn-recon-7i6.1` | P1 |
 | Confirmed rules, physical and Kubernetes side | feature | `ovn-recon-7i6.2` | P1 |
 | Confirmed rules, logical side | feature | `ovn-recon-7i6.3` | P2 |
 | Best practices and anti-patterns *(moved)* | feature | `ovn-recon-s3t.35` | P2 |
 | **Visual polish** | epic | `ovn-recon-nt4` | P2 |
-| Neutral node styling and a safe network palette | feature | `ovn-recon-nt4.1` | P2 |
-| Legend | feature | `ovn-recon-nt4.2` | P2 |
+| Neutral node styling and a safe network palette *(done)* | feature | `ovn-recon-nt4.1` | P2 |
+| Legend *(done)* | feature | `ovn-recon-nt4.2` | P2 |
 | One view toolbar | feature | `ovn-recon-nt4.3` | P2 |
 | Loading and error states | bug | `ovn-recon-nt4.4` | P2 |
 | Ladder label collisions and name truncation *(done)* | bug | `ovn-recon-nt4.5` | P2 |
@@ -393,13 +402,13 @@ last seventeen rows were added on 2026-11-10 and 2026-11-11.
 | Which route carries this address? | feature | `ovn-recon-tpp.3` | P3 |
 | Deep-linkable selection in all three views *(moved, broadened, done)* | feature | `ovn-recon-s3t.16` | P2 |
 | **Network pages** | epic | `ovn-recon-nfs` | P2 |
-| Network page shell and overview networks table | feature | `ovn-recon-nfs.1` | P2 |
-| Per-node placement matrix | feature | `ovn-recon-nfs.2` | P2 |
+| Network page shell and overview networks table *(done)* | feature | `ovn-recon-nfs.1` | P2 |
+| Per-node placement matrix *(done)* | feature | `ovn-recon-nfs.2` | P2 |
 | Default network page | feature | `ovn-recon-nfs.3` | P2 |
 | NetworkPolicy and MultiNetworkPolicy on networks and NADs *(moved, re-scoped)* | feature | `ovn-recon-s3t.67` | P3 |
 | **Console integration** | epic | `ovn-recon-zdt` | P2 |
-| Tabs on Node, CUDN, UDN and NAD pages | feature | `ovn-recon-zdt.1` | P2 |
-| Kebab actions: Open in OVN Recon | feature | `ovn-recon-zdt.2` | P2 |
+| Tabs on Node, CUDN, UDN and NAD pages *(done)* | feature | `ovn-recon-zdt.1` | P2 |
+| Kebab actions: Open in OVN Recon *(done)* | feature | `ovn-recon-zdt.2` | P2 |
 | Workload network path tab on Pod and VirtualMachine | feature | `ovn-recon-zdt.3` | P2 |
 | Link-out registry | feature | `ovn-recon-zdt.4` | P2 |
 | Show the VM, not the launcher pod | feature | `ovn-recon-zdt.5` | P2 |
@@ -422,7 +431,7 @@ last seventeen rows were added on 2026-11-10 and 2026-11-11.
 | Drawer polish left after v1.0.6 | task | `ovn-recon-dp7.9` | P3 |
 | Findings engine: model, rule registry and evaluator, no UI *(done)* | feature | `ovn-recon-7i6.4` | P1 |
 | Search results: one row per Service VIP, exact names first *(done)* | bug | `ovn-recon-tpp.8` | P2 |
-| CR toggle for console integration: fields, feature flags, gating | feature | `ovn-recon-zdt.7` | P2 |
+| CR toggle for console integration: fields, feature flags, gating *(done)* | feature | `ovn-recon-zdt.7` | P2 |
 | Policy tab: Match column squeezed | bug | `ovn-recon-e2b.13` | P2 |
 | Lookup returns only the first matching VIP of a load balancer row | bug | `ovn-recon-tpp.9` | P3 |
 | Network pages polish found on v1.0.6-a9 | task | `ovn-recon-nfs.7` | P3 |
@@ -431,3 +440,24 @@ last seventeen rows were added on 2026-11-10 and 2026-11-11.
 | Ladder: dragging selects its text *(closed, not a defect)* | bug | `ovn-recon-nt4.11` | P3 |
 | Stabilise and cut v1.0.6 from the b-series *(done)* | task | `ovn-recon-xa7` | P1 |
 | Find in cluster: toolbar entry on the three graph pages | feature | `ovn-recon-tpp.5` | P2 |
+| Physical view: vertical drag-pan moves the graph slower than the pointer | bug | `ovn-recon-d0q` | P3 |
+| Routing plane extras: Logical_Router_Policy, Static_MAC_Binding, DHCP_Options, QoS, Meter/Copp | feature | `ovn-recon-e2b.7` | P3 |
+| Revisit kck.1 decision 4: SB Port_Binding/Chassis/Encap for binding and tunnel diagnostics | task | `ovn-recon-e2b.10` | P4 |
+| MCP foundation: stateless Streamable HTTP /mcp endpoint in the collector with list_nodes and get_logical_summary | task | `ovn-recon-khy.1` | P3 |
+| Operator: spec.mcp.enabled, NetworkPolicy for the collector, conditional gateway registration | task | `ovn-recon-khy.2` | P3 |
+| Port physical-topology selectors from TypeScript to Go (CUDN/NAD/VRF/LLDP/RouteAdvertisements) | task | `ovn-recon-khy.3` | P3 |
+| Tools: lookup_address, get_network, check_consistency | task | `ovn-recon-khy.4` | P3 |
+| Tools: trace_path and lint (health check) | task | `ovn-recon-khy.5` | P3 |
+| Direct-access auth mode: RequireBearerToken with TokenReview verifier | task | `ovn-recon-khy.6` | P3 |
+| Evals: eval suite of realistic agent tasks and tool-description iteration loop | task | `ovn-recon-khy.7` | P3 |
+| Prompts and docs: diagnose_connectivity, explain_node, audit_network prompts; user guide | task | `ovn-recon-khy.8` | P3 |
+| Network page: pods and VMs attached per node | feature | `ovn-recon-nfs.4` | P2 |
+| Network page: logical switch present in each node's zone | feature | `ovn-recon-nfs.5` | P2 |
+| Overview: replace the Networks card counts with a networks table | feature | `ovn-recon-nfs.6` | P2 |
+| Draw OVS internal ports inside their bridge, not as peer nodes | feature | `ovn-recon-s3t.26` | P2 |
+| Keep the bridge mapping node, but stop drawing it as a hop | task | `ovn-recon-s3t.27` | P2 |
+| Give the Geneve tunnel one role on every cluster and decide node versus annotation | task | `ovn-recon-s3t.55` | P3 |
+| Annotate the underlay interface holding a VTEP address; handle a dummy or loopback holder | feature | `ovn-recon-s3t.59` | P3 |
+| Link an sriov NAD to the PF whose pool it draws from, and absent VFs to the pods holding them | feature | `ovn-recon-s3t.65` | P3 |
+| Search: browser-side sources not yet covered (network resources, bridge mappings, Services, EgressIPs, LLDP) | feature | `ovn-recon-tpp.6` | P3 |
+| Search and deep links: select= to an interface in the hidden Logical Interfaces lane opens the physical view with nothing selected | bug | `ovn-recon-tpp.7` | P3 |
