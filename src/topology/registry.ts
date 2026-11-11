@@ -1371,8 +1371,9 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                         value: `${internalPort.name}${getIpv4Addresses(internalPort).length > 0
                             ? ` ${getIpv4Addresses(internalPort).join(', ')}` : ' (no address)'}`,
                         provenance: 'observed',
-                        hint: 'The bridge\'s own OVS internal port, shown as an attribute rather '
-                            + 'than a node (the rule from ovn-recon-s3t.26).'
+                        // An attribute, not a node: the rule from ovn-recon-s3t.26.
+                        hint: 'The bridge\'s own OVS internal port. It is shown here as an attribute '
+                            + 'of the bridge rather than as a separate node.'
                     } as Fact]
                     : [])
             ];
