@@ -30,7 +30,13 @@ Visual polish (a calmer palette, a legend, one toolbar, honest loading states) a
 routing/BGP view round it out. The MCP server stays, but behind the UI work it shares a
 backend with.
 
-## Progress: 2026-11-11, v1.0.6-a6 to b0
+## Progress: 2026-11-11, v1.0.6-a6 to the v1.0.6 release
+
+**v1.0.6 was released on 2026-11-11.** It carries every row below, plus three changes
+made after b0: the physical view keeps its scale and pans only as far as it must beside
+the drawer (`ovn-recon-dp7.10`, checked in a console on the release); a drawer hint no
+longer names an issue ID, and a test keeps issue IDs out of user-facing text
+(`ovn-recon-dp7.11`); and the guides, README and screenshots were brought up to date.
 
 Twenty PRs merged in the two days after this review and shipped in v1.0.6-a6 through
 b0. Every row below was checked in a signed-in console unless it says otherwise.
@@ -114,7 +120,7 @@ trigger it (`ovn-recon-dp7.7`).
   switched from the `OvnRecon` resource and is off by default (`ovn-recon-zdt.7`).
 - On the physical view, selecting a node shrinks the graph to about two thirds, a deep
   link parks it off-centre, and closing the drawer leaves it offset
-  (`ovn-recon-dp7.10`).
+  (`ovn-recon-dp7.10`). Fixed in v1.0.6.
 - A second correction: the b0 check also reported that dragging on the ladder selects
   its text (`ovn-recon-nt4.11`). The maintainer could not reproduce it. It came from
   one automated drag that pressed and released without moving in between, which a
@@ -306,17 +312,19 @@ has shipped), `ovn-recon-e2b.2`, `.7`, `.10`, `ovn-recon-s3t.19`, `.27`, `.55`,
 
 ## Suggested order
 
-Revised 2026-11-11 after v1.0.6-b0. Done or in b0: the drawer tables, fixes and layout
-kit (`dp7.1` to `dp7.3`, `dp7.5` to `dp7.7`), deep links and search (`s3t.16`, `tpp.1`,
-`tpp.2`, `tpp.8`), the detail page (`e2b.8`), the findings engine and surfaces (`7i6.4`,
-`7i6.1`), network pages (`nfs.1`, `nfs.2`), the palette and legend (`nt4.1`, `nt4.2`),
+Revised 2026-11-11 after the v1.0.6 release. Shipped in 1.0.6: the drawer tables, fixes
+and layout kit (`dp7.1` to `dp7.3`, `dp7.5` to `dp7.7`, `dp7.10`), deep links and search
+(`s3t.16`, `tpp.1`, `tpp.2`, `tpp.8`), the detail page (`e2b.8`), the findings engine
+and surfaces (`7i6.4`, `7i6.1`), network pages (`nfs.1`, `nfs.2`), the palette and legend (`nt4.1`, `nt4.2`),
 gated console tabs and actions (`zdt.7`, `zdt.1`, `zdt.2`), and the ladder fixes
 (`nt4.5`, `nt4.6`, `4b9`).
 
-**Before a 1.0.6 release** (stabilise, add nothing; checklist on `ovn-recon-xa7`): fix
-the defects a new user would meet first (`dp7.10`, `e2b.13`, `nfs.7`, `tpp.9`, `dp7.8`);
-test the upgrade from 1.0.5 on the stable channel; let a release candidate sit for a
-day or two. b0 has been checked in a console and the README screenshots are new.
+**Carried over from 1.0.6** (small defects the release shipped with; take these
+first): the Policy tab's squeezed Match column (`e2b.13`), network page polish (`nfs.7`),
+the lookup that reports only a load balancer row's first VIP (`tpp.9`), interface links
+in the main routing table (`dp7.8`), and the drawer polish that is left (`dp7.9`). The
+upgrade from 1.0.5 on the stable channel was not exercised before the release; check it
+on the first cluster that follows that channel.
 
 **Next cycle:** the default network page (`nfs.3`) and the logical rules (`7i6.3`); the
 workload network path and link-out registry (`zdt.3`, `zdt.4`); loading states and the
@@ -411,14 +419,15 @@ last seventeen rows were added on 2026-11-10 and 2026-11-11.
 | Overlay drawer hides the selected object and can shift the page *(done)* | bug | `ovn-recon-dp7.7` | P2 |
 | Lookup: in-memory index of cached snapshots | task | `ovn-recon-tpp.4` | P3 |
 | Link interface cells in the main routing table to the graph | feature | `ovn-recon-dp7.8` | P2 |
-| Drawer polish found on v1.0.6-a7 | task | `ovn-recon-dp7.9` | P3 |
+| Drawer polish left after v1.0.6 | task | `ovn-recon-dp7.9` | P3 |
 | Findings engine: model, rule registry and evaluator, no UI *(done)* | feature | `ovn-recon-7i6.4` | P1 |
 | Search results: one row per Service VIP, exact names first *(done)* | bug | `ovn-recon-tpp.8` | P2 |
 | CR toggle for console integration: fields, feature flags, gating | feature | `ovn-recon-zdt.7` | P2 |
 | Policy tab: Match column squeezed | bug | `ovn-recon-e2b.13` | P2 |
 | Lookup returns only the first matching VIP of a load balancer row | bug | `ovn-recon-tpp.9` | P3 |
 | Network pages polish found on v1.0.6-a9 | task | `ovn-recon-nfs.7` | P3 |
-| Physical view: selection shrinks and displaces the graph | bug | `ovn-recon-dp7.10` | P2 |
+| Physical view: selection shrinks and displaces the graph *(done)* | bug | `ovn-recon-dp7.10` | P2 |
+| Keep issue IDs out of user-facing text *(done)* | bug | `ovn-recon-dp7.11` | P2 |
 | Ladder: dragging selects its text *(closed, not a defect)* | bug | `ovn-recon-nt4.11` | P3 |
-| Stabilise and cut v1.0.6 from the b-series | task | `ovn-recon-xa7` | P1 |
+| Stabilise and cut v1.0.6 from the b-series *(done)* | task | `ovn-recon-xa7` | P1 |
 | Find in cluster: toolbar entry on the three graph pages | feature | `ovn-recon-tpp.5` | P2 |
