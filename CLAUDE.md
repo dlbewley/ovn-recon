@@ -88,7 +88,7 @@ The plugin registers six route-based modules in `console-extensions.json`, reach
 
 | Route | Module | Purpose |
 |---|---|---|
-| `/ovn-recon` (also `/ovn-recon/node-network-state`) | `OvnReconOverview` | Overview: cluster-wide search (`?q=`), collector status, network counts, node table |
+| `/ovn-recon` (also `/ovn-recon/node-network-state`) | `OvnReconOverview` | Overview: cluster-wide search (`?q=`), findings summary, networks table, node table, collector status line |
 | `/ovn-recon/node-network-state/:name` | `NodeNetworkStateDetails` | Physical topology per node |
 | `/ovn-recon/ovn` | `ClusterLogicalTopologyDetails` | Logical OVN topology merged across node zones (collector-gated) |
 | `/ovn-recon/ovn/:name` | `NodeLogicalTopologyDetails` | Logical OVN topology of one node's zone (collector-gated) |

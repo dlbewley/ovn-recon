@@ -1,16 +1,17 @@
 import fs from 'fs';
 import path from 'path';
 
-import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
+import { ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState } from '../types';
+import { evaluatePhysical } from '../insights';
 import { cudnRef, makeFinding, nodeRef } from '../insights/refs';
 import {
     filterNodeSummaries,
     findingCountsByNode,
-    formatCudnBreakdown,
     groupFindingsByRule,
     nodeRole,
+    overviewNetworkRows,
+    snapshotAges,
     summarizeFleet,
-    summarizeNetworks,
     summarizeNode,
 } from './overviewModel';
 
@@ -75,23 +76,6 @@ describe('overviewModel', () => {
         });
     });
 
-    describe('summarizeNetworks', () => {
-        it('counts each kind and breaks CUDNs down by topology', () => {
-            const cudns = fixture<ClusterUserDefinedNetwork[]>('cudn', 'primary-cudn-vrf.json');
-            const summary = summarizeNetworks(cudns, [], [{} as never], [{} as never, {} as never]);
-            expect(summary.cudns).toBe(cudns.length);
-            expect(Object.values(summary.cudnsByTopology).reduce((a, b) => a + b, 0)).toBe(cudns.length);
-            expect(summary.udns).toBe(0);
-            expect(summary.nads).toBe(1);
-            expect(summary.routeAdvertisements).toBe(2);
-        });
-
-        it('formats the breakdown largest first', () => {
-            expect(formatCudnBreakdown({ Layer2: 1, Localnet: 3 })).toBe('3 Localnet, 1 Layer2');
-            expect(formatCudnBreakdown({})).toBe('');
-        });
-    });
-
     describe('summarizeFleet and filtering', () => {
         const summaries = [
             summarizeNode(fixture<NodeNetworkState>('nns', 'bonded-lldp.json')),
@@ -144,5 +128,84 @@ describe('findings helpers (ovn-recon-7i6.1)', () => {
             })
         }));
         expect(groups[1].entries[0].where).toBe('on n1');
+    });
+});
+
+describe('overviewNetworkRows (ovn-recon-nfs.6)', () => {
+    const items = <T,>(...segments: string[]): T[] => {
+        const data = fixture<T[] | { items: T[] }>(...segments);
+        return Array.isArray(data) ? data : data.items;
+    };
+    // The ten-node capture: thirdmap and secondmap are mapped on no node.
+    const nns = items<NodeNetworkState>('nns', 'cluster-localnet-coverage.json');
+    const cudns = items<ClusterUserDefinedNetwork>('cudn', 'cluster-localnet-coverage.json');
+    const nads = items<NetworkAttachmentDefinition>('nad', 'cluster-localnet-coverage.json');
+    const inputs = { cudns, udns: [], nads, routeAdvertisements: [] };
+    const findings = evaluatePhysical.network({ cudns, udns: [], nads, nodeNetworkStates: nns });
+
+    it('gives each network its page, the nodes it is wired on and its findings', () => {
+        const rows = overviewNetworkRows(inputs, nns, findings);
+        // The NADs here are all copies a CUDN generated, so they are not rows of their own.
+        expect(rows.map((row) => row.record.kind)).toEqual(Array(6).fill('cudn'));
+        const byName = new Map(rows.map((row) => [row.record.name, row]));
+        expect(byName.get('machinenet')).toMatchObject({
+            path: '/ovn-recon/networks/cudn/machinenet',
+            wired: { wired: 10, total: 10 },
+            notCreated: false,
+            findings: { warning: 0, info: 0, total: 0 },
+        });
+        expect(byName.get('vlan-1924')!.wired).toEqual({ wired: 4, total: 10 });
+        expect(byName.get('vlan-999')).toMatchObject({
+            wired: { wired: 0, total: 10 },
+            findings: { warning: 1, info: 0, total: 1 },
+        });
+    });
+
+    it('puts networks with warnings first, then info, keeping the list order within each', () => {
+        const info = makeFinding({
+            ruleId: 'test-info', severity: 'info',
+            subject: { kind: 'k8s', ref: cudnRef('vlan-1926') },
+            scope: { network: cudnRef('vlan-1926') },
+            summary: 'An info finding.', evidence: [], remedy: { text: '', target: cudnRef('vlan-1926') }
+        });
+        expect(overviewNetworkRows(inputs, nns, [...findings, info]).map((row) => row.record.name))
+            .toEqual(['vlan-333', 'vlan-333-again', 'vlan-999', 'vlan-1926', 'machinenet', 'vlan-1924']);
+        expect(overviewNetworkRows(inputs, nns, []).map((row) => row.record.name))
+            .toEqual(['machinenet', 'vlan-1924', 'vlan-1926', 'vlan-333', 'vlan-333-again', 'vlan-999']);
+    });
+
+    it('leaves the nodes unknown, rather than zero, without NodeNetworkStates', () => {
+        overviewNetworkRows(inputs, undefined, findings).forEach((row) => expect(row.wired).toBeUndefined());
+        overviewNetworkRows(inputs, [], findings).forEach((row) => expect(row.wired).toBeUndefined());
+    });
+
+    it('flags a network whose NetworkCreated condition is False', () => {
+        const failed: ClusterUserDefinedNetwork = {
+            ...cudns[0],
+            status: { conditions: [{ type: 'NetworkCreated', status: 'False', reason: 'NetworkAttachmentDefinitionSyncError' }] },
+        };
+        const rows = overviewNetworkRows({ ...inputs, cudns: [failed, ...cudns.slice(1)] }, nns, []);
+        expect(rows.filter((row) => row.notCreated).map((row) => row.record.name)).toEqual([failed.metadata!.name]);
+    });
+});
+
+describe('snapshotAges (ovn-recon-nt4.9)', () => {
+    it('reads the oldest and newest snapshot, skipping missing and unparseable times', () => {
+        const now = Date.now();
+        const ages = snapshotAges([
+            new Date(now - 90000).toISOString(),
+            undefined,
+            'not a time',
+            new Date(now - 5000).toISOString(),
+        ]);
+        expect(ages.oldestMs).toBeGreaterThanOrEqual(90000);
+        expect(ages.oldestMs).toBeLessThan(95000);
+        expect(ages.newestMs).toBeGreaterThanOrEqual(5000);
+        expect(ages.newestMs).toBeLessThan(10000);
+    });
+
+    it('knows nothing without a usable time', () => {
+        expect(snapshotAges([])).toEqual({ oldestMs: null, newestMs: null });
+        expect(snapshotAges([undefined, 'nope'])).toEqual({ oldestMs: null, newestMs: null });
     });
 });

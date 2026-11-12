@@ -1,16 +1,21 @@
 import { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 
-import {
-    ClusterUserDefinedNetwork,
-    NetworkAttachmentDefinition,
-    NodeNetworkState,
-    RouteAdvertisements,
-    UserDefinedNetwork,
-} from '../types';
+import { NodeNetworkState } from '../types';
 import { findingSubjectLink, FindingLink } from '../insights/links';
-import { countBySeverity, SeverityCounts } from '../insights/selectors';
+import { countBySeverity, findingsForNetwork, SeverityCounts } from '../insights/selectors';
 import type { Finding, Severity } from '../insights/types';
+import {
+    buildPlacement,
+    listNetworks,
+    networkCreationFailure,
+    NetworkInputs,
+    NetworkKind,
+    networkPath,
+    NetworkRecord,
+    placementSummary,
+} from './networkPageModel';
 import { extractLldpNeighbors } from './nodeVisualizationSelectors';
+import { parseSnapshotAgeMs } from './snapshotFreshness';
 
 /**
  * Pure summaries behind the OVN Recon overview page (ovn-recon-brx). Every
@@ -67,42 +72,6 @@ export const nodeRole = (node: K8sResourceCommon | undefined): string => {
     if (roles.includes('worker')) return 'worker';
     return roles.sort()[0] ?? '';
 };
-
-export interface NetworkSummary {
-    cudns: number;
-    /** CUDN count per topology as declared, e.g. { Localnet: 3, Layer2: 1 }. */
-    cudnsByTopology: Record<string, number>;
-    udns: number;
-    nads: number;
-    routeAdvertisements: number;
-}
-
-export const summarizeNetworks = (
-    cudns: ClusterUserDefinedNetwork[],
-    udns: UserDefinedNetwork[],
-    nads: NetworkAttachmentDefinition[],
-    routeAdvertisements: RouteAdvertisements[],
-): NetworkSummary => {
-    const cudnsByTopology: Record<string, number> = {};
-    for (const cudn of cudns) {
-        const topology = cudn.spec?.network?.topology ?? 'Unknown';
-        cudnsByTopology[topology] = (cudnsByTopology[topology] ?? 0) + 1;
-    }
-    return {
-        cudns: cudns.length,
-        cudnsByTopology,
-        udns: udns.length,
-        nads: nads.length,
-        routeAdvertisements: routeAdvertisements.length,
-    };
-};
-
-/** "3 Localnet, 1 Layer2", topologies in descending count order; empty string with no CUDNs. */
-export const formatCudnBreakdown = (byTopology: Record<string, number>): string =>
-    Object.entries(byTopology)
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-        .map(([topology, count]) => `${count} ${topology}`)
-        .join(', ');
 
 export interface FleetSummary {
     nodes: number;
@@ -188,4 +157,80 @@ export const groupFindingsByRule = (
     return Array.from(groups.values()).sort((a, b) =>
         (a.severity === b.severity ? 0 : a.severity === 'warning' ? -1 : 1)
         || a.title.localeCompare(b.title));
+};
+
+// --- Networks table (ovn-recon-nfs.6) ---------------------------------------------
+
+export const NETWORK_KIND_LABEL: Record<NetworkKind, string> = { cudn: 'CUDN', udn: 'UDN', nad: 'NAD' };
+
+/** How many networks the overview lists before it points at the networks page. */
+export const OVERVIEW_NETWORK_LIMIT = 10;
+
+export interface OverviewNetworkRow {
+    /** Unique among the rows: kind, namespace and name. */
+    key: string;
+    record: NetworkRecord;
+    /** The network's own page. */
+    path: string;
+    /**
+     * Nodes the network is wired on, of the nodes with a NodeNetworkState. Undefined
+     * when nothing node-local is checked for the network, or no node's state is known.
+     */
+    wired?: { wired: number; total: number };
+    /** The network's NetworkCreated condition is False: nothing else about it exists yet. */
+    notCreated: boolean;
+    /** Findings about the network, network-wide or on any node. */
+    findings: SeverityCounts;
+}
+
+/**
+ * One row per network for the overview's table, as the networks page lists them
+ * (listNetworks) and wires them (buildPlacement). Networks with warnings come first,
+ * then those with only info findings, then the rest, each in the list's own order, so
+ * what a capped table leaves out has nothing to report.
+ *
+ * Pass `nodeNetworkStates` as undefined while the list is loading, refused or absent:
+ * "0 of 0" would read as a network wired nowhere.
+ */
+export const overviewNetworkRows = (
+    inputs: NetworkInputs,
+    nodeNetworkStates: NodeNetworkState[] | undefined,
+    findings: Finding[],
+): OverviewNetworkRow[] => {
+    const states = nodeNetworkStates && nodeNetworkStates.length > 0 ? nodeNetworkStates : undefined;
+    const rank = (row: OverviewNetworkRow): number => (row.findings.warning > 0 ? 0 : row.findings.info > 0 ? 1 : 2);
+    return listNetworks(inputs)
+        .map((record): OverviewNetworkRow => {
+            const placement = states ? buildPlacement(record, states, inputs) : undefined;
+            return {
+                key: `${record.kind}/${record.namespace ?? ''}/${record.name}`,
+                record,
+                path: networkPath(record),
+                wired: placement && placementSummary(placement) !== undefined
+                    ? { wired: placement.wired, total: placement.total }
+                    : undefined,
+                notCreated: networkCreationFailure(record) !== undefined,
+                findings: countBySeverity(findingsForNetwork(findings, record.ref)),
+            };
+        })
+        // Array.prototype.sort is stable, so ties keep listNetworks' order.
+        .sort((a, b) => rank(a) - rank(b));
+};
+
+// --- Collector status (ovn-recon-nt4.9) -------------------------------------------
+
+export interface SnapshotAges {
+    /** The stalest zone snapshot: what the status line's freshness is judged on. */
+    oldestMs: number | null;
+    newestMs: number | null;
+}
+
+/** Oldest and newest age across zone snapshots; null where no snapshot carries a usable time. */
+export const snapshotAges = (generatedAts: (string | undefined)[]): SnapshotAges => {
+    const ages = generatedAts
+        .map((generatedAt) => (generatedAt ? parseSnapshotAgeMs(generatedAt) : null))
+        .filter((age): age is number => age != null);
+    return ages.length === 0
+        ? { oldestMs: null, newestMs: null }
+        : { oldestMs: Math.max(...ages), newestMs: Math.min(...ages) };
 };
