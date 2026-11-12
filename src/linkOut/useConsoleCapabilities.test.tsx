@@ -4,6 +4,7 @@ import type { ConsoleCapabilities } from './registry';
 const mockExtensions = jest.fn();
 const mockFlags: Record<string, boolean | undefined> = {};
 const mockGuards: Array<(extension: { type: string }) => boolean> = [];
+const mockWatch = jest.fn();
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => {
     const is = (type: string) => (extension: { type: string }) => extension.type === type;
@@ -13,6 +14,7 @@ jest.mock('@openshift-console/dynamic-plugin-sdk', () => {
         isResourceClusterNavItem: is('console.navigation/resource-cluster'),
         isModelFeatureFlag: is('console.flag/model'),
         useFlag: (flag: string) => mockFlags[flag],
+        useK8sWatchResource: (resource: unknown) => mockWatch(resource),
         useResolvedExtensions: (guard: (extension: { type: string }) => boolean) => {
             mockGuards.push(guard);
             return [mockExtensions().filter(guard), true, []];
@@ -28,6 +30,8 @@ const { useConsoleCapabilities } = jest.requireActual('./useConsoleCapabilities'
 describe('useConsoleCapabilities (ovn-recon-zdt.4)', () => {
     beforeEach(() => {
         mockGuards.length = 0;
+        mockWatch.mockReset();
+        mockWatch.mockReturnValue([undefined, false, undefined]);
         Object.keys(mockFlags).forEach((key) => delete mockFlags[key]);
         mockExtensions.mockReturnValue([
             {
@@ -68,5 +72,45 @@ describe('useConsoleCapabilities (ovn-recon-zdt.4)', () => {
         expect(crds['nmstate.io~v1~NodeNetworkConfigurationPolicy']).toBe(true);
         expect(crds['k8s.cni.cncf.io~v1beta1~MultiNetworkPolicy']).toBe(false);
         expect(crds['k8s.ovn.org~v1~UserDefinedNetwork']).toBeUndefined();
+    });
+
+    describe('Network Observability (ovn-recon-vqd.1)', () => {
+        const netobservNav = {
+            type: 'console.navigation/href',
+            pluginName: 'netobserv-plugin',
+            properties: { href: '/netflow-traffic' },
+        };
+        const flowCollector = { spec: { agent: { ebpf: { features: ['UDNMapping'] } } } };
+
+        it('watches nothing and reports nothing when the plugin is not loaded', () => {
+            mockFlags.NETOBSERV_LOKI_ENABLED = true;
+            const capabilities = renderHook(() => useConsoleCapabilities());
+            expect(mockWatch).toHaveBeenCalledWith(null);
+            expect(capabilities.netobserv).toBeUndefined();
+        });
+
+        it('watches the one FlowCollector by name once the plugin is loaded', () => {
+            mockExtensions.mockReturnValue([netobservNav]);
+            mockFlags.NETOBSERV_LOKI_ENABLED = true;
+            mockWatch.mockReturnValue([flowCollector, true, undefined]);
+            const { netobserv } = renderHook(() => useConsoleCapabilities());
+            expect(mockWatch).toHaveBeenCalledWith({
+                groupVersionKind: { group: 'flows.netobserv.io', version: 'v1beta2', kind: 'FlowCollector' },
+                name: 'cluster',
+                isList: false,
+            });
+            expect(netobserv?.loki).toBe(true);
+            expect(netobserv?.nodeMetrics).toBe(true);
+            expect([...netobserv!.features!]).toEqual(['UDNMapping']);
+        });
+
+        it('knows only the flag when the FlowCollector is forbidden or still loading', () => {
+            mockExtensions.mockReturnValue([netobservNav]);
+            mockFlags.NETOBSERV_LOKI_ENABLED = true;
+            mockWatch.mockReturnValue([flowCollector, true, new Error('forbidden')]);
+            expect(renderHook(() => useConsoleCapabilities()).netobserv).toEqual({ loki: true });
+            mockWatch.mockReturnValue([undefined, false, undefined]);
+            expect(renderHook(() => useConsoleCapabilities()).netobserv).toEqual({ loki: true });
+        });
     });
 });

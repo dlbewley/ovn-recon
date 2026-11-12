@@ -41,7 +41,7 @@ import {
     vipClassContext,
 } from './serviceIndex';
 import { useKubeService, useServiceEndpointSlices, useServiceNetworks } from './useServiceReads';
-import { ConsoleLink } from '../linkOut/LinkOut';
+import { ConsoleLink, SecondaryLinks } from '../linkOut/LinkOut';
 import { resourceTarget } from '../linkOut/registry';
 import { InfoPopover } from './drawerKit';
 
@@ -153,17 +153,20 @@ const PortChips: React.FC<{ group: ServiceGroupView }> = ({ group }) =>
  * (ovn-recon-dp7.9 item 3): "namespace/name" in one run wrapped long
  * operator Service names onto three or four lines.
  */
-const ServiceName: React.FC<{ group: ServiceGroupView }> = ({ group }) =>
-    group.service && group.service.kind === 'Service' ? (
+const ServiceName: React.FC<{ group: ServiceGroupView }> = ({ group }) => {
+    const target = group.service && group.service.kind === 'Service'
+        ? resourceTarget({
+            apiVersion: 'v1',
+            kind: 'Service',
+            namespace: group.service.namespace,
+            name: group.service.name,
+        })
+        : undefined;
+    return group.service && target ? (
         <>
             <span data-testid="service-name">
                 <ConsoleLink
-                    target={resourceTarget({
-                        apiVersion: 'v1',
-                        kind: 'Service',
-                        namespace: group.service.namespace,
-                        name: group.service.name,
-                    })}
+                    target={target}
                     title={group.loadBalancers.map((row) => row.name).join('\n')}
                     style={BREAK_WORD}
                 >
@@ -173,12 +176,14 @@ const ServiceName: React.FC<{ group: ServiceGroupView }> = ({ group }) =>
             <div style={{ ...SUBTLE, fontSize: '0.875em', ...BREAK_WORD }} data-testid="service-namespace">
                 {group.service.namespace}
             </div>
+            <SecondaryLinks target={target} style={{ fontSize: '0.875em' }} />
         </>
     ) : (
         <code style={BREAK_WORD}>
             <LabelText label={group.label} />
         </code>
     );
+};
 
 const BackendsCell: React.FC<{ group: ServiceGroupView }> = ({ group }) => {
     if (group.vips.length > 0 && group.vipsWithoutEndpoints === group.vips.length) {

@@ -1,4 +1,4 @@
-import { capabilitiesFrom } from './capabilities';
+import { capabilitiesFrom, netobservFrom } from './capabilities';
 
 describe('console capabilities from extensions (ovn-recon-zdt.4)', () => {
     const extensions = [
@@ -46,5 +46,43 @@ describe('console capabilities from extensions (ovn-recon-zdt.4)', () => {
     it('carries the CRD answers through unchanged', () => {
         const crds = { 'a~v1~B': true, 'c~v1~D': undefined };
         expect(capabilitiesFrom([], crds).crds).toBe(crds);
+    });
+});
+
+describe('what Network Observability can answer (ovn-recon-vqd.1)', () => {
+    const flowCollector = (spec: object) => ({ spec });
+
+    it('knows only the Loki flag when the FlowCollector cannot be read', () => {
+        expect(netobservFrom(true, undefined)).toEqual({ loki: true });
+        expect(netobservFrom(undefined, undefined)).toEqual({ loki: undefined });
+        expect(netobservFrom(false, {})).toEqual({ loki: false });
+    });
+
+    it('reads the eBPF features from the FlowCollector', () => {
+        const { features } = netobservFrom(true, flowCollector({
+            agent: { ebpf: { features: ['PacketDrop', 'UDNMapping'] } },
+        }));
+        expect([...features!].sort()).toEqual(['PacketDrop', 'UDNMapping']);
+        expect(netobservFrom(true, flowCollector({})).features?.size).toBe(0);
+    });
+
+    it('lets the plugin\'s flag overrule spec.loki.enable, and falls back to the spec without a flag', () => {
+        expect(netobservFrom(false, flowCollector({ loki: { enable: true } })).loki).toBe(false);
+        expect(netobservFrom(true, flowCollector({ loki: { enable: false } })).loki).toBe(true);
+        expect(netobservFrom(undefined, flowCollector({ loki: { enable: false } })).loki).toBe(false);
+        expect(netobservFrom(undefined, flowCollector({ loki: {} })).loki).toBe(true);
+        expect(netobservFrom(undefined, flowCollector({})).loki).toBe(true);
+    });
+
+    it('counts node metrics as on by default, and off when the include list drops them', () => {
+        expect(netobservFrom(true, flowCollector({})).nodeMetrics).toBe(true);
+        expect(netobservFrom(true, flowCollector({
+            processor: { metrics: { includeList: ['namespace_flows_total', 'node_ingress_bytes_total'] } },
+        })).nodeMetrics).toBe(true);
+        expect(netobservFrom(true, flowCollector({
+            processor: { metrics: { includeList: ['namespace_flows_total'] } },
+        })).nodeMetrics).toBe(false);
+        expect(netobservFrom(true, flowCollector({ processor: { metrics: { includeList: [] } } })).nodeMetrics)
+            .toBe(false);
     });
 });

@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { useParams, Link, useLocation, useNavigate } from 'react-router';
 import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem, ExpandableSection, Flex, FlexItem } from '@patternfly/react-core';
+import { LinkOutProvider, SecondaryLinks } from '../linkOut/LinkOut';
+import { resourceTarget } from '../linkOut/registry';
 import { DocumentTitle, K8sResourceCommon, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import NodeVisualization from './NodeVisualization';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
@@ -234,6 +236,14 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({ name
                                     View logical OVN topology for this node
                                 </Link>
                             </p>
+                        )}
+                        {nns?.metadata?.name && (
+                            <LinkOutProvider>
+                                <SecondaryLinks
+                                    target={resourceTarget({ apiVersion: 'v1', kind: 'Node', name: nns.metadata.name })}
+                                    style={{ marginTop: 'var(--pf-t--global--spacer--sm)' }}
+                                />
+                            </LinkOutProvider>
                         )}
                     </>
                 )}

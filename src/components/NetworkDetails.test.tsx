@@ -4,6 +4,7 @@ import { act } from 'react';
 
 import { clone, loadFixture, loadItems } from '../insights/testing';
 import type { ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState, UserDefinedNetwork } from '../types';
+import { NETOBSERV_FULL, withNetobserv } from '../linkOut/testCapabilities';
 import NetworkDetails from './NetworkDetails';
 import { TestRouter } from './testRouter';
 
@@ -18,6 +19,12 @@ jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sModel: (gvk: { kind: string }) => [mockModels[gvk.kind], false],
     useK8sWatchResource: (resource: { groupVersionKind: { kind: string } } | null) =>
         (resource ? [mockWatches[resource.groupVersionKind.kind] ?? [], true, undefined] : [undefined, true, undefined]),
+}));
+
+// "Nothing loaded" unless a test says otherwise, as jest.setup.js gives every suite.
+const mockCapabilities = jest.fn();
+jest.mock('../linkOut/useConsoleCapabilities', () => ({
+    useConsoleCapabilities: () => mockCapabilities() ?? jest.requireActual('../linkOut/registry').NO_CAPABILITIES,
 }));
 
 jest.mock('./useOvnCollectorFeatureGate', () => ({
@@ -112,6 +119,23 @@ describe('NetworkDetails', () => {
         expect(text('placement-worker-2')).toContain('inferred');
         expect(text('placement-worker-2')).toContain('ovn-k8s-mp3');
         expect(links()).toContain('/ovn-recon/node-network-state/worker-2?select=vrf:example-p-cudn');
+    });
+
+    it('offers a network\'s traffic in its header only when Network Observability can answer', async () => {
+        const traffic = () => Array.from(container.querySelectorAll('[data-testid="secondary-links"] a'))
+            .map((a) => [a.textContent, a.getAttribute('href')]);
+        try {
+            await render('/ovn-recon/networks/cudn/vlan-1924');
+            expect(traffic()).toEqual([]);
+            mockCapabilities.mockReturnValue(NETOBSERV_FULL);
+            await render('/ovn-recon/networks/cudn/vlan-1924');
+            expect(traffic()).toEqual([['View traffic', '/netflow-traffic?filters=udns%3Dvlan-1924']]);
+            mockCapabilities.mockReturnValue(withNetobserv({ loki: true, nodeMetrics: true, features: new Set() }));
+            await render('/ovn-recon/networks/cudn/vlan-1924');
+            expect(traffic()).toEqual([]);
+        } finally {
+            mockCapabilities.mockReset();
+        }
     });
 
     it('shows a namespaced UDN', async () => {

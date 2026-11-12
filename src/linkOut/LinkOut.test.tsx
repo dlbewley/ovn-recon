@@ -8,7 +8,7 @@ import { ChipLink } from '../components/drawerKit';
 import { FactList } from '../topology/facts';
 import { ConsoleLink, SecondaryLinks, StaticLinkOutProvider } from './LinkOut';
 import { ConsoleCapabilities, LinkTarget } from './registry';
-import { BARE, OCP_4_22, OCP_5_1 } from './testCapabilities';
+import { BARE, NETOBSERV_FULL, OCP_4_22, OCP_5_1, withNetobserv } from './testCapabilities';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[], true, undefined],
@@ -111,6 +111,29 @@ describe('link-out components (ovn-recon-zdt.4)', () => {
 
         it('renders nothing when the plugin is absent', () => {
             render(<SecondaryLinks target={iface} />, BARE);
+            expect(container.innerHTML).toBe('');
+        });
+
+        const service: LinkTarget = {
+            type: 'resource', ref: { apiVersion: 'v1', kind: 'Service', namespace: 'demo', name: 'web' },
+        };
+
+        it('offers a Service\'s traffic in Network Observability, and says so in the link\'s hint', () => {
+            render(<SecondaryLinks target={service} />, NETOBSERV_FULL);
+            expect(anchors()).toEqual([{
+                text: 'View traffic',
+                href: '/netflow-traffic?filters=dst_resource%3DService.demo.web',
+                owner: 'netobserv-plugin',
+                target: null,
+            }]);
+            expect(container.querySelector('a')?.getAttribute('title'))
+                .toBe('Network Observability: traffic to this Service');
+        });
+
+        it('renders no traffic link without the plugin, or without Loki', () => {
+            render(<SecondaryLinks target={service} />, OCP_4_22);
+            expect(container.innerHTML).toBe('');
+            render(<SecondaryLinks target={service} />, withNetobserv({ loki: false, nodeMetrics: true }));
             expect(container.innerHTML).toBe('');
         });
     });

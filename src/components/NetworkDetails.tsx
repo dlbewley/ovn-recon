@@ -21,7 +21,7 @@ import { DocumentTitle, K8sResourceCommon, useK8sModel, useK8sWatchResource } fr
 
 import { evaluatePhysical, findingsForNetwork } from '../insights';
 import type { ClusterNetworkInputs, Finding } from '../insights';
-import { ConsoleLink, LinkOutProvider } from '../linkOut/LinkOut';
+import { ConsoleLink, LinkOutProvider, SecondaryLinks } from '../linkOut/LinkOut';
 import { resourceTarget } from '../linkOut/registry';
 import { FactList, ProvenanceLabel } from '../topology/facts';
 import {
@@ -555,6 +555,9 @@ const NetworkPage: React.FC<NetworkBodyProps> = ({ record, inputs, nns, showLogi
                         <ConsoleLink target={resourceTarget(record.resourceRef)} hideWhenAbsent data-testid="network-console-link">
                             View {KIND_SHORT[record.kind]} in the console
                         </ConsoleLink>
+                    </FlexItem>
+                    <FlexItem>
+                        <SecondaryLinks target={resourceTarget(record.resourceRef)} />
                     </FlexItem>
                 </Flex>
                 <NetworkOwner record={record} />

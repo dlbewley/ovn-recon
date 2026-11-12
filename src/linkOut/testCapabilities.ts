@@ -1,4 +1,7 @@
-import { ConsoleCapabilities, CRD_FLAGS, kindReference, NETWORKING_PLUGIN, NMSTATE_PLUGIN } from './registry';
+import {
+    ConsoleCapabilities, CRD_FLAGS, kindReference, NetObservCapabilities, NETOBSERV_PLUGIN, NETOBSERV_TRAFFIC_PATH,
+    NETOBSERV_UDN_MAPPING, NETWORKING_PLUGIN, NMSTATE_PLUGIN
+} from './registry';
 
 /**
  * Test-only capability sets (ovn-recon-zdt.4), shaped after what the plugins'
@@ -31,3 +34,20 @@ export const OCP_5_1 = capabilities({
 
 /** Neither plugin, and none of the CRDs. */
 export const BARE = capabilities({}, allCrds(false));
+
+/** Network Observability loaded beside the 4.22 plugins, answering what `netobserv` says. */
+export const withNetobserv = (netobserv: NetObservCapabilities | undefined): ConsoleCapabilities => ({
+    ...capabilities({
+        [NETWORKING_PLUGIN]: [],
+        [NMSTATE_PLUGIN]: ['/node-network-configuration', '/physical-networks'],
+        [NETOBSERV_PLUGIN]: ['/network-health', NETOBSERV_TRAFFIC_PATH],
+    }),
+    ...(netobserv ? { netobserv } : {}),
+});
+
+/** Loki, node metrics and UDN mapping: every traffic link has something to show. */
+export const NETOBSERV_FULL = withNetobserv({
+    loki: true,
+    nodeMetrics: true,
+    features: new Set([NETOBSERV_UDN_MAPPING]),
+});

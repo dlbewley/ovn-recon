@@ -84,7 +84,13 @@ export const SecondaryLinks: React.FC<{ target: LinkTarget | undefined; style?: 
     return (
         <div data-testid="secondary-links" style={{ display: 'flex', flexWrap: 'wrap', gap: '0 1em', ...style }}>
             {secondary.map((link) => (
-                <Link key={link.id} to={link.path} data-link-owner={link.owner} data-link-id={link.id}>
+                <Link
+                    key={link.id}
+                    to={link.path}
+                    title={link.hint}
+                    data-link-owner={link.owner}
+                    data-link-id={link.id}
+                >
                     {link.label}
                 </Link>
             ))}
