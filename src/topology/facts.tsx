@@ -151,8 +151,8 @@ const isRenderable = (fact: Fact): boolean => {
  * fixed term width, the hint behind an info button. A table-valued fact
  * takes the full width under its term.
  */
-export const FactList: React.FC<{ facts: Fact[] } & FactRenderHooks> = ({ facts, ...hooks }) => (
-    <FactRows ariaLabel="Facts">
+export const FactList: React.FC<{ facts: Fact[]; termWidth?: string } & FactRenderHooks> = ({ facts, termWidth, ...hooks }) => (
+    <FactRows ariaLabel="Facts" termWidth={termWidth}>
         {facts.filter(isRenderable).map((fact) => {
             const Row = isFactTable(fact.value) && fact.value.routes.length > 0 ? WideFactRow : FactRow;
             return (

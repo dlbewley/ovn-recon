@@ -1,3 +1,5 @@
+import { networkPath } from '../components/networkPageModel';
+import type { NetworkAddress } from '../components/networkPageModel';
 import { withSelectParam } from '../components/useSelectParam';
 import { graphNodeIdForRef } from './refs';
 import type { Finding, K8sRef } from './types';
@@ -30,16 +32,28 @@ export interface FindingLink {
     href?: string;
     /** What the link opens, for its text. */
     label: string;
+    /** A second place worth offering: a node's graph with the network selected. */
+    secondary?: { to: string; label: string };
 }
+
+/** The network page address of a CUDN, UDN or NAD; undefined for any other kind. */
+export const networkAddressForRef = (ref: K8sRef): NetworkAddress | undefined => {
+    if (ref.kind === 'ClusterUserDefinedNetwork') return { kind: 'cudn', name: ref.name };
+    if (ref.kind === 'UserDefinedNetwork') return { kind: 'udn', name: ref.name, namespace: ref.namespace || 'default' };
+    if (ref.kind === 'NetworkAttachmentDefinition') return { kind: 'nad', name: ref.name, namespace: ref.namespace || 'default' };
+    return undefined;
+};
 
 /**
  * Where an overview entry for a finding links to: its subject, selected.
  *
  *   on one node's graph   that node's page, ?select= the graph node
- *   a CUDN or UDN         a node page with ?select= the network, which every node's
- *                         graph draws (`anyNode` picks which one; the first by name)
- *   anything else         the object in the console (a NAD, whose lane is hidden by
- *                         default and so cannot be selected on arrival)
+ *   a CUDN, UDN or NAD    the network's own page. For a CUDN or UDN, which every
+ *                         node's graph draws, a node page with ?select= the network
+ *                         is offered second (`anyNode` picks which one; the first by
+ *                         name). A NAD's lane is hidden by default, so it cannot be
+ *                         selected on arrival and gets no second link.
+ *   anything else         the object in the console
  */
 export const findingSubjectLink = (finding: Finding, anyNode?: string): FindingLink => {
     const { subject } = finding;
@@ -47,12 +61,18 @@ export const findingSubjectLink = (finding: Finding, anyNode?: string): FindingL
         return { to: nodePagePath(subject.node, subject.graphNodeId), label: subject.node };
     }
     if (subject.kind === 'k8s') {
-        const node = finding.scope.node ?? anyNode;
-        const graphNodeId = graphNodeIdForRef(subject.ref);
-        const drawnOnEveryNode = subject.ref.kind === 'ClusterUserDefinedNetwork'
-            || subject.ref.kind === 'UserDefinedNetwork';
-        if (node && graphNodeId && drawnOnEveryNode) {
-            return { to: nodePagePath(node, graphNodeId), label: refLabel(subject.ref) };
+        const address = networkAddressForRef(subject.ref);
+        if (address) {
+            const node = finding.scope.node ?? anyNode;
+            const graphNodeId = graphNodeIdForRef(subject.ref);
+            const drawnOnEveryNode = address.kind !== 'nad';
+            return {
+                to: networkPath(address),
+                label: refLabel(subject.ref),
+                ...(node && graphNodeId && drawnOnEveryNode
+                    ? { secondary: { to: nodePagePath(node, graphNodeId), label: `Physical view on ${node}` } }
+                    : {})
+            };
         }
         return { href: consoleHrefForRef(subject.ref), label: refLabel(subject.ref) };
     }

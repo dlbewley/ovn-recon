@@ -142,6 +142,104 @@ describe('NetworkDetails', () => {
         expect(links()).toContain('/ovn-recon/networks/cudn/vlan-1924');
     });
 
+    describe('breadcrumbs', () => {
+        const crumbs = () => [...container.querySelectorAll('.pf-v6-c-breadcrumb__item')].map((item) => ({
+            text: item.textContent,
+            divided: item.querySelector('.pf-v6-c-breadcrumb__item-divider') !== null,
+        }));
+
+        it('separates the list page from the overview', async () => {
+            await render('/ovn-recon/networks');
+            expect(crumbs()).toEqual([
+                { text: 'OVN Recon', divided: false },
+                { text: 'Networks', divided: true },
+            ]);
+        });
+
+        it('separates every item after the first on a network page', async () => {
+            await render('/ovn-recon/networks/cudn/vlan-1924');
+            expect(crumbs()).toEqual([
+                { text: 'OVN Recon', divided: false },
+                { text: 'Networks', divided: true },
+                { text: 'vlan-1924', divided: true },
+            ]);
+        });
+    });
+
+    describe('the cluster default network', () => {
+        const defaultNad: NetworkAttachmentDefinition = {
+            metadata: { name: 'default', namespace: 'openshift-ovn-kubernetes' },
+            spec: { config: '{"cniVersion":"0.4.0","name":"ovn-kubernetes","type":"ovn-k8s-cni-overlay"}' },
+        };
+
+        beforeEach(() => {
+            mockWatches.NetworkAttachmentDefinition = [...coverageNads, defaultNad];
+        });
+
+        it('is named for what it is in the list, not given an unknown topology', async () => {
+            await render('/ovn-recon/networks');
+            expect(text('network-row-nad-default')).toContain('Cluster default network');
+            expect(text('network-row-nad-default')).not.toContain('Unknown');
+        });
+
+        it('says what it is on its page', async () => {
+            await render('/ovn-recon/networks/nad/openshift-ovn-kubernetes/default');
+            expect(text('network-summary')).toContain('Cluster default network');
+            expect(text('network-summary')).not.toContain('Unknown');
+            expect(text('placement-summary')).toContain('checks nothing node-local for the cluster default network;');
+        });
+    });
+
+    describe('a network that was not created', () => {
+        const failed = (): ClusterUserDefinedNetwork[] => {
+            const cudns = clone(coverageCudns);
+            const target = cudns.find((cudn) => cudn.metadata?.name === 'vlan-333')!;
+            target.status = {
+                conditions: [{
+                    type: 'NetworkCreated',
+                    status: 'False',
+                    reason: 'NetworkAttachmentDefinitionSyncError',
+                    message: 'failed to create NetworkAttachmentDefinition in namespace demo',
+                }],
+            };
+            return cudns;
+        };
+
+        beforeEach(() => {
+            mockWatches.ClusterUserDefinedNetwork = failed();
+        });
+
+        it('leads its page with the failed condition and its message', async () => {
+            await render('/ovn-recon/networks/cudn/vlan-333');
+            const alert = container.querySelector('[data-testid="network-not-created"]')!;
+            expect(alert.textContent).toContain('This network was not created: NetworkAttachmentDefinitionSyncError');
+            expect(alert.textContent).toContain('failed to create NetworkAttachmentDefinition in namespace demo');
+            // Before the summary, and before the findings.
+            const summary = container.querySelector('[data-testid="network-summary"]')!;
+            const findings = container.querySelector('[data-testid="network-findings"]')!;
+            expect(alert.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+            expect(alert.compareDocumentPosition(findings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        });
+
+        it('marks its row in the list, and no other', async () => {
+            await render('/ovn-recon/networks');
+            expect(container.querySelectorAll('[data-testid="network-row-not-created"]')).toHaveLength(1);
+            expect(text('network-row-cudn-vlan-333')).toContain('Not created');
+            expect(text('network-row-cudn-vlan-1924')).not.toContain('Not created');
+        });
+
+        it('says nothing on a network whose condition is True', async () => {
+            await render('/ovn-recon/networks/cudn/vlan-1924');
+            expect(container.querySelector('[data-testid="network-not-created"]')).toBeNull();
+        });
+    });
+
+    it('lays the summary out one line per fact', async () => {
+        await render('/ovn-recon/networks/cudn/vlan-1924');
+        const list = container.querySelector('[data-testid="network-summary"] [data-testid="fact-rows"]')!;
+        expect(list.className).toContain('pf-m-horizontal');
+    });
+
     it('renders an empty state for an unknown name', async () => {
         await render('/ovn-recon/networks/cudn/no-such-network');
         expect(text('network-not-found')).toContain('No network named no-such-network');

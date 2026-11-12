@@ -90,6 +90,14 @@ const FindingsCard: React.FC<FindingsCardProps> = ({
                                                 {finding.summary}
                                             </FindingSubjectAnchor>
                                             <span style={{ ...subtle, fontSize: '0.85em' }}> {where}</span>
+                                            {link.secondary && (
+                                                <span style={{ fontSize: '0.85em' }} data-testid="findings-entry-secondary">
+                                                    {' · '}
+                                                    <FindingSubjectAnchor to={link.secondary.to}>
+                                                        {link.secondary.label}
+                                                    </FindingSubjectAnchor>
+                                                </span>
+                                            )}
                                         </li>
                                     ))}
                                 </ul>

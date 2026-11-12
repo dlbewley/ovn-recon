@@ -112,19 +112,28 @@ describe('OvnReconOverview findings', () => {
     };
     const findingsCell = (node: string) => container.querySelector(`[data-testid="overview-findings-${node}"]`)!;
 
-    it('lists a Localnet network mapped on no node once, under the network, linked to it selected', async () => {
+    it('lists a Localnet network mapped on no node once, linked to its network page, with a node page second', async () => {
         await render();
         expect(card().querySelector('[data-testid="count-warning"]')?.textContent).toContain('3');
         expand();
         const group = card().querySelector('[data-testid="findings-group-localnet-unmapped"]')!;
-        const links = Array.from(group.querySelectorAll('a'));
-        expect(links.map((a) => a.textContent)).toEqual([
+        const entries = Array.from(group.querySelectorAll('[data-testid="findings-entry"]'));
+        const first = entries.map((entry) => entry.querySelector('a')!);
+        expect(first.map((a) => a.textContent)).toEqual([
             'ClusterUserDefinedNetwork vlan-333 names physical network thirdmap, which no node maps to a bridge.',
             'ClusterUserDefinedNetwork vlan-333-again names physical network secondmap, which no node maps to a bridge.',
             'ClusterUserDefinedNetwork vlan-999 names physical network secondmap, which no node maps to a bridge.',
         ]);
-        // The first node by name, with the CUDN selected; every node's graph draws it.
-        expect(links.map((a) => a.getAttribute('href'))).toEqual([
+        // The network's own page first.
+        expect(first.map((a) => a.getAttribute('href'))).toEqual([
+            '/ovn-recon/networks/cudn/vlan-333',
+            '/ovn-recon/networks/cudn/vlan-333-again',
+            '/ovn-recon/networks/cudn/vlan-999',
+        ]);
+        // Then the first node by name, with the CUDN selected; every node's graph draws it.
+        const second = entries.map((entry) => entry.querySelector('[data-testid="findings-entry-secondary"] a')!);
+        expect(second.map((a) => a.textContent)).toEqual(Array(3).fill('Physical view on control-1'));
+        expect(second.map((a) => a.getAttribute('href'))).toEqual([
             '/ovn-recon/node-network-state/control-1?select=cudn:vlan-333',
             '/ovn-recon/node-network-state/control-1?select=cudn:vlan-333-again',
             '/ovn-recon/node-network-state/control-1?select=cudn:vlan-999',

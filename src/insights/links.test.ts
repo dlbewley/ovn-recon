@@ -29,24 +29,38 @@ describe('finding links', () => {
         expect(nodePagePath('worker-1')).toBe('/ovn-recon/node-network-state/worker-1');
     });
 
-    it('links a network-wide CUDN finding to a node page with the CUDN selected', () => {
+    it('links a network-wide CUDN finding to the network page, with a node page second', () => {
         const network = finding({ subject: { kind: 'k8s', ref: cudnRef('vlan-333') }, scope: { network: cudnRef('vlan-333') } });
         expect(findingSubjectLink(network, 'control-1')).toEqual({
-            to: '/ovn-recon/node-network-state/control-1?select=cudn:vlan-333',
-            label: 'ClusterUserDefinedNetwork vlan-333'
+            to: '/ovn-recon/networks/cudn/vlan-333',
+            label: 'ClusterUserDefinedNetwork vlan-333',
+            secondary: {
+                to: '/ovn-recon/node-network-state/control-1?select=cudn:vlan-333',
+                label: 'Physical view on control-1'
+            }
         });
     });
 
-    it('links a NAD finding, whose lane is hidden by default, to the console', () => {
+    it('links a NAD finding to its network page alone: its lane is hidden on a node page', () => {
         const ref = nadRef({ metadata: { name: 'blue', namespace: 'demo' } });
         expect(findingSubjectLink(finding({ subject: { kind: 'k8s', ref }, scope: { network: ref } }), 'control-1')).toEqual({
-            href: '/k8s/ns/demo/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/blue',
+            to: '/ovn-recon/networks/nad/demo/blue',
             label: 'NetworkAttachmentDefinition demo/blue'
         });
     });
 
-    it('falls back to the console when there is no node to show a CUDN on', () => {
+    it('links a CUDN finding to the network page alone when there is no node to show it on', () => {
         const network = finding({ subject: { kind: 'k8s', ref: cudnRef('vlan-333') }, scope: { network: cudnRef('vlan-333') } });
-        expect(findingSubjectLink(network).href).toBe('/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/vlan-333');
+        expect(findingSubjectLink(network)).toEqual({
+            to: '/ovn-recon/networks/cudn/vlan-333', label: 'ClusterUserDefinedNetwork vlan-333'
+        });
+    });
+
+    it('links any other object to the console', () => {
+        const other = finding({ subject: { kind: 'k8s', ref: nncpRef('br-ex-policy') }, scope: {} });
+        expect(findingSubjectLink(other, 'control-1')).toEqual({
+            href: '/k8s/cluster/nmstate.io~v1~NodeNetworkConfigurationPolicy/br-ex-policy',
+            label: 'NodeNetworkConfigurationPolicy br-ex-policy'
+        });
     });
 });

@@ -138,7 +138,10 @@ describe('findings helpers (ovn-recon-7i6.1)', () => {
         expect(groups.map((g) => [g.title, g.severity])).toEqual([['MID', 'warning'], ['ALPHA', 'info'], ['ZETA', 'info']]);
         expect(groups[0].entries[0]).toEqual(expect.objectContaining({
             where: 'network-wide',
-            link: expect.objectContaining({ to: '/ovn-recon/node-network-state/n1?select=cudn:net-mid' })
+            link: expect.objectContaining({
+                to: '/ovn-recon/networks/cudn/net-mid',
+                secondary: expect.objectContaining({ to: '/ovn-recon/node-network-state/n1?select=cudn:net-mid' })
+            })
         }));
         expect(groups[1].entries[0].where).toBe('on n1');
     });

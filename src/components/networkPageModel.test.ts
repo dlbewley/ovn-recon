@@ -12,7 +12,9 @@ import {
     findNadOwner,
     findNetwork,
     generatedNads,
+    isClusterDefaultNad,
     listNetworks,
+    networkCreationFailure,
     NetworkInputs,
     networkPath,
     networkSummaryFacts,
@@ -326,6 +328,61 @@ describe('a NAD outside OVN-Kubernetes', () => {
         expect(placement.rows.find((row) => row.node === 'worker-1')?.physicalPath)
             .toBe('/ovn-recon/node-network-state/worker-1?select=iface:br-vmdata');
         expect(factValue(networkSummaryFacts(record, bridgeInputs), 'VLAN')?.value).toBe('30');
+    });
+});
+
+describe('the cluster default network NAD', () => {
+    const config = '{"cniVersion":"0.4.0","name":"ovn-kubernetes","type":"ovn-k8s-cni-overlay"}';
+    const nad = (namespace: string, name = 'default', specConfig = config): NetworkAttachmentDefinition =>
+        ({ metadata: { name, namespace }, spec: { config: specConfig } });
+    const inputs = (item: NetworkAttachmentDefinition): NetworkInputs => ({ ...coverageInputs, nads: [item] });
+
+    it('is recognised by name, namespace and CNI type', () => {
+        expect(isClusterDefaultNad(nad('openshift-ovn-kubernetes'))).toBe(true);
+        expect(isClusterDefaultNad(nad('ovn-kubernetes'))).toBe(true);
+        expect(isClusterDefaultNad(nad('demo'))).toBe(false);
+        expect(isClusterDefaultNad(nad('openshift-ovn-kubernetes', 'other'))).toBe(false);
+        expect(isClusterDefaultNad(nad('openshift-ovn-kubernetes', 'default', '{"type":"bridge","bridge":"br1"}'))).toBe(false);
+    });
+
+    it('is named for what it is rather than given an unknown topology', () => {
+        const item = nad('openshift-ovn-kubernetes');
+        const record = findNetwork({ kind: 'nad', namespace: 'openshift-ovn-kubernetes', name: 'default' }, inputs(item))!;
+        expect(record).toMatchObject({ topology: 'Cluster default network', clusterDefault: true, placement: 'none' });
+        const facts = networkSummaryFacts(record, inputs(item));
+        expect(factValue(facts, 'Topology')).toBeUndefined();
+        expect(factValue(facts, 'Network')).toMatchObject({ value: 'Cluster default network' });
+    });
+
+    it('leaves any other OVN-Kubernetes NAD without a topology as Unknown', () => {
+        const item = nad('demo');
+        expect(findNetwork({ kind: 'nad', namespace: 'demo', name: 'default' }, inputs(item))).toMatchObject({ topology: 'Unknown' });
+    });
+
+    it('keeps a declared topology on a NAD in that place', () => {
+        const item = nad('openshift-ovn-kubernetes', 'default', '{"type":"ovn-k8s-cni-overlay","topology":"layer2"}');
+        const record = findNetwork({ kind: 'nad', namespace: 'openshift-ovn-kubernetes', name: 'default' }, inputs(item))!;
+        expect(record.topology).toBe('Layer2');
+        expect(record.clusterDefault).toBeUndefined();
+    });
+});
+
+describe('a network whose NetworkCreated condition is False', () => {
+    const withCondition = (status: string) => {
+        const cudn = clone(coverage.cudns.find((c) => c.metadata?.name === 'vlan-333')!);
+        cudn.status = { conditions: [{ type: 'NetworkCreated', status, reason: 'SyncError', message: 'no' }] };
+        return findNetwork({ kind: 'cudn', name: 'vlan-333' }, { ...coverageInputs, cudns: [cudn] })!;
+    };
+
+    it('reports the condition when False, and nothing when True, Unknown or absent', () => {
+        expect(networkCreationFailure(withCondition('False'))).toMatchObject({ reason: 'SyncError', message: 'no' });
+        expect(networkCreationFailure(withCondition('True'))).toBeUndefined();
+        expect(networkCreationFailure(withCondition('Unknown'))).toBeUndefined();
+        const bare = clone(coverage.cudns[0]);
+        delete bare.status;
+        expect(networkCreationFailure(findNetwork(
+            { kind: 'cudn', name: bare.metadata?.name || '' }, { ...coverageInputs, cudns: [bare] }
+        )!)).toBeUndefined();
     });
 });
 

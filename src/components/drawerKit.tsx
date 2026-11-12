@@ -97,15 +97,22 @@ export const InferredLabel: React.FC = () => (
 );
 
 /** One line per fact. The children are FactRow, WideFactRow or their groups. */
-export const FactRows: React.FC<{ children: React.ReactNode; ariaLabel?: string; testId?: string }> = ({
+export const FactRows: React.FC<{
+    children: React.ReactNode;
+    ariaLabel?: string;
+    testId?: string;
+    /** The term column's width; a full-width page has room for longer terms than a drawer. */
+    termWidth?: string;
+}> = ({
     children,
     ariaLabel,
     testId,
+    termWidth = FACT_TERM_WIDTH,
 }) => (
     <DescriptionList
         isHorizontal
         isCompact
-        horizontalTermWidthModifier={{ default: FACT_TERM_WIDTH }}
+        horizontalTermWidthModifier={{ default: termWidth }}
         style={FACT_LIST_STYLE}
         aria-label={ariaLabel}
         data-testid={testId ?? 'fact-rows'}
