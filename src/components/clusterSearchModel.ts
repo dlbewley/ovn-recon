@@ -657,9 +657,10 @@ const comparePorts = (a: string, b: string): number => {
  * member. A load balancer with no Service owner and no Service name is a
  * Service of its own, under its row name.
  *
- * The collector reports one VIP key per load balancer row, the first that
- * matched; a second port of the same address in the same row is only seen
- * when another row carries it.
+ * The collector reports one hit per load balancer row; `matchedValues`
+ * carries every VIP of the row that matched, so a second port of the same
+ * address in the same row is a port here too. An older collector sends only
+ * `matchedValue`, the first.
  */
 export const foldServiceVips = (
     hits: LookupHit[],
@@ -700,9 +701,11 @@ export const foldServiceVips = (
         const ports = new Set<string>();
         for (const vipHit of bucket.hits) {
             if (vipHit.matchedField !== 'vips') continue;
-            const { port } = parseVip(vipHit.matchedValue);
             const protocol = serviceOfLoadBalancerName(vipHit.rowName)?.protocol;
-            if (port) ports.add(protocol ? `${port}/${protocol}` : port);
+            for (const value of vipHit.matchedValues?.length ? vipHit.matchedValues : [vipHit.matchedValue]) {
+                const { port } = parseVip(value);
+                if (port) ports.add(protocol ? `${port}/${protocol}` : port);
+            }
         }
         const places = unionPlaces(members);
         const found = new Set(places.map((place) => place.node));

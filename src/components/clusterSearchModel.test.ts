@@ -873,6 +873,21 @@ describe('Service VIPs: one row per Service and address (ovn-recon-tpp.8)', () =
         ]);
     });
 
+    it('makes a chip of every VIP a load balancer row reports, and still reads an older collector', () => {
+        const both = (zone: string, protocol: string, vips: string[]): LookupHit =>
+            lb(zone, `Service_openshift-dns/dns-default_${protocol}_cluster`, vips[0], { matchedValues: vips });
+        const [result] = foldServiceVips(
+            [
+                both('node-a', 'TCP', ['198.51.100.10:53', '198.51.100.10:9154']),
+                both('node-a', 'UDP', ['198.51.100.10:53']),
+            ],
+            ['node-a'],
+        );
+        expect(result.ports).toEqual(['53/TCP', '53/UDP', '9154/TCP']);
+        const [older] = foldServiceVips([lb('node-a', 'Service_openshift-dns/dns-default_TCP_cluster', '198.51.100.10:53')], ['node-a']);
+        expect(older.ports).toEqual(['53/TCP']);
+    });
+
     it('names the Service from the load balancer name when the row has no owner', () => {
         const [result] = foldServiceVips(
             [

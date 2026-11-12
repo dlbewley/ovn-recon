@@ -812,3 +812,17 @@ func TestLookupSearchReportsEachZoneAndSurvivesAnEmptyOne(t *testing.T) {
 		t.Fatal("expected hits from the populated zone")
 	}
 }
+
+func TestLookupLoadBalancerRowReportsEveryVIPOnTheAddress(t *testing.T) {
+	// The row holds 10.30.0.10:80 and :443 beside an IPv6 VIP.
+	vip := onlyHit(t, lookupSynthetic(t, "ip", "10.30.0.10"), LookupTableLoadBalancer)
+	want := []string{"10.30.0.10:443", "10.30.0.10:80"}
+	if !reflect.DeepEqual(vip.MatchedValues, want) || vip.MatchedValue != want[0] {
+		t.Fatalf("expected both VIPs of the row, got %q / %v", vip.MatchedValue, vip.MatchedValues)
+	}
+	// One matching VIP leaves the field out.
+	single := onlyHit(t, lookupSynthetic(t, "ip", "fd00:30::10"), LookupTableLoadBalancer)
+	if single.MatchedValues != nil {
+		t.Fatalf("a single match should not carry matchedValues, got %v", single.MatchedValues)
+	}
+}
