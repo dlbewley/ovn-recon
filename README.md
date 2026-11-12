@@ -32,58 +32,12 @@ Blog post: [OVN Recon: Making OpenShift Networking Connections](https://guifreel
 - **Optional console integration**: an OVN Recon tab and action on the console's own Node and network pages, off by default.
 - **Operator-managed lifecycle**: recommended installation via the OVN Recon Operator with automatic console plugin enablement and collector wiring.
 
-## Kubernetes Resource Dependencies
-
-OVN Recon visualizes the following Kubernetes Custom Resources:
-
-- **NodeNetworkState (NNS)** - Represents the current network configuration of a node, including interfaces, bridges, and OVN bridge mappings. Provided by the [nmstate operator](https://nmstate.io/).
-- **NodeNetworkConfigurationPolicy (NNCP)** - Defines desired network configuration for nodes. Used to configure OVN bridge mappings and physical network interfaces.
-- **ClusterUserDefinedNetwork (CUDN)** - Defines overlay networks that can be attached to pods. Part of OpenShift's [OVN-Kubernetes secondary networks](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/about-ovn-kubernetes.html).
-- **UserDefinedNetwork (UDN)** - Namespace-scoped network definitions used by secondary network workflows.
-- **NetworkAttachmentDefinition (NAD)** - Multus CNI resource that references a CUDN and allows pods to attach to secondary networks.
-- **RouteAdvertisements** - Cluster-scoped route advertisement policy objects used for VRF-to-network relationships.
-- **VTEP** - Cluster-scoped EVPN tunnel endpoint pool. Used to say which VTEP a node's VXLAN device and EVPN bridge belong to, and which EVPN networks ride on it. Optional: absent on clusters without EVPN.
-- **Node** - Only the node being viewed, and only its `k8s.ovn.org/vteps` annotation, which records the address OVN-Kubernetes discovered for each VTEP on that node. Optional.
-- **NodeNetworkConfigurationEnactment** - Shows which NodeNetworkConfigurationPolicy configured an interface and whether a policy is failing on the node. Optional.
-- **SriovNetworkNodeState** - Virtual function pools and drivers on a node. Optional: absent on clusters without the SR-IOV operator.
-- **Service and EndpointSlice** - Read only when a Service row is expanded in the logical view's Services tab, to show its type and resolve backends to pods.
-- **OvnRecon** - Operator custom resource that controls plugin/collector deployment and logical topology feature gating.
-
-The plugin watches these resources in real-time and renders interactive physical/logical topology views to show how interfaces, bridges, networks, routes, and attachments are connected.
-
-## Using OVN Recon
-
-- **Overview**: `/ovn-recon` (the single *Networking → OVN Recon* menu entry): a cluster-wide search,
-  collector status, network counts, and a node table with per-node facts and links to every view.
-  `/ovn-recon/node-network-state` still lands here so older bookmarks keep working.
-  - **Find in cluster**: type an IP address, a CIDR, a MAC, or part of a pod, VM, network or interface
-    name and press Enter. Results are grouped by kind (pod and VM ports, router ports, NAT rules, Service
-    VIPs, node interfaces, routes) and each opens the logical or physical view with the object selected.
-    Routes and subnets that only contain the address are folded into a separate, collapsed section. The
-    search is kept in the page URL (`/ovn-recon?q=10.131.0.70`), so it can be bookmarked and linked to.
-    OVN objects are searched by the collector; with the collector disabled the search still covers every
-    node's NodeNetworkState and says the result is partial.
-  - **Findings**: a card counts warnings across the cluster and lists them by rule; each links to the object it is about.
-- **Networks**: `/ovn-recon/networks` lists every CUDN, UDN and NAD with the number of nodes it is wired on. A network's page
-  (`/ovn-recon/networks/cudn/:name`, `/udn/:namespace/:name`, `/nad/:namespace/:name`) shows its summary and a per-node placement table.
-- **Physical view**: `/ovn-recon/node-network-state/:name`
-- **Cluster logical OVN view**: `/ovn-recon/ovn` (shown when the collector feature gate is enabled)
-- **Node logical OVN view**: `/ovn-recon/ovn/:name` (shown when the collector feature gate is enabled)
-- **Switch or router detail page**: `/ovn-recon/ovn/:node/:kind/:name`, reached from a drawer's **Open details** link.
-- **Linking to a selection**: selecting an object adds `?select=` to the URL (for example `?select=iface:br-ex` on the physical view or
-  `?select=switch:join` on a logical view). Opening that URL selects the object again.
-
-In the physical node graph:
-- LLDP neighbors are rendered in a dedicated optional column left of physical interfaces.
-- The `Show LLDP neighbors` toggle appears only when LLDP is enabled on at least one interface and LLDP neighbor payloads are present.
-
 ## Installation
 
 > [!WARNING]
-> **Experimental / No warranty.** This project is experimental, community-maintained, and is **not endorsed or supported by Red Hat**. It is provided "as is" with no warranty. Installing or using it may affect your cluster; you assume all risk. Test in a non-production environment first. The authors are not responsible for any damage, downtime, or data loss.
+> **Experimental / No warranty.** This project is experimental, community-maintained, and is **not endorsed or supported by Red Hat**. OVN Recon is provided "as is" with no warranty. Installing or using it may affect your cluster; you assume all risk. Test in a non-production environment first. The authors are not responsible for any damage, downtime, or data loss.
 
 ### Operator Installation (recommended)
-
 
 #### GUI Operator Installation Method
 
@@ -96,29 +50,28 @@ In the physical node graph:
 - After a few moments click the tile to create a "ovnrecon" resource and accept the defaults
 - After a few more moments a new "OVN Recon" menu will show up within the Networking menu.
 
-#### CLI Operator Installation Method
+### Deep Console Integration (off by default)
 
-Create the Bewley Operators [catalog source](manifests/catalogsource.yaml)
-
-```bash
-oc apply -f manifests/catalogsource.yaml
-```
-
-Create the [operator subscription](manifests/operator/base).
+OVN Recon can add an **OVN Recon** tab and an **Open in OVN Recon** action to the console's own
+Node, ClusterUserDefinedNetwork, UserDefinedNetwork and NetworkAttachmentDefinition pages. Both
+are **off by default**, so installing or upgrading OVN Recon changes nothing on those pages. An
+administrator turns them on, for every console user at once, in the `OvnRecon` resource:
 
 ```bash
-oc apply -k manifests/operator/base
+oc patch ovnrecon ovn-recon --type=merge -p '{
+  "spec": {
+    "consolePlugin": {
+      "integration": { "resourceTabs": true, "resourceActions": true }
+    }
+  }
+}'
 ```
 
-Create the `ovnrecon` [resource instance](manifests/instance/base) to enable console plugin and deploy OVN Recon application.
+Set either back to `false` to remove it. Users who may not read `OvnRecon` resources do not see
+the tabs or actions. See [OPERATOR.md](OPERATOR.md#console-integration) for details.
 
-```bash
-oc apply -k manifests/instance/base
-```
+<a href="img/console-node-tab.png"><img src="img/console-node-tab.png" width="60%" alt="The OVN Recon tab on a Node details page" /></a>
 
-Console plugin will be automatically enabled.
-
-For detailed operator deployment instructions, please see [docs/OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
 
 ### Logical Topology View (Collector)
 
@@ -196,27 +149,31 @@ spec:
   instead of risking a volume-attach deadlock); a pre-created RWX claim
   keeps zero-gap rolling updates.
 
-### Console Integration (off by default)
+## Alternative Installation Methods
 
-OVN Recon can add an **OVN Recon** tab and an **Open in OVN Recon** action to the console's own
-Node, ClusterUserDefinedNetwork, UserDefinedNetwork and NetworkAttachmentDefinition pages. Both
-are **off by default**, so installing or upgrading OVN Recon changes nothing on those pages. An
-administrator turns them on, for every console user at once, in the `OvnRecon` resource:
+### CLI Operator Installation
+
+Create the Bewley Operators [catalog source](manifests/catalogsource.yaml)
 
 ```bash
-oc patch ovnrecon ovn-recon --type=merge -p '{
-  "spec": {
-    "consolePlugin": {
-      "integration": { "resourceTabs": true, "resourceActions": true }
-    }
-  }
-}'
+oc apply -f manifests/catalogsource.yaml
 ```
 
-Set either back to `false` to remove it. Users who may not read `OvnRecon` resources do not see
-the tabs or actions. See [OPERATOR.md](OPERATOR.md#console-integration) for details.
+Create the [operator subscription](manifests/operator/base).
 
-<a href="img/console-node-tab.png"><img src="img/console-node-tab.png" width="60%" alt="The OVN Recon tab on a Node details page" /></a>
+```bash
+oc apply -k manifests/operator/base
+```
+
+Create the `ovnrecon` [resource instance](manifests/instance/base) to enable console plugin and deploy OVN Recon application.
+
+```bash
+oc apply -k manifests/instance/base
+```
+
+Console plugin will be automatically enabled.
+
+For detailed operator deployment instructions, please see [docs/OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
 
 ### Manual Installation
 
@@ -239,6 +196,52 @@ oc patch console.operator.openshift.io cluster --type=json \
 ```
 
 The OpenShift console will reload to apply the changes. You should see a notification that the console has been updated.
+
+## Kubernetes Resource Dependencies
+
+OVN Recon visualizes the following Kubernetes Custom Resources:
+
+- **NodeNetworkState (NNS)** - Represents the current network configuration of a node, including interfaces, bridges, and OVN bridge mappings. Provided by the [nmstate operator](https://nmstate.io/).
+- **NodeNetworkConfigurationPolicy (NNCP)** - Defines desired network configuration for nodes. Used to configure OVN bridge mappings and physical network interfaces.
+- **ClusterUserDefinedNetwork (CUDN)** - Defines overlay networks that can be attached to pods. Part of OpenShift's [OVN-Kubernetes secondary networks](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/about-ovn-kubernetes.html).
+- **UserDefinedNetwork (UDN)** - Namespace-scoped network definitions used by secondary network workflows.
+- **NetworkAttachmentDefinition (NAD)** - Multus CNI resource that references a CUDN and allows pods to attach to secondary networks.
+- **RouteAdvertisements** - Cluster-scoped route advertisement policy objects used for VRF-to-network relationships.
+- **VTEP** - Cluster-scoped EVPN tunnel endpoint pool. Used to say which VTEP a node's VXLAN device and EVPN bridge belong to, and which EVPN networks ride on it. Optional: absent on clusters without EVPN.
+- **Node** - Only the node being viewed, and only its `k8s.ovn.org/vteps` annotation, which records the address OVN-Kubernetes discovered for each VTEP on that node. Optional.
+- **NodeNetworkConfigurationEnactment** - Shows which NodeNetworkConfigurationPolicy configured an interface and whether a policy is failing on the node. Optional.
+- **SriovNetworkNodeState** - Virtual function pools and drivers on a node. Optional: absent on clusters without the SR-IOV operator.
+- **Service and EndpointSlice** - Read only when a Service row is expanded in the logical view's Services tab, to show its type and resolve backends to pods.
+- **OvnRecon** - Operator custom resource that controls plugin/collector deployment and logical topology feature gating.
+
+The plugin watches these resources in real-time and renders interactive physical/logical topology views to show how interfaces, bridges, networks, routes, and attachments are connected.
+
+## Using OVN Recon
+
+- **Overview**: `/ovn-recon` (the single *Networking → OVN Recon* menu entry): a cluster-wide search,
+  collector status, network counts, and a node table with per-node facts and links to every view.
+  `/ovn-recon/node-network-state` still lands here so older bookmarks keep working.
+  - **Find in cluster**: type an IP address, a CIDR, a MAC, or part of a pod, VM, network or interface
+    name and press Enter. Results are grouped by kind (pod and VM ports, router ports, NAT rules, Service
+    VIPs, node interfaces, routes) and each opens the logical or physical view with the object selected.
+    Routes and subnets that only contain the address are folded into a separate, collapsed section. The
+    search is kept in the page URL (`/ovn-recon?q=10.131.0.70`), so it can be bookmarked and linked to.
+    OVN objects are searched by the collector; with the collector disabled the search still covers every
+    node's NodeNetworkState and says the result is partial.
+  - **Findings**: a card counts warnings across the cluster and lists them by rule; each links to the object it is about.
+- **Networks**: `/ovn-recon/networks` lists every CUDN, UDN and NAD with the number of nodes it is wired on. A network's page
+  (`/ovn-recon/networks/cudn/:name`, `/udn/:namespace/:name`, `/nad/:namespace/:name`) shows its summary and a per-node placement table.
+- **Physical view**: `/ovn-recon/node-network-state/:name`
+- **Cluster logical OVN view**: `/ovn-recon/ovn` (shown when the collector feature gate is enabled)
+- **Node logical OVN view**: `/ovn-recon/ovn/:name` (shown when the collector feature gate is enabled)
+- **Switch or router detail page**: `/ovn-recon/ovn/:node/:kind/:name`, reached from a drawer's **Open details** link.
+- **Linking to a selection**: selecting an object adds `?select=` to the URL (for example `?select=iface:br-ex` on the physical view or
+  `?select=switch:join` on a logical view). Opening that URL selects the object again.
+
+In the physical node graph:
+- LLDP neighbors are rendered in a dedicated optional column left of physical interfaces.
+- The `Show LLDP neighbors` toggle appears only when LLDP is enabled on at least one interface and LLDP neighbor payloads are present.
+
 
 ## Troubleshooting
 
