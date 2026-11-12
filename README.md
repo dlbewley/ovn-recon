@@ -80,10 +80,9 @@ In the physical node graph:
 ## Installation
 
 > [!WARNING]
-> **Experimental / No warranty.** This project is experimental, community-maintained, and is **not endorsed or supported by Red Hat**. It is provided "as is" with no warranty. Installing or using it may affect your cluster; you assume all risk. Test in a non-production environment first. The authors are not responsible for any damage, downtime, or data loss.
+> **Experimental / No warranty.** This project is experimental, community-maintained, and is **not endorsed or supported by Red Hat**. OVN Recon is provided "as is" with no warranty. Installing or using it may affect your cluster; you assume all risk. Test in a non-production environment first. The authors are not responsible for any damage, downtime, or data loss.
 
 ### Operator Installation (recommended)
-
 
 #### GUI Operator Installation Method
 
@@ -96,29 +95,28 @@ In the physical node graph:
 - After a few moments click the tile to create a "ovnrecon" resource and accept the defaults
 - After a few more moments a new "OVN Recon" menu will show up within the Networking menu.
 
-#### CLI Operator Installation Method
+### Deep Console Integration (off by default)
 
-Create the Bewley Operators [catalog source](manifests/catalogsource.yaml)
-
-```bash
-oc apply -f manifests/catalogsource.yaml
-```
-
-Create the [operator subscription](manifests/operator/base).
+OVN Recon can add an **OVN Recon** tab and an **Open in OVN Recon** action to the console's own
+Node, ClusterUserDefinedNetwork, UserDefinedNetwork and NetworkAttachmentDefinition pages. Both
+are **off by default**, so installing or upgrading OVN Recon changes nothing on those pages. An
+administrator turns them on, for every console user at once, in the `OvnRecon` resource:
 
 ```bash
-oc apply -k manifests/operator/base
+oc patch ovnrecon ovn-recon --type=merge -p '{
+  "spec": {
+    "consolePlugin": {
+      "integration": { "resourceTabs": true, "resourceActions": true }
+    }
+  }
+}'
 ```
 
-Create the `ovnrecon` [resource instance](manifests/instance/base) to enable console plugin and deploy OVN Recon application.
+Set either back to `false` to remove it. Users who may not read `OvnRecon` resources do not see
+the tabs or actions. See [OPERATOR.md](OPERATOR.md#console-integration) for details.
 
-```bash
-oc apply -k manifests/instance/base
-```
+<a href="img/console-node-tab.png"><img src="img/console-node-tab.png" width="60%" alt="The OVN Recon tab on a Node details page" /></a>
 
-Console plugin will be automatically enabled.
-
-For detailed operator deployment instructions, please see [docs/OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
 
 ### Logical Topology View (Collector)
 
@@ -196,27 +194,29 @@ spec:
   instead of risking a volume-attach deadlock); a pre-created RWX claim
   keeps zero-gap rolling updates.
 
-### Console Integration (off by default)
+#### CLI Operator Installation Method
 
-OVN Recon can add an **OVN Recon** tab and an **Open in OVN Recon** action to the console's own
-Node, ClusterUserDefinedNetwork, UserDefinedNetwork and NetworkAttachmentDefinition pages. Both
-are **off by default**, so installing or upgrading OVN Recon changes nothing on those pages. An
-administrator turns them on, for every console user at once, in the `OvnRecon` resource:
+Create the Bewley Operators [catalog source](manifests/catalogsource.yaml)
 
 ```bash
-oc patch ovnrecon ovn-recon --type=merge -p '{
-  "spec": {
-    "consolePlugin": {
-      "integration": { "resourceTabs": true, "resourceActions": true }
-    }
-  }
-}'
+oc apply -f manifests/catalogsource.yaml
 ```
 
-Set either back to `false` to remove it. Users who may not read `OvnRecon` resources do not see
-the tabs or actions. See [OPERATOR.md](OPERATOR.md#console-integration) for details.
+Create the [operator subscription](manifests/operator/base).
 
-<a href="img/console-node-tab.png"><img src="img/console-node-tab.png" width="60%" alt="The OVN Recon tab on a Node details page" /></a>
+```bash
+oc apply -k manifests/operator/base
+```
+
+Create the `ovnrecon` [resource instance](manifests/instance/base) to enable console plugin and deploy OVN Recon application.
+
+```bash
+oc apply -k manifests/instance/base
+```
+
+Console plugin will be automatically enabled.
+
+For detailed operator deployment instructions, please see [docs/OLM-BUNDLE-GUIDE.md](docs/OLM-BUNDLE-GUIDE.md).
 
 ### Manual Installation
 
