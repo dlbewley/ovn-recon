@@ -5,7 +5,7 @@ import {
     CONSOLE_OWNER, CRD_FLAGS, kindReference, LinkTarget, NETWORKING_PLUGIN, NMSTATE_PLUGIN, NO_CAPABILITIES,
     resolveLinkOut, resolveLinkOuts
 } from './registry';
-import { BARE, capabilities, OCP_4_22, OCP_5_1 } from './testCapabilities';
+import { allCrds, BARE, capabilities, OCP_4_22, OCP_5_1 } from './testCapabilities';
 
 const NETWORK_POLICY = { apiVersion: 'networking.k8s.io/v1', kind: 'NetworkPolicy' };
 const MULTI_NETWORK_POLICY = { apiVersion: 'k8s.cni.cncf.io/v1beta1', kind: 'MultiNetworkPolicy' };
@@ -122,21 +122,22 @@ describe('link-out registry (ovn-recon-zdt.4)', () => {
     describe('an interface on a node', () => {
         const iface: LinkTarget = { type: 'node-interface', node: 'worker-1', name: 'ens192', interfaceType: 'ethernet' };
 
-        it('gets a secondary link into nmstate\'s topology, selected by node, name and type', () => {
+        it('gets a secondary link to its details on nmstate\'s state page, by node, name and type', () => {
             const { primary, secondary } = resolveLinkOuts(iface, OCP_4_22);
             expect(primary).toBeUndefined();
             expect(secondary).toEqual([{
-                id: 'nmstate-topology',
-                path: '/node-network-configuration?selectedID=worker-1~ens192~ethernet',
+                id: 'nmstate-interface',
+                path: '/k8s/cluster/nmstate.io~v1beta1~NodeNetworkState?selectedState=worker-1&selectedInterface=ens192&selectedInterfaceType=ethernet',
                 owner: NMSTATE_PLUGIN,
-                label: 'Open in nmstate topology',
+                label: 'Interface details in nmstate',
             }]);
         });
 
         it('escapes a name that would break the query string', () => {
             const odd: LinkTarget = { ...iface, name: 'a&b=c' } as LinkTarget;
             expect(resolveLinkOuts(odd, OCP_5_1).secondary[0].path)
-                .toBe('/node-network-configuration?selectedID=worker-1~a%26b%3Dc~ethernet');
+                .toBe('/k8s/cluster/nmstate.io~v1beta1~NodeNetworkState'
+                    + '?selectedState=worker-1&selectedInterface=a%26b%3Dc&selectedInterfaceType=ethernet');
         });
 
         it('gets nothing when the nmstate plugin is absent', () => {
@@ -146,8 +147,13 @@ describe('link-out registry (ovn-recon-zdt.4)', () => {
                 .toEqual([]);
         });
 
-        it('gets nothing when the plugin is loaded without the topology page', () => {
-            expect(resolveLinkOuts(iface, capabilities({ [NMSTATE_PLUGIN]: [] })).secondary).toEqual([]);
+        it('does not depend on the topology page: the state page comes with the plugin', () => {
+            expect(resolveLinkOuts(iface, capabilities({ [NMSTATE_PLUGIN]: [] })).secondary).toHaveLength(1);
+        });
+
+        it('gets nothing when the cluster does not serve NodeNetworkState', () => {
+            expect(resolveLinkOuts(iface, capabilities({ [NMSTATE_PLUGIN]: [] }, allCrds(false))).secondary)
+                .toEqual([]);
         });
 
         it('gets nothing without all three parts of the selection', () => {

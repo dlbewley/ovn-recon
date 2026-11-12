@@ -72,7 +72,7 @@ export const ConsoleLink: React.FC<ConsoleLinkProps> = ({ target, children, hide
 
 /**
  * The other pages worth offering for `target`, each under its own label
- * ("Open in nmstate topology"). Renders nothing when there are none, so a
+ * ("Interface details in nmstate"). Renders nothing when there are none, so a
  * caller can place it unconditionally.
  */
 export const SecondaryLinks: React.FC<{ target: LinkTarget | undefined; style?: React.CSSProperties }> = ({

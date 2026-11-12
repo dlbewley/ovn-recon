@@ -109,12 +109,16 @@ describe('physical drawer links, rendered (ovn-recon-zdt.4)', () => {
         act(() => { button!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     };
 
-    it('offers the NodeNetworkState and nmstate\'s topology for an interface when nmstate is loaded', () => {
+    it('offers the NodeNetworkState and nmstate\'s interface details for an interface when nmstate is loaded', () => {
         mockCapabilities.mockReturnValue(OCP_4_22);
         open('ens192 (ethernet)');
         expect(elsewhere()).toEqual([
             ['View resource in console', '/k8s/cluster/nmstate.io~v1beta1~NodeNetworkState/worker-1', null],
-            ['Open in nmstate topology', '/node-network-configuration?selectedID=worker-1~ens192~ethernet', null],
+            [
+                'Interface details in nmstate',
+                '/k8s/cluster/nmstate.io~v1beta1~NodeNetworkState?selectedState=worker-1&selectedInterface=ens192&selectedInterfaceType=ethernet',
+                null,
+            ],
         ]);
     });
 

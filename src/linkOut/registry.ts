@@ -19,8 +19,12 @@ import type { ResourceRef } from '../topology/types';
  *   who owns the page in `owner`.
  * - Create forms are different: `~new/form` exists only as a route the networking
  *   plugin adds. Without that plugin the console's own `~new` (YAML) is the page.
- * - nmstate's topology is `/node-network-configuration`, and it selects an
- *   interface from `selectedID=<node>~<interface>~<type>`.
+ * - nmstate replaces the NodeNetworkState list page, and that page opens one
+ *   interface's details from `selectedState`, `selectedInterface` and
+ *   `selectedInterfaceType` (release-4.21 to release-5.1). That is where an
+ *   interface links. nmstate's topology at `/node-network-configuration` also
+ *   reads a `selectedID`, but on release-4.22 an arriving link selects and opens
+ *   nothing there, so it is not a destination (checked on a 4.22 console).
  * - `/physical-networks` belongs to the nmstate plugin on 4.22 and to the
  *   networking plugin on 5.1. Neither reads a network name from the URL, so the
  *   link opens the list.
@@ -38,7 +42,6 @@ export const NETOBSERV_PLUGIN = 'netobserv-plugin';
 /** The console itself, as the owner of a page no plugin replaces. */
 export const CONSOLE_OWNER = 'console';
 
-export const NMSTATE_TOPOLOGY_PATH = '/node-network-configuration';
 export const PHYSICAL_NETWORKS_PATH = '/physical-networks';
 
 /** A kind, without an object: enough to address its list or create page. */
@@ -238,14 +241,18 @@ const consoleProvider: LinkOutProvider = (target, capabilities) => {
 const nmstateProvider: LinkOutProvider = (target, capabilities) => {
     if (target.type !== 'node-interface') return {};
     if (!target.node || !target.name || !target.interfaceType) return {};
-    if (!navOwner(NMSTATE_TOPOLOGY_PATH, capabilities, [NMSTATE_PLUGIN])) return {};
-    const selected = [target.node, target.name, target.interfaceType].join('~');
+    if (!capabilities.plugins.has(NMSTATE_PLUGIN) || !kindIsServed(NNS, capabilities)) return {};
+    const query = new URLSearchParams({
+        selectedState: target.node,
+        selectedInterface: target.name,
+        selectedInterfaceType: target.interfaceType,
+    });
     return {
         secondary: [{
-            id: 'nmstate-topology',
-            path: `${NMSTATE_TOPOLOGY_PATH}?selectedID=${encodeURIComponent(selected)}`,
+            id: 'nmstate-interface',
+            path: `/k8s/cluster/${kindReference(NNS)}?${query.toString()}`,
             owner: NMSTATE_PLUGIN,
-            label: 'Open in nmstate topology',
+            label: 'Interface details in nmstate',
         }],
     };
 };
