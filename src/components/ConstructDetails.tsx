@@ -35,6 +35,7 @@ import {
     PortsBody,
     RelationshipsBody,
     ServicesBody,
+    useDrawerFindings,
     useSectionStates,
 } from './ConstructDrawerBody';
 import {
@@ -61,6 +62,10 @@ import { useChassisNodeNames } from './useChassisNodeNames';
 import { useConstructDetailData } from './useConstructDetailData';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { LinkOutProvider } from '../linkOut/LinkOut';
+import { FindingsSection } from '../insights/ui/FindingsViews';
+import { useHideInfoFindings } from '../insights/ui/useFindings';
+import { useLogicalFindings } from '../insights/ui/useLogicalFindings';
+import { useNodePods } from '../insights/ui/useLogicalInputs';
 import { getResourcePath } from '../topology/links';
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
@@ -310,6 +315,18 @@ const ConstructDetails: React.FC = () => {
         [],
     );
 
+    // Findings on this construct (ovn-recon-7i6.3): the node's logical rules over
+    // the page's snapshot and the node's pods, plus the section rules over a section
+    // the page has loaded for a tab. Findings about the zone as a whole are listed on
+    // the node's ladder page, not here.
+    const pods = useNodePods(gateLoaded && enabled && kind === 'switch' ? node : undefined);
+    const allFindings = useLogicalFindings({ nodeName: node, snapshot, pods });
+    const [hideInfo] = useHideInfoFindings();
+    const findings = useDrawerFindings(
+        { findings: allFindings, hideInfo, construct: construct ?? EMPTY_CONSTRUCT, databaseNode: node },
+        sectionStates.policy,
+    );
+
     if (!gateLoaded) {
         return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
     }
@@ -514,6 +531,11 @@ const ConstructDetails: React.FC = () => {
         ) : null;
         body = (
             <PageSection isFilled>
+                {findings && findings.length > 0 && (
+                    <div className="pf-u-mb-md" data-testid="construct-findings">
+                        <FindingsSection findings={findings} />
+                    </div>
+                )}
                 <Tabs
                     activeKey={activeTab}
                     onSelect={(_event, key) => {

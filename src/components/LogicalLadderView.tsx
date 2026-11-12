@@ -26,6 +26,8 @@ import {
 } from './logicalLadderLabels';
 import { ViewportBox } from './canvasViewport';
 import { CATEGORICAL, CategoricalColor, SURFACE } from '../topology/palette';
+import type { Finding } from '../insights/types';
+import { FindingsBadge, findingsBadgeWidth } from '../insights/ui/FindingsViews';
 
 // The label text lives with its fitting logic; the drawer imports it from here.
 export { EDGE_ROLE_LABELS, edgeLabel } from './logicalLadderLabels';
@@ -71,6 +73,11 @@ export interface LogicalLadderViewProps {
      * aggregate), so the page can keep it visible as the canvas resizes.
      */
     onSelectedBox?: (box: ViewportBox | null) => void;
+    /**
+     * The findings to badge on a construct (ovn-recon-7i6.3). A construct folded into
+     * an aggregate chip lends its findings to the chip. Unset draws no badges.
+     */
+    findingsFor?: (construct: LadderConstruct) => Finding[];
 }
 
 /**
@@ -349,7 +356,14 @@ interface ConstructCardProps {
     isSelected: boolean;
     isDimmed: boolean;
     onSelect: (uuid: string) => void;
+    findings?: Finding[];
 }
+
+/** The findings pill straddling a card's top edge, right-aligned as on the physical graph. */
+const CardFindingsBadge: React.FC<{ findings?: Finding[] }> = ({ findings }) =>
+    (findings && findings.length > 0
+        ? <FindingsBadge findings={findings} x={CONSTRUCT_WIDTH - 6 - findingsBadgeWidth(findings)} y={-9} />
+        : null);
 
 const ConstructCard: React.FC<ConstructCardProps> = ({
     construct,
@@ -359,6 +373,7 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
     isSelected,
     isDimmed,
     onSelect,
+    findings,
 }) => {
     const statParts: string[] = [];
     if (construct.bridge) statParts.push(`→ ${construct.bridge}`);
@@ -452,6 +467,7 @@ const ConstructCard: React.FC<ConstructCardProps> = ({
                     {truncate(statParts.join(' · '), 34)}
                 </text>
             )}
+            <CardFindingsBadge findings={findings} />
         </g>
     );
 };
@@ -468,6 +484,7 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
     revealRequest,
     onRevealBox,
     onSelectedBox,
+    findingsFor,
 }) => {
     const model = React.useMemo(() => filterModel(fullModel, networkFilter), [fullModel, networkFilter]);
     const layout: LadderLayout = React.useMemo(
@@ -662,6 +679,7 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                             isSelected={selectedUuid === construct.uuid}
                             isDimmed={query !== '' && !constructMatches(construct, query)}
                             onSelect={onSelect}
+                            findings={findingsFor?.(construct)}
                         />
                     );
                 })}
@@ -697,6 +715,12 @@ const LogicalLadderView: React.FC<LogicalLadderViewProps> = ({
                         >
                             {aggregate.count} × {roleLabel(aggregate.role)}
                         </text>
+                        <CardFindingsBadge
+                            findings={findingsFor && aggregate.memberUuids.flatMap((uuid) => {
+                                const member = model.constructByUuid.get(uuid);
+                                return member ? findingsFor(member) : [];
+                            })}
+                        />
                     </g>
                 ))}
             </g>

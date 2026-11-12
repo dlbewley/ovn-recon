@@ -2,7 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { buildGraphContext, GraphContextInput } from '../topology/context';
-import type { ClusterNetworkInputs, PhysicalContext } from './types';
+import type { LogicalTopologySnapshot } from '../types';
+import type { ClusterNetworkInputs, LogicalContext, PhysicalContext } from './types';
 
 /*
  * Test helpers for the rule tests. Not imported by any shipped module.
@@ -56,4 +57,24 @@ export const physicalContext = (
 export const clusterContext = (cluster: Partial<ClusterNetworkInputs>): PhysicalContext => ({
     domain: 'physical',
     cluster: { cudns: [], udns: [], nads: [], ...cluster }
+});
+
+const SNAPSHOT_FIXTURES = path.join(process.cwd(), 'collector', 'fixtures', 'snapshots');
+
+/**
+ * A collector snapshot fixture (collector/fixtures/snapshots/<name>.json), as a fresh
+ * copy a test may vary. These hold the full snapshot, policy and services included.
+ */
+export const loadSnapshot = (name: string): LogicalTopologySnapshot =>
+    JSON.parse(fs.readFileSync(path.join(SNAPSHOT_FIXTURES, `${name}.json`), 'utf-8')) as LogicalTopologySnapshot;
+
+/** A logical context for one zone's snapshot; the node defaults to the snapshot's. */
+export const logicalContext = (
+    snapshot: LogicalTopologySnapshot,
+    extra: Partial<Omit<LogicalContext, 'domain' | 'snapshot'>> = {}
+): LogicalContext => ({
+    domain: 'logical',
+    nodeName: snapshot.metadata.nodeName,
+    snapshot,
+    ...extra
 });

@@ -315,6 +315,26 @@ export interface NetworkAttachmentDefinition extends K8sResourceCommon {
     };
 }
 
+/**
+ * A MultiNetworkPolicy (k8s.cni.cncf.io/v1beta1): a NetworkPolicy for secondary
+ * networks. The annotation k8s.v1.cni.cncf.io/policy-for names the
+ * NetworkAttachmentDefinitions it applies to, comma separated, each `name` (in the
+ * policy's namespace) or `namespace/name`.
+ */
+export interface MultiNetworkPolicy extends K8sResourceCommon {
+    spec?: Record<string, unknown>;
+}
+
+/** The fields of a Pod the plugin reads. */
+export interface Pod extends K8sResourceCommon {
+    spec?: { nodeName?: string };
+    status?: {
+        phase?: string;
+        /** RFC 3339; when the kubelet accepted the pod, before any image pull. */
+        startTime?: string;
+    };
+}
+
 export interface RouteAdvertisements extends K8sResourceCommon {
     spec?: {
         networkSelectors?: {

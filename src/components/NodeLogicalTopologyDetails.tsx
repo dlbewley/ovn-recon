@@ -29,7 +29,11 @@ import {
 import { LogicalTopologySnapshot, NodeNetworkState } from '../types';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { fetchCollectorSnapshot } from './collectorApi';
-import { buildLadderModel } from './logicalLadderModel';
+import { buildLadderModel, LadderConstruct } from './logicalLadderModel';
+import { FindingsSection, HideInfoSwitch } from '../insights/ui/FindingsViews';
+import { useHideInfoFindings, visibleFindings } from '../insights/ui/useFindings';
+import { constructFindings, useLogicalFindings, zoneFindings } from '../insights/ui/useLogicalFindings';
+import { useLogicalClusterInputs, useNodePods } from '../insights/ui/useLogicalInputs';
 import ConstructDrawerBody, { LOGICAL_DRAWER_WIDTH } from './ConstructDrawerBody';
 import { useLadderViewport } from './useLadderViewport';
 import SnapshotJsonControls from './SnapshotJsonControls';
@@ -225,6 +229,26 @@ const NodeLogicalTopologyDetails: React.FC = () => {
         [model, networkFilter, search],
     );
 
+    // Findings (ovn-recon-7i6.3): evaluated on the snapshot fetched for this node,
+    // with this node's pods and, where the CRDs exist, the NADs and
+    // MultiNetworkPolicies. Those on a construct badge its card and open its drawer;
+    // the rest (the zone's collection, rows on no one construct) list above the ladder.
+    const pods = useNodePods(enabled ? name : undefined);
+    const logicalClusterInputs = useLogicalClusterInputs();
+    const allFindings = useLogicalFindings({
+        nodeName: name,
+        snapshot: snapshotNode === name ? snapshot : null,
+        pods,
+        cluster: logicalClusterInputs,
+    });
+    const [hideInfo, setHideInfo] = useHideInfoFindings();
+    const findings = React.useMemo(() => visibleFindings(allFindings, hideInfo), [allFindings, hideInfo]);
+    const pageFindings = React.useMemo(() => zoneFindings(findings), [findings]);
+    const findingsFor = React.useCallback(
+        (construct: LadderConstruct) => constructFindings([findings], construct, name),
+        [findings, name],
+    );
+
     if (!gateLoaded) {
         return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
     }
@@ -302,6 +326,8 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             sectionsRefreshKey={snapshot?.metadata?.generatedAt}
                                             nodeForChassis={nodeForChassis}
                                             detailHref={detailHrefFor(name, selectedConstruct)}
+                                            findings={findings}
+                                            hideInfo={hideInfo}
                                         />
                                     </>
                                 )}
@@ -353,6 +379,12 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                     )}
                                 </AlertGroup>
 
+                                {pageFindings.length > 0 && (
+                                    <div className="pf-u-mt-md" data-testid="zone-findings">
+                                        <FindingsSection findings={pageFindings} />
+                                    </div>
+                                )}
+
                                 <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }} alignItems={{ default: 'alignItemsCenter' }}>
                                     <FlexItem>
                                         <LadderSearch
@@ -395,6 +427,16 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                     <FlexItem><Button variant="secondary" onClick={viewport.zoomIn}>+</Button></FlexItem>
                                     <FlexItem><Button variant="link" onClick={viewport.resetView}>Reset view</Button></FlexItem>
                                     <FlexItem><LegendButton><LogicalLegend /></LegendButton></FlexItem>
+                                    {allFindings.some((finding) => finding.severity === 'info') && (
+                                        <FlexItem>
+                                            <HideInfoSwitch
+                                                id="hide-info-findings-toggle"
+                                                findings={allFindings}
+                                                hideInfo={hideInfo}
+                                                onChange={setHideInfo}
+                                            />
+                                        </FlexItem>
+                                    )}
                                     <FlexItem>
                                         <Button variant="tertiary" onClick={() => loadSnapshot()} isDisabled={isLoading}>
                                             Refresh now
@@ -439,6 +481,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                                 revealRequest={revealRequest}
                                                 onRevealBox={viewport.onRevealBox}
                                                 onSelectedBox={viewport.onSelectedBox}
+                                                findingsFor={findingsFor}
                                             />
                                         </div>
                                     )}

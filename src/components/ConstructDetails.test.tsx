@@ -15,11 +15,13 @@ import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 import cnv2 from '../../collector/fixtures/snapshots/cnv-2.json';
 
 const mockNodeNetworkStates: { metadata: { name: string } }[] = [];
+const mockPods: unknown[] = [];
 const mockGate = { enabled: true, loaded: true, loadError: undefined as Error | undefined };
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     DocumentTitle: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    useK8sWatchResource: () => [mockNodeNetworkStates, true, undefined],
+    useK8sWatchResource: (resource: { groupVersionKind?: { kind?: string } } | null) =>
+        (resource?.groupVersionKind?.kind === 'Pod' ? [mockPods, true, undefined] : [mockNodeNetworkStates, true, undefined]),
 }));
 
 jest.mock('./useOvnCollectorFeatureGate', () => ({
@@ -89,6 +91,7 @@ describe('ConstructDetails', () => {
         root = createRoot(container);
         locations = [];
         mockNodeNetworkStates.splice(0, mockNodeNetworkStates.length);
+        mockPods.splice(0, mockPods.length);
         mockGate.enabled = true;
         fetchSnapshot.mockReset();
         fetchCluster.mockReset();
@@ -544,5 +547,26 @@ describe('ConstructDetails', () => {
             await clickTab('Policy');
             expect(container.querySelector('[data-testid="policy-not-collected"]')).not.toBeNull();
         });
+    });
+    it('opens with the findings on this construct (ovn-recon-7i6.3)', async () => {
+        const port = 'openshift-mtv_forklift-volume-populator-controller-6d5f776884-cllnz';
+        mockPods.push({
+            metadata: { namespace: 'openshift-mtv', name: 'forklift-volume-populator-controller-6d5f776884-cllnz' },
+            status: { phase: 'Running', startTime: new Date(Date.now() - 60 * 60 * 1000).toISOString() },
+        });
+        fetchSnapshot.mockImplementation(async () => {
+            const snapshot = JSON.parse(JSON.stringify(ladderSnapshot(cnv1))) as LogicalTopologySnapshot;
+            snapshot.database!.logicalSwitchPorts.find((row) => row.name === port)!.up = false;
+            return snapshot;
+        });
+        await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1');
+
+        const section = container.querySelector('[data-testid="construct-findings"]');
+        expect([...(section?.querySelectorAll('[data-testid="finding"]') ?? [])].map((entry) => entry.getAttribute('data-rule')))
+            .toEqual(['lsp-down']);
+
+        // A router of the same zone carries none.
+        await renderAt('/ovn-recon/ovn/cnv-1/router/ovn_cluster_router');
+        expect(container.querySelector('[data-testid="construct-findings"]')).toBeNull();
     });
 });

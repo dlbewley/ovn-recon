@@ -82,6 +82,10 @@ import RuleTable, { RuleColumn } from './RuleTable';
 import { DetailHref } from './constructDetailLinks';
 import { portPolicyCounts } from './policyRows';
 import { OptionalSectionsState } from './useOptionalSections';
+import type { Finding } from '../insights/types';
+import { FindingsSection } from '../insights/ui/FindingsViews';
+import { visibleFindings } from '../insights/ui/useFindings';
+import { constructFindings, useSectionFindings } from '../insights/ui/useLogicalFindings';
 
 const MAX_LISTED_PORTS = 15;
 /** ACLs listed for one port before a more-note: a pod under many
@@ -143,6 +147,15 @@ export interface ConstructDrawerBodyProps {
     focusPort?: string;
     /** Detail page: a port row was expanded or collapsed. */
     onPortToggle?: (portName: string, expanded: boolean) => void;
+    /**
+     * The zone's logical findings (ovn-recon-7i6.3), from the page's snapshot. When
+     * set, the drawer opens its Overview with the selected construct's findings,
+     * adding those of the rules that read a section once the drawer has loaded it.
+     * Unset (the cluster view) shows no findings section.
+     */
+    findings?: Finding[];
+    /** The "Hide info findings" choice the page holds. */
+    hideInfo?: boolean;
 }
 
 /**
@@ -1363,6 +1376,27 @@ export const useSectionStates = (
 };
 
 /**
+ * The selected construct's findings: the page's, plus the section rules' over the
+ * policy section the drawer loaded (a ladder snapshot carries no sections).
+ * Undefined when the page passes no findings.
+ */
+export const useDrawerFindings = (
+    { findings, hideInfo, construct, databaseNode }: Pick<ConstructDrawerBodyProps, 'findings' | 'hideInfo' | 'construct' | 'databaseNode'>,
+    policy: PolicyState,
+): Finding[] | undefined => {
+    const sectionFindings = useSectionFindings(
+        findings !== undefined && policy.status === 'ready' ? policy.database : undefined,
+        databaseNode,
+    );
+    return React.useMemo(
+        () => (findings === undefined
+            ? undefined
+            : visibleFindings(constructFindings([findings, sectionFindings], construct, databaseNode), Boolean(hideInfo))),
+        [findings, sectionFindings, construct, databaseNode, hideInfo],
+    );
+};
+
+/**
  * Rendered directly under the page's DrawerHead. The tab strip sits flush
  * against the panel edges and only the tab content is padded, the same
  * structure as the physical drawer (ovn-recon-mow); wrapping the whole thing
@@ -1395,6 +1429,7 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps & {
     const effectiveTab: ConstructTabId =
         (activeTab === 'ports' && !showPorts) || (activeTab === 'services' && !showServices) ? 'overview' : activeTab;
     const bodyProps: DrawerBodyProps = { ...props, services, policy };
+    const findings = useDrawerFindings(props, policy);
 
     // One read of what the console has loaded, shared by every link below
     // (ovn-recon-zdt.4): owners, networks, pods and Services all resolve
@@ -1417,7 +1452,12 @@ const ConstructDrawerBody: React.FC<ConstructDrawerBodyProps & {
                 aria-label="Construct details"
             />
             <DrawerPanelBody>
-                {effectiveTab === 'overview' && <OverviewBody {...bodyProps} />}
+                {effectiveTab === 'overview' && (
+                    <>
+                        {findings && <FindingsSection findings={findings} />}
+                        <OverviewBody {...bodyProps} />
+                    </>
+                )}
                 {effectiveTab === 'relationships' && <RelationshipsBody {...props} />}
                 {effectiveTab === 'ports' && <PortsBody key={props.construct.uuid} {...bodyProps} />}
                 {effectiveTab === 'services' && <ServicesBody key={props.construct.uuid} {...bodyProps} />}

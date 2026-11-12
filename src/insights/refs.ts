@@ -42,6 +42,17 @@ export const nncpRef = (policyName: string): K8sRef => ({
 
 export const nodeRef = (name: string): K8sRef => ({ group: '', version: 'v1', kind: 'Node', name });
 
+export const podRef = (namespace: string, name: string): K8sRef =>
+    ({ group: '', version: 'v1', kind: 'Pod', name, namespace });
+
+export const multiNetworkPolicyRef = (namespace: string, name: string): K8sRef => ({
+    group: 'k8s.cni.cncf.io', version: 'v1beta1', kind: 'MultiNetworkPolicy', name, namespace
+});
+
+export const nadRefByName = (namespace: string, name: string): K8sRef => ({
+    group: 'k8s.cni.cncf.io', version: 'v1', kind: 'NetworkAttachmentDefinition', name, namespace
+});
+
 export const refKey = (ref: K8sRef): string =>
     `${ref.group}/${ref.kind}/${ref.namespace ? `${ref.namespace}/` : ''}${ref.name}`;
 

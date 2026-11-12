@@ -380,3 +380,46 @@ func TestWarmCacheRecollectsEntriesFromAnotherBuild(t *testing.T) {
 		}
 	}
 }
+
+func hasWarning(payload snapshot.LogicalTopologySnapshot, code string) bool {
+	for _, warning := range payload.Warnings {
+		if warning.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func TestSnapshotsServedDuringWarmUpCarryTheWarmingMark(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	fresh := zoneSnapshot("")
+	fresh.Metadata.GeneratedAt = now.Add(-time.Second)
+	collector := &countingCollector{payload: fresh}
+	srv, cache := newCachedServer(t, collector, 2*time.Minute, now)
+
+	srv.warming.Store(true)
+	if payload := fetchNode(t, srv, "worker-a"); !hasWarning(payload, warningCollectorWarming) {
+		t.Fatalf("expected %s while warming, got %+v", warningCollectorWarming, payload.Warnings)
+	}
+	// The mark belongs to the response only: the cache entry stays clean.
+	if cached, ok := cache.Get("worker-a"); !ok || hasWarning(cached, warningCollectorWarming) {
+		t.Fatalf("expected a clean cache entry, got ok=%v warnings=%+v", ok, cached.Warnings)
+	}
+
+	srv.warming.Store(false)
+	if payload := fetchNode(t, srv, "worker-a"); hasWarning(payload, warningCollectorWarming) {
+		t.Fatalf("expected no %s after warm-up, got %+v", warningCollectorWarming, payload.Warnings)
+	}
+}
+
+func TestWarmCacheClearsTheWarmingMarkWhenDone(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	collector := &countingCollector{payload: zoneSnapshot("")}
+	srv, _ := newCachedServer(t, collector, 2*time.Minute, now)
+	srv.WithNodeLister(fakeLister{nodes: []string{"worker-a"}})
+
+	srv.WarmCache(context.Background())
+	if srv.warming.Load() {
+		t.Fatal("expected the warming mark cleared after warm-up")
+	}
+}
