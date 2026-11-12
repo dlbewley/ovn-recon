@@ -47,7 +47,7 @@ describe('OvnReconOverview', () => {
         ];
         mockWatches.ClusterUserDefinedNetwork = fixture<ClusterUserDefinedNetwork[]>('cudn', 'primary-cudn-vrf.json');
         mockWatches.UserDefinedNetwork = [];
-        mockWatches.NetworkAttachmentDefinition = [{}, {}];
+        mockWatches.NetworkAttachmentDefinition = [];
         mockWatches.RouteAdvertisements = [{}];
         global.fetch = jest.fn().mockResolvedValue({
             ok: true,
@@ -82,25 +82,55 @@ describe('OvnReconOverview', () => {
     const text = () => container.textContent ?? '';
     const row = (name: string) => container.querySelector(`[data-testid="overview-node-${name}"]`);
 
-    it('summarizes the collector, the networks and the fleet above the node table', async () => {
+    const collectorStatus = () => container.querySelector('[data-testid="overview-collector-status"]');
+    // PatternFly mounts the popover in document.body.
+    const openCollectorDetails = async (): Promise<string> => {
+        const button = Array.from(collectorStatus()!.querySelectorAll('button'))
+            .find((candidate) => candidate.textContent === 'Collector details');
+        expect(button).toBeDefined();
+        await act(async () => {
+            button!.click();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        return document.querySelector('[data-testid="overview-collector-details"]')?.textContent ?? '';
+    };
+
+    it('states the collector in one line, with the rest behind Collector details', async () => {
         await render();
 
-        const collector = container.querySelector('[data-testid="overview-collector-card"]');
+        const collector = collectorStatus();
         expect(collector).not.toBeNull();
+        expect(collector!.textContent).toContain('Cluster logical topology');
         expect(collector!.textContent).toContain('Fresh');
         expect(collector!.textContent).toContain('Assembled from 1 node');
         expect(collector!.textContent).toContain('1 collector warning');
-        expect(collector!.querySelector('a[href="/ovn-recon/ovn"]')).not.toBeNull();
+        expect(collector!.querySelector('a[href="/ovn-recon/ovn"]')!.textContent).toBe('Open cluster view');
+        // The line itself stays short: the warning's text is in the popover.
+        expect(collector!.textContent).not.toContain('one warning');
+
+        const details = await openCollectorDetails();
+        expect(details).toContain('Source healthhealthy');
+        expect(details).toContain('Node databases1');
+        expect(details).toContain('Oldest snapshot');
+        expect(details).toContain('X: one warning');
+    });
+
+    it('lists the networks in a table where the counts were, and the fleet with the nodes', async () => {
+        await render();
 
         const networks = container.querySelector('[data-testid="overview-networks-card"]');
-        expect(networks!.textContent).toContain('CUDNs');
-        expect(networks!.textContent).toContain('NADs2');
-        expect(networks!.textContent).toContain('Route advertisements1');
+        expect(networks!.querySelector('a[href="/ovn-recon/networks"]')!.textContent).toBe('Networks');
+        const cudns = fixture<ClusterUserDefinedNetwork[]>('cudn', 'primary-cudn-vrf.json');
+        expect(networks!.querySelectorAll('[data-testid^="overview-network-cudn-"]')).toHaveLength(cudns.length);
+        expect(Array.from(networks!.querySelectorAll('th')).map((th) => th.textContent))
+            .toEqual(['Name', 'Kind', 'Topology', 'Role', 'Nodes wired', 'Findings']);
+        expect(networks!.querySelector('dl')).toBeNull();
 
-        const physical = container.querySelector('[data-testid="overview-physical-card"]');
-        expect(physical!.textContent).toContain('2 with NodeNetworkState');
-        expect(physical!.textContent).toContain('29 across');
-        expect(physical!.textContent).toContain('1 node reports neighbors');
+        const nodes = container.querySelector('[data-testid="overview-nodes-card"]');
+        expect(nodes!.textContent).toContain('2 nodes with NodeNetworkState');
+        const fleet = container.querySelector('[data-testid="overview-fleet-summary"]');
+        expect(fleet!.textContent).toContain('29 bridge mappings across');
+        expect(fleet!.textContent).toContain('1 node reports LLDP neighbors');
     });
 
     it('gives each node its role, counts and the three views', async () => {
@@ -121,16 +151,26 @@ describe('OvnReconOverview', () => {
         expect(basic!.textContent).toContain('4 up / 4');
     });
 
-    it('hides the collector card and the Logical links when the gate is off', async () => {
+    it('says the collector is not enabled, and drops the logical links, when the gate is off', async () => {
         mockGate.enabled = false;
         await render();
 
-        expect(container.querySelector('[data-testid="overview-collector-card"]')).toBeNull();
+        expect(collectorStatus()!.textContent).toContain('Collector not enabled');
+        expect(collectorStatus()!.textContent).not.toContain('Fresh');
         expect(container.querySelector('a[href^="/ovn-recon/ovn"]')).toBeNull();
         expect(global.fetch).not.toHaveBeenCalled();
+        expect(await openCollectorDetails()).toContain('spec.collector.enabled');
         // The other cards and the table are unaffected.
         expect(container.querySelector('[data-testid="overview-networks-card"]')).not.toBeNull();
         expect(row('worker-2.example.com')).not.toBeNull();
+    });
+
+    it('says nothing about the collector until the gate is known', async () => {
+        mockGate.loaded = false;
+        await render();
+
+        expect(collectorStatus()!.textContent).toBe('Cluster logical topologyLoading...');
+        expect(collectorStatus()!.querySelector('button')).toBeNull();
     });
 
     it('filters the node table by name', async () => {
@@ -177,8 +217,9 @@ describe('OvnReconOverview', () => {
         (global.fetch as jest.Mock).mockRejectedValue(new Error('boom'));
         await render();
 
-        const collector = container.querySelector('[data-testid="overview-collector-card"]');
-        expect(collector!.textContent).toContain('Collector unreachable');
+        expect(collectorStatus()!.textContent).toContain('Collector unreachable');
+        expect(collectorStatus()!.querySelector('a[href="/ovn-recon/ovn"]')).not.toBeNull();
+        expect(await openCollectorDetails()).toContain('The collector did not answer: ');
         expect(row('worker-2.example.com')).not.toBeNull();
     });
 });

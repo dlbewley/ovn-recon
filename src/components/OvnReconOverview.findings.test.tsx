@@ -143,6 +143,39 @@ describe('OvnReconOverview findings', () => {
         coverage.nns.forEach((nns) => expect(findingsCell(nns.metadata!.name!).textContent).toBe(''));
     });
 
+    it('summarizes before anything is opened: the counts, then each rule that fired and how often', async () => {
+        mockWatches.NodeNetworkState = [
+            coverage.nns.map((nns) => (nns.metadata?.name === 'worker-2' ? withState(nns, 'ens224', 'down') : nns)),
+            true, undefined,
+        ];
+        await render(createPhysicalEvaluator({ rules: [...PHYSICAL_RULES, testInfoRule] }));
+        const counts = card().querySelector('[data-testid="findings-counts"]')!;
+        expect(counts.querySelector('[data-testid="count-warning"]')!.textContent).toBe('4 warnings');
+        expect(counts.querySelector('[data-testid="count-info"]')!.textContent).toBe('1 info');
+
+        const rules = Array.from(card().querySelectorAll('[data-testid^="findings-group-"]:not([data-testid="findings-group-count"])'));
+        // Warnings' rules first. The test rule is not in the registry, so it goes by its id.
+        expect(rules.map((rule) => rule.getAttribute('aria-label'))).toEqual([
+            'Interface carrying traffic is down', 'Localnet network mapped on no node', 'test-dated-practice',
+        ]);
+        expect(rules.map((rule) => rule.querySelector('[data-testid="findings-group-count"]')!.textContent)).toEqual(['1', '3', '1']);
+        // The findings themselves wait for "Show findings".
+        expect(card().querySelector('[data-testid="findings-entry"]')).toBeNull();
+        const toggle = Array.from(card().querySelectorAll('button')).find((b) => b.textContent === 'Show findings')!;
+        expect(toggle.getAttribute('aria-expanded')).toBe('false');
+        expand();
+        expect(card().querySelectorAll('[data-testid="findings-entry"]')).toHaveLength(5);
+        expect(Array.from(card().querySelectorAll('button')).find((b) => b.textContent === 'Hide findings')!
+            .getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('counts a network finding in that network\'s row of the networks table', async () => {
+        await render();
+        const cell = container.querySelector('[data-testid="overview-network-findings-cudn-vlan-999"]')!;
+        expect(cell.querySelector('a')?.getAttribute('aria-label')).toBe('1 warning on vlan-999');
+        expect(container.querySelector('[data-testid="overview-network-findings-cudn-machinenet"]')!.textContent).toBe('');
+    });
+
     it('counts a node finding in that node\'s row, linking to the node page, and lists it with ?select=', async () => {
         mockWatches.NodeNetworkState = [
             coverage.nns.map((nns) => (nns.metadata?.name === 'worker-2' ? withState(nns, 'ens224', 'down') : nns)),
