@@ -1,6 +1,6 @@
 {
     "name": "ovn-recon",
-    "version": "1.0.6",
+    "version": "1.0.7-a0",
     "private": true,
     "repository": "git@github.com:dlbewley/ovn-recon.git",
     "scripts": {
@@ -18,7 +18,7 @@
     },
     "consolePlugin": {
         "name": "ovn-recon",
-        "version": "1.0.6",
+        "version": "1.0.7-a0",
         "displayName": "OVN Recon",
         "description": "OpenShift Console Plugin for OVN Recon",
         "exposedModules": {
