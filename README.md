@@ -194,7 +194,9 @@ spec:
   instead of risking a volume-attach deadlock); a pre-created RWX claim
   keeps zero-gap rolling updates.
 
-#### CLI Operator Installation Method
+## Alternative Installation Methods
+
+### CLI Operator Installation
 
 Create the Bewley Operators [catalog source](manifests/catalogsource.yaml)
 
