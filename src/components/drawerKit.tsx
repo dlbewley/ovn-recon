@@ -1,5 +1,8 @@
 import * as React from 'react';
 import { Link } from 'react-router';
+
+import { useLinkOuts } from '../linkOut/LinkOut';
+import type { LinkTarget } from '../linkOut/registry';
 import {
     Button,
     ClipboardCopy,
@@ -234,8 +237,11 @@ export interface ContextChip {
     value: string;
     /** In-console route (react-router). */
     to?: string;
-    /** Plain href, for console resource pages outside the plugin's routes. */
-    href?: string;
+    /**
+     * A console object outside the plugin's routes, resolved by the link-out
+     * registry to the page that owns it; a plain chip when no page is there.
+     */
+    target?: LinkTarget;
     /** The association was inferred, not read: the chip says so. */
     inferred?: boolean;
 }
@@ -250,14 +256,15 @@ export interface DrawerIdentityProps {
     chips?: ContextChip[];
 }
 
-const ChipLink: React.FC<{ chip: ContextChip }> = ({ chip }) => {
+export const ChipLink: React.FC<{ chip: ContextChip }> = ({ chip }) => {
     const text = (
         <>
             <span style={SUBTLE}>{chip.kind}</span> {chip.value}
             {chip.inferred && <span style={SUBTLE}> · inferred</span>}
         </>
     );
-    const to = chip.to;
+    const resolved = useLinkOuts(chip.to ? undefined : chip.target).primary?.path;
+    const to = chip.to ?? resolved;
     if (to) {
         return (
             <Label
@@ -270,7 +277,6 @@ const ChipLink: React.FC<{ chip: ContextChip }> = ({ chip }) => {
             </Label>
         );
     }
-    if (chip.href) return <Label isCompact variant="outline" href={chip.href}>{text}</Label>;
     return <Label isCompact variant="outline">{text}</Label>;
 };
 

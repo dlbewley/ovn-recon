@@ -276,5 +276,71 @@
                 "OVN_RECON_RESOURCE_ACTIONS"
             ]
         }
+    },
+    {
+        "type": "console.flag/model",
+        "properties": {
+            "flag": "OVN_RECON_CRD_CUDN",
+            "model": {
+                "group": "k8s.ovn.org",
+                "version": "v1",
+                "kind": "ClusterUserDefinedNetwork"
+            }
+        }
+    },
+    {
+        "type": "console.flag/model",
+        "properties": {
+            "flag": "OVN_RECON_CRD_UDN",
+            "model": {
+                "group": "k8s.ovn.org",
+                "version": "v1",
+                "kind": "UserDefinedNetwork"
+            }
+        }
+    },
+    {
+        "type": "console.flag/model",
+        "properties": {
+            "flag": "OVN_RECON_CRD_NAD",
+            "model": {
+                "group": "k8s.cni.cncf.io",
+                "version": "v1",
+                "kind": "NetworkAttachmentDefinition"
+            }
+        }
+    },
+    {
+        "type": "console.flag/model",
+        "properties": {
+            "flag": "OVN_RECON_CRD_MULTI_NETWORK_POLICY",
+            "model": {
+                "group": "k8s.cni.cncf.io",
+                "version": "v1beta1",
+                "kind": "MultiNetworkPolicy"
+            }
+        }
+    },
+    {
+        "type": "console.flag/model",
+        "properties": {
+            "flag": "OVN_RECON_CRD_NNCP",
+            "model": {
+                "group": "nmstate.io",
+                "version": "v1",
+                "kind": "NodeNetworkConfigurationPolicy"
+            }
+        }
+    },
+    {
+        "type": "console.flag/model",
+        "properties": {
+            "flag": "OVN_RECON_CRD_NNS",
+            "model": {
+                "group": "nmstate.io",
+                "version": "v1beta1",
+                "kind": "NodeNetworkState"
+            }
+        }
     }
 ]

@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { Link } from 'react-router';
 import {
     Checkbox,
     ExpandableSection,
@@ -42,7 +41,8 @@ import {
     vipClassContext,
 } from './serviceIndex';
 import { useKubeService, useServiceEndpointSlices, useServiceNetworks } from './useServiceReads';
-import { getResourcePath } from '../topology/links';
+import { ConsoleLink } from '../linkOut/LinkOut';
+import { resourceTarget } from '../linkOut/registry';
 import { InfoPopover } from './drawerKit';
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
@@ -157,8 +157,8 @@ const ServiceName: React.FC<{ group: ServiceGroupView }> = ({ group }) =>
     group.service && group.service.kind === 'Service' ? (
         <>
             <span data-testid="service-name">
-                <Link
-                    to={getResourcePath({
+                <ConsoleLink
+                    target={resourceTarget({
                         apiVersion: 'v1',
                         kind: 'Service',
                         namespace: group.service.namespace,
@@ -168,7 +168,7 @@ const ServiceName: React.FC<{ group: ServiceGroupView }> = ({ group }) =>
                     style={BREAK_WORD}
                 >
                     {group.service.name}
-                </Link>
+                </ConsoleLink>
             </span>
             <div style={{ ...SUBTLE, fontSize: '0.875em', ...BREAK_WORD }} data-testid="service-namespace">
                 {group.service.namespace}
@@ -200,9 +200,9 @@ const BackendsCell: React.FC<{ group: ServiceGroupView }> = ({ group }) => {
 };
 
 const PodRef: React.FC<{ namespace: string; pod: string }> = ({ namespace, pod }) => (
-    <Link to={getResourcePath({ apiVersion: 'v1', kind: 'Pod', namespace, name: pod })} style={WRAP_ANYWHERE}>
+    <ConsoleLink target={resourceTarget({ apiVersion: 'v1', kind: 'Pod', namespace, name: pod })} style={WRAP_ANYWHERE}>
         {namespace}/{pod}
-    </Link>
+    </ConsoleLink>
 );
 
 // ------------------------------------------------ backend resolution

@@ -13,3 +13,15 @@ if (typeof global.TextEncoder === 'undefined') {
     global.TextEncoder = TextEncoder;
     global.TextDecoder = TextDecoder;
 }
+
+// The link-out registry reads what the console has loaded through SDK hooks
+// (useResolvedExtensions, useFlag). Most suites mock the SDK with a factory
+// that lists only what the component under test calls, so the hook would be
+// undefined in every drawer test. Suites get "nothing loaded" by default, which
+// resolves every link to its generic console page. The hook's own suite takes
+// the real module back with jest.requireActual over a mocked SDK; a suite that
+// wants a plugin present mocks this module itself, or renders a link under
+// StaticLinkOutProvider.
+jest.mock('./src/linkOut/useConsoleCapabilities', () => ({
+    useConsoleCapabilities: () => jest.requireActual('./src/linkOut/registry').NO_CAPABILITIES,
+}));

@@ -939,7 +939,12 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     ? [{ label: 'VLAN ID', value: String(vlanId), provenance: 'declared' } as Fact]
                     : []),
                 ...(physicalNetworkName
-                    ? [{ label: 'Physical Network', value: physicalNetworkName, provenance: 'declared' } as Fact]
+                    ? [{
+                        label: 'Physical Network',
+                        // Linked only on a console that has a Physical networks page.
+                        value: [{ text: physicalNetworkName, target: { type: 'physical-network', name: physicalNetworkName } }],
+                        provenance: 'declared'
+                    } as Fact]
                     : []),
                 // Beside Physical Network: for a Localnet CUDN this corroborates it.
                 ...cudnPatchPortFacts(cudn, ctx),
