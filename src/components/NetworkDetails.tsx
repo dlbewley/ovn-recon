@@ -21,8 +21,9 @@ import { DocumentTitle, K8sResourceCommon, useK8sModel, useK8sWatchResource } fr
 
 import { evaluatePhysical, findingsForNetwork } from '../insights';
 import type { ClusterNetworkInputs, Finding } from '../insights';
+import { ConsoleLink, LinkOutProvider } from '../linkOut/LinkOut';
+import { resourceTarget } from '../linkOut/registry';
 import { FactList, ProvenanceLabel } from '../topology/facts';
-import { getResourcePath } from '../topology/links';
 import {
     ClusterUserDefinedNetwork,
     NetworkAttachmentDefinition,
@@ -36,6 +37,7 @@ import {
     listNetworks,
     NETWORKS_PATH,
     networkConditions,
+    networkCreationFailure,
     NetworkInputs,
     networkPath,
     NetworkRecord,
@@ -76,6 +78,9 @@ const KIND_LABEL: Record<NetworkRecord['kind'], string> = {
 };
 
 const KIND_SHORT: Record<NetworkRecord['kind'], string> = { cudn: 'CUDN', udn: 'UDN', nad: 'NAD' };
+
+/** The Summary's term column: wide enough for its longest term on one line. */
+const SUMMARY_TERM_WIDTH = '16rem';
 
 export interface Watched<T> {
     data: T[];
@@ -160,6 +165,26 @@ const NetworkFinding: React.FC<{ finding: Finding }> = ({ finding }) => (
         <p className="pf-v6-u-mt-sm">{finding.remedy.text}</p>
     </Alert>
 );
+
+/**
+ * A network OVN-Kubernetes did not create, said first: until NetworkCreated turns True
+ * the rest of the page describes a spec, not a network.
+ */
+const CreationFailure: React.FC<{ record: NetworkRecord }> = ({ record }) => {
+    const failure = networkCreationFailure(record);
+    if (!failure) return null;
+    return (
+        <Alert
+            variant="danger"
+            isInline
+            title={`This network was not created${failure.reason ? `: ${failure.reason}` : ''}`}
+            data-testid="network-not-created"
+            className="pf-v6-u-mb-sm"
+        >
+            <p>{failure.message || 'The NetworkCreated condition is False and gives no message.'}</p>
+        </Alert>
+    );
+};
 
 const uplinkText = (uplink: PlacementUplink): string =>
     [
@@ -265,7 +290,9 @@ const placementColumns = (placement: Placement, vlan: string | undefined, showLo
 };
 
 const noPlacementText = (record: NetworkRecord): string =>
-    `This page checks nothing node-local for a ${[record.role, record.topology].filter(Boolean).join(' ')} network; `
+    `This page checks nothing node-local for ${record.clusterDefault
+        ? 'the cluster default network'
+        : `a ${[record.role, record.topology].filter(Boolean).join(' ')} network`}; `
     + 'the links open each node\'s views.';
 
 const PlacementCard: React.FC<{
@@ -334,14 +361,10 @@ const Breadcrumbs: React.FC<{ current?: string }> = ({ current }) => (
         <BreadcrumbItem>
             <Link to="/ovn-recon">OVN Recon</Link>
         </BreadcrumbItem>
-        {current ? (
-            <>
-                <BreadcrumbItem><Link to={NETWORKS_PATH}>Networks</Link></BreadcrumbItem>
-                <BreadcrumbItem isActive>{current}</BreadcrumbItem>
-            </>
-        ) : (
-            <BreadcrumbItem isActive>Networks</BreadcrumbItem>
-        )}
+        {/* Direct children only: Breadcrumb gives each item after the first its
+            separator, and does not look inside a fragment. */}
+        {current && <BreadcrumbItem><Link to={NETWORKS_PATH}>Networks</Link></BreadcrumbItem>}
+        <BreadcrumbItem isActive>{current ?? 'Networks'}</BreadcrumbItem>
     </Breadcrumb>
 );
 
@@ -385,7 +408,19 @@ const NetworkList: React.FC<{
                                         ?? networkSummaryFacts(record, inputs).find((f) => f.label === 'Subnets')?.value;
                                     return (
                                         <Tr key={`${record.kind}/${displayName(record)}`} data-testid={`network-row-${record.kind}-${record.name}`}>
-                                            <Td dataLabel="Name"><Link to={networkPath(record)}>{record.name}</Link></Td>
+                                            <Td dataLabel="Name">
+                                                <Link to={networkPath(record)}>{record.name}</Link>
+                                                {networkCreationFailure(record) && (
+                                                    <Label
+                                                        isCompact
+                                                        status="danger"
+                                                        style={{ marginInlineStart: 'var(--pf-t--global--spacer--sm)' }}
+                                                        data-testid="network-row-not-created"
+                                                    >
+                                                        Not created
+                                                    </Label>
+                                                )}
+                                            </Td>
                                             <Td dataLabel="Kind">{KIND_SHORT[record.kind]}</Td>
                                             <Td dataLabel="Namespace">{record.namespace ?? ''}</Td>
                                             <Td dataLabel="Topology">{record.topology}</Td>
@@ -464,18 +499,25 @@ export const NetworkBody: React.FC<NetworkBodyProps> = ({ record, inputs, nns, s
         [cluster, record.ref],
     );
 
+    const notCreated = Boolean(networkCreationFailure(record));
+
     return (
         <>
-            {findings.length > 0 && (
-                <PageSection data-testid="network-findings">
-                    {findings.map((finding) => <NetworkFinding key={finding.key} finding={finding} />)}
+            {(notCreated || findings.length > 0) && (
+                <PageSection>
+                    <CreationFailure record={record} />
+                    {findings.length > 0 && (
+                        <div data-testid="network-findings">
+                            {findings.map((finding) => <NetworkFinding key={finding.key} finding={finding} />)}
+                        </div>
+                    )}
                 </PageSection>
             )}
             <PageSection>
                 <Card data-testid="network-summary">
                     <CardTitle>Summary</CardTitle>
                     <CardBody>
-                        <FactList facts={facts} />
+                        <FactList facts={facts} termWidth={SUMMARY_TERM_WIDTH} />
                         <div className="pf-v6-u-mt-md"><StatusConditions record={record} /></div>
                     </CardBody>
                 </Card>
@@ -510,9 +552,9 @@ const NetworkPage: React.FC<NetworkBodyProps> = ({ record, inputs, nns, showLogi
                         </LabelGroup>
                     </FlexItem>
                     <FlexItem>
-                        <a href={getResourcePath(record.resourceRef)} data-testid="network-console-link">
+                        <ConsoleLink target={resourceTarget(record.resourceRef)} hideWhenAbsent data-testid="network-console-link">
                             View {KIND_SHORT[record.kind]} in the console
-                        </a>
+                        </ConsoleLink>
                     </FlexItem>
                 </Flex>
                 <NetworkOwner record={record} />
@@ -564,7 +606,7 @@ export const useNetworkData = (): NetworkData => {
     return { inputs, loaded, nns, showLogical };
 };
 
-const NetworkDetails: React.FC = () => {
+const NetworkPages: React.FC = () => {
     const location = useLocation();
     const target = React.useMemo(() => parseNetworkPath(location.pathname), [location.pathname]);
     const { inputs, loaded, nns, showLogical } = useNetworkData();
@@ -588,5 +630,12 @@ const NetworkDetails: React.FC = () => {
     }
     return <NetworkPage record={record} inputs={inputs} nns={nns} showLogical={showLogical} />;
 };
+
+/** Reads what the console has loaded once, for every console link on the page. */
+const NetworkDetails: React.FC = () => (
+    <LinkOutProvider>
+        <NetworkPages />
+    </LinkOutProvider>
+);
 
 export default NetworkDetails;

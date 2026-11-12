@@ -391,10 +391,66 @@ describe('ConstructDetails', () => {
                 (button) => button.textContent === 'Priority',
             );
             await click(header);
-            const priorityOf = (row: Element) => Number(row.querySelectorAll('td')[1].textContent);
+            const priorityOf = (row: Element) => parseInt(row.querySelectorAll('td')[1].textContent ?? '', 10);
             expect(priorityOf(aclRows()[0])).toBe(Math.min(...acls.map((acl) => acl.priority)));
             await click(header);
             expect(priorityOf(aclRows()[0])).toBe(Math.max(...acls.map((acl) => acl.priority)));
+        });
+
+        it('lays the ACL columns out with Match widest and clamped to two lines', async () => {
+            await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=policy');
+            const table = container.querySelector('table[aria-label="ACLs"]')!;
+            const headers = [...table.querySelectorAll('thead th')];
+            // The row toggle, then five columns. Tier shares Priority's cell, direction
+            // Action's, owner type Owner's and the port count Applied via's; every ACL
+            // here is on one network, which the summary says once.
+            expect(headers.map((th) => th.textContent)).toEqual([
+                'Row expansion', 'Priority', 'Action', 'Owner', 'Applied via', 'Match',
+            ]);
+            expect(summary()).toContain('all on Default cluster network');
+            // Match has the largest share; the two short columns hug their content.
+            const widthOf = (th: Element) => Number(/pf-m-width-(\d+)/.exec(th.className)?.[1] ?? 0);
+            expect(headers.map(widthOf)).toEqual([0, 0, 0, 20, 20, 45]);
+
+            const acl = acls.reduce((longest, candidate) => (candidate.match.length > longest.match.length ? candidate : longest));
+            await setValue(filter(), acl.match);
+            const row = rowFor(acl.uuid)!;
+            const cells = [...row.querySelectorAll('td')];
+            expect(cells).toHaveLength(6);
+            for (const position of [1, 2]) expect(cells[position].className).toContain('pf-m-fit-content');
+            expect(cells[1].textContent).toBe(`${acl.priority}tier ${acl.tier}`);
+            expect(cells[2].textContent).toBe(`${acl.action}${acl.direction}`);
+            const kind = describeOwner(ownerOf(acl.externalIds), roleOf).kind;
+            expect(cells[3].querySelector('[data-testid="owner-kind"]')?.textContent?.startsWith(kind)).toBe(true);
+            expect(cells[4].querySelector('[data-testid="acl-via-ports"]')?.textContent).toMatch(/\d+ ports? here$/);
+
+            // Collapsed: the whole expression is in the cell, cut to two lines by CSS, not wrapped without limit.
+            const match = cells[5].querySelector<HTMLElement>('[data-testid="acl-match"]')!;
+            expect(match.textContent).toBe(acl.match);
+            expect(match.getAttribute('data-clamp-lines')).toBe('2');
+            expect(match.style.overflow).toBe('hidden');
+            expect(match.style.display).toBe('-webkit-box');
+            // The owner's name and the group's keep to the lines a row allows, too.
+            expect(cells[3].querySelector<HTMLElement>('[data-testid="owner-name"]')!.style.overflow).toBe('hidden');
+            expect(cells[4].querySelector<HTMLElement>('[data-testid="acl-via"] div')!.style.overflow).toBe('hidden');
+
+            // Expanded: the full expression, unclamped.
+            await click(row.querySelector('button'));
+            const detail = container.querySelector<HTMLElement>(`[data-testid="acl-detail-${acl.uuid}"]`)!;
+            const full = [...detail.querySelectorAll('code')].find((code) => code.textContent === acl.match)!;
+            expect(full).toBeDefined();
+            expect(full.closest('[data-clamp-lines]')).toBeNull();
+        });
+
+        it('merges owner type into the Owner cell of port groups and address sets', async () => {
+            await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=policy');
+            await click(container.querySelector('#policy-view-groups'));
+            const titles = (label: string) =>
+                [...container.querySelectorAll(`table[aria-label="${label}"] thead th`)].map((th) => th.textContent);
+            expect(titles('Port groups')).toEqual(['Row expansion', 'Owner', 'Network', 'OVN name', 'Ports here', 'ACLs']);
+            expect(container.querySelector('table[aria-label="Port groups"] [data-testid="owner-kind"]')).not.toBeNull();
+            await click(container.querySelector('#policy-view-sets'));
+            expect(titles('Address sets')).toEqual(['Row expansion', 'Name', 'Owner', 'Addresses', 'ACLs naming it']);
         });
 
         it('links a NetworkPolicy owner', async () => {

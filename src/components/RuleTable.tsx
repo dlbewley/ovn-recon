@@ -27,6 +27,9 @@ export interface RuleColumn<R> {
     headerModifier?: ThProps['modifier'];
     /** Cell wrapping (breakWord, fitContent, ...). */
     modifier?: TdProps['modifier'];
+    /** The column's share of the table width, in percent. Give it to the one
+     * column that should take the room the others leave. */
+    width?: ThProps['width'];
 }
 
 /**
@@ -325,7 +328,12 @@ export const RuleTable = <R,>({
                         <Tr>
                             {expandable && <Th screenReaderText="Row expansion" />}
                             {columns.map((column, index) => (
-                                <Th key={column.key} sort={sortParams(index)} modifier={column.headerModifier ?? 'nowrap'}>
+                                <Th
+                                    key={column.key}
+                                    sort={sortParams(index)}
+                                    modifier={column.headerModifier ?? 'nowrap'}
+                                    width={column.width}
+                                >
                                     {column.title}
                                 </Th>
                             ))}
