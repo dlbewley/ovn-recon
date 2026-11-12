@@ -792,6 +792,10 @@ export interface LookupHit {
     /** The matched value as stored: one address entry, one network, one VIP
      * key, the name. */
     matchedValue: string;
+    /** Every value of the field that matched at the same type, `matchedValue`
+     * first, when more than one did (a load balancer row with two VIPs on the
+     * address). Absent from an older collector and for a single match. */
+    matchedValues?: string[];
     matchType: LookupMatchType;
     /** When the zone's snapshot was collected: how old this answer is. */
     snapshotGeneratedAt: string;

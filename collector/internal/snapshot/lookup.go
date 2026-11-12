@@ -130,9 +130,13 @@ var tableRank = func() map[LookupTable]int {
 // addresses and port_security): the best match type wins, and between equal
 // types the field offered first.
 type rowMatch struct {
-	found     bool
-	field     LookupField
-	value     string
+	found bool
+	field LookupField
+	value string
+	// values is every value of the winning field that matched at the winning
+	// type, the first included: a load balancer row holding two VIPs on one
+	// address reports both.
+	values    []string
 	matchType LookupMatchType
 	// bits is the stored prefix length, used to put the most specific
 	// containing range first.
@@ -140,10 +144,19 @@ type rowMatch struct {
 }
 
 func (m *rowMatch) offer(field LookupField, value string, matchType LookupMatchType, bits int) {
+	if m.found && matchRank[matchType] == matchRank[m.matchType] && field == m.field && matchType == m.matchType && bits == m.bits {
+		for _, seen := range m.values {
+			if seen == value {
+				return
+			}
+		}
+		m.values = append(m.values, value)
+		return
+	}
 	if m.found && matchRank[matchType] >= matchRank[m.matchType] {
 		return
 	}
-	*m = rowMatch{found: true, field: field, value: value, matchType: matchType, bits: bits}
+	*m = rowMatch{found: true, field: field, value: value, values: []string{value}, matchType: matchType, bits: bits}
 }
 
 // host offers a stored host address: an address a port holds, written bare
@@ -369,6 +382,9 @@ func (s *LookupSearch) AddZone(zone LogicalTopologySnapshot) {
 			MatchedValue:        m.value,
 			MatchType:           m.matchType,
 			SnapshotGeneratedAt: zone.Metadata.GeneratedAt,
+		}
+		if len(m.values) > 1 {
+			hit.MatchedValues = m.values
 		}
 		hit.Network = networkOfExternalIDs(externalIDs)
 		if owner != nil {

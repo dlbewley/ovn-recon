@@ -202,9 +202,13 @@ type LookupHit struct {
 	Owner *LookupOwner `json:"owner,omitempty"`
 	// MatchedField is the field that matched and MatchedValue its value as
 	// stored (one address entry, one network, one VIP key, the name).
-	MatchedField LookupField     `json:"matchedField"`
-	MatchedValue string          `json:"matchedValue"`
-	MatchType    LookupMatchType `json:"matchType"`
+	MatchedField LookupField `json:"matchedField"`
+	MatchedValue string      `json:"matchedValue"`
+	// MatchedValues lists every value of that field that matched at the same
+	// type, MatchedValue first, when more than one did (a load balancer row
+	// with two VIPs on the queried address). Absent for a single match.
+	MatchedValues []string        `json:"matchedValues,omitempty"`
+	MatchType     LookupMatchType `json:"matchType"`
 	// SnapshotGeneratedAt is when the zone's snapshot was collected: how old
 	// this answer is.
 	SnapshotGeneratedAt time.Time `json:"snapshotGeneratedAt"`
