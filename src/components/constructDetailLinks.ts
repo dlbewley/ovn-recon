@@ -13,6 +13,12 @@ import { constructSelectValue, withSelectParam } from './useSelectParam';
  * name (expanded on the Ports tab).
  */
 
+/**
+ * What every drawer link to this page is called (ovn-recon-dp7.12), whichever tab it
+ * sits on: one label, so the same destination never reads as two different things.
+ */
+export const OPEN_FULL_PAGE = 'Open full page';
+
 export const DETAIL_TABS = [
     'overview',
     'relationships',

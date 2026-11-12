@@ -234,7 +234,7 @@ The plugin watches these resources in real-time and renders interactive physical
 - **Physical view**: `/ovn-recon/node-network-state/:name`
 - **Cluster logical OVN view**: `/ovn-recon/ovn` (shown when the collector feature gate is enabled)
 - **Node logical OVN view**: `/ovn-recon/ovn/:name` (shown when the collector feature gate is enabled)
-- **Switch or router detail page**: `/ovn-recon/ovn/:node/:kind/:name`, reached from a drawer's **Open details** link.
+- **Switch or router detail page**: `/ovn-recon/ovn/:node/:kind/:name`, reached from a drawer's **Open full page** link.
 - **Linking to a selection**: selecting an object adds `?select=` to the URL (for example `?select=iface:br-ex` on the physical view or
   `?select=switch:join` on a logical view). Opening that URL selects the object again.
 

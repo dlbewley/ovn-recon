@@ -557,7 +557,7 @@ describe('ConstructDrawerBody links to the detail page (ovn-recon-e2b.8)', () =>
     it('opens a router\'s details and links its rule tables to Routes and NAT', () => {
         render('GR_cnv-1');
         const links = hrefs();
-        expect(links).toContainEqual(['Open details', '/ovn-recon/ovn/cnv-1/router/GR_cnv-1']);
+        expect(links).toContainEqual(['Open full page', '/ovn-recon/ovn/cnv-1/router/GR_cnv-1']);
         expect(links).toContainEqual(['NAT rules (74)', '/ovn-recon/ovn/cnv-1/router/GR_cnv-1?tab=routes']);
         expect(links).toContainEqual(['Open all 74', '/ovn-recon/ovn/cnv-1/router/GR_cnv-1?tab=routes']);
         expect(links).toContainEqual(['Static routes (3)', '/ovn-recon/ovn/cnv-1/router/GR_cnv-1?tab=routes']);
@@ -570,7 +570,8 @@ describe('ConstructDrawerBody links to the detail page (ovn-recon-e2b.8)', () =>
         expect(hrefs()).toContainEqual(['ACLs', '/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=policy']);
         const portsTab = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Ports');
         act(() => portsTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-        expect(hrefs()).toContainEqual(['Open in full page', '/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=ports']);
+        // The same label as the Overview's link to the page (ovn-recon-dp7.12).
+        expect(hrefs()).toContainEqual(['Open full page', '/ovn-recon/ovn/cnv-1/switch/cnv-1?tab=ports']);
 
         // A port's expanded row links to the Policy tab narrowed to it.
         const podRow = [...container.querySelectorAll('tr[data-testid^="port-row-"]')].find((row) =>

@@ -79,7 +79,7 @@ import DrawerTabStrip from './DrawerTabStrip';
 import { NatRuleTable, StaticRouteTable } from './RouterRuleTables';
 import ServicesView, { Surface } from './ServiceTables';
 import RuleTable, { RuleColumn } from './RuleTable';
-import { DetailHref } from './constructDetailLinks';
+import { DetailHref, OPEN_FULL_PAGE } from './constructDetailLinks';
 import { portPolicyCounts } from './policyRows';
 import { OptionalSectionsState } from './useOptionalSections';
 import type { Finding } from '../insights/types';
@@ -134,7 +134,7 @@ export interface ConstructDrawerBodyProps {
     sectionsRefreshKey?: string | number;
     /**
      * The construct's detail page (ovn-recon-e2b.8), for switches and routers:
-     * the Overview opens with an "Open details" link and each line that
+     * the Overview opens with an "Open full page" link and each line that
      * stands for a row set links to its tab. Unset for bridge mappings.
      */
     detailHref?: DetailHref;
@@ -425,7 +425,7 @@ export const OverviewBody: React.FC<DrawerBodyProps> = ({
         <>
         {detailHref && surface === 'drawer' && (
             <div className="pf-u-mb-md" data-testid="open-details">
-                <Link to={detailHref()}>Open details</Link>
+                <Link to={detailHref()}>{OPEN_FULL_PAGE}</Link>
             </div>
         )}
         <FactRows ariaLabel="Overview">
@@ -1159,7 +1159,7 @@ export const PortsBody: React.FC<DrawerBodyProps> = ({
         const parts: React.ReactNode[] = [];
         if (shown < total) parts.push(`${shown} of ${total} ports`);
         if (databaseNode) parts.push(`Logical_Switch_Port rows from node ${databaseNode}`);
-        const fullPage = !isPage && detailHref ? <Link to={detailHref('ports')}>Open in full page</Link> : null;
+        const fullPage = !isPage && detailHref ? <Link to={detailHref('ports')}>{OPEN_FULL_PAGE}</Link> : null;
         if (parts.length === 0 && !fullPage) return null;
         return (
             <span style={SUBTLE_TEXT}>
