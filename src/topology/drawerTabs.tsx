@@ -17,7 +17,7 @@ import {
 } from '../components/drawerKit';
 import { physicalIdentifiers } from './drawerIdentity';
 import { baseFacts, FactList } from './facts';
-import { resolveInterfaceRef } from './ids';
+import { resolveInterfaceLinkRef } from './ids';
 import { nodeKindRegistry } from './registry';
 import { DrawerTabDefinition, DrawerTabId, NodeViewModel } from './types';
 
@@ -61,10 +61,12 @@ export interface DrawerTabHooks {
  * link that moves the selection the way the Relationships tab does, when the
  * graph draws that interface.
  */
-export const interfaceSelector = (ctx: GraphContext, hooks: DrawerTabHooks): InterfaceSelector =>
+export const interfaceSelector = (ctx: GraphContext, hooks: DrawerTabHooks, selfId?: string): InterfaceSelector =>
     (name) => {
-        const id = resolveInterfaceRef(name, ctx);
-        if (!id || (hooks.isDrawn && !hooks.isDrawn(id))) return undefined;
+        const id = resolveInterfaceLinkRef(name, ctx);
+        // A management port resolves to its owner; in the owner's own drawer that
+        // would be a link to the node already open, so it stays plain text.
+        if (!id || id === selfId || (hooks.isDrawn && !hooks.isDrawn(id))) return undefined;
         return () => hooks.onSelectNode(id);
     };
 
@@ -194,7 +196,7 @@ export const buildDrawerTabs = (
                 <LinkOutProvider>
                     <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
                         <FindingsSection findings={hooks.findingsFor?.(node.id) ?? []} />
-                        <FactList facts={facts ?? baseFacts(node)} selectInterface={interfaceSelector(ctx, hooks)} />
+                        <FactList facts={facts ?? baseFacts(node)} selectInterface={interfaceSelector(ctx, hooks, node.id)} />
                         <IdentifiersSection identifiers={physicalIdentifiers(node)} />
                     </div>
                     <ElsewhereLinks node={node} ctx={ctx} />

@@ -13,7 +13,9 @@ import { buildDrawerTabs, getDrawerTabs } from '../topology/drawerTabs';
 import DrawerTabStrip from './DrawerTabStrip';
 import { DrawerIdentity } from './drawerKit';
 import { physicalIdentity } from '../topology/drawerIdentity';
-import { edgeKey, findDuplicateIds, resolveNodeId as resolveId } from '../topology/ids';
+import {
+    edgeKey, findDuplicateIds, parseNodeId, resolveInterfaceLinkRef, resolveNodeId as resolveId
+} from '../topology/ids';
 import {
     DrawerTabId, NodeViewModel
 } from '../topology/types';
@@ -812,7 +814,13 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
             if (reveal) {
                 setShowHiddenColumns(reveal.showHiddenColumns);
                 setShowNads(reveal.showNads);
+                return null;
             }
+            // A management port is not a node: an older link naming one lands on
+            // the VRF or integration bridge that owns it.
+            const parsed = parseNodeId(id);
+            const owner = parsed?.kind === 'iface' ? resolveInterfaceLinkRef(parsed.key, ctx) : undefined;
+            if (owner && owner !== id && placedNodeById.has(owner)) return owner;
             return null;
         },
         apply: (id) => {

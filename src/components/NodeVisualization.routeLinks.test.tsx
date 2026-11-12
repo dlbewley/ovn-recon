@@ -72,8 +72,8 @@ describe('NodeVisualization route table links', () => {
         expect(container.querySelector('.pf-v6-c-drawer__panel')?.textContent).toContain('Routes via this interface');
     });
 
-    it('leaves an interface the canvas does not draw as plain text', () => {
-        // ovn-k8s-mp3 lives in the hidden lane until that lane is shown.
+    it('leaves a management port as plain text in the drawer of the VRF that owns it', () => {
+        // ovn-k8s-mp3 is not a node; a link to it lands on this VRF, which is already open.
         clickNode('example-p-cudn (VRF)');
         const mp3 = interfaceCells().filter((cell) => cell.textContent === 'ovn-k8s-mp3');
         expect(mp3.length).toBeGreaterThan(0);

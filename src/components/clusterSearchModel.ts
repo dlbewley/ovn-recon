@@ -12,7 +12,7 @@ import {
     LookupTable,
     NodeNetworkState,
 } from '../types';
-import { resolveInterfaceRef } from '../topology/ids';
+import { resolveInterfaceLinkRef } from '../topology/ids';
 import { getResourcePath } from '../topology/links';
 import { networkCidr, ParsedPrefix, parsePrefix, prefixContains } from './ipPrefix';
 import { buildKernelRouteTables, kernelTableLabel, KernelRouteRow, KernelRouteTableGroup } from './kernelRoutes';
@@ -973,8 +973,8 @@ const nextHopsText = (row: KernelRouteRow): string =>
  * node reports no interface by that name.
  */
 const routeNodeId = (table: KernelRouteTableGroup, row: KernelRouteRow, interfaces: Interface[]): string | undefined =>
-    resolveInterfaceRef(table.vrfName, { interfaces })
-    ?? row.nextHops.map((hop) => resolveInterfaceRef(hop.interface, { interfaces })).find(Boolean);
+    resolveInterfaceLinkRef(table.vrfName, { interfaces })
+    ?? row.nextHops.map((hop) => resolveInterfaceLinkRef(hop.interface, { interfaces })).find(Boolean);
 
 export interface WatchedSearch {
     results: SearchResult[];
@@ -1018,7 +1018,7 @@ export const searchWatchedResources = (query: SearchQuery, sources: WatchedSourc
                     source: 'cluster',
                     title: iface.name,
                     match,
-                    places: [{ node, link: physicalLink(node, resolveInterfaceRef(iface.name, { interfaces })) }],
+                    places: [{ node, link: physicalLink(node, resolveInterfaceLinkRef(iface.name, { interfaces })) }],
                     links: [],
                 };
                 if (subtitle) result.subtitle = subtitle;
