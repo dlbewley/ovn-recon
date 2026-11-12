@@ -179,7 +179,7 @@ physical view's drawer:
   resolves each backend to its pod.
 - **Config**: the construct's raw northbound rows.
 
-**Open details** leads to the construct's own page.
+**Open full page** leads to the construct's own page.
 
 <a href="img/logical-topology-router.png"><img src="img/logical-topology-router.png" width="80%" alt="A gateway router's drawer with NAT rules and static routes" /></a>
 
