@@ -27,8 +27,8 @@ export interface RuleColumn<R> {
     headerModifier?: ThProps['modifier'];
     /** Cell wrapping (breakWord, fitContent, ...). */
     modifier?: TdProps['modifier'];
-    /** The column's share of the table width, in percent. Give it to the one
-     * column that should take the room the others leave. */
+    /** The column's share of the table width, in percent. Give it to the
+     * columns that should take the room the short ones leave. */
     width?: ThProps['width'];
 }
 
