@@ -130,6 +130,46 @@ export const resolveInterfaceRef = (
     return match.type === 'vrf' ? vrfNodeId(name) : ifaceNodeId(name);
 };
 
+/** The synthesized integration bridge's node (nmstate reports no interface for it). */
+export const integrationBridgeNodeId = (name: string): string => `intbr:${name}`;
+
+const MANAGEMENT_PORT_PREFIX = 'ovn-k8s-mp';
+
+/**
+ * Where a link to an interface name should land, for links from outside the model:
+ * a route's device, a search hit, a `select=` in a URL.
+ *
+ * Same as resolveInterfaceRef, except for an OVN management port (`ovn-k8s-mp0`,
+ * `ovn-k8s-mp<N>`). nmstate reports those with `state: ignore` and the graph draws
+ * none of them as a node: each is shown as a fact of the node that owns it. So a link
+ * to one lands on its owner -- the VRF it is enslaved into for a Primary network's
+ * port, else the integration bridge it is a port of (ovn-recon-tpp.7).
+ *
+ * Kept apart from resolveInterfaceRef on purpose: that one resolves the references
+ * edges are built from, and an edge to a management port must not become an edge to
+ * its bridge.
+ */
+export const resolveInterfaceLinkRef = (
+    name: string | undefined,
+    ctx: Pick<GraphContext, 'interfaces'>
+): string | undefined => {
+    if (!name) return undefined;
+    const match = ctx.interfaces.find((i) => i.name === name);
+    if (!match) return undefined;
+    const isManagementPort = match.type === 'ovs-interface'
+        && match.state === 'ignore'
+        && name.startsWith(MANAGEMENT_PORT_PREFIX);
+    if (!isManagementPort) return resolveInterfaceRef(name, ctx);
+    const vrf = ctx.interfaces.find((i) => {
+        if (i.type !== 'vrf') return false;
+        const ports = i.vrf?.port;
+        return Array.isArray(ports) ? ports.includes(name) : ports === name;
+    });
+    if (vrf) return vrfNodeId(vrf.name);
+    const bridge = match.controller || match.master;
+    return bridge ? integrationBridgeNodeId(bridge) : resolveInterfaceRef(name, ctx);
+};
+
 /**
  * Ids appearing more than once. Duplicates make React log a duplicate-key warning and
  * draw one node on top of another, which reads as missing data rather than as a bug.

@@ -4,7 +4,7 @@ import path from 'path';
 import { buildGraphContext } from './context';
 import {
     attachmentNodeId, edgeKey, findDuplicateIds, nadNodeId, networkNodeId,
-    parseNodeId, resolveInterfaceRef, resolveNodeId, udnNodeId
+    parseNodeId, resolveInterfaceLinkRef, resolveInterfaceRef, resolveNodeId, udnNodeId
 } from './ids';
 import { getNamespaceQueryPath, getProjectPath, getResourceLinks, getResourcePath } from './links';
 import { nodeKindRegistry } from './registry';
@@ -96,6 +96,36 @@ describe('resolveInterfaceRef', () => {
         const ctx = { interfaces: [{ name: 'mp9-udn-vrf', type: 'vrf', state: 'up' }] };
         expect(resolveInterfaceRef('mp9-udn-vrf', ctx)).toBe('vrf:mp9-udn-vrf');
         expect(resolveInterfaceRef(undefined, ctx)).toBeUndefined();
+    });
+});
+
+describe('resolveInterfaceLinkRef', () => {
+    const interfaces = [
+        { name: 'br-ex', type: 'ovs-bridge', state: 'up' },
+        { name: 'ovn-k8s-mp0', type: 'ovs-interface', state: 'ignore', controller: 'br-int' },
+        { name: 'ovn-k8s-mp3', type: 'ovs-interface', state: 'ignore', controller: 'br-int' },
+        { name: 'blue', type: 'vrf', state: 'up', vrf: { port: ['ovn-k8s-mp3', 'vlan.9'] } },
+        { name: 'patch-br-int-to-br-ex', type: 'ovs-interface', state: 'ignore', controller: 'br-int' },
+        { name: 'ovn-k8s-mp7', type: 'ovs-interface', state: 'up', controller: 'br-int' },
+    ];
+    const linkCtx = { interfaces };
+
+    it('sends the default network\'s management port to the integration bridge', () => {
+        expect(resolveInterfaceLinkRef('ovn-k8s-mp0', linkCtx)).toBe('intbr:br-int');
+    });
+
+    it('sends a Primary network\'s management port to the VRF it is enslaved into', () => {
+        expect(resolveInterfaceLinkRef('ovn-k8s-mp3', linkCtx)).toBe('vrf:blue');
+    });
+
+    it('resolves everything else exactly as resolveInterfaceRef does', () => {
+        ['br-ex', 'blue', 'patch-br-int-to-br-ex', 'ovn-k8s-mp7', 'nope'].forEach((name) =>
+            expect(resolveInterfaceLinkRef(name, linkCtx)).toBe(resolveInterfaceRef(name, linkCtx)));
+        expect(resolveInterfaceLinkRef(undefined, linkCtx)).toBeUndefined();
+    });
+
+    it('leaves edge resolution alone: a reference to a management port is not its bridge', () => {
+        expect(resolveInterfaceRef('ovn-k8s-mp0', linkCtx)).toBe('iface:ovn-k8s-mp0');
     });
 });
 

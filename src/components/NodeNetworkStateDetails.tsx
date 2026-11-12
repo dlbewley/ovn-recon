@@ -11,7 +11,7 @@ import KernelRouteTable, { InterfaceSelector } from './KernelRouteTable';
 import { logicalViewPath, physicalViewPath } from './networkPageModel';
 import { readSelectParam, withSelectParam } from './useSelectParam';
 import { buildGraphContext } from '../topology/context';
-import { resolveInterfaceRef } from '../topology/ids';
+import { resolveInterfaceLinkRef } from '../topology/ids';
 import { isDrawableNode } from '../topology/lanes';
 
 /** Where the SR-IOV Network Operator keeps its per-node state. */
@@ -166,7 +166,7 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({ name
     const selectInterface = React.useMemo<InterfaceSelector | undefined>(() => {
         if (!graphContext) return undefined;
         return (interfaceName) => {
-            const id = resolveInterfaceRef(interfaceName, graphContext);
+            const id = resolveInterfaceLinkRef(interfaceName, graphContext);
             if (!id || !isDrawableNode(graphContext, id)) return undefined;
             return () => navigate(
                 { pathname: location.pathname, search: withSelectParam(location.search, id), hash: location.hash },

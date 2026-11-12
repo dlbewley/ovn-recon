@@ -83,14 +83,16 @@ describe('NodeNetworkStateDetails main routing table links', () => {
         expect(current().navigationType).toBe('REPLACE');
     });
 
-    it('leaves an interface the graph never draws as plain text', () => {
-        // nmstate reports this port state: ignore, so no view of the graph draws it.
+    it('sends a management port, which the graph never draws, to the integration bridge', () => {
+        // nmstate reports this port state: ignore; it is a fact of br-int, not a node.
         const section = render();
-        const cells = interfaceCells(section).filter((cell) => cell.textContent === 'ovn-k8s-mp0');
-        expect(cells.length).toBeGreaterThan(0);
-        cells.forEach((cell) => {
-            expect(cell.querySelector('button')).toBeNull();
-            expect(cell.querySelector('code')?.textContent).toBe('ovn-k8s-mp0');
-        });
+        const link = interfaceCells(section)
+            .map((cell) => cell.querySelector('button'))
+            .find((button) => button?.textContent === 'ovn-k8s-mp0');
+        expect(link).toBeDefined();
+
+        act(() => link!.click());
+        expect(current().search).toContain('select=intbr:br-int');
+        expect(drawerTitle()).toContain('br-int');
     });
 });

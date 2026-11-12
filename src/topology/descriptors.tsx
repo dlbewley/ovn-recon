@@ -39,7 +39,7 @@ import { EdgeMeaning } from '../components/nodeVisualizationModel';
 import { GraphContext } from './context';
 import {
     attachmentNodeId, attachmentSourceNodeId, bridgeMappingNodeId, cudnNodeId,
-    interfaceNodeId, nadNodeId, udnNodeId
+    integrationBridgeNodeId, interfaceNodeId, nadNodeId, udnNodeId
 } from './ids';
 import { CATEGORICAL, NodeStatus } from './palette';
 import { getUdnTopologyAndRole } from './registry';
@@ -522,7 +522,7 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         // Synthesized: nmstate reports no br-int interface, only ports declaring
         // it as their controller (ovn-recon-s3t.46).
         items: (ctx) => (ctx.integrationBridge ? [ctx.integrationBridge] : []),
-        id: (bridge) => `intbr:${bridge.name}`,
+        id: (bridge) => integrationBridgeNodeId(bridge.name),
         present: (bridge) => ({
             label: bridge.name,
             subtitle: 'OVS Integration Bridge',
@@ -531,7 +531,7 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
             isSynthetic: true
         }),
         edges: (bridge, ctx, out) => {
-            const id = `intbr:${bridge.name}`;
+            const id = integrationBridgeNodeId(bridge.name);
             // One peer edge per provider bridge: the reciprocal patch.peer pair is
             // a virtual cable, and several pairs to one bridge are still one link.
             const providers = new Set<string>();
