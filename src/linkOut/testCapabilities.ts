@@ -5,7 +5,7 @@ import { ConsoleCapabilities, CRD_FLAGS, kindReference, NETWORKING_PLUGIN, NMSTA
  * manifests register on each release.
  */
 
-const allCrds = (present: boolean): Record<string, boolean> =>
+export const allCrds = (present: boolean): Record<string, boolean> =>
     Object.fromEntries(CRD_FLAGS.map(({ kind }) => [kindReference(kind), present]));
 
 export const capabilities = (

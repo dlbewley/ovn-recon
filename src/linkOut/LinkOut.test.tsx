@@ -99,11 +99,11 @@ describe('link-out components (ovn-recon-zdt.4)', () => {
     });
 
     describe('SecondaryLinks', () => {
-        it('offers nmstate\'s topology for an interface when the plugin is loaded', () => {
+        it('offers nmstate\'s interface details for an interface when the plugin is loaded', () => {
             render(<SecondaryLinks target={iface} />, OCP_5_1);
             expect(anchors()).toEqual([{
-                text: 'Open in nmstate topology',
-                href: '/node-network-configuration?selectedID=worker-1~ens192~ethernet',
+                text: 'Interface details in nmstate',
+                href: '/k8s/cluster/nmstate.io~v1beta1~NodeNetworkState?selectedState=worker-1&selectedInterface=ens192&selectedInterfaceType=ethernet',
                 owner: 'nmstate-console-plugin',
                 target: null,
             }]);
