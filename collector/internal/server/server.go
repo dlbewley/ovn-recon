@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dlbewley/ovn-recon/collector/internal/snapshot"
@@ -74,7 +75,17 @@ type Server struct {
 	// refreshMu guards single-flight background revalidation per node.
 	refreshMu       sync.Mutex
 	refreshInFlight map[string]bool
+
+	// warming is set while the start-up cache sweep runs (WarmCache). Zone
+	// snapshots served meanwhile carry warningCollectorWarming, so a client
+	// can tell a probe that failed during start-up (an upgrade rolling the
+	// collector and ovnkube-node together) from a lasting failure.
+	warming atomic.Bool
 }
+
+// warningCollectorWarming marks a zone snapshot served while the start-up
+// cache sweep runs. Clients hold back degraded-collection alerts meanwhile.
+const warningCollectorWarming = "COLLECTOR_WARMING"
 
 // New creates a collector HTTP server.
 func New(store snapshot.Store) *Server {
@@ -182,7 +193,7 @@ func (s *Server) handleSnapshotByNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, err := s.collectZone(r.Context(), nodeName)
+	payload, err := s.collectZoneMarked(r.Context(), nodeName)
 	if err != nil {
 		s.writeStoreError(w, nodeName, err)
 		return
@@ -202,6 +213,23 @@ func requestedSections(w http.ResponseWriter, r *http.Request) (snapshot.Section
 		return nil, false
 	}
 	return sections, true
+}
+
+// collectZoneMarked is collectZone for a response: while the start-up
+// sweep runs, the payload also carries COLLECTOR_WARMING. The mark is
+// never cached; collectZone's payload is copied before it is added.
+func (s *Server) collectZoneMarked(ctx context.Context, nodeName string) (snapshot.LogicalTopologySnapshot, error) {
+	payload, err := s.collectZone(ctx, nodeName)
+	if err != nil || !s.warming.Load() {
+		return payload, err
+	}
+	warnings := make([]snapshot.Warning, 0, len(payload.Warnings)+1)
+	warnings = append(warnings, payload.Warnings...)
+	payload.Warnings = append(warnings, snapshot.Warning{
+		Code:    warningCollectorWarming,
+		Message: "The collector is warming its snapshot cache after start-up",
+	})
+	return payload, nil
 }
 
 // collectZone resolves one node's zone snapshot: fresh cache first; a stale
@@ -318,6 +346,9 @@ func (s *Server) WarmCache(ctx context.Context) {
 		return
 	}
 
+	s.warming.Store(true)
+	defer s.warming.Store(false)
+
 	nodes, err := s.nodeLister.ListNodes(ctx)
 	if err != nil {
 		s.logger.Warn("cache warm-up skipped; node discovery failed", "error", err)
@@ -387,7 +418,7 @@ func (s *Server) handleSnapshotsAggregate(w http.ResponseWriter, r *http.Request
 			defer wg.Done()
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
-			payload, zoneErr := s.collectZone(r.Context(), nodeName)
+			payload, zoneErr := s.collectZoneMarked(r.Context(), nodeName)
 			if payload.Metadata.NodeName == "" {
 				payload.Metadata.NodeName = nodeName
 			}

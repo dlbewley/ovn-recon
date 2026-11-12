@@ -1,10 +1,12 @@
-import type { LadderModel } from '../components/logicalLadderModel';
 import type { GraphContext } from '../topology/context';
 import type {
     ClusterUserDefinedNetwork,
     LogicalTopologySnapshot,
+    MultiNetworkPolicy,
     NetworkAttachmentDefinition,
     NodeNetworkState,
+    Pod,
+    SnapshotSection,
     UserDefinedNetwork
 } from '../types';
 
@@ -66,6 +68,11 @@ export interface Evidence {
     /** The field the fact was read from, in dotted form; `[name=x]` picks a list entry. */
     path?: string;
     inferred?: string;
+    /**
+     * Where the fact was read when it is not a Kubernetes object: the logical rules
+     * read a collector snapshot ("the northbound database of node worker-1").
+     */
+    origin?: string;
 }
 
 /** What to change, naming the object to edit. */
@@ -74,6 +81,12 @@ export interface Remedy {
     target: K8sRef;
     /** The field to edit, when one field is the fix. */
     path?: string;
+    /**
+     * `view` when the target is where to look rather than what to edit: OVN-Kubernetes
+     * owns the northbound rows, so a logical remedy often starts at a Pod or a Node.
+     * Default `edit`, which links the target's YAML.
+     */
+    verb?: 'edit' | 'view';
 }
 
 export interface FindingScope {
@@ -122,15 +135,31 @@ export interface PhysicalContext {
 }
 
 /**
- * Context for logical rules (ovn-recon-7i6.3): one zone's collector snapshot and the
- * ladder model built from it. Defined here so the engine's shape is settled; no rule
- * uses it yet.
+ * Cluster-wide inputs for the logical network rules: what the page watches. Absent
+ * (undefined) until every list has loaded, and when a CRD is not installed; a rule
+ * needing it then reports nothing.
+ */
+export interface LogicalClusterInputs {
+    nads: NetworkAttachmentDefinition[];
+    multiNetworkPolicies: MultiNetworkPolicy[];
+}
+
+/**
+ * Context for logical rules (ovn-recon-7i6.3): one zone's collector snapshot, plus
+ * what a rule needs beside it. Each extra input is optional and a rule needing one
+ * stays quiet without it -- absence of data is never a finding.
  */
 export interface LogicalContext {
     domain: 'logical';
+    /** The node whose zone the snapshot is. */
     nodeName: string;
     snapshot: LogicalTopologySnapshot;
-    ladder: LadderModel;
+    /** The pods scheduled on `nodeName`, once loaded. */
+    pods?: Pod[];
+    /** For network-scope rules; see LogicalClusterInputs. */
+    cluster?: LogicalClusterInputs;
+    /** Evaluation time in ms, for rules with a grace period; defaults to Date.now(). */
+    now?: number;
 }
 
 export type RuleContext = PhysicalContext | LogicalContext;
@@ -144,6 +173,12 @@ export interface Rule<C extends RuleContext = RuleContext> {
     title: string;
     /** Pure: no hooks, no fetches, no mutation of ctx. */
     evaluate: (ctx: C) => Finding[];
+    /**
+     * Logical rules that read an optional snapshot section (and nothing else but
+     * `ctx.snapshot.database` and `ctx.nodeName`). A surface that loads the section
+     * on its own, as the drawer does, runs them over that database.
+     */
+    section?: SnapshotSection;
 }
 
 export type PhysicalRule = Rule<PhysicalContext>;

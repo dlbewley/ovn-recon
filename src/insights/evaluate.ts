@@ -1,6 +1,16 @@
 import type { GraphContext } from '../topology/context';
-import { PHYSICAL_RULES } from './registry';
-import type { ClusterNetworkInputs, Finding, PhysicalContext, PhysicalRule, Severity } from './types';
+import type { LogicalDatabase, LogicalTopologySnapshot } from '../types';
+import { LOGICAL_RULES, PHYSICAL_RULES } from './registry';
+import type {
+    ClusterNetworkInputs,
+    Finding,
+    LogicalClusterInputs,
+    LogicalContext,
+    LogicalRule,
+    PhysicalContext,
+    PhysicalRule,
+    Severity
+} from './types';
 
 const SEVERITY_ORDER: Record<Severity, number> = { warning: 0, info: 1 };
 
@@ -112,3 +122,100 @@ export const createPhysicalEvaluator = (options: PhysicalEvaluatorOptions = {}):
 
 /** The evaluator over every shipped physical rule, shared by the surfaces. */
 export const evaluatePhysical = createPhysicalEvaluator();
+
+// --- Logical ------------------------------------------------------------------
+
+export interface LogicalEvaluatorOptions {
+    rules?: readonly LogicalRule[];
+    /** Called when a rule throws. The rule's findings are dropped; the others stand. */
+    onRuleError?: (ruleId: string, error: unknown) => void;
+}
+
+export interface LogicalEvaluator {
+    /** Findings for one zone's page: its zone rules plus the network rules. */
+    (ctx: LogicalContext): Finding[];
+    /** Findings of the network-scope rules alone. */
+    network: (cluster: LogicalClusterInputs) => Finding[];
+    /**
+     * Findings of the rules that read one optional section (see Rule.section), over a
+     * database that carries it: what the drawer adds once it has loaded the section.
+     */
+    sections: (database: LogicalDatabase, nodeName: string) => Finding[];
+}
+
+const EMPTY_SNAPSHOT: LogicalTopologySnapshot = Object.freeze({
+    metadata: { schemaVersion: '', generatedAt: '', sourceHealth: '', nodeName: '' },
+    nodes: [], edges: [], groups: [], warnings: []
+}) as LogicalTopologySnapshot;
+
+/**
+ * A memoised evaluator over a set of logical rules, cached by object identity like
+ * the physical one, with the same contract split:
+ *
+ *   network rules read ctx.cluster only;
+ *   node rules read everything else (the snapshot, the node's pods, the time) and
+ *   never ctx.cluster;
+ *   section rules (Rule.section) read ctx.snapshot.database and ctx.nodeName only.
+ */
+export const createLogicalEvaluator = (options: LogicalEvaluatorOptions = {}): LogicalEvaluator => {
+    const rules = options.rules ?? LOGICAL_RULES;
+    const networkRules = rules.filter((rule) => rule.scope === 'network');
+    const zoneRules = rules.filter((rule) => rule.scope !== 'network');
+    const sectionRules = zoneRules.filter((rule) => rule.section !== undefined);
+
+    const run = (selected: readonly LogicalRule[], ctx: LogicalContext): Finding[] =>
+        dedupeAndSort(selected.flatMap((rule) => {
+            try {
+                return rule.evaluate(ctx);
+            } catch (error) {
+                options.onRuleError?.(rule.id, error);
+                return [];
+            }
+        }));
+
+    const networkCache = new WeakMap<LogicalClusterInputs, Finding[]>();
+    const contextCache = new WeakMap<LogicalContext, Finding[]>();
+    const sectionCache = new WeakMap<LogicalDatabase, Map<string, Finding[]>>();
+
+    const network = (cluster: LogicalClusterInputs): Finding[] => {
+        let findings = networkCache.get(cluster);
+        if (!findings) {
+            findings = run(networkRules, { domain: 'logical', nodeName: '', snapshot: EMPTY_SNAPSHOT, cluster });
+            networkCache.set(cluster, findings);
+        }
+        return findings;
+    };
+
+    const evaluate = ((ctx: LogicalContext): Finding[] => {
+        let findings = contextCache.get(ctx);
+        if (!findings) {
+            const zone = run(zoneRules, { ...ctx, cluster: undefined });
+            findings = ctx.cluster ? dedupeAndSort([...zone, ...network(ctx.cluster)]) : zone;
+            contextCache.set(ctx, findings);
+        }
+        return findings;
+    }) as LogicalEvaluator;
+
+    evaluate.network = network;
+    evaluate.sections = (database, nodeName) => {
+        let byNode = sectionCache.get(database);
+        if (!byNode) {
+            byNode = new Map();
+            sectionCache.set(database, byNode);
+        }
+        let findings = byNode.get(nodeName);
+        if (!findings) {
+            findings = run(sectionRules, {
+                domain: 'logical',
+                nodeName,
+                snapshot: { ...EMPTY_SNAPSHOT, database }
+            });
+            byNode.set(nodeName, findings);
+        }
+        return findings;
+    };
+    return evaluate;
+};
+
+/** The evaluator over every shipped logical rule, shared by the surfaces. */
+export const evaluateLogical = createLogicalEvaluator();

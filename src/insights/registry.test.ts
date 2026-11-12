@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { ALL_RULES, getRule, PHYSICAL_RULES } from './registry';
+import { ALL_RULES, getRule, LOGICAL_RULES, PHYSICAL_RULES } from './registry';
 
 /**
  * Guard rails on the rule list. The confirmed list and severities are on
@@ -20,6 +20,16 @@ describe('the rule registry', () => {
         ]);
     });
 
+    it('ships the confirmed logical rules, all warnings (ovn-recon-7i6.3)', () => {
+        expect(LOGICAL_RULES.map((rule) => [rule.id, rule.severity, rule.domain])).toEqual([
+            ['lsp-down', 'warning', 'logical'],
+            ['mnp-missing-nad', 'warning', 'logical'],
+            ['match-ref-unresolved', 'warning', 'logical'],
+            ['mac-binding-orphan', 'warning', 'logical'],
+            ['collector-degraded', 'warning', 'logical']
+        ]);
+    });
+
     it('has unique ids and looks them up', () => {
         const ids = ALL_RULES.map((rule) => rule.id);
         expect(new Set(ids).size).toBe(ids.length);
@@ -30,7 +40,12 @@ describe('the rule registry', () => {
     it('holds none of the candidates decided not to be findings', () => {
         // Partial Localnet coverage, a second default route, an unreferenced mapping:
         // see README.md before adding any of these.
-        ['localnet-partial', 'multiple-default-routes', 'mapping-unreferenced'].forEach((id) =>
+        // Logical side: Service VIPs without endpoints, a router policy naming a port the
+        // router no longer has.
+        [
+            'localnet-partial', 'multiple-default-routes', 'mapping-unreferenced',
+            'vip-no-endpoints', 'router-policy-stale-port'
+        ].forEach((id) =>
             expect(getRule(id)).toBeUndefined());
     });
 

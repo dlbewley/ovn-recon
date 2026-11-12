@@ -251,6 +251,8 @@ body.
 The server first attempts live OVN collection using Kubernetes pod exec in `COLLECTOR_TARGET_NAMESPACES`.
 If live collection fails, it falls back to snapshot JSON from `SNAPSHOT_DIR` and adds a `LIVE_PROBE_FAILED` warning.
 
+While the start-up cache sweep runs, every zone snapshot served also carries a `COLLECTOR_WARMING` warning. The plugin holds back its `collector-degraded` finding while it is present: an upgrade restarts the collector and ovnkube-node together, so a probe that fails then is expected.
+
 - Default (local): `./fixtures/snapshots`
 - Default (container image): `/app/fixtures/snapshots`
 

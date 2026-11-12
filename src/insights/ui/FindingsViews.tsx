@@ -81,11 +81,15 @@ export const HideInfoSwitch: React.FC<{
 
 const MAX_SOURCES = 3;
 
-/** Where one evidence line was read from, with each object linked to its console page. */
+/**
+ * Where one evidence line was read from, with each object linked to its console page,
+ * or, for a fact read from a collector snapshot, which node's database.
+ */
 const EvidenceProvenance: React.FC<{ evidence: Evidence }> = ({ evidence }) => {
     const shown = evidence.sources.slice(0, MAX_SOURCES);
     const more = evidence.sources.length - shown.length;
-    if (shown.length === 0 && !evidence.path) return null;
+    const origin = shown.length === 0 ? evidence.origin : undefined;
+    if (shown.length === 0 && !origin && !evidence.path) return null;
     return (
         <div style={{ ...subtle, fontSize: '0.85em' }} data-testid="finding-provenance">
             {shown.length > 0 && <>From </>}
@@ -96,9 +100,10 @@ const EvidenceProvenance: React.FC<{ evidence: Evidence }> = ({ evidence }) => {
                 </React.Fragment>
             ))}
             {more > 0 && <> and {more} more</>}
+            {origin && <>From {origin}</>}
             {evidence.path && (
                 <>
-                    {shown.length > 0 ? ', field ' : 'Field '}
+                    {shown.length > 0 || origin ? ', field ' : 'Field '}
                     <code>{evidence.path}</code>
                 </>
             )}
@@ -137,9 +142,13 @@ const FindingEntry: React.FC<{ finding: Finding }> = ({ finding }) => {
             )}
             <div style={{ margin: '0.25em 0 0 1.5em' }} data-testid="finding-remedy">
                 <strong>Remedy:</strong> {finding.remedy.text}{' '}
-                <a href={consoleHrefForRef(finding.remedy.target, true)}>
-                    Edit {refLabel(finding.remedy.target)}
-                </a>
+                {finding.remedy.verb === 'view' ? (
+                    <a href={consoleHrefForRef(finding.remedy.target)}>View {refLabel(finding.remedy.target)}</a>
+                ) : (
+                    <a href={consoleHrefForRef(finding.remedy.target, true)}>
+                        Edit {refLabel(finding.remedy.target)}
+                    </a>
+                )}
                 {finding.remedy.path && <> (field <code>{finding.remedy.path}</code>)</>}
                 {finding.docsUrl && (
                     <>
