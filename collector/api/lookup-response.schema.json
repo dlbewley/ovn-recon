@@ -157,7 +157,9 @@
           "matchedValues": {
             "description": "Every value of the matched field that matched at the same type, matchedValue first, present only when more than one did (a load balancer row with two VIPs on the queried address).",
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "matchType": {
             "description": "`exact`: the stored address, CIDR or name equals the query. `containment`: a stored CIDR contains the queried address or CIDR. `within`: the stored address or CIDR lies inside the queried CIDR (cidr lookups). `substring`: the stored name contains the queried text (name lookups).",

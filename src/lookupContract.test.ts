@@ -50,6 +50,7 @@ const hitKeys: Record<keyof LookupHit, true> = {
     owner: true,
     matchedField: true,
     matchedValue: true,
+    matchedValues: true,
     matchType: true,
     snapshotGeneratedAt: true,
 };
