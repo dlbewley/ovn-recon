@@ -108,7 +108,10 @@ export const ownerTarget = (node: NodeViewModel, ctx: GraphContext): LinkTarget 
         : undefined;
 };
 
-/** Pages beside the owner: nmstate's topology for an interface, Physical networks for a mapping. */
+/**
+ * Pages beside the owner: nmstate's topology for an interface, Physical networks for a mapping.
+ * The owner's own secondary links (a network's traffic) are drawn from the owner target.
+ */
 export const elsewhereTarget = (node: NodeViewModel, ctx: GraphContext): LinkTarget | undefined => {
     const nodeName = ctx.nns?.metadata?.name;
     if (node.kind === 'interface') {
@@ -145,6 +148,7 @@ const ElsewhereLinks: React.FC<{ node: NodeViewModel; ctx: GraphContext }> = ({ 
             }}
         >
             <ConsoleLink target={owner} hideWhenAbsent data-testid="owner-link">View resource in console</ConsoleLink>
+            <SecondaryLinks target={owner} />
             {elsewhere?.type === 'physical-network'
                 ? <ConsoleLink target={elsewhere} hideWhenAbsent>Open in Physical networks</ConsoleLink>
                 : <SecondaryLinks target={elsewhere} />}

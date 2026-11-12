@@ -60,6 +60,7 @@ import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
 import { useChassisNodeNames } from './useChassisNodeNames';
 import { useConstructDetailData } from './useConstructDetailData';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
+import { LinkOutProvider } from '../linkOut/LinkOut';
 import { getResourcePath } from '../topology/links';
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
@@ -527,6 +528,7 @@ const ConstructDetails: React.FC = () => {
                     ))}
                 </Tabs>
                 <div className="pf-u-mt-md" data-testid={`detail-tab-${activeTab}`}>
+                    <LinkOutProvider>
                     {sectionError}
                     {activeTab === 'overview' && <OverviewBody {...bodyProps} />}
                     {activeTab === 'relationships' && <RelationshipsBody {...bodyProps} />}
@@ -545,6 +547,7 @@ const ConstructDetails: React.FC = () => {
                         />
                     )}
                     {activeTab === 'config' && <ConfigBody {...bodyProps} />}
+                    </LinkOutProvider>
                 </div>
             </PageSection>
         );

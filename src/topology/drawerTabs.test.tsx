@@ -6,7 +6,7 @@ import { act } from 'react';
 
 import NodeVisualizationComponent from '../components/NodeVisualization';
 import { routed } from '../components/testRouter';
-import { OCP_4_22 } from '../linkOut/testCapabilities';
+import { NETOBSERV_FULL, OCP_4_22, withNetobserv } from '../linkOut/testCapabilities';
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
 import { elsewhereTarget, ownerTarget } from './drawerTabs';
 import { GraphContext } from './context';
@@ -142,6 +142,23 @@ describe('physical drawer links, rendered (ovn-recon-zdt.4)', () => {
         mockCapabilities.mockReturnValue(OCP_4_22);
         open('machinenet (CUDN)');
         selectTab('Config');
+        expect(elsewhere()).toEqual([
+            ['View resource in console', '/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/machinenet', null],
+        ]);
+    });
+
+    it('offers a network\'s traffic beside its resource when Network Observability can answer', () => {
+        mockCapabilities.mockReturnValue(NETOBSERV_FULL);
+        open('machinenet (CUDN)');
+        expect(elsewhere()).toEqual([
+            ['View resource in console', '/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/machinenet', null],
+            ['View traffic', '/netflow-traffic?filters=udns%3Dmachinenet', null],
+        ]);
+    });
+
+    it('offers no traffic for a network when the FlowCollector does not map UDNs', () => {
+        mockCapabilities.mockReturnValue(withNetobserv({ loki: true, nodeMetrics: true, features: new Set() }));
+        open('machinenet (CUDN)');
         expect(elsewhere()).toEqual([
             ['View resource in console', '/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/machinenet', null],
         ]);

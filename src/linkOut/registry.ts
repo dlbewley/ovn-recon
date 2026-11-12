@@ -29,15 +29,43 @@ import type { ResourceRef } from '../topology/types';
  *   networking plugin on 5.1. Neither reads a network name from the URL, so the
  *   link opens the list.
  *
- * Adding a destination (Network Observability's "View traffic", ovn-recon-vqd.1)
- * is one more LinkOutProvider in PROVIDERS: it receives the same target and
- * capabilities and returns the links it can honour.
+ * Network Observability's "View traffic" (ovn-recon-vqd.1) is a provider too. What
+ * was read from netobserv-plugin's source (v1.9 to v2.0) and shapes it:
+ *
+ * - The plugin's name is `netobserv-plugin`, and `/netflow-traffic` is its page and
+ *   its navigation item on every release read. A second plugin,
+ *   `netobserv-plugin-static`, only carries FlowCollector forms, so the traffic
+ *   page is recognised by the navigation item, never by the plugin name alone.
+ * - It adds a "Network Traffic" tab at `<details page>/netflow`. The Node tab is
+ *   registered without a flag on every release read and applies the node filter
+ *   itself, so it needs no URL format from us. Without Loki it draws from the
+ *   node metrics, which are on unless the FlowCollector's includeList drops them.
+ * - The CUDN and UDN tabs are registered from 1.9 but say "Kind not managed"
+ *   before 1.11, and nothing tells the releases apart from here. So a network
+ *   links to the traffic page with the filter the 1.11 tab applies: `udns=<name>`
+ *   for a CUDN, `udns=<namespace>.<name>` for a UDN. That filter exists only with
+ *   the FlowCollector's UDNMapping feature; the page silently drops a filter it
+ *   does not know and would show all traffic.
+ * - A Service is `dst_resource=Service.<namespace>.<name>` (a Service is always
+ *   the destination side), the filter netobserv's own Service tab applies.
+ * - Resource and UDN filters are answered from flow logs. Without Loki the page
+ *   offers only filters whose labels are on the metrics, which these are not, so
+ *   both need Loki. netobserv publishes that as the NETOBSERV_LOKI_ENABLED flag
+ *   (1.10 on) and gates its own Pod and Service tabs on it.
+ * - In the `filters` parameter `key=value` is an exact match from 1.10; on 1.9 it
+ *   is a partial match. No `match` parameter is sent: its values changed between
+ *   releases and the default suits both filters.
  */
 
 export const NETWORKING_PLUGIN = 'networking-console-plugin';
 export const NMSTATE_PLUGIN = 'nmstate-console-plugin';
-/** Named here for the Network Observability provider to come; nothing uses it yet. */
 export const NETOBSERV_PLUGIN = 'netobserv-plugin';
+/** Network Observability's traffic page, and the navigation item that proves it is there. */
+export const NETOBSERV_TRAFFIC_PATH = '/netflow-traffic';
+/** The console flag netobserv sets once it knows whether flow logs are stored in Loki. */
+export const NETOBSERV_LOKI_FLAG = 'NETOBSERV_LOKI_ENABLED';
+/** The FlowCollector feature that records which UDN a flow belongs to. */
+export const NETOBSERV_UDN_MAPPING = 'UDNMapping';
 
 /** The console itself, as the owner of a page no plugin replaces. */
 export const CONSOLE_OWNER = 'console';
@@ -70,6 +98,19 @@ export type LinkTarget =
     | { type: 'path'; path: string };
 
 /**
+ * What Network Observability is set up to answer. Every field is `undefined`
+ * until it is known, and the registry treats unknown as no.
+ */
+export interface NetObservCapabilities {
+    /** Flow logs are stored in Loki, so filters on a resource or a UDN return rows. */
+    loki?: boolean;
+    /** Per-node metrics are generated, so a node's traffic shows without Loki. */
+    nodeMetrics?: boolean;
+    /** The FlowCollector's `spec.agent.ebpf.features`. */
+    features?: ReadonlySet<string>;
+}
+
+/**
  * What this console has loaded. `undefined` for a CRD means discovery has not
  * answered yet; the registry treats that as absent, since a link that appears a
  * moment late is better than one to a page that is not there.
@@ -81,6 +122,8 @@ export interface ConsoleCapabilities {
     navHrefs: ReadonlyMap<string, ReadonlySet<string>>;
     /** CRD presence by `<group>~<version>~<kind>`. */
     crds: Readonly<Record<string, boolean | undefined>>;
+    /** Absent when the Network Observability plugin is not loaded. */
+    netobserv?: NetObservCapabilities;
 }
 
 /** Nothing loaded: every target resolves to its generic page, or to nothing. */
@@ -99,6 +142,8 @@ export interface LinkOut {
     owner: string;
     /** Link text for a link that stands on its own (secondary links always do). */
     label: string;
+    /** What following the link shows, where the label alone does not say. */
+    hint?: string;
 }
 
 export interface LinkOuts {
@@ -121,6 +166,8 @@ const UDN: KindRef = { apiVersion: 'k8s.ovn.org/v1', kind: 'UserDefinedNetwork' 
 const NAD: KindRef = { apiVersion: 'k8s.cni.cncf.io/v1', kind: 'NetworkAttachmentDefinition' };
 const NNCP: KindRef = { apiVersion: 'nmstate.io/v1', kind: 'NodeNetworkConfigurationPolicy' };
 const NNS: KindRef = { apiVersion: 'nmstate.io/v1beta1', kind: 'NodeNetworkState' };
+const NODE: KindRef = { apiVersion: 'v1', kind: 'Node' };
+const SERVICE: KindRef = { apiVersion: 'v1', kind: 'Service' };
 
 /**
  * The CRDs whose presence the plugin asks the console about, one
@@ -266,8 +313,58 @@ const physicalNetworksProvider: LinkOutProvider = (target, capabilities) => {
     };
 };
 
+const isKind = (ref: ResourceRef, kind: KindRef): boolean =>
+    ref.apiVersion === kind.apiVersion && ref.kind === kind.kind;
+
+const trafficPage = (filter: string): string =>
+    `${NETOBSERV_TRAFFIC_PATH}?${new URLSearchParams({ filters: filter }).toString()}`;
+
+/**
+ * "View traffic": the Network Observability page for a node, a network or a
+ * Service. Offered only when that page would be filtered to the object and have
+ * something to draw from; the header comment says what each one needs.
+ */
+const netobservProvider: LinkOutProvider = (target, capabilities) => {
+    if (target.type !== 'resource' || target.view === 'yaml' || !target.ref.name) return {};
+    if (!capabilities.navHrefs.get(NETOBSERV_PLUGIN)?.has(NETOBSERV_TRAFFIC_PATH)) return {};
+    const { loki, nodeMetrics, features } = capabilities.netobserv ?? {};
+    const { ref } = target;
+    const link = (id: string, path: string, hint: string): Partial<LinkOuts> => ({
+        secondary: [{ id, path, owner: NETOBSERV_PLUGIN, label: 'View traffic', hint }],
+    });
+
+    if (isKind(ref, NODE)) {
+        return loki === true || nodeMetrics === true
+            ? link(
+                'netobserv-node',
+                `${getResourcePath(ref)}/netflow`,
+                'Network Observability: traffic to and from this node',
+            )
+            : {};
+    }
+    if (isKind(ref, CUDN) || isKind(ref, UDN)) {
+        if (loki !== true || !features?.has(NETOBSERV_UDN_MAPPING)) return {};
+        if (isKind(ref, UDN) && !ref.namespace) return {};
+        return link(
+            'netobserv-network',
+            trafficPage(`udns=${isKind(ref, UDN) ? `${ref.namespace}.${ref.name}` : ref.name}`),
+            'Network Observability: traffic on this network',
+        );
+    }
+    if (isKind(ref, SERVICE)) {
+        return loki === true && ref.namespace
+            ? link(
+                'netobserv-service',
+                trafficPage(`dst_resource=Service.${ref.namespace}.${ref.name}`),
+                'Network Observability: traffic to this Service',
+            )
+            : {};
+    }
+    return {};
+};
+
 /** In order: the first provider to name a primary page wins it. */
-const PROVIDERS: LinkOutProvider[] = [physicalNetworksProvider, nmstateProvider, consoleProvider];
+const PROVIDERS: LinkOutProvider[] = [physicalNetworksProvider, nmstateProvider, consoleProvider, netobservProvider];
 
 /** Every page worth offering for a target on this console. */
 export const resolveLinkOuts = (

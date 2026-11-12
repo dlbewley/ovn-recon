@@ -16,8 +16,15 @@ import { SERVICE_PAGE_SIZE } from './ServiceTables';
 import { detailHrefFor } from './constructDetailLinks';
 import { EndpointSliceLike } from './serviceIndex';
 import { openInfoPopover } from './drawerKitTestUtils';
+import { NETOBSERV_FULL, withNetobserv } from '../linkOut/testCapabilities';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
+
+// "Nothing loaded" unless a test says otherwise, as jest.setup.js gives every suite.
+const mockCapabilities = jest.fn();
+jest.mock('../linkOut/useConsoleCapabilities', () => ({
+    useConsoleCapabilities: () => mockCapabilities() ?? jest.requireActual('../linkOut/registry').NO_CAPABILITIES,
+}));
 
 jest.mock('react-router', () => ({
     Link: ({ to, children, title }: { to: string; children: React.ReactNode; title?: string }) => (
@@ -1032,6 +1039,28 @@ describe('ConstructDrawerBody Services tab', () => {
         expect(container.querySelector('[data-testid="rule-table-pager"]')).not.toBeNull();
         expect(container.textContent).not.toMatch(/narrow the filter/);
         expect(container.textContent).toContain('Load_Balancer rows from node cnv-1');
+    });
+
+    it('offers a Service\'s traffic under its name only when Network Observability can answer', () => {
+        const trafficLinks = () => {
+            renderConstruct('cnv-1');
+            clickTab('Services');
+            setFilter('172.30.0.1:443');
+            return [...cellsOf(rowsOf(NODE_TABLE)[0]).Service.querySelectorAll('[data-testid="secondary-links"] a')]
+                .map((a) => [a.textContent, a.getAttribute('href')]);
+        };
+        const hook = mockCapabilities;
+        try {
+            expect(trafficLinks()).toEqual([]);
+            hook.mockReturnValue(NETOBSERV_FULL);
+            expect(trafficLinks()).toEqual([
+                ['View traffic', '/netflow-traffic?filters=dst_resource%3DService.default.kubernetes'],
+            ]);
+            hook.mockReturnValue(withNetobserv({ loki: false, nodeMetrics: true }));
+            expect(trafficLinks()).toEqual([]);
+        } finally {
+            hook.mockReset();
+        }
     });
 
     it('finds the Service behind a VIP and links to it', () => {

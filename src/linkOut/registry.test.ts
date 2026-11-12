@@ -2,10 +2,10 @@ import fs from 'fs';
 import path from 'path';
 
 import {
-    CONSOLE_OWNER, CRD_FLAGS, kindReference, LinkTarget, NETWORKING_PLUGIN, NMSTATE_PLUGIN, NO_CAPABILITIES,
-    resolveLinkOut, resolveLinkOuts
+    CONSOLE_OWNER, CRD_FLAGS, kindReference, LinkTarget, NETOBSERV_PLUGIN, NETOBSERV_UDN_MAPPING, NETWORKING_PLUGIN,
+    NMSTATE_PLUGIN, NO_CAPABILITIES, resolveLinkOut, resolveLinkOuts
 } from './registry';
-import { allCrds, BARE, capabilities, OCP_4_22, OCP_5_1 } from './testCapabilities';
+import { allCrds, BARE, capabilities, NETOBSERV_FULL, OCP_4_22, OCP_5_1, withNetobserv } from './testCapabilities';
 
 const NETWORK_POLICY = { apiVersion: 'networking.k8s.io/v1', kind: 'NetworkPolicy' };
 const MULTI_NETWORK_POLICY = { apiVersion: 'k8s.cni.cncf.io/v1beta1', kind: 'MultiNetworkPolicy' };
@@ -227,5 +227,121 @@ describe('link-out registry (ovn-recon-zdt.4)', () => {
             .map(({ properties: { flag, model } }) => `${flag}=${model.group}~${model.version}~${model.kind}`)
             .sort();
         expect(declared).toEqual(CRD_FLAGS.map(({ flag, kind }) => `${flag}=${kindReference(kind)}`).sort());
+    });
+});
+
+describe('Network Observability traffic links (ovn-recon-vqd.1)', () => {
+    const node: LinkTarget = { type: 'resource', ref: { apiVersion: 'v1', kind: 'Node', name: 'worker-1' } };
+    const cudn: LinkTarget = { type: 'resource', ref: { ...CUDN, name: 'machinenet' } };
+    const udn: LinkTarget = { type: 'resource', ref: { ...UDN, namespace: 'demo', name: 'blue' } };
+    const service: LinkTarget = {
+        type: 'resource', ref: { apiVersion: 'v1', kind: 'Service', namespace: 'demo', name: 'web' },
+    };
+    const everyTarget = [node, cudn, udn, service];
+
+    const traffic = (target: LinkTarget, caps = NETOBSERV_FULL) =>
+        resolveLinkOuts(target, caps).secondary.filter((link) => link.owner === NETOBSERV_PLUGIN);
+    const paths = (target: LinkTarget, caps = NETOBSERV_FULL) => traffic(target, caps).map((link) => link.path);
+
+    const UDN_MAPPING = new Set([NETOBSERV_UDN_MAPPING]);
+
+    describe('with the plugin loaded and everything it needs', () => {
+        it('opens a node on netobserv\'s own tab of the Node page', () => {
+            expect(traffic(node)).toEqual([{
+                id: 'netobserv-node',
+                path: '/k8s/cluster/core~v1~Node/worker-1/netflow',
+                owner: NETOBSERV_PLUGIN,
+                label: 'View traffic',
+                hint: 'Network Observability: traffic to and from this node',
+            }]);
+        });
+
+        it('filters the traffic page to a CUDN by name', () => {
+            expect(paths(cudn)).toEqual(['/netflow-traffic?filters=udns%3Dmachinenet']);
+        });
+
+        it('filters the traffic page to a UDN by namespace.name', () => {
+            expect(paths(udn)).toEqual(['/netflow-traffic?filters=udns%3Ddemo.blue']);
+        });
+
+        it('filters the traffic page to a Service as the destination', () => {
+            expect(paths(service)).toEqual(['/netflow-traffic?filters=dst_resource%3DService.demo.web']);
+        });
+
+        it('leaves the primary page of each object alone', () => {
+            expect(resolveLinkOut(node, NETOBSERV_FULL)?.path).toBe('/k8s/cluster/core~v1~Node/worker-1');
+            expect(resolveLinkOut(service, NETOBSERV_FULL)?.owner).toBe(CONSOLE_OWNER);
+        });
+
+        it('offers nothing for a kind it has no filter for, or for a YAML view', () => {
+            expect(traffic({ type: 'resource', ref: { apiVersion: 'v1', kind: 'Pod', namespace: 'demo', name: 'web-1' } }))
+                .toEqual([]);
+            expect(traffic({
+                type: 'resource',
+                ref: { apiVersion: 'k8s.cni.cncf.io/v1', kind: 'NetworkAttachmentDefinition', namespace: 'demo', name: 'blue' },
+            })).toEqual([]);
+            expect(traffic({ ...node, view: 'yaml' } as LinkTarget)).toEqual([]);
+            expect(traffic({ type: 'node-interface', node: 'worker-1', name: 'ens192', interfaceType: 'ethernet' }))
+                .toEqual([]);
+        });
+
+        it('offers nothing for a namespaced object that names no namespace', () => {
+            expect(traffic({ type: 'resource', ref: { ...UDN, name: 'blue' } })).toEqual([]);
+            expect(traffic({ type: 'resource', ref: { apiVersion: 'v1', kind: 'Service', name: 'web' } })).toEqual([]);
+        });
+    });
+
+    describe('with the plugin absent', () => {
+        it.each([['no plugin at all', BARE], ['the 4.22 plugins', OCP_4_22], ['nothing loaded', NO_CAPABILITIES]])(
+            'offers no traffic link with %s',
+            (_name, caps) => {
+                for (const target of everyTarget) expect(traffic(target, caps)).toEqual([]);
+            },
+        );
+
+        it('is not fooled by the forms-only netobserv plugin, or by answers without the traffic page', () => {
+            const formsOnly = {
+                ...capabilities({ 'netobserv-plugin-static': [], [NETOBSERV_PLUGIN]: ['/network-health'] }),
+                netobserv: NETOBSERV_FULL.netobserv,
+            };
+            for (const target of everyTarget) expect(traffic(target, formsOnly)).toEqual([]);
+        });
+    });
+
+    describe('with the plugin loaded but not what a link needs', () => {
+        it('offers nothing while nothing is known yet', () => {
+            for (const caps of [withNetobserv(undefined), withNetobserv({})]) {
+                for (const target of everyTarget) expect(traffic(target, caps)).toEqual([]);
+            }
+        });
+
+        it('offers a node on Loki alone, or on node metrics alone, and not without both', () => {
+            expect(paths(node, withNetobserv({ loki: true }))).toHaveLength(1);
+            expect(paths(node, withNetobserv({ loki: false, nodeMetrics: true }))).toHaveLength(1);
+            expect(paths(node, withNetobserv({ loki: false, nodeMetrics: false, features: UDN_MAPPING }))).toEqual([]);
+            expect(paths(node, withNetobserv({ loki: false }))).toEqual([]);
+        });
+
+        it('offers a network only when the FlowCollector maps UDNs', () => {
+            for (const target of [cudn, udn]) {
+                expect(paths(target, withNetobserv({ loki: true, nodeMetrics: true, features: new Set(['PacketDrop']) })))
+                    .toEqual([]);
+                // The FlowCollector could not be read, so its features are unknown.
+                expect(paths(target, withNetobserv({ loki: true }))).toEqual([]);
+            }
+        });
+
+        it('offers a network only with Loki, where the UDN filter is answered', () => {
+            for (const target of [cudn, udn]) {
+                expect(paths(target, withNetobserv({ loki: false, nodeMetrics: true, features: UDN_MAPPING }))).toEqual([]);
+                expect(paths(target, withNetobserv({ nodeMetrics: true, features: UDN_MAPPING }))).toEqual([]);
+            }
+        });
+
+        it('offers a Service only with Loki, where the resource filter is answered', () => {
+            expect(paths(service, withNetobserv({ loki: false, nodeMetrics: true, features: UDN_MAPPING }))).toEqual([]);
+            expect(paths(service, withNetobserv({ nodeMetrics: true }))).toEqual([]);
+            expect(paths(service, withNetobserv({ loki: true }))).toHaveLength(1);
+        });
     });
 });
