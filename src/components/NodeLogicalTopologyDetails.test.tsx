@@ -2,6 +2,7 @@ import * as React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
+import { fetchClusterTopology } from './collectorApi';
 import { NodeLogicalTopologyBody } from './NodeLogicalTopologyDetails';
 import { LocationRecord, TestRouter } from './testRouter';
 
@@ -257,5 +258,49 @@ describe('NodeLogicalTopologyBody', () => {
         expect(['?select=switch:cnv-1', '?select=switch:demo.mirror_example.l3.udn_cnv-1'])
             .toContain(current().search);
         expect(container.textContent).toContain('1 / 2');
+    });
+
+    describe('while it waits, and when the collector does not answer (ovn-recon-nt4.4)', () => {
+        it('says which node it is loading in place of an empty canvas', async () => {
+            global.fetch = jest.fn(() => new Promise(() => undefined)) as unknown as typeof fetch;
+            await act(async () => { renderPage(); });
+
+            const canvas = container.querySelector('[data-testid="ladder-canvas"]')!;
+            const loading = canvas.querySelector('[data-testid="collector-loading"]');
+            expect(loading?.textContent).toContain('Loading the OVN snapshot of cnv-1…');
+            expect(loading?.querySelector('[role="progressbar"]')).not.toBeNull();
+        });
+
+        it('paints the zone of the node from the aggregate this tab last received', async () => {
+            const aggregate = {
+                metadata: { schemaVersion: '2', generatedAt: new Date().toISOString(), sourceHealth: 'healthy' },
+                snapshots: [cnv1],
+                warnings: [],
+            };
+            global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => aggregate }) as unknown as typeof fetch;
+            await fetchClusterTopology();
+
+            global.fetch = jest.fn(() => new Promise(() => undefined)) as unknown as typeof fetch;
+            await act(async () => { renderPage(); });
+
+            expect(container.querySelector('[data-testid="collector-loading"]')).toBeNull();
+            expect(container.querySelector('[data-testid="construct-cnv-1"]')).not.toBeNull();
+            expect((global.fetch as jest.Mock).mock.calls.map(([url]) => String(url))
+                .some((url) => url.endsWith('/snapshots/cnv-1'))).toBe(true);
+        });
+
+        it('names the HTTP status in the alert and keeps the routes tried behind Details', async () => {
+            global.fetch = jest.fn().mockImplementation(async (url: string) => ({
+                ok: false,
+                status: url.startsWith('/api/plugins/ovn-recon/api/v1') ? 502 : 404,
+            })) as unknown as typeof fetch;
+            await act(async () => { renderPage(); });
+            await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+            const alert = container.querySelector('.pf-v6-c-alert')!;
+            expect(alert.querySelector('.pf-v6-c-alert__title')?.textContent).toContain('Collector is not answering (HTTP 502)');
+            expect(alert.querySelectorAll('[data-testid="collector-failure-details"] li')).toHaveLength(4);
+            expect(container.querySelector('[data-testid="collector-loading"]')).toBeNull();
+        });
     });
 });

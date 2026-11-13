@@ -1,9 +1,13 @@
 import { LookupResponse } from '../types';
 import {
     CollectorRequestError,
+    CollectorUnreachableError,
+    describeCollectorFailure,
     fetchClusterTopology,
     fetchCollectorLookup,
     fetchCollectorSnapshot,
+    rememberedClusterTopology,
+    rememberedCollectorSnapshot,
     sectionsPath,
 } from './collectorApi';
 
@@ -217,6 +221,108 @@ describe('fetchCollectorLookup', () => {
             .mockResolvedValueOnce({ ok: false, status: 400, text: async () => 'unknown include section' })
             .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
         await fetchCollectorSnapshot('cnv-1', { include: ['services'] });
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+});
+
+// ovn-recon-nt4.4: a failure keeps its routes, and the status of the likeliest one.
+describe('a collector that does not answer', () => {
+    it('rejects with every route tried, the likeliest first, and its status', async () => {
+        fetchMock.mockReset();
+        fetchMock.mockImplementation(async (url: string) => ({ ok: false, status: url.startsWith(API) ? 502 : 404 }));
+        const failure = await fetchClusterTopology().catch((error: unknown) => error);
+        expect(failure).toBeInstanceOf(CollectorUnreachableError);
+        const unreachable = failure as CollectorUnreachableError;
+        expect(unreachable.status).toBe(502);
+        expect(unreachable.attempts.map(({ status }) => status)).toEqual([502, 404, 404, 404]);
+        expect(unreachable.message).toContain('Collector request failed. Attempts: ');
+
+        expect(describeCollectorFailure(failure)).toMatchObject({
+            summary: 'Collector is not answering (HTTP 502)',
+            status: 502,
+            attempts: [
+                `${API}/snapshots -> HTTP 502`,
+                '/api/plugins/ovn-recon/backend/api/v1/snapshots -> HTTP 404',
+                '/api/proxy/plugin/ovn-recon/backend/api/v1/snapshots -> HTTP 404',
+                '/api/proxy/plugin/ovn-recon/api/v1/snapshots -> HTTP 404',
+            ],
+        });
+    });
+
+    it('names no status when no route answered at all', async () => {
+        fetchMock.mockReset();
+        fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+        const failure = describeCollectorFailure(await fetchClusterTopology().catch((error: unknown) => error));
+        expect(failure.summary).toBe('Collector is not answering');
+        expect(failure.status).toBeUndefined();
+        expect(failure.attempts[0]).toBe(`${API}/snapshots -> Failed to fetch`);
+    });
+
+    it('describes any other error by its message', () => {
+        expect(describeCollectorFailure(new Error('boom'))).toEqual({
+            summary: 'Collector request failed', attempts: [], message: 'boom',
+        });
+    });
+});
+
+// ovn-recon-nt4.4: what a view paints before the collector answers.
+describe('remembered ladder payloads', () => {
+    const snapshotOf = (nodeName: string, generatedAt: string) => ({ metadata: { nodeName, generatedAt } });
+    const answer = (payload: unknown) =>
+        fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+
+    it('remembers the last aggregate and each node\'s ladder snapshot, not section payloads', async () => {
+        expect(rememberedClusterTopology()).toBeNull();
+        const aggregate = { snapshots: [snapshotOf('cnv-1', '2026-11-12T10:00:00Z')] };
+        answer(aggregate);
+        await fetchClusterTopology();
+        expect(rememberedClusterTopology()).toBe(aggregate);
+        // The node's zone in the aggregate stands in for its own snapshot.
+        expect(rememberedCollectorSnapshot('cnv-1')).toBe(aggregate.snapshots[0]);
+        expect(rememberedCollectorSnapshot('cnv-2')).toBeNull();
+
+        const own = snapshotOf('cnv-1', '2026-11-12T10:05:00Z');
+        answer(own);
+        await fetchCollectorSnapshot('cnv-1');
+        expect(rememberedCollectorSnapshot('cnv-1')).toBe(own);
+
+        answer(snapshotOf('cnv-1', '2026-11-12T10:10:00Z'));
+        await fetchCollectorSnapshot('cnv-1', { include: ['policy'] });
+        expect(rememberedCollectorSnapshot('cnv-1')).toBe(own);
+    });
+
+    it('keeps the newer of a node\'s own snapshot and its zone in the aggregate', async () => {
+        answer(snapshotOf('cnv-1', '2026-11-12T10:00:00Z'));
+        await fetchCollectorSnapshot('cnv-1');
+        const aggregate = { snapshots: [snapshotOf('cnv-1', '2026-11-12T10:05:00Z')] };
+        answer(aggregate);
+        await fetchClusterTopology();
+        expect(rememberedCollectorSnapshot('cnv-1')).toBe(aggregate.snapshots[0]);
+    });
+
+    it('keeps the last good aggregate through a failed request', async () => {
+        const aggregate = { snapshots: [] };
+        answer(aggregate);
+        await fetchClusterTopology();
+        fetchMock.mockReset();
+        fetchMock.mockResolvedValue({ ok: false, status: 502 });
+        await expect(fetchClusterTopology()).rejects.toBeInstanceOf(CollectorUnreachableError);
+        expect(rememberedClusterTopology()).toBe(aggregate);
+    });
+
+    it('shares a request already in flight for the same path', async () => {
+        let resolve: (value: unknown) => void = () => undefined;
+        fetchMock.mockReset();
+        fetchMock.mockReturnValue(new Promise((done) => { resolve = done; }));
+        const first = fetchClusterTopology();
+        const second = fetchClusterTopology();
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        resolve({ ok: true, status: 200, json: async () => ({ snapshots: [] }) });
+        expect(await second).toBe(await first);
+
+        // Once it has settled, the next request asks again.
+        answer({ snapshots: [] });
+        await fetchClusterTopology();
         expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 });

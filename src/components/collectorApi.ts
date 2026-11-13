@@ -54,11 +54,71 @@ interface FetchFirstOptions {
     refusedStatuses?: readonly number[];
 }
 
+/** One proxy route tried for a request, and what came back. */
+export interface CollectorAttempt {
+    url: string;
+    /** The HTTP status, when the route answered at all. */
+    status?: number;
+    /** Why the request did not complete, when it did not. */
+    message?: string;
+}
+
+const attemptText = ({ url, status, message }: CollectorAttempt): string =>
+    `${url} -> ${status != null ? `HTTP ${status}` : message ?? 'failed'}`;
+
+/**
+ * No route reached a collector that answered (ovn-recon-nt4.4): every proxy shape was
+ * tried and each one failed. `attempts` keeps them in the order tried, the most likely
+ * route first (the one that worked last, else the default install's), so its status is
+ * the one worth showing: HTTP 502 while the collector pod restarts, where the other
+ * routes answer 404 on every default install.
+ */
+export class CollectorUnreachableError extends Error {
+    readonly attempts: CollectorAttempt[];
+
+    constructor(attempts: CollectorAttempt[]) {
+        super(`Collector request failed. Attempts: ${attempts.map(attemptText).join('; ')}`);
+        this.name = 'CollectorUnreachableError';
+        this.attempts = attempts;
+    }
+
+    /** The status of the first route tried, when it answered. */
+    get status(): number | undefined {
+        return this.attempts[0]?.status;
+    }
+}
+
+/** A failed collector request, as a status line and its details show it. */
+export interface CollectorFailure {
+    /** One line: "Collector is not answering (HTTP 502)". */
+    summary: string;
+    /** The HTTP status of the most likely route, when it answered. */
+    status?: number;
+    /** Each route tried and what came back; empty for a failure that is not a routing one. */
+    attempts: string[];
+    /** The whole error message. */
+    message: string;
+}
+
+export const describeCollectorFailure = (error: unknown): CollectorFailure => {
+    if (error instanceof CollectorUnreachableError) {
+        const { status } = error;
+        return {
+            summary: `Collector is not answering${status != null ? ` (HTTP ${status})` : ''}`,
+            status,
+            attempts: error.attempts.map(attemptText),
+            message: error.message,
+        };
+    }
+    const message = error instanceof Error ? error.message : String(error || 'Failed to reach the collector');
+    return { summary: 'Collector request failed', attempts: [], message };
+};
+
 const fetchFirst = async <T>(
     buildUrl: (prefix: string) => string,
     { refusedStatuses = [] }: FetchFirstOptions = {},
 ): Promise<T> => {
-    const attempts: string[] = [];
+    const attempts: CollectorAttempt[] = [];
 
     for (const prefix of orderedPrefixes()) {
         const url = buildUrl(prefix);
@@ -75,7 +135,7 @@ const fetchFirst = async <T>(
             }
 
             if (!response.ok) {
-                attempts.push(`${url} -> HTTP ${response.status}`);
+                attempts.push({ url, status: response.status });
                 continue;
             }
 
@@ -85,12 +145,52 @@ const fetchFirst = async <T>(
         } catch (error) {
             if (error instanceof CollectorRequestError) throw error;
             const message = error instanceof Error ? error.message : String(error);
-            attempts.push(`${url} -> ${message}`);
+            attempts.push({ url, message });
         }
     }
 
-    throw new Error(`Collector request failed. Attempts: ${attempts.join('; ')}`);
+    throw new CollectorUnreachableError(attempts);
 };
+
+/*
+ * The last ladder payload of each path, held for the browser tab (ovn-recon-nt4.4).
+ * The aggregate takes 10 to 18 seconds on a cold collector, and the shell remounts
+ * after a trip to another console page; a view paints what it was last shown at once
+ * and refreshes over it. Only payloads without optional sections are kept, so what is
+ * held is one aggregate and one snapshot per node viewed. A request for a path already
+ * in flight shares it, so the title row's collector line and the cluster ladder opened
+ * together ask the collector once.
+ */
+const remembered = new Map<string, unknown>();
+const inFlight = new Map<string, Promise<unknown>>();
+
+const fetchShared = <T>(path: string, remember: boolean): Promise<T> => {
+    const pending = inFlight.get(path);
+    if (pending) return pending as Promise<T>;
+    const request = fetchFirst<T>((prefix) => `${prefix}${path}`)
+        .then((payload) => {
+            if (remember) remembered.set(path, payload);
+            return payload;
+        })
+        .finally(() => {
+            if (inFlight.get(path) === request) inFlight.delete(path);
+        });
+    inFlight.set(path, request);
+    return request;
+};
+
+/**
+ * Forget every remembered payload, in-flight request and the route that worked
+ * (jest.setup.js, between tests).
+ */
+export const forgetCollectorResponses = (): void => {
+    remembered.clear();
+    inFlight.clear();
+    lastWorkingPrefix = null;
+};
+
+const AGGREGATE_PATH = '/snapshots';
+const snapshotPath = (nodeName: string): string => `/snapshots/${encodeURIComponent(nodeName)}`;
 
 export interface SnapshotFetchOptions {
     /**
@@ -123,9 +223,8 @@ export const fetchCollectorSnapshot = (
     nodeName: string,
     options: SnapshotFetchOptions = {},
 ): Promise<LogicalTopologySnapshot> => {
-    const encodedNodeName = encodeURIComponent(nodeName);
     const sections = sectionsPath(options.include);
-    return fetchFirst((prefix) => `${prefix}${sections}/snapshots/${encodedNodeName}`);
+    return fetchShared(`${sections}${snapshotPath(nodeName)}`, sections === '');
 };
 
 /**
@@ -135,7 +234,28 @@ export const fetchCollectorSnapshot = (
  */
 export const fetchClusterTopology = (options: SnapshotFetchOptions = {}): Promise<ClusterLogicalTopology> => {
     const sections = sectionsPath(options.include);
-    return fetchFirst((prefix) => `${prefix}${sections}/snapshots`);
+    return fetchShared(`${sections}${AGGREGATE_PATH}`, sections === '');
+};
+
+/** The last aggregate (ladder payload) this browser tab received, or null. */
+export const rememberedClusterTopology = (): ClusterLogicalTopology | null =>
+    (remembered.get(AGGREGATE_PATH) as ClusterLogicalTopology | undefined) ?? null;
+
+const generatedAtMs = (snapshot: LogicalTopologySnapshot): number => {
+    const parsed = Date.parse(snapshot.metadata?.generatedAt ?? '');
+    return Number.isNaN(parsed) ? -Infinity : parsed;
+};
+
+/**
+ * The newest ladder payload of one node this browser tab has seen: its own snapshot,
+ * or its zone in the last aggregate (the same projection), or null.
+ */
+export const rememberedCollectorSnapshot = (nodeName: string): LogicalTopologySnapshot | null => {
+    const own = remembered.get(snapshotPath(nodeName)) as LogicalTopologySnapshot | undefined;
+    const fromAggregate = rememberedClusterTopology()?.snapshots
+        ?.find((snapshot) => snapshot.metadata?.nodeName === nodeName);
+    if (own && fromAggregate) return generatedAtMs(fromAggregate) > generatedAtMs(own) ? fromAggregate : own;
+    return own ?? fromAggregate ?? null;
 };
 
 /**

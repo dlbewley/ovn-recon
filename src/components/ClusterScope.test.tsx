@@ -33,7 +33,12 @@ const items = <T,>(...segments: string[]): T[] => {
 
 // [data, loaded, error] per kind; absent kinds load as empty.
 const mockWatches: Record<string, [unknown, boolean, unknown]> = {};
-const mockGate = { enabled: false, loaded: true, loadError: null as Error | null };
+const mockGate = {
+    enabled: false,
+    loaded: true,
+    loadError: null as Error | null,
+    collectorDeployment: { namespace: 'ovn-recon', name: 'ovn-recon-collector' },
+};
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     DocumentTitle: () => null,
@@ -193,9 +198,49 @@ describe('the Cluster scope, drawn by the shell', () => {
             (global.fetch as jest.Mock).mockRejectedValue(new Error('boom'));
             await render(overviewPath());
 
-            expect(status().textContent).toContain('Collector unreachable');
-            expect(await openDetails()).toContain('The collector did not answer: ');
+            expect(status().textContent).toContain('Collector is not answering');
+            expect(await openDetails()).toContain('boom');
             expect(byTestId('overview-node-worker-1')).not.toBeNull();
+        });
+
+        // ovn-recon-nt4.4: during a collector restart the plugin's proxy answers 502 and
+        // the console's other routes 404. One line with the status, where to look, and
+        // the routes tried behind Details.
+        it('says the collector is not answering with its HTTP status, where to look, and the routes tried', async () => {
+            mockGate.enabled = true;
+            global.fetch = jest.fn().mockImplementation(async (url: string) => ({
+                ok: false,
+                status: url.startsWith('/api/plugins/ovn-recon/api/v1') ? 502 : 404,
+                json: async () => ({}),
+            })) as unknown as typeof fetch;
+            await render(overviewPath());
+
+            expect(status().textContent).toContain('Collector is not answering (HTTP 502)');
+            expect(status().textContent).not.toContain('/api/');
+
+            await openDetails();
+            const details = document.querySelector('[data-testid="overview-collector-details"]')!;
+            const links = Array.from(details.querySelectorAll('[data-testid="collector-links"] a'))
+                .map((link) => [link.textContent, link.getAttribute('href')]);
+            expect(links).toEqual([
+                ['Collector Deployment', '/k8s/ns/ovn-recon/apps~v1~Deployment/ovn-recon-collector'],
+                ['Pods', '/k8s/ns/ovn-recon/apps~v1~Deployment/ovn-recon-collector/pods'],
+                ['Events', '/k8s/ns/ovn-recon/apps~v1~Deployment/ovn-recon-collector/events'],
+            ]);
+            const toggle = details.querySelector<HTMLButtonElement>(
+                '[data-testid="collector-failure-details"] button')!;
+            expect(toggle.textContent).toBe('Details');
+            expect(toggle.getAttribute('aria-expanded')).toBe('false');
+            await act(async () => { toggle.click(); });
+            expect(toggle.getAttribute('aria-expanded')).toBe('true');
+            const attempts = Array.from(details.querySelectorAll('[data-testid="collector-failure-details"] li'))
+                .map((item) => item.textContent);
+            expect(attempts).toEqual([
+                '/api/plugins/ovn-recon/api/v1/snapshots -> HTTP 502',
+                '/api/plugins/ovn-recon/backend/api/v1/snapshots -> HTTP 404',
+                '/api/proxy/plugin/ovn-recon/backend/api/v1/snapshots -> HTTP 404',
+                '/api/proxy/plugin/ovn-recon/api/v1/snapshots -> HTTP 404',
+            ]);
         });
 
         it('says nothing about the collector until the gate is known', async () => {

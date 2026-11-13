@@ -1,5 +1,5 @@
 import * as React from 'react';
-
+import { K8sResourceCommon, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 
 import {
     PageSection,
@@ -24,7 +24,8 @@ import {
 
 import { ClusterLogicalTopology } from '../types';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
-import { fetchClusterTopology } from './collectorApi';
+import { CollectorFailure, describeCollectorFailure, fetchClusterTopology, rememberedClusterTopology } from './collectorApi';
+import { assemblingTitle, CollectorFailureDetails, CollectorLoadingState } from './collectorViewStates';
 import { mergeZones } from './logicalClusterModel';
 import { aggregateId } from './logicalLadderLayout';
 import ConstructDrawerBody, { LOGICAL_DRAWER_WIDTH } from './ConstructDrawerBody';
@@ -74,9 +75,17 @@ export const ClusterLogicalTopologyBody: React.FC<ClusterLogicalTopologyBodyProp
 }) => {
     const { enabled, loaded: gateLoaded, loadError: gateError } = useOvnCollectorFeatureGate();
 
-    const [topology, setTopology] = React.useState<ClusterLogicalTopology | null>(null);
+    // The last aggregate this browser tab received paints first, and the refresh
+    // replaces it (ovn-recon-nt4.4): a cold collector takes 10 to 18 seconds.
+    const [topology, setTopology] = React.useState<ClusterLogicalTopology | null>(rememberedClusterTopology);
     const [isLoading, setIsLoading] = React.useState<boolean>(false);
-    const [fetchError, setFetchError] = React.useState<string>('');
+    const [fetchError, setFetchError] = React.useState<CollectorFailure | null>(null);
+    // How many node snapshots the first aggregate waits on, for the loading state.
+    const [nodes] = useK8sWatchResource<K8sResourceCommon[]>({
+        groupVersionKind: { version: 'v1', kind: 'Node' },
+        isList: true,
+    });
+    const nodeCount = Array.isArray(nodes) ? nodes.length : 0;
     const [search, setSearch] = React.useState<string>('');
     const [hostFilter, setHostFilter] = React.useState<string>('all');
     const [networkFilter, setNetworkFilter] = React.useState<string>('all');
@@ -89,14 +98,14 @@ export const ClusterLogicalTopologyBody: React.FC<ClusterLogicalTopologyBodyProp
     const loadTopology = React.useCallback(async () => {
         if (!enabled) return;
         setIsLoading(true);
-        setFetchError('');
+        setFetchError(null);
         try {
             const payload = await fetchClusterTopology();
             setTopology(payload);
         } catch (error) {
             // Keep the last-good topology rendered: a transient failure (a
             // collector pod handoff, a proxy blip) must not blank the view.
-            setFetchError(error instanceof Error ? error.message : 'Failed to load cluster topology');
+            setFetchError(describeCollectorFailure(error));
         } finally {
             setIsLoading(false);
         }
@@ -323,10 +332,13 @@ export const ClusterLogicalTopologyBody: React.FC<ClusterLogicalTopologyBodyProp
                             <CardBody>
                                 <AlertGroup isToast={false}>
                                     {fetchError && (
-                                        <Alert variant="warning" isInline title={fetchError}>
+                                        <Alert variant="warning" isInline title={fetchError.summary}>
                                             {topology
                                                 ? 'Showing the last loaded topology; refresh retries automatically.'
-                                                : 'The aggregate endpoint requires an ovn-collector image with snapshot contract v2.'}
+                                                : fetchError.status === 404
+                                                    ? 'The aggregate endpoint requires an ovn-collector image with snapshot contract v2.'
+                                                    : 'Refresh retries automatically.'}
+                                            <CollectorFailureDetails failure={fetchError} />
                                         </Alert>
                                     )}
                                     {topology && topology.warnings.length > 0 && (
@@ -416,6 +428,12 @@ export const ClusterLogicalTopologyBody: React.FC<ClusterLogicalTopologyBodyProp
                                     data-testid="ladder-canvas"
                                     style={{ height: 'max(560px, calc(100vh - 340px))', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: viewport.isDragging ? 'grabbing' : 'grab' }}
                                 >
+                                    {!topology && !fetchError && (
+                                        <CollectorLoadingState title={assemblingTitle(nodeCount)}>
+                                            The collector reads each node&apos;s OVN databases; with a cold cache
+                                            this can take several seconds.
+                                        </CollectorLoadingState>
+                                    )}
                                     {model && (
                                         <div data-testid="ladder-content" style={{ transform: viewport.contentTransform, transformOrigin: '0 0' }}>
                                             <LogicalLadderView

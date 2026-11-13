@@ -852,6 +852,8 @@ export interface OvnReconIntegration {
 
 export interface OvnRecon extends K8sResourceCommon {
     spec?: {
+        /** Where the workloads run; the operator defaults it to "ovn-recon". */
+        targetNamespace?: string;
         consolePlugin?: {
             integration?: OvnReconIntegration;
         };
@@ -866,6 +868,8 @@ export interface OvnRecon extends K8sResourceCommon {
          * predates a field leaves it absent, which reads as off.
          */
         effective?: {
+            /** The namespace the workloads run in, as resolved. */
+            targetNamespace?: string;
             consolePlugin?: {
                 integration?: OvnReconIntegration;
             };

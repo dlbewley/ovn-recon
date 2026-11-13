@@ -11,9 +11,13 @@ import cnv2 from '../../collector/fixtures/snapshots/cnv-2.json';
 import ctrl1 from '../../collector/fixtures/snapshots/ctrl-1.json';
 import { toolbarButton } from './viewToolbarTestUtils';
 
+// jest.mock factories may only close over identifiers prefixed `mock`.
+let mockNodes: { metadata: { name: string } }[] = [];
+
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     DocumentTitle: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    useK8sWatchResource: () => [[], true, undefined],
+    useK8sWatchResource: (resource: { groupVersionKind: { kind: string } }) =>
+        [resource.groupVersionKind.kind === 'Node' ? mockNodes : [], true, undefined],
 }));
 
 jest.mock('./useOvnCollectorFeatureGate', () => ({
@@ -56,6 +60,7 @@ describe('ClusterLogicalTopologyBody', () => {
         document.body.appendChild(container);
         root = createRoot(container);
         locations = [];
+        mockNodes = [];
         global.fetch = jest.fn().mockResolvedValue({
             ok: true,
             json: async () => aggregate,
@@ -130,8 +135,76 @@ describe('ClusterLogicalTopologyBody', () => {
 
         expect(container.querySelector('[data-testid="construct-transit_switch"]')).not.toBeNull();
         const text = container.textContent ?? '';
-        expect(text).toContain('Collector request failed');
+        expect(text).toContain('Collector is not answering');
         expect(text).toContain('Showing the last loaded topology');
+    });
+
+    describe('while it waits, and when the collector does not answer (ovn-recon-nt4.4)', () => {
+        it('says how many node snapshots it is assembling in place of an empty canvas', async () => {
+            mockNodes = ['cnv-1', 'cnv-2', 'ctrl-1'].map((name) => ({ metadata: { name } }));
+            global.fetch = jest.fn(() => new Promise(() => undefined)) as unknown as typeof fetch;
+            await act(async () => {
+                renderPage();
+            });
+
+            const canvas = container.querySelector('[data-testid="ladder-canvas"]')!;
+            const loading = canvas.querySelector('[data-testid="collector-loading"]');
+            expect(loading?.textContent).toContain('Assembling 3 node snapshots…');
+            expect(loading?.querySelector('[role="progressbar"]')).not.toBeNull();
+            expect(canvas.querySelector('[data-testid="ladder-content"]')).toBeNull();
+        });
+
+        it('says it is assembling without a count before the Nodes are known', async () => {
+            global.fetch = jest.fn(() => new Promise(() => undefined)) as unknown as typeof fetch;
+            await act(async () => {
+                renderPage();
+            });
+            expect(container.querySelector('[data-testid="collector-loading"]')?.textContent)
+                .toContain('Assembling node snapshots…');
+        });
+
+        it('paints the aggregate this tab last received at once, and refreshes over it', async () => {
+            await act(async () => {
+                renderPage();
+            });
+            await act(async () => {
+                await Promise.resolve();
+            });
+            act(() => root.unmount());
+            root = createRoot(container);
+
+            // The collector is slow now: the remembered aggregate paints while it answers.
+            global.fetch = jest.fn(() => new Promise(() => undefined)) as unknown as typeof fetch;
+            await act(async () => {
+                renderPage();
+            });
+            expect(global.fetch).toHaveBeenCalled();
+            expect(container.querySelector('[data-testid="collector-loading"]')).toBeNull();
+            expect(container.querySelector('[data-testid="construct-transit_switch"]')).not.toBeNull();
+            expect(container.textContent).toContain('Assembled from 3 nodes');
+        });
+
+        it('names the HTTP status in the alert and keeps the routes tried behind Details', async () => {
+            global.fetch = jest.fn().mockImplementation(async (url: string) => ({
+                ok: false,
+                status: url.startsWith('/api/plugins/ovn-recon/api/v1') ? 502 : 404,
+            })) as unknown as typeof fetch;
+            await act(async () => {
+                renderPage();
+            });
+            await act(async () => {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            });
+
+            const alert = container.querySelector('.pf-v6-c-alert')!;
+            expect(alert.querySelector('.pf-v6-c-alert__title')?.textContent).toContain('Collector is not answering (HTTP 502)');
+            expect(alert.querySelector('.pf-v6-c-alert__title')?.textContent).not.toContain('/api/');
+            const details = alert.querySelector('[data-testid="collector-failure-details"]')!;
+            expect(details.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
+            expect(details.querySelectorAll('li')).toHaveLength(4);
+            // No spinner once the request has failed.
+            expect(container.querySelector('[data-testid="collector-loading"]')).toBeNull();
+        });
     });
 
     it('renders the merged cluster ladder from the aggregate payload', async () => {
