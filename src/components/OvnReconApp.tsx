@@ -74,12 +74,21 @@ const ConstructDetails = React.lazy(() => import('./ConstructDetails'));
 const NetworkDetails = React.lazy(() => import('./NetworkDetails'));
 
 export const TREE_PANEL_ID = 'ovn-recon-explorer-tree';
-export const TREE_DEFAULT_SIZE = '280px';
+// 240 px leaves the node table one line per row at 1440 px with the console nav open.
+export const TREE_DEFAULT_SIZE = '240px';
 export const TREE_MIN_SIZE = '200px';
 export const TREE_MAX_SIZE = '480px';
 const RAIL_SIZE = '48px';
 /** Half the round collapse button, so it sits astride the divider. */
 const TOGGLE_HALF = 14;
+/** Where the divider is drawn: the middle of the panel's splitter, from the container's start. */
+const dividerOffset = (container: HTMLElement, panel: HTMLElement): number | null => {
+    const splitter = panel.querySelector<HTMLElement>('[role="separator"]');
+    const box = (splitter ?? panel).getBoundingClientRect();
+    if (box.width === 0) return null;
+    const edge = splitter ? box.left + box.width / 2 : box.right;
+    return edge - container.getBoundingClientRect().left;
+};
 
 // --- Small parts --------------------------------------------------------------------
 
@@ -112,8 +121,8 @@ const ClusterIndex: React.FC<{ view: ExplorerView | null; data: ExplorerData }> 
     return <ClusterNodesTab data={data} />;
 };
 
-/** The width of the tree's panel, followed while it is dragged; the fallback until it is measured. */
-const usePanelWidth = (
+/** Where the tree's divider is, followed while it is dragged; the fallback until it is measured. */
+const useDividerOffset = (
     container: React.RefObject<HTMLDivElement>,
     active: boolean,
     fallback: string,
@@ -121,10 +130,12 @@ const usePanelWidth = (
     const [width, setWidth] = React.useState<number>(() => parseInt(fallback, 10));
     React.useLayoutEffect(() => {
         if (!active) return undefined;
-        const panel = container.current?.querySelector<HTMLElement>(`#${TREE_PANEL_ID}`);
-        if (!panel) return undefined;
+        const host = container.current;
+        const panel = host?.querySelector<HTMLElement>(`#${TREE_PANEL_ID}`);
+        if (!host || !panel) return undefined;
         const measure = () => {
-            if (panel.offsetWidth > 0) setWidth(panel.offsetWidth);
+            const offset = dividerOffset(host, panel);
+            if (offset !== null) setWidth(offset);
         };
         measure();
         if (typeof ResizeObserver === 'undefined') return undefined;
@@ -226,7 +237,7 @@ const OvnReconApp: React.FC = () => {
         toggled.current = true;
         setCollapsed(value);
     };
-    const panelWidth = usePanelWidth(container, !collapsed, treeSize);
+    const dividerAt = useDividerOffset(container, !collapsed, treeSize);
 
     const panel = collapsed ? (
         <DrawerPanelContent
@@ -289,10 +300,11 @@ const OvnReconApp: React.FC = () => {
                     rowGap={{ default: 'rowGapSm' }}
                 >
                     <FlexItem><Title headingLevel="h1">OVN Recon</Title></FlexItem>
-                    <FlexItem data-testid="explorer-collector-status">
+                    {/* The status may wrap within itself; the search box keeps its place on the line. */}
+                    <FlexItem data-testid="explorer-collector-status" style={{ flex: '1 1 auto', minWidth: 0 }}>
                         <CollectorStatus collector={data.collector} />
                     </FlexItem>
-                    <FlexItem align={{ default: 'alignRight' }} style={{ width: 'min(26rem, 100%)' }} data-testid="explorer-search">
+                    <FlexItem style={{ flex: '0 1 22rem', minWidth: '14rem' }} data-testid="explorer-search">
                         <ClusterSearchInput search={search} placeholder="Find an IP, CIDR, MAC or name" />
                     </FlexItem>
                 </Flex>
@@ -312,7 +324,7 @@ const OvnReconApp: React.FC = () => {
                         style={{
                             position: 'absolute',
                             insetBlockStart: 'var(--pf-t--global--spacer--md)',
-                            insetInlineStart: `${panelWidth - TOGGLE_HALF}px`,
+                            insetInlineStart: `${dividerAt - TOGGLE_HALF}px`,
                             zIndex: 'var(--pf-t--global--z-index--md)',
                             width: `${TOGGLE_HALF * 2}px`,
                             height: `${TOGGLE_HALF * 2}px`,
@@ -325,7 +337,8 @@ const OvnReconApp: React.FC = () => {
                     />
                 )}
                 <Drawer isExpanded isInline position="start">
-                    <DrawerContent panelContent={panel}>
+                    {/* minWidth 0: a wide table scrolls inside the content, never shifting the tree out of view. */}
+                    <DrawerContent panelContent={panel} style={{ minWidth: 0 }}>
                         {view?.scope === 'cluster' && (
                             <ClusterScopeHeader tab={view.tab} data={data} query={view.params.q} />
                         )}

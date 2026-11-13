@@ -13,6 +13,16 @@ const NODE_COLUMNS = ['Node', 'Role', 'Findings', 'Interfaces', 'Bridges', 'Mapp
 
 const subtle: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
 
+/**
+ * Narrower cell padding, and none at the table's edges so the columns line up with
+ * the toolbar: one line per node beside the explorer's tree at 1440 px
+ * (ovn-recon-gbr.4).
+ */
+const DENSE_CELLS = {
+    '--pf-v6-c-table--cell--Padding--base': '12px',
+    '--pf-v6-c-table--cell--first-last-child--PaddingInline': '0px',
+} as React.CSSProperties;
+
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 const nnsResourcePath = (name: string): string =>
@@ -78,7 +88,7 @@ const NodesTable: React.FC<NodesTableProps> = ({ summaries, roles, findingCounts
                     </ToolbarItem>
                 </ToolbarContent>
             </Toolbar>
-            <Table aria-label="Nodes" variant="compact">
+            <Table aria-label="Nodes" variant="compact" style={DENSE_CELLS}>
                 <Thead>
                     <Tr>
                         {NODE_COLUMNS.map((column) => <Th key={column} modifier="nowrap">{column}</Th>)}

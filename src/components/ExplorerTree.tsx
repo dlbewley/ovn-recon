@@ -88,7 +88,7 @@ const ExplorerTree: React.FC<ExplorerTreeProps> = ({
                 aria-label="Cluster, nodes and networks"
                 data={data}
                 activeItems={active}
-                variant="compactNoBackground"
+                variant="default"
                 onSelect={(_event, treeItem) => {
                     const item = byId.get(String(treeItem.id));
                     // A group opens and closes; it is not a place to go.
