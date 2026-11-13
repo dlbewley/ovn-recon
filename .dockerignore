@@ -1,0 +1,29 @@
+# Build context for the plugin image (root Dockerfile: `npm ci`, `COPY . .`,
+# `npm run build`, then nginx + dist). Allow-list: everything is left out
+# unless a build step reads it, so a host's node_modules (macOS binaries over
+# the container's own), dist/, .git, .claude worktrees, .beads, operator/,
+# collector/ sources and docs never reach the builder.
+#
+# If the build starts failing with a missing file, add it below.
+
+*
+
+# npm ci, webpack (ts-node), ts-loader, ConsoleRemotePlugin
+!package.json
+!package-lock.json
+!tsconfig.json
+!webpack.config.ts
+!console-extensions.json
+
+# COPY nginx.conf in the final stage
+!nginx.conf
+
+# the plugin sources
+!src
+
+# ts-loader type-checks every file under src/, test files included, and those
+# import the collector's schemas and fixture snapshots and scripts/format-contract-json.
+!collector/api
+!collector/fixtures/snapshots
+!scripts/format-contract-json.js
+!scripts/format-contract-json.d.ts
