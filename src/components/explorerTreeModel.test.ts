@@ -11,6 +11,7 @@ import {
     nodeItemId,
     NODES_GROUP_ID,
     selectedItemId,
+    treeHasFindings,
 } from './explorerTreeModel';
 
 const nodes = [
@@ -115,6 +116,68 @@ describe('explorerTreeModel', () => {
     it('gives every item a unique id', () => {
         const ids = flattenTree(buildExplorerTree(input())).map((item) => item.id);
         expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    describe('findings (ovn-recon-gbr.7)', () => {
+        const counts = (warning: number, info: number) => ({ warning, info, total: warning + info });
+        const withFindings = {
+            nodes: nodes.map((node) => (node.name === 'worker-1' ? { ...node, findings: counts(2, 1) } : node)),
+            // cudn-0 has a warning; team-13/udn-13, past the cap, an info finding.
+            networks: networks.map((network, index) => {
+                if (index === 0) return { ...network, findings: counts(1, 0) };
+                if (index === 13) return { ...network, findings: counts(0, 1) };
+                return { ...network, findings: counts(0, 0) };
+            }),
+        };
+        const item = (tree: ExplorerTreeItem[], id: string) => flattenTree(tree).find((candidate) => candidate.id === id);
+
+        it('badges each node and network with findings, and nothing else', () => {
+            const tree = buildExplorerTree(input({ ...withFindings, showAllNetworks: true, openGroups: new Set([NODES_GROUP_ID, NETWORKS_GROUP_ID]) }));
+            expect(item(tree, nodeItemId('worker-1'))?.findings).toEqual(counts(2, 1));
+            expect(item(tree, networkItemId(networks[0]))?.findings).toEqual(counts(1, 0));
+            expect(item(tree, networkItemId(networks[13]))?.findings).toEqual(counts(0, 1));
+            const badged = flattenTree(tree).filter((candidate) => candidate.findings).map((candidate) => candidate.id);
+            expect(badged).toEqual([nodeItemId('worker-1'), networkItemId(networks[0]), networkItemId(networks[13])]);
+        });
+
+        it('badges a closed group with its members\' findings, those past the cap included, and an open one not', () => {
+            const closed = buildExplorerTree(input({ ...withFindings, openGroups: new Set() }));
+            expect(group(closed, NODES_GROUP_ID).findings).toEqual(counts(2, 1));
+            expect(group(closed, NETWORKS_GROUP_ID).findings).toEqual(counts(1, 1));
+            const open = buildExplorerTree(input({ ...withFindings, openGroups: new Set([NODES_GROUP_ID, NETWORKS_GROUP_ID]) }));
+            expect(group(open, NODES_GROUP_ID).findings).toBeUndefined();
+            expect(group(open, NETWORKS_GROUP_ID).findings).toBeUndefined();
+            // A closed group's badge counts only what the filter leaves.
+            const filtered = buildExplorerTree(input({ ...withFindings, filter: 'worker-2', openGroups: new Set() }));
+            expect(group(filtered, NODES_GROUP_ID).findings).toBeUndefined();
+        });
+
+        it('narrows both groups to what has findings, opened and uncapped, with "With findings only"', () => {
+            const tree = buildExplorerTree(input({ ...withFindings, findingsOnly: true, openGroups: new Set() }));
+            expect(childIds(tree, NODES_GROUP_ID)).toEqual([nodeItemId('worker-1')]);
+            expect(childIds(tree, NETWORKS_GROUP_ID)).toEqual([networkItemId(networks[0]), networkItemId(networks[13])]);
+            expect([group(tree, NODES_GROUP_ID).count, group(tree, NETWORKS_GROUP_ID).count]).toEqual([1, 2]);
+            expect(tree.filter((candidate) => candidate.kind === 'group').every((candidate) => candidate.expanded)).toBe(true);
+            expect(tree[0].id).toBe(CLUSTER_ITEM_ID);
+        });
+
+        it('keeps the selection listed with "With findings only", and combines with the name filter', () => {
+            const selected = buildExplorerTree(input({ ...withFindings, findingsOnly: true, selectedId: nodeItemId('worker-2') }));
+            expect(childIds(selected, NODES_GROUP_ID)).toEqual([nodeItemId('worker-1'), nodeItemId('worker-2')]);
+            const both = buildExplorerTree(input({ ...withFindings, findingsOnly: true, filter: 'team' }));
+            expect(childIds(both, NODES_GROUP_ID)).toEqual([]);
+            expect(childIds(both, NETWORKS_GROUP_ID)).toEqual([networkItemId(networks[13])]);
+        });
+
+        it('with no findings: no badges, nothing to narrow, and the switch ignored', () => {
+            const none = { nodes, networks: networks.map((network) => ({ ...network, findings: counts(0, 0) })) };
+            expect(treeHasFindings(none.nodes, none.networks)).toBe(false);
+            expect(treeHasFindings(withFindings.nodes, withFindings.networks)).toBe(true);
+            const tree = buildExplorerTree(input({ ...none, findingsOnly: true, openGroups: new Set() }));
+            expect(flattenTree(tree).some((candidate) => candidate.findings)).toBe(false);
+            expect(tree.map((candidate) => candidate.expanded)).toEqual([undefined, false, false]);
+            expect(childIds(tree, NETWORKS_GROUP_ID)).toHaveLength(11);
+        });
     });
 
     describe('selectedItemId', () => {

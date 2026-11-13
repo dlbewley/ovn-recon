@@ -26,10 +26,8 @@ import { constructSelectValue, encodeSelectValue, withSelectParam } from './comp
  *
  * `?select=`, `?tab=`, `?q=` and `?port=` keep their meaning. The explorer shell
  * (`OvnReconApp`, ovn-recon-gbr.4) serves every path here under one console route
- * through `SHELL_ROUTES`, except the node Findings tab, which has a builder and a
- * table entry but no route until ovn-recon-gbr.7. Each scope draws its own: Cluster
- * (gbr.4), a node (`NodeScope`, gbr.5) and a network (`NetworkScope`, gbr.6, one view
- * and so no tabs).
+ * through `SHELL_ROUTES`. Each scope draws its own: Cluster (gbr.4), a node
+ * (`NodeScope`, gbr.5) and a network (`NetworkScope`, gbr.6, one view and so no tabs).
  *
  * The other modules that used to build these paths re-export the builders under their
  * old names (physicalViewPath, nodeLadderPath, NETWORKS_PATH, ...), so call sites did
@@ -98,7 +96,7 @@ export const nodeLogicalPath = (node: string, construct?: Pick<LadderConstruct, 
 /** One node's Routes tab: its main routing table. */
 export const nodeRoutesPath = (node: string): string => `${physicalBase(node)}/${ROUTES_SEGMENT}`;
 
-/** NEW, not served yet: one node's Findings tab. */
+/** One node's Findings tab: that node's findings (ovn-recon-gbr.7). */
 export const nodeFindingsPath = (node: string): string => `${physicalBase(node)}/${FINDINGS_SEGMENT}`;
 
 export interface DetailLinkOptions {
@@ -151,6 +149,7 @@ export const SHELL_ROUTES = {
     search: SEARCH_SEGMENT,
     nodePhysical: `${PHYSICAL_SEGMENT}/:name`,
     nodeRoutes: `${PHYSICAL_SEGMENT}/:name/${ROUTES_SEGMENT}`,
+    nodeFindings: `${PHYSICAL_SEGMENT}/:name/${FINDINGS_SEGMENT}`,
     nodeLogical: `${LOGICAL_SEGMENT}/:name`,
     construct: `${LOGICAL_SEGMENT}/:node/:kind/:name`,
     cudn: `${NETWORKS_SEGMENT}/cudn/:name`,

@@ -17,17 +17,23 @@ const nodeView = (url: string): NodeView => {
 
 describe('nodeScopeModel', () => {
     describe('nodeTabs', () => {
-        it('links Physical, Logical and Routes to the node\'s own URLs, with no selection', () => {
-            expect(nodeTabs('cnv-1', true, 'physical')).toEqual([
+        it('links Physical, Logical, Routes and Findings to the node\'s own URLs, with no selection', () => {
+            expect(nodeTabs('cnv-1', true, 'physical', 2)).toEqual([
                 { key: 'physical', title: 'Physical topology', path: nodePhysicalPath('cnv-1') },
                 { key: 'logical', title: 'Logical topology', path: nodeLogicalPath('cnv-1') },
                 { key: 'routes', title: 'Routes', path: nodeRoutesPath('cnv-1') },
+                { key: 'findings', title: 'Findings', path: nodeFindingsPath('cnv-1'), count: 2 },
             ]);
         });
 
+        it('counts 0 findings as 0, and gives no count while it is unknown', () => {
+            expect(nodeTabs('cnv-1', false, 'findings', 0)[2].count).toBe(0);
+            expect(nodeTabs('cnv-1', false, 'findings')[2]).not.toHaveProperty('count');
+        });
+
         it('leaves Logical out while the collector is off, unless it is the tab on screen', () => {
-            expect(nodeTabs('cnv-1', false, 'routes').map((tab) => tab.key)).toEqual(['physical', 'routes']);
-            expect(nodeTabs('cnv-1', false, 'logical').map((tab) => tab.key)).toEqual(['physical', 'logical', 'routes']);
+            expect(nodeTabs('cnv-1', false, 'routes').map((tab) => tab.key)).toEqual(['physical', 'routes', 'findings']);
+            expect(nodeTabs('cnv-1', false, 'logical').map((tab) => tab.key)).toEqual(['physical', 'logical', 'routes', 'findings']);
         });
 
         it('encodes the node name', () => {
@@ -41,7 +47,7 @@ describe('nodeScopeModel', () => {
             expect(activeNodeTab(nodeView(nodeLogicalPath('n')))).toBe('logical');
             expect(activeNodeTab(nodeView(nodeRoutesPath('n')))).toBe('routes');
             expect(activeNodeTab(nodeView(constructDetailPath('n', 'switch', 'join')))).toBe('logical');
-            expect(activeNodeTab(nodeView(nodeFindingsPath('n')))).toBeNull();
+            expect(activeNodeTab(nodeView(nodeFindingsPath('n')))).toBe('findings');
         });
     });
 

@@ -62,9 +62,10 @@ import { ExplorerData, useExplorerData } from './useExplorerData';
  * tree and whose content is the selected scope. A round button on the divider
  * collapses the tree to a rail. The Cluster scope (Nodes, Networks, Findings, Logical
  * topology, Search results) is drawn here, and so are the node scope (`NodeScope`,
- * ovn-recon-gbr.5: Physical topology, Logical topology, Routes, and the construct
- * page) and the network scope (`NetworkScope`, ovn-recon-gbr.6: a header over the
- * network page's body).
+ * ovn-recon-gbr.5: Physical topology, Logical topology, Routes, Findings, and the
+ * construct page) and the network scope (`NetworkScope`, ovn-recon-gbr.6: a header
+ * over the network page's body). Findings (ovn-recon-gbr.7) are evaluated once in
+ * `useExplorerData` and feed the tree's badges and the Findings tabs alike.
  *
  * The URL holds the selection and the tab (`viewForLocation`). The tree's width and
  * whether it is collapsed are plain component state until ovn-recon-gbr.9 keeps them
@@ -181,6 +182,7 @@ const OvnReconApp: React.FC = () => {
     const [filter, setFilter] = React.useState('');
     const [openGroups, setOpenGroups] = React.useState<ReadonlySet<string>>(() => new Set([NODES_GROUP_ID]));
     const [showAllNetworks, setShowAllNetworks] = React.useState(false);
+    const [findingsOnly, setFindingsOnly] = React.useState(false);
     const selectedId = selectedItemId(view);
 
     // A group that holds the selection is open, and stays open once the selection moves.
@@ -200,13 +202,18 @@ const OvnReconApp: React.FC = () => {
     }, []);
 
     const treeNodes = React.useMemo<ExplorerTreeNode[]>(
-        () => data.summaries.map((summary) => ({ name: summary.name, role: data.roles.get(summary.name) ?? '' })),
-        [data.summaries, data.roles],
+        () => data.summaries.map((summary) => ({
+            name: summary.name,
+            role: data.roles.get(summary.name) ?? '',
+            findings: data.findingCounts.get(summary.name),
+        })),
+        [data.summaries, data.roles, data.findingCounts],
     );
+    // Badges are the tables' own counts (ovn-recon-gbr.7): one evaluation, in the shell.
     const treeNetworks = React.useMemo<ExplorerTreeNetwork[]>(
-        () => data.networkRows.map(({ record }) => (record.namespace === undefined
-            ? { kind: record.kind, name: record.name }
-            : { kind: record.kind, namespace: record.namespace, name: record.name })),
+        () => data.networkRows.map(({ record, findings }) => (record.namespace === undefined
+            ? { kind: record.kind, name: record.name, findings }
+            : { kind: record.kind, namespace: record.namespace, name: record.name, findings })),
         [data.networkRows],
     );
 
@@ -238,7 +245,7 @@ const OvnReconApp: React.FC = () => {
     const dividerAt = useDividerOffset(container, !collapsed, treeSize);
 
     // The node routes all draw the node scope; the URL says which tab.
-    const nodeBody = view?.scope === 'node' ? <NodeScopeBody view={view} /> : <NotFound />;
+    const nodeBody = view?.scope === 'node' ? <NodeScopeBody view={view} data={data} /> : <NotFound />;
     const networkBody = view?.scope === 'network' ? <NetworkScopeBody view={view} /> : <NotFound />;
 
     const panel = collapsed ? (
@@ -283,6 +290,8 @@ const OvnReconApp: React.FC = () => {
                     openGroups={openGroups}
                     onGroupToggle={toggleGroup}
                     showAllNetworks={showAllNetworks}
+                    findingsOnly={findingsOnly}
+                    onFindingsOnlyChange={setFindingsOnly}
                     onSelectItem={selectItem}
                 />
             </DrawerPanelBody>
@@ -357,6 +366,7 @@ const OvnReconApp: React.FC = () => {
                                 <Route path={SHELL_ROUTES.search} element={<ClusterSearchTab search={search} />} />
                                 <Route path={SHELL_ROUTES.nodePhysical} element={nodeBody} />
                                 <Route path={SHELL_ROUTES.nodeRoutes} element={nodeBody} />
+                                <Route path={SHELL_ROUTES.nodeFindings} element={nodeBody} />
                                 <Route path={SHELL_ROUTES.nodeLogical} element={nodeBody} />
                                 <Route path={SHELL_ROUTES.construct} element={nodeBody} />
                                 <Route path={SHELL_ROUTES.cudn} element={networkBody} />
