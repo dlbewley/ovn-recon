@@ -77,6 +77,20 @@ export interface ClusterSearchProps {
     collectorEnabled: boolean;
     /** Whether `collectorEnabled` is known yet. */
     gateLoaded: boolean;
+    /**
+     * For a host that keeps the search at a path of its own (the explorer shell,
+     * ovn-recon-gbr.4): the submitted text, read in place of `?q=` on the current
+     * page, and where a new search goes. Without it the search lives in `?q=` on
+     * whatever page the box is on.
+     */
+    route?: ClusterSearchRoute;
+}
+
+export interface ClusterSearchRoute {
+    /** The submitted text; empty when no search is open. */
+    submitted: string;
+    /** Open a search for this text; empty text closes the search. */
+    go: (text: string) => void;
 }
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
@@ -534,12 +548,13 @@ export const useClusterSearch = ({
     stateError,
     collectorEnabled,
     gateLoaded,
+    route,
 }: ClusterSearchProps): ClusterSearchState => {
     const location = useLocation();
     const navigate = useNavigate();
 
     // The URL holds the submitted search; the box holds what is being typed.
-    const submitted = readSearchParam(location.search);
+    const submitted = route ? route.submitted.trim() : readSearchParam(location.search);
     const query = React.useMemo(() => detectSearchQuery(submitted), [submitted]);
 
     // Bumped to repeat the search that is already in the URL.
@@ -589,6 +604,10 @@ export const useClusterSearch = ({
             if (text !== '') setRun((count) => count + 1);
             return;
         }
+        if (route) {
+            route.go(text);
+            return;
+        }
         navigate(
             { pathname: location.pathname, search: withSearchParam(location.search, text), hash: location.hash },
             { replace: true, state: location.state },
@@ -612,7 +631,11 @@ export const useClusterSearch = ({
 };
 
 /** The search box. It holds what is being typed; the search itself is the owner's. */
-export const ClusterSearchInput: React.FC<{ search: ClusterSearchState }> = ({ search }) => {
+export const ClusterSearchInput: React.FC<{
+    search: ClusterSearchState;
+    /** A shorter hint for a narrow box; the default spells out what can be searched. */
+    placeholder?: string;
+}> = ({ search, placeholder = 'IP address, CIDR, MAC, or part of a pod, VM, network or interface name' }) => {
     const { submitted, submit } = search;
     const [input, setInput] = React.useState(submitted);
     const seenSubmitted = React.useRef(submitted);
@@ -625,7 +648,7 @@ export const ClusterSearchInput: React.FC<{ search: ClusterSearchState }> = ({ s
     return (
         <SearchInput
             aria-label="Find an IP, CIDR, MAC or name in the cluster"
-            placeholder="IP address, CIDR, MAC, or part of a pod, VM, network or interface name"
+            placeholder={placeholder}
             value={input}
             onChange={(_event, value) => setInput(value)}
             onSearch={(_event, value) => submit(value)}

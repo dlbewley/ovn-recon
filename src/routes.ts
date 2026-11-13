@@ -24,9 +24,10 @@ import { constructSelectValue, encodeSelectValue, withSelectParam } from './comp
  *   /ovn-recon/networks/cudn/:name                 network  network
  *   /ovn-recon/networks/{udn,nad}/:namespace/:name network  network
  *
- * `?select=`, `?tab=`, `?q=` and `?port=` keep their meaning. The four new paths have
- * builders and table entries but no route serves them yet: nothing links to them
- * until the explorer shell (ovn-recon-gbr.4 and later) does.
+ * `?select=`, `?tab=`, `?q=` and `?port=` keep their meaning. The explorer shell
+ * (`OvnReconApp`, ovn-recon-gbr.4) serves every path here under one console route
+ * through `SHELL_ROUTES`, except the node Routes and Findings tabs, which have
+ * builders and table entries but no route until ovn-recon-gbr.5.
  *
  * The other modules that used to build these paths re-export the builders under their
  * old names (physicalViewPath, nodeLadderPath, NETWORKS_PATH, ...), so call sites did
@@ -76,10 +77,10 @@ export const networksPath = (): string => NETWORKS_PATH;
 export const clusterLogicalPath = (construct?: Pick<LadderConstruct, 'kind' | 'name'>): string =>
     `${BASE_PATH}/${LOGICAL_SEGMENT}${constructSearch(construct)}`;
 
-/** NEW, not served yet: the cluster's Findings tab. */
+/** The cluster's Findings tab. */
 export const clusterFindingsPath = (): string => `${BASE_PATH}/${FINDINGS_SEGMENT}`;
 
-/** NEW, not served yet: the cluster's Search results tab, `/ovn-recon/search?q=`. */
+/** The cluster's Search results tab, `/ovn-recon/search?q=`. */
 export const searchPath = (text: string): string => `${BASE_PATH}/${SEARCH_SEGMENT}${querySearch(text)}`;
 
 // --- Node scope ----------------------------------------------------------------
@@ -130,6 +131,29 @@ export const networkPath = (address: NetworkAddress): string => {
     if (address.kind === 'cudn') return `${NETWORKS_PATH}/cudn/${name}`;
     return `${NETWORKS_PATH}/${address.kind}/${encodeURIComponent(address.namespace || 'default')}/${name}`;
 };
+
+// --- The shell's routes --------------------------------------------------------
+
+/**
+ * The explorer shell's nested route patterns, relative to `BASE_PATH`: the console
+ * mounts the shell at `${BASE_PATH}/*` and the shell's own `Routes` match these
+ * beneath it. Each pattern is the path the builders above produce; the shell's route
+ * test checks the two agree.
+ */
+export const SHELL_ROUTES = {
+    /** The overview's second path, the Nodes tab like `BASE_PATH` itself. */
+    nodesAlias: PHYSICAL_SEGMENT,
+    networks: NETWORKS_SEGMENT,
+    findings: FINDINGS_SEGMENT,
+    clusterLogical: LOGICAL_SEGMENT,
+    search: SEARCH_SEGMENT,
+    nodePhysical: `${PHYSICAL_SEGMENT}/:name`,
+    nodeLogical: `${LOGICAL_SEGMENT}/:name`,
+    construct: `${LOGICAL_SEGMENT}/:node/:kind/:name`,
+    cudn: `${NETWORKS_SEGMENT}/cudn/:name`,
+    udn: `${NETWORKS_SEGMENT}/udn/:namespace/:name`,
+    nad: `${NETWORKS_SEGMENT}/nad/:namespace/:name`,
+} as const;
 
 // --- Locations -----------------------------------------------------------------
 
