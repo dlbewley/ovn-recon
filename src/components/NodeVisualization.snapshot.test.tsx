@@ -7,6 +7,7 @@ import { act } from 'react';
 import { ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState, SriovNetworkNodeState, Vtep } from '../types';
 import NodeVisualizationComponent from './NodeVisualization';
 import { routed } from './testRouter';
+import { toggleViewOption } from './viewToolbarTestUtils';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
@@ -121,7 +122,7 @@ describe('NodeVisualization rendered structure', () => {
                 cudns={fixture<ClusterUserDefinedNetwork[]>('cudn', 'primary-cudn-vrf.json')}
                 udns={[]} nads={[]} routeAdvertisements={[]} />);
         });
-        act(() => container.querySelector<HTMLInputElement>('#show-hidden-columns-toggle')!.click());
+        toggleViewOption(container, 'show-hidden-columns-toggle');
         expect(describeGraph()).toMatchSnapshot();
     });
 
@@ -158,7 +159,7 @@ describe('NodeVisualization rendered structure', () => {
                 sriovNodeState={fixture<SriovNetworkNodeState>('sriovnetworknodestate', 'sriov.json')}
                 cudns={[]} udns={[]} routeAdvertisements={[]} />);
         });
-        act(() => container.querySelector<HTMLInputElement>('#show-nads-toggle')!.click());
+        toggleViewOption(container, 'show-nads-toggle');
         expect(describeGraph()).toMatchSnapshot();
     });
 
@@ -185,7 +186,7 @@ describe('NodeVisualization rendered structure', () => {
                 nns={fixture<NodeNetworkState>('nns', 'bonded-lldp.json')}
                 cudns={[]} udns={[]} nads={[]} routeAdvertisements={[]} />);
         });
-        act(() => container.querySelector<HTMLInputElement>('#show-lldp-neighbors-toggle')!.click());
+        toggleViewOption(container, 'show-lldp-neighbors-toggle');
         expect(describeGraph()).toMatchSnapshot();
     });
 

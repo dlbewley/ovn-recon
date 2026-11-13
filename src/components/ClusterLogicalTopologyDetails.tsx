@@ -15,11 +15,9 @@ import {
     DrawerHead,
     DrawerActions,
     DrawerCloseButton,
-    Flex,
-    FlexItem,
     FormSelect,
     FormSelectOption,
-    Button,
+    ToolbarItem,
     Alert,
     AlertGroup,
 } from '@patternfly/react-core';
@@ -31,8 +29,8 @@ import { mergeZones } from './logicalClusterModel';
 import { aggregateId } from './logicalLadderLayout';
 import ConstructDrawerBody, { LOGICAL_DRAWER_WIDTH } from './ConstructDrawerBody';
 import { useLadderViewport } from './useLadderViewport';
-import SnapshotJsonControls from './SnapshotJsonControls';
-import { LegendButton, LogicalLegend } from './GraphLegend';
+import ViewToolbar from './ViewToolbar';
+import { LogicalLegend } from './GraphLegend';
 import LogicalLadderView, {
     LadderSearch,
     ladderSearchMatches,
@@ -347,66 +345,58 @@ export const ClusterLogicalTopologyBody: React.FC<ClusterLogicalTopologyBodyProp
                                     )}
                                 </AlertGroup>
 
-                                <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }} alignItems={{ default: 'alignItemsCenter' }}>
-                                    <FlexItem>
-                                        <LadderSearch
-                                            value={search}
-                                            onChange={setSearch}
-                                            matches={searchMatches}
-                                            selectedUuid={selectedUuid}
-                                            onReveal={selectConstructFromDrawer}
-                                        />
-                                    </FlexItem>
-                                    {!hideHostSelect && (
-                                        <FlexItem>
-                                            <FormSelect
-                                                aria-label="Filter by host"
-                                                value={hostFilter}
-                                                onChange={(_event, value) => selectHost(value)}
-                                            >
-                                                <FormSelectOption value="all" label="All hosts" />
-                                                {hosts.map((host) => (
-                                                    <FormSelectOption key={host} value={host} label={host} />
-                                                ))}
-                                            </FormSelect>
-                                        </FlexItem>
-                                    )}
-                                    <FlexItem>
-                                        <FormSelect
-                                            aria-label="Filter by network"
-                                            value={networkFilter}
-                                            onChange={(_event, value) => setNetworkFilter(value)}
-                                        >
-                                            <FormSelectOption value="all" label="All networks" />
-                                            {model?.networks.map((network) => (
-                                                <FormSelectOption
-                                                    key={network}
-                                                    value={network}
-                                                    label={networkDisplayName(network)}
-                                                />
-                                            ))}
-                                        </FormSelect>
-                                    </FlexItem>
-                                    <FlexItem><Button variant="secondary" onClick={viewport.zoomOut}>-</Button></FlexItem>
-                                    <FlexItem><Button variant="secondary" onClick={viewport.zoomIn}>+</Button></FlexItem>
-                                    <FlexItem><Button variant="link" onClick={viewport.resetView}>Reset view</Button></FlexItem>
-                                    <FlexItem><LegendButton><LogicalLegend /></LegendButton></FlexItem>
-                                    <FlexItem>
-                                        <Button variant="tertiary" onClick={() => loadTopology()} isDisabled={isLoading}>
-                                            Refresh now
-                                        </Button>
-                                    </FlexItem>
-                                    {snapshotJson && (
-                                        <FlexItem>
-                                            <SnapshotJsonControls
-                                                label={snapshotJson.label}
-                                                filename={snapshotJson.filename}
-                                                payload={snapshotJson.payload}
-                                            />
-                                        </FlexItem>
-                                    )}
-                                    {topology && model && (
-                                        <FlexItem align={{ default: 'alignRight' }}>
+                                <div className="pf-u-mt-md">
+                                    <ViewToolbar
+                                        label="Cluster logical topology view"
+                                        filters={(
+                                            <>
+                                                <ToolbarItem>
+                                                    <LadderSearch
+                                                        value={search}
+                                                        onChange={setSearch}
+                                                        matches={searchMatches}
+                                                        selectedUuid={selectedUuid}
+                                                        onReveal={selectConstructFromDrawer}
+                                                    />
+                                                </ToolbarItem>
+                                                {!hideHostSelect && (
+                                                    <ToolbarItem>
+                                                        <FormSelect
+                                                            aria-label="Filter by host"
+                                                            style={{ minWidth: '10rem' }}
+                                                            value={hostFilter}
+                                                            onChange={(_event, value) => selectHost(value)}
+                                                        >
+                                                            <FormSelectOption value="all" label="All hosts" />
+                                                            {hosts.map((host) => (
+                                                                <FormSelectOption key={host} value={host} label={host} />
+                                                            ))}
+                                                        </FormSelect>
+                                                    </ToolbarItem>
+                                                )}
+                                                <ToolbarItem>
+                                                    <FormSelect
+                                                        aria-label="Filter by network"
+                                                        value={networkFilter}
+                                                        onChange={(_event, value) => setNetworkFilter(value)}
+                                                    >
+                                                        <FormSelectOption value="all" label="All networks" />
+                                                        {model?.networks.map((network) => (
+                                                            <FormSelectOption
+                                                                key={network}
+                                                                value={network}
+                                                                label={networkDisplayName(network)}
+                                                            />
+                                                        ))}
+                                                    </FormSelect>
+                                                </ToolbarItem>
+                                            </>
+                                        )}
+                                        zoom={{ onZoomOut: viewport.zoomOut, onZoomIn: viewport.zoomIn, onReset: viewport.resetView }}
+                                        legend={<LogicalLegend />}
+                                        refresh={{ onRefresh: () => loadTopology(), isLoading }}
+                                        json={snapshotJson ?? undefined}
+                                        status={topology && model ? (
                                             <SnapshotStatusLine
                                                 freshness={freshness}
                                                 ageMs={ageMs}
@@ -416,9 +406,9 @@ export const ClusterLogicalTopologyBody: React.FC<ClusterLogicalTopologyBodyProp
                                                 ovn={ovnSummary}
                                                 isLoading={isLoading}
                                             />
-                                        </FlexItem>
-                                    )}
-                                </Flex>
+                                        ) : undefined}
+                                    />
+                                </div>
 
                                 <div
                                     {...viewport.canvasProps}

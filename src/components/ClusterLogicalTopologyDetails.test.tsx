@@ -9,6 +9,7 @@ import { LocationRecord, TestRouter } from './testRouter';
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 import cnv2 from '../../collector/fixtures/snapshots/cnv-2.json';
 import ctrl1 from '../../collector/fixtures/snapshots/ctrl-1.json';
+import { toolbarButton } from './viewToolbarTestUtils';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     DocumentTitle: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -120,10 +121,8 @@ describe('ClusterLogicalTopologyBody', () => {
 
         // Next poll fails; the graph must survive with a warning beside it.
         (global.fetch as jest.Mock).mockRejectedValue(new Error('connection refused'));
-        const refresh = [...container.querySelectorAll('button')].find(
-            (button) => button.textContent === 'Refresh now',
-        );
-        expect(refresh).toBeDefined();
+        const refresh = toolbarButton(container, 'Refresh now');
+        expect(refresh).not.toBeNull();
         await act(async () => {
             refresh!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
             await Promise.resolve();

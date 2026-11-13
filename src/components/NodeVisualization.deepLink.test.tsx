@@ -7,6 +7,7 @@ import { act } from 'react';
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
 import NodeVisualization from './NodeVisualization';
 import { LocationRecord, TestRouter } from './testRouter';
+import { viewOptionInput } from './viewToolbarTestUtils';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
@@ -80,7 +81,7 @@ describe('NodeVisualization deep-linked selection', () => {
     });
 
     it('turns on a hidden lane to select a node in it (ovn-recon-tpp.7)', () => {
-        const toggle = () => container.querySelector<HTMLInputElement>('#show-hidden-columns-toggle')!;
+        const toggle = () => viewOptionInput(container, 'show-hidden-columns-toggle')!;
         // An OVS internal port nmstate reports up sits in Logical Interfaces, hidden
         // by default. (One reported state: ignore is drawn in no view at all.)
         render('/ovn-recon/node-network-state/worker-1', 'basic-host.json');

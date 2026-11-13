@@ -1,5 +1,21 @@
 import * as React from 'react';
-import { Card, CardBody, CardTitle, Drawer, DrawerPanelContent, DrawerContent, DrawerContentBody, DrawerHead, DrawerActions, DrawerCloseButton, Switch, Flex, FlexItem, Button, FormSelect, FormSelectOption } from '@patternfly/react-core';
+import {
+    Card,
+    CardBody,
+    CardTitle,
+    Drawer,
+    DrawerPanelContent,
+    DrawerContent,
+    DrawerContentBody,
+    DrawerHead,
+    DrawerActions,
+    DrawerCloseButton,
+    Flex,
+    FlexItem,
+    FormSelect,
+    FormSelectOption,
+    ToolbarItem,
+} from '@patternfly/react-core';
 import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 import { useNavigate } from 'react-router';
 
@@ -26,7 +42,8 @@ import { descriptorFor, iconFor, NodeTypeId, NODE_TYPES, opaqueNodeIds } from '.
 import { edgeAppearance } from '../topology/edgeStyles';
 import { STATUS_STYLE, SURFACE } from '../topology/palette';
 import { NodeStatusIcon } from '../topology/statusIcon';
-import { LegendButton, PhysicalLegend } from './GraphLegend';
+import { PhysicalLegend } from './GraphLegend';
+import ViewToolbar from './ViewToolbar';
 import { buildFlowGraph, flowPath } from '../topology/flowPath';
 import { useSelectionDeepLink } from './useSelectParam';
 import {
@@ -34,7 +51,7 @@ import {
 } from './canvasViewport';
 import { countBySeverity, findingsForGraphNode } from '../insights/selectors';
 import type { Finding } from '../insights/types';
-import { describeCounts, FindingsBadge, findingsBadgeWidth, HideInfoSwitch } from '../insights/ui/FindingsViews';
+import { describeCounts, FindingsBadge, findingsBadgeWidth } from '../insights/ui/FindingsViews';
 import { useHideInfoFindings, useNodeFindings, visibleFindings } from '../insights/ui/useFindings';
 import { nodePhysicalPath } from '../routes';
 
@@ -141,20 +158,6 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         if (value) {
             navigate(nodePhysicalPath(value));
         }
-    };
-
-    const getSwitchChecked = (
-        first: React.FormEvent<HTMLInputElement> | boolean,
-        second?: React.FormEvent<HTMLInputElement> | boolean
-    ): boolean => {
-        if (typeof first === 'boolean') {
-            return first;
-        }
-        if (typeof second === 'boolean') {
-            return second;
-        }
-        const target = first.target as HTMLInputElement | null;
-        return Boolean(target?.checked);
     };
 
     const ctx: GraphContext = React.useMemo(
@@ -999,70 +1002,45 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                         data-canvas-frame=""
                     >
                         <DrawerContentBody style={{ padding: '12px 24px', overflow: 'auto' }}>
-                            <Flex style={{ marginBottom: '16px', alignItems: 'center', gap: '16px' }}>
-                                {!hideHostSelect && (
-                                    <FlexItem>
-                                        <FormSelect
-                                            value={nns?.metadata?.name || ''}
-                                            onChange={handleHostSelect}
-                                            aria-label="Host selector"
-                                            style={{ minWidth: '200px' }}
-                                        >
-                                            <FormSelectOption key="placeholder" value="" label="Select host" isPlaceholder />
-                                            {allNodeNetworkStates
-                                                ?.slice()
-                                                .sort((a: NodeNetworkState, b: NodeNetworkState) => {
-                                                    const nameA = a.metadata?.name || '';
-                                                    const nameB = b.metadata?.name || '';
-                                                    return nameA.localeCompare(nameB);
-                                                })
-                                                .map((nnsItem: NodeNetworkState) => (
-                                                    <FormSelectOption key={nnsItem.metadata?.name} value={nnsItem.metadata?.name || ''} label={nnsItem.metadata?.name || 'Unknown'} />
-                                                ))}
-                                        </FormSelect>
-                                    </FlexItem>
-                                )}
-                                <FlexItem>
-                                    <Switch
-                                        id="show-nads-toggle"
-                                        label="Show Net Attach Defs"
-                                        isChecked={showNads}
-                                        onChange={(first, second) => setShowNads(getSwitchChecked(first, second))}
-                                    />
-                                </FlexItem>
-                                {hasLldpData && (
-                                    <FlexItem>
-                                        <Switch
-                                            id="show-lldp-neighbors-toggle"
-                                            label="Show LLDP neighbors"
-                                            isChecked={showLldpNeighbors}
-                                            onChange={(first, second) => setShowLldpNeighbors(getSwitchChecked(first, second))}
-                                        />
-                                    </FlexItem>
-                                )}
-                                <FlexItem>
-                                    <Switch
-                                        id="show-hidden-columns-toggle"
-                                        label="Show hidden columns"
-                                        isChecked={showHiddenColumns}
-                                        onChange={(first, second) => setShowHiddenColumns(getSwitchChecked(first, second))}
-                                    />
-                                </FlexItem>
-                                {allFindings.some((finding) => finding.severity === 'info') && (
-                                    <FlexItem>
-                                        <HideInfoSwitch
-                                            id="hide-info-findings-toggle"
-                                            findings={allFindings}
-                                            hideInfo={hideInfo}
-                                            onChange={setHideInfo}
-                                        />
-                                    </FlexItem>
-                                )}
-                                <FlexItem><Button variant="secondary" onClick={handleZoomOut} aria-label="Zoom out">-</Button></FlexItem>
-                                <FlexItem><Button variant="secondary" onClick={handleZoomIn} aria-label="Zoom in">+</Button></FlexItem>
-                                <FlexItem><Button variant="link" onClick={handleResetZoom}>Reset view</Button></FlexItem>
-                                <FlexItem><LegendButton><PhysicalLegend /></LegendButton></FlexItem>
-                            </Flex>
+                            <div style={{ marginBottom: '16px' }}>
+                                <ViewToolbar
+                                    label="Physical topology view"
+                                    filters={hideHostSelect ? undefined : (
+                                        <ToolbarItem>
+                                            <FormSelect
+                                                value={nns?.metadata?.name || ''}
+                                                onChange={handleHostSelect}
+                                                aria-label="Host selector"
+                                                style={{ minWidth: '200px' }}
+                                            >
+                                                <FormSelectOption key="placeholder" value="" label="Select host" isPlaceholder />
+                                                {allNodeNetworkStates
+                                                    ?.slice()
+                                                    .sort((a: NodeNetworkState, b: NodeNetworkState) => {
+                                                        const nameA = a.metadata?.name || '';
+                                                        const nameB = b.metadata?.name || '';
+                                                        return nameA.localeCompare(nameB);
+                                                    })
+                                                    .map((nnsItem: NodeNetworkState) => (
+                                                        <FormSelectOption key={nnsItem.metadata?.name} value={nnsItem.metadata?.name || ''} label={nnsItem.metadata?.name || 'Unknown'} />
+                                                    ))}
+                                            </FormSelect>
+                                        </ToolbarItem>
+                                    )}
+                                    viewOptions={[
+                                        { id: 'show-nads-toggle', label: 'Net Attach Defs', checked: showNads, onChange: setShowNads },
+                                        ...(hasLldpData
+                                            ? [{ id: 'show-lldp-neighbors-toggle', label: 'LLDP neighbors', checked: showLldpNeighbors, onChange: setShowLldpNeighbors }]
+                                            : []),
+                                        { id: 'show-hidden-columns-toggle', label: 'Hidden columns', checked: showHiddenColumns, onChange: setShowHiddenColumns },
+                                        ...(allFindings.some((finding) => finding.severity === 'info')
+                                            ? [{ id: 'hide-info-findings-toggle', label: 'Hide info findings', checked: hideInfo, onChange: setHideInfo }]
+                                            : []),
+                                    ]}
+                                    zoom={{ onZoomOut: handleZoomOut, onZoomIn: handleZoomIn, onReset: handleResetZoom }}
+                                    legend={<PhysicalLegend />}
+                                />
+                            </div>
                             <svg
                                 ref={svgRef}
                                 width="100%"

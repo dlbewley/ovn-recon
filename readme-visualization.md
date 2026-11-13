@@ -44,17 +44,17 @@ something in it, unless noted.
 
 | Lane | Holds | Notes |
 |---|---|---|
-| LLDP Neighbors | The device at the far end of each cable | Behind the **Show LLDP neighbors** toggle, offered only when LLDP data exists |
+| LLDP Neighbors | The device at the far end of each cable | Behind **LLDP neighbors** in **View options**, offered only when LLDP data exists |
 | Physical Interfaces | Ethernet devices | |
 | Virtual Functions | SR-IOV virtual functions present on the host | |
 | Bonds | Bond interfaces | |
 | VLAN Interfaces | VLAN and VXLAN devices | |
 | Bridges | Linux and OVS bridges, and under an **Integration** heading the OVN integration bridge | The integration bridge is derived from its ports; nmstate does not report it as a bridge |
-| Logical Interfaces | OVS internal ports | Hidden unless **Show hidden columns** is on |
+| Logical Interfaces | OVS internal ports | Hidden unless **Hidden columns** is checked in **View options** |
 | Bridge Mappings and VRFs | The names OVN uses for a bridge, and VRF devices | One lane with two headings |
 | Networks | CUDNs and UDNs | |
 | Attachments | The namespaces attached to each network | Always shown |
-| NADs | NetworkAttachmentDefinitions | Behind the **Show Net Attach Defs** toggle |
+| NADs | NetworkAttachmentDefinitions | Behind **Net Attach Defs** in **View options** |
 
 Interfaces that fit no lane (loopback, the Geneve tunnel device) are listed in
 an **Other Interfaces** grid below the lanes.
@@ -92,7 +92,9 @@ rule and the fields each was read from.
   `?select=iface:br-ex`, `?select=vrf:blue`, `?select=cudn:blue`,
   `?select=udn:ns1/blue` or `?select=nad:ns1/blue`. An unknown value is
   ignored.
-- **Toolbar**: the lane toggles above, zoom, **Reset view** and **Legend**.
+- **Toolbar** (the same one the logical views use): **View options**, a menu of
+  the lane toggles above and **Hide info findings**; zoom out, zoom in and
+  **Reset view** as icon buttons; and **Legend**.
   The node's name in the header above the tabs switches to another node and
   keeps the tab.
 - **Routes**, the node's next tab, lists its main kernel table and marks which

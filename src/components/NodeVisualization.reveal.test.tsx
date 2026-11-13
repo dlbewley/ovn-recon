@@ -9,6 +9,7 @@ import NodeVisualization from './NodeVisualization';
 import { LocationRecord, TestRouter } from './testRouter';
 import { installFakeResizeObserver, resizeCanvases } from './canvasTestGeometry';
 import { REVEAL_MARGIN_PX, svgMeetRegion, svgMeetScale, ViewportBox } from './canvasViewport';
+import { toolbarButton } from './viewToolbarTestUtils';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
@@ -145,8 +146,7 @@ describe('NodeVisualization reveal beside the inline drawer', () => {
         for (let i = 0; i < times; i += 1) act(() => { button.click(); });
     };
     const resetView = () => {
-        const button = Array.from(container.querySelectorAll('button'))
-            .find((candidate) => candidate.textContent === 'Reset view')!;
+        const button = toolbarButton(container, 'Reset view')!;
         act(() => { button.click(); });
     };
     const drag = (dx: number, dy: number) => {

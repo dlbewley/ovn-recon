@@ -274,7 +274,7 @@ An old `/ovn-recon?q=` link opens the search results.
 
 In the physical node graph:
 - LLDP neighbors are rendered in a dedicated optional column left of physical interfaces.
-- The `Show LLDP neighbors` toggle appears only when LLDP is enabled on at least one interface and LLDP neighbor payloads are present.
+- **LLDP neighbors** appears in the toolbar's **View options** menu only when LLDP is enabled on at least one interface and LLDP neighbor payloads are present.
 
 
 ## Troubleshooting
