@@ -4,7 +4,8 @@ import { act } from 'react';
 
 import type { SeverityCounts } from '../insights/selectors';
 import { ClusterLogicalTopology, LogicalTopologySnapshot } from '../types';
-import CollectorStatus, { CollectorState, useCollectorState } from './CollectorStatus';
+import type { CollectorFailure } from './collectorApi';
+import CollectorStatus, { CollectorState, collectorIsWarming, useCollectorState } from './CollectorStatus';
 import NetworksTable from './NetworksTable';
 import NodesTable, { NodesTableProps } from './NodesTable';
 import { NodeSummary, OverviewNetworkRow } from './overviewModel';
@@ -278,7 +279,7 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
 
         it('names an unreachable collector and counts its warnings', async () => {
             await render(<CollectorStatus collector={collectorState({ topology: null, error: 'HTTP 503' })} />);
-            expect(container.textContent).toContain('Collector unreachable');
+            expect(container.textContent).toContain('Collector is not answering');
 
             await render(
                 <CollectorStatus
@@ -286,6 +287,83 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
                 />,
             );
             expect(container.textContent).toContain('2 collector warnings');
+        });
+
+        // ovn-recon-nt4.4: the states a collector restart walks through.
+        describe('through a collector restart (ovn-recon-nt4.4)', () => {
+            const unreachable: CollectorFailure = {
+                summary: 'Collector is not answering (HTTP 502)',
+                status: 502,
+                attempts: ['/api/plugins/ovn-recon/api/v1/snapshots -> HTTP 502', '/api/proxy/x -> HTTP 404'],
+                message: 'Collector request failed. Attempts: ...',
+            };
+            const deployment = { namespace: 'recon', name: 'mine-collector' };
+            const detailsElement = () => document.querySelector('[data-testid="overview-collector-details"]')!;
+
+            it('waits for the first answer, with a spinner while it is asked', async () => {
+                await render(<CollectorStatus collector={collectorState({ topology: null, loading: true })} />);
+                expect(container.textContent).toContain('Waiting for the collector');
+                expect(container.textContent).not.toContain('Freshness unknown');
+                expect(container.querySelector('[role="progressbar"]')).not.toBeNull();
+                expect(await openDetails()).toContain('Waiting for the collector\'s first answer');
+            });
+
+            it('says it is not answering in one line, with links and the routes behind Details', async () => {
+                await render(
+                    <CollectorStatus collector={collectorState({ topology: null, error: unreachable.message, failure: unreachable, deployment })} />,
+                );
+                expect(container.textContent).toContain('Collector is not answering (HTTP 502)');
+                expect(container.textContent).not.toContain('/api/');
+                expect(container.textContent).not.toContain('Waiting for the collector');
+
+                const details = await openDetails();
+                expect(details).toContain('Collector is not answering (HTTP 502)');
+                expect(Array.from(detailsElement().querySelectorAll('a')).map((link) => link.getAttribute('href'))).toEqual([
+                    '/k8s/ns/recon/apps~v1~Deployment/mine-collector',
+                    '/k8s/ns/recon/apps~v1~Deployment/mine-collector/pods',
+                    '/k8s/ns/recon/apps~v1~Deployment/mine-collector/events',
+                ]);
+                const section = detailsElement().querySelector('[data-testid="collector-failure-details"]')!;
+                const toggle = section.querySelector('button')!;
+                expect(toggle.getAttribute('aria-expanded')).toBe('false');
+                await act(async () => { toggle.click(); });
+                expect(toggle.getAttribute('aria-expanded')).toBe('true');
+                expect(Array.from(section.querySelectorAll('li')).map((item) => item.textContent)).toEqual(unreachable.attempts);
+            });
+
+            it('leaves the links out until it knows where the collector runs', async () => {
+                await render(<CollectorStatus collector={collectorState({ topology: null, failure: unreachable, error: 'x' })} />);
+                await openDetails();
+                expect(detailsElement().querySelector('[data-testid="collector-links"]')).toBeNull();
+                expect(detailsElement().querySelector('[data-testid="collector-failure-details"]')).not.toBeNull();
+            });
+
+            it('keeps the last aggregate on the line beside a refresh that failed', async () => {
+                await render(<CollectorStatus collector={collectorState({ failure: unreachable, error: 'x', deployment })} />);
+                expect(container.textContent).toContain('Assembled from 2 nodes');
+                expect(container.textContent).toContain('Collector is not answering (HTTP 502)');
+                const details = await openDetails();
+                expect(details).toContain('Last refresh failed');
+                expect(detailsElement().querySelectorAll('[data-testid="collector-links"] a')).toHaveLength(3);
+            });
+
+            it('says the cache is warming while any zone carries COLLECTOR_WARMING', async () => {
+                const warm = topology();
+                warm.snapshots = warm.snapshots.map((snapshot, index) => (index === 0
+                    ? { ...snapshot, warnings: [...snapshot.warnings, { code: 'COLLECTOR_WARMING', message: 'warming' }] }
+                    : snapshot));
+                expect(collectorIsWarming(warm)).toBe(true);
+                expect(collectorIsWarming(topology())).toBe(false);
+                expect(collectorIsWarming(null)).toBe(false);
+
+                await render(<CollectorStatus collector={collectorState({ topology: warm })} />);
+                expect(container.textContent).toContain('Warming cache');
+                expect(container.textContent).toContain('Assembled from 2 nodes');
+                expect(await openDetails()).toContain('Warming after start-up');
+
+                await render(<CollectorStatus collector={collectorState()} />);
+                expect(container.textContent).not.toContain('Warming cache');
+            });
         });
     });
 
@@ -325,6 +403,39 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
 
             expect(global.fetch).not.toHaveBeenCalled();
             expect(states[states.length - 1]).toMatchObject({ enabled: false, gateLoaded: true, topology: null });
+        });
+
+        it('records a failure with the status of the likeliest route', async () => {
+            global.fetch = jest.fn().mockImplementation(async (url: string) => ({
+                ok: false,
+                status: url.startsWith('/api/plugins/ovn-recon/api/v1') ? 502 : 404,
+            })) as unknown as typeof fetch;
+            const states: CollectorState[] = [];
+
+            await render(<Probe onState={(state) => states.push(state)} />);
+            await settle();
+
+            const last = states[states.length - 1];
+            expect(last.topology).toBeNull();
+            expect(last.failure?.summary).toBe('Collector is not answering (HTTP 502)');
+            expect(last.failure?.attempts).toHaveLength(4);
+            expect(last.error).toContain('Collector request failed');
+        });
+
+        it('paints the aggregate this tab last received before asking again (ovn-recon-nt4.4)', async () => {
+            const payload = topology();
+            global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => payload }) as unknown as typeof fetch;
+            await render(<Probe onState={() => undefined} />);
+            await settle();
+            act(() => root.unmount());
+            root = createRoot(container);
+
+            global.fetch = jest.fn(() => new Promise(() => undefined)) as unknown as typeof fetch;
+            const states: CollectorState[] = [];
+            await render(<Probe onState={(state) => states.push(state)} />);
+
+            expect(states[0].topology).toBe(payload);
+            expect(states[states.length - 1]).toMatchObject({ topology: payload, loading: true });
         });
     });
 });

@@ -78,10 +78,23 @@ export interface KindRef {
     kind: string;
 }
 
+/**
+ * Which tab of a resource's details page: its details, its YAML, or (for a workload
+ * such as a Deployment) its Pods or Events tab, which the console draws at
+ * `<details page>/pods` and `<details page>/events` (ovn-recon-nt4.4).
+ */
+export type ResourceView = 'details' | 'yaml' | 'pods' | 'events';
+
+const RESOURCE_VIEW_LABELS: Record<Exclude<ResourceView, 'details'>, (kind: string) => string> = {
+    yaml: (kind) => `${kind} YAML`,
+    pods: () => 'Pods',
+    events: () => 'Events',
+};
+
 /** What a link is about. */
 export type LinkTarget =
     /** One Kubernetes object; `view: 'yaml'` asks for its YAML tab. */
-    | { type: 'resource'; ref: ResourceRef; view?: 'details' | 'yaml' }
+    | { type: 'resource'; ref: ResourceRef; view?: ResourceView }
     /** Every object of a kind: in one namespace, in all of them, or cluster-scoped. */
     | { type: 'list'; kind: KindRef; scope: 'cluster' | 'all-namespaces' | { namespace: string } }
     /** The page that creates one: cluster-scoped, or in a namespace. */
@@ -224,12 +237,13 @@ const consoleProvider: LinkOutProvider = (target, capabilities) => {
         case 'resource': {
             if (!target.ref.name) return {};
             const path = getResourcePath(target.ref);
+            const tab = target.view && target.view !== 'details' ? target.view : undefined;
             return {
                 primary: {
-                    id: target.view === 'yaml' ? 'resource-yaml' : 'resource',
-                    path: target.view === 'yaml' ? `${path}/yaml` : path,
+                    id: tab ? `resource-${tab}` : 'resource',
+                    path: tab ? `${path}/${tab}` : path,
                     owner: pageOwner(target.ref, capabilities),
-                    label: target.view === 'yaml' ? `${target.ref.kind} YAML` : target.ref.kind,
+                    label: tab ? RESOURCE_VIEW_LABELS[tab](target.ref.kind) : target.ref.kind,
                 },
             };
         }
@@ -325,7 +339,7 @@ const trafficPage = (filter: string): string =>
  * something to draw from; the header comment says what each one needs.
  */
 const netobservProvider: LinkOutProvider = (target, capabilities) => {
-    if (target.type !== 'resource' || target.view === 'yaml' || !target.ref.name) return {};
+    if (target.type !== 'resource' || (target.view && target.view !== 'details') || !target.ref.name) return {};
     if (!capabilities.navHrefs.get(NETOBSERV_PLUGIN)?.has(NETOBSERV_TRAFFIC_PATH)) return {};
     const { loki, nodeMetrics, features } = capabilities.netobserv ?? {};
     const { ref } = target;
@@ -387,5 +401,5 @@ export const resolveLinkOut = (
 ): LinkOut | undefined => resolveLinkOuts(target, capabilities).primary;
 
 /** The target for a resource reference, as drawer facts and chips carry them. */
-export const resourceTarget = (ref: ResourceRef, view?: 'details' | 'yaml'): LinkTarget =>
+export const resourceTarget = (ref: ResourceRef, view?: ResourceView): LinkTarget =>
     ({ type: 'resource', ref, ...(view ? { view } : {}) });

@@ -24,7 +24,8 @@ import {
 
 import { LogicalTopologySnapshot, NodeNetworkState } from '../types';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
-import { fetchCollectorSnapshot } from './collectorApi';
+import { CollectorFailure, describeCollectorFailure, fetchCollectorSnapshot, rememberedCollectorSnapshot } from './collectorApi';
+import { CollectorFailureDetails, CollectorLoadingState } from './collectorViewStates';
 import { buildLadderModel, LadderConstruct } from './logicalLadderModel';
 import { FindingsSection } from '../insights/ui/FindingsViews';
 import { useHideInfoFindings, visibleFindings } from '../insights/ui/useFindings';
@@ -107,13 +108,16 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
     // Nodes carry the mapping back to node names.
     const nodeForChassis = useChassisNodeNames();
 
-    const [snapshot, setSnapshot] = React.useState<LogicalTopologySnapshot | null>(null);
+    // The node's last snapshot this browser tab received (its own, or its zone in the
+    // last aggregate) paints first, and the refresh replaces it (ovn-recon-nt4.4).
+    const [snapshot, setSnapshot] = React.useState<LogicalTopologySnapshot | null>(
+        () => rememberedCollectorSnapshot(name));
     // The node the snapshot on screen was fetched for. A select link applies
     // only to that node's model, never to the previous node's in the render
     // between a route change and the reset below.
-    const [snapshotNode, setSnapshotNode] = React.useState<string>('');
+    const [snapshotNode, setSnapshotNode] = React.useState<string>(() => (snapshot ? name : ''));
     const [isLoading, setIsLoading] = React.useState<boolean>(false);
-    const [snapshotError, setSnapshotError] = React.useState<string>('');
+    const [snapshotError, setSnapshotError] = React.useState<CollectorFailure | null>(null);
     const [lastLoadedAt, setLastLoadedAt] = React.useState<number>(Date.now());
     const [search, setSearch] = React.useState<string>('');
     const [networkFilter, setNetworkFilter] = React.useState<string>('all');
@@ -145,9 +149,10 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
     // constructs, selection, filters or viewport on screen under the new title
     // while the next snapshot loads.
     React.useEffect(() => {
-        setSnapshot(null);
-        setSnapshotNode('');
-        setSnapshotError('');
+        const remembered = rememberedCollectorSnapshot(name);
+        setSnapshot(remembered);
+        setSnapshotNode(remembered ? name : '');
+        setSnapshotError(null);
         setSelectedUuid(null);
         setRevealRequest(undefined);
         setSearch('');
@@ -159,7 +164,7 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
         if (!enabled || !name) return;
 
         setIsLoading(true);
-        setSnapshotError('');
+        setSnapshotError(null);
 
         try {
             const payload = await fetchCollectorSnapshot(name);
@@ -169,7 +174,7 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
         } catch (error) {
             // Keep the last-good snapshot rendered: a transient failure (a
             // collector pod handoff, a proxy blip) must not blank the view.
-            setSnapshotError(error instanceof Error ? error.message : 'Failed to load logical topology');
+            setSnapshotError(describeCollectorFailure(error));
         } finally {
             setIsLoading(false);
         }
@@ -324,8 +329,11 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
                             <CardBody>
                                 <AlertGroup isToast={false}>
                                     {snapshotError && (
-                                        <Alert variant="warning" isInline title={snapshotError}>
-                                            {snapshot ? 'Showing the last loaded topology; refresh retries automatically.' : null}
+                                        <Alert variant="warning" isInline title={snapshotError.summary}>
+                                            {snapshot
+                                                ? 'Showing the last loaded topology; refresh retries automatically.'
+                                                : 'Refresh retries automatically.'}
+                                            <CollectorFailureDetails failure={snapshotError} />
                                         </Alert>
                                     )}
                                     {snapshot && snapshot.warnings.length > 0 && (
@@ -442,6 +450,12 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
                                     data-testid="ladder-canvas"
                                     style={{ height: 'max(560px, calc(100vh - 340px))', border: '1px solid var(--pf-t--global--border--color--default)', overflow: 'hidden', cursor: viewport.isDragging ? 'grabbing' : 'grab' }}
                                 >
+                                    {!snapshot && !snapshotError && (
+                                        <CollectorLoadingState title={`Loading the OVN snapshot of ${name}…`}>
+                                            The collector reads the node&apos;s OVN databases when its cache
+                                            holds no recent snapshot.
+                                        </CollectorLoadingState>
+                                    )}
                                     {model && (
                                         <div data-testid="ladder-content" style={{ transform: viewport.contentTransform, transformOrigin: '0 0' }}>
                                             <LogicalLadderView

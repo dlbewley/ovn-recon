@@ -60,6 +60,18 @@ describe('link-out registry (ovn-recon-zdt.4)', () => {
                 .toBe('/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/vlan-10/yaml');
         });
 
+        // ovn-recon-nt4.4: where to look when the collector does not answer.
+        it('opens a workload\'s Pods and Events tabs when asked for', () => {
+            const deployment = { apiVersion: 'apps/v1', kind: 'Deployment', namespace: 'ovn-recon', name: 'ovn-recon-collector' };
+            const base = '/k8s/ns/ovn-recon/apps~v1~Deployment/ovn-recon-collector';
+            expect(resolveLinkOut({ type: 'resource', ref: deployment, view: 'details' }))
+                .toMatchObject({ path: base, label: 'Deployment' });
+            expect(resolveLinkOut({ type: 'resource', ref: deployment, view: 'pods' }))
+                .toMatchObject({ id: 'resource-pods', path: `${base}/pods`, label: 'Pods', owner: CONSOLE_OWNER });
+            expect(resolveLinkOut({ type: 'resource', ref: deployment, view: 'events' }))
+                .toMatchObject({ id: 'resource-events', path: `${base}/events`, label: 'Events' });
+        });
+
         it('has no page for a reference without a name', () => {
             expect(resolveLinkOut({ type: 'resource', ref: { ...CUDN, name: '' } }, OCP_5_1)).toBeUndefined();
         });
@@ -281,6 +293,7 @@ describe('Network Observability traffic links (ovn-recon-vqd.1)', () => {
                 ref: { apiVersion: 'k8s.cni.cncf.io/v1', kind: 'NetworkAttachmentDefinition', namespace: 'demo', name: 'blue' },
             })).toEqual([]);
             expect(traffic({ ...node, view: 'yaml' } as LinkTarget)).toEqual([]);
+            expect(traffic({ ...node, view: 'events' } as LinkTarget)).toEqual([]);
             expect(traffic({ type: 'node-interface', node: 'worker-1', name: 'ens192', interfaceType: 'ethernet' }))
                 .toEqual([]);
         });
