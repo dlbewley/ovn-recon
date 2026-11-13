@@ -38,6 +38,11 @@ import {
 } from './overviewModel';
 
 /**
+ * No longer routed (ovn-recon-gbr.4): the explorer shell, `OvnReconApp`, lands on its
+ * Cluster scope instead, drawn from the same parts and from `useOverviewData`, which
+ * the shell still calls. The page stays until the passthrough is removed
+ * (ovn-recon-gbr.10).
+ *
  * The single front door for OVN Recon (ovn-recon-brx), laid out by ovn-recon-nt4.9.
  * One Networking entry lands here. Top to bottom: a search over every node
  * (ovn-recon-tpp.2); what is wrong (the findings summary) beside what exists (the

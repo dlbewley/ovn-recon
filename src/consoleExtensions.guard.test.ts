@@ -70,6 +70,26 @@ describe('console-extensions.json integration guard (ovn-recon-zdt.7)', () => {
             .forEach((extension) => expect(extension.properties.page).toEqual({ name: 'OVN Recon', href: TAB_HREF }));
     });
 
+    it('registers one non-exact page route at /ovn-recon, the explorer shell (ovn-recon-gbr.4)', () => {
+        // The shell routes everything beneath it; a second page route would take a
+        // path away from it and unmount the tree on every hop to that path.
+        const routes = extensions.filter((extension) => extension.type === 'console.page/route');
+        expect(routes.map((extension) => extension.properties)).toEqual([
+            { exact: false, path: '/ovn-recon', component: { $codeRef: 'OvnReconApp' } },
+        ]);
+    });
+
+    it('exposes only modules an extension references', () => {
+        // The SDK's webpack plugin fails the build on an exposed module no extension
+        // names; the shell imports the pages it passes through itself.
+        const referenced = new Set<string>();
+        JSON.stringify(extensions).replace(/"\$codeRef":"([^".]+)/g, (_match, module: string) => {
+            referenced.add(module);
+            return '';
+        });
+        expect(Object.keys(exposedModules).filter((module) => !referenced.has(module))).toEqual([]);
+    });
+
     it('points every code reference at an exposed module', () => {
         const modules = new Set<string>();
         const collect = (value: unknown) => {

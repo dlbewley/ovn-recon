@@ -2,99 +2,10 @@
     {
         "type": "console.page/route",
         "properties": {
-            "exact": true,
+            "exact": false,
             "path": "/ovn-recon",
             "component": {
-                "$codeRef": "OvnReconOverview"
-            }
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "exact": true,
-            "path": "/ovn-recon/node-network-state",
-            "component": {
-                "$codeRef": "OvnReconOverview"
-            }
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "path": "/ovn-recon/node-network-state/:name",
-            "component": {
-                "$codeRef": "NodeNetworkStateDetails"
-            }
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "exact": true,
-            "path": "/ovn-recon/ovn/:name",
-            "component": {
-                "$codeRef": "NodeLogicalTopologyDetails"
-            }
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "exact": true,
-            "path": "/ovn-recon/ovn/:node/:kind/:name",
-            "component": {
-                "$codeRef": "ConstructDetails"
-            }
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "exact": true,
-            "path": "/ovn-recon/ovn",
-            "component": {
-                "$codeRef": "ClusterLogicalTopologyDetails"
-            }
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "exact": true,
-            "path": "/ovn-recon/networks",
-            "component": {
-                "$codeRef": "NetworkDetails"
-            }
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "exact": true,
-            "path": "/ovn-recon/networks/cudn/:name",
-            "component": {
-                "$codeRef": "NetworkDetails"
-            }
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "exact": true,
-            "path": "/ovn-recon/networks/udn/:namespace/:name",
-            "component": {
-                "$codeRef": "NetworkDetails"
-            }
-        }
-    },
-    {
-        "type": "console.page/route",
-        "properties": {
-            "exact": true,
-            "path": "/ovn-recon/networks/nad/:namespace/:name",
-            "component": {
-                "$codeRef": "NetworkDetails"
+                "$codeRef": "OvnReconApp"
             }
         }
     },
