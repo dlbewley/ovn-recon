@@ -1,7 +1,8 @@
 # OVN Recon: explorer shell (build plan)
 
-Status: proposed 2026-11-12; nothing is built. Dale chose this direction (option C of
-`ovn-recon-nt4.12`) the same day. Epic: `ovn-recon-gbr`. Written against `main` at
+Status: in progress. Proposed 2026-11-12, when Dale chose this direction (option C of
+`ovn-recon-nt4.12`). The routing spike passed on a live console the same day (see Spike
+result); nothing else is built. Epic: `ovn-recon-gbr`. Written against `main` at
 `f4ec408` (v1.0.7-a2), PatternFly 6.6.1, console SDK 4.22.0.
 
 ## Summary
@@ -98,11 +99,11 @@ No existing URL changes or redirects. Four are new.
 `<Route path="/ovn-recon/*">` and caches the lazy component by extension uid
 (`openshift/console` release-4.22,
 `frontend/packages/console-app/src/hooks/usePluginRoutes.tsx`). So the shell stays
-mounted while the path changes beneath it, and the tree keeps its state without any
-restoring. Today every hop between pages unmounts one module and mounts another. The
-monitoring plugin uses the same arrangement at `/monitoring`. This is read from source,
-not yet seen working for this plugin: `ovn-recon-gbr.1` checks it on a live console
-before anything else is built on it.
+mounted while the path changes beneath it. Today every hop between pages unmounts one
+module and mounts another. The monitoring plugin uses the same arrangement at
+`/monitoring`. The spike (`ovn-recon-gbr.1`) confirmed it for this plugin on a live
+console, with two limits: the shell mounts twice on a fresh page load, and it remounts
+after the user leaves OVN Recon for another console page and comes back.
 
 **Pieces.**
 
@@ -120,26 +121,52 @@ before anything else is built on it.
 - The URL holds the selection, the tab, the graph selection and the search text.
 - Console user settings (`useUserSettings` from the SDK) hold the tree's width and
   whether it is collapsed.
-- Which tree groups are open is plain component state; it survives because the shell
-  does not remount.
+- Which tree groups are open is plain component state. It survives moving around inside
+  OVN Recon, but not a fresh page load or a trip to another console page and back. If it
+  should survive those, it is stored with the width (`ovn-recon-gbr.9`).
 
 **Data.** The shell makes the cluster-wide watches the overview makes today and
 evaluates findings once, so the tree, the tab and the tables cannot disagree. The search
 lookup moves to a shell-level hook so the tree can mark matches.
 
 **Loading.** Heavy views (the physical graph, the ladder, the construct page) load
-lazily, so the landing view does not pull in graph code.
+lazily, so the landing view does not pull in graph code. In the spike each page stayed
+its own chunk and the shell's chunk was about 12 KB minified. Because the console
+replaces its whole frame once on a fresh page load, the shell must not hang one-shot
+work on mount.
+
+**Not found.** The shell carries a catch-all route. Without one, a path that no nested
+route matches renders a blank pane. A well-formed path that names a missing node or
+network is a separate problem the released pages already have (`ovn-recon-nt4.13`).
 
 **What does not change.** The console-integration tabs and actions and their flags, the
 link-out registry, the collector API, the `?select=` deep links, and the detail drawers.
+
+## Spike result (2026-11-12)
+
+`ovn-recon-gbr.1`: a throwaway shell with one non-exact route and nested routes for the
+existing pages, run on a live 4.22 console. The result is a go. The spike code was not
+merged.
+
+| Check | Result |
+|---|---|
+| Existing URLs resolve through the nested routes, including a pasted `?select=` link | Pass |
+| The shell stays mounted while the path changes | Pass over nine in-app hops, Back and Forward. It mounts twice on a fresh page load, as every plugin page does today, and remounts after leaving OVN Recon and returning. |
+| The Networking > OVN Recon item stays highlighted | Pass on every sub-path |
+| Back and Forward | Pass |
+| Console-integration tabs and "Open in OVN Recon" actions | Pass for the Node and CUDN tabs and the Node action. The UDN, NAD and CUDN actions were not clicked one by one. |
+| An unknown sub-path | Pass with a catch-all route. A path naming a missing node or network stays on "Loading...", in the released pages too (`ovn-recon-nt4.13`). |
 
 ## Order of work
 
 Each step leaves `main` releasable. Until a path is moved into the shell it renders its
 existing page unchanged (a legacy passthrough), so the shell can ship one scope at a
-time.
+time. The shell imports those pages itself, lazily. They cannot stay in
+`exposedModules`: the SDK's webpack plugin fails the build on an exposed module that no
+extension references, so they leave that list in the same change that swaps the routes.
 
-1. **Prove the route** (`ovn-recon-gbr.1`). A throwaway shell on a live console.
+1. **Prove the route** (`ovn-recon-gbr.1`, done 2026-11-12: go). A throwaway shell on a
+   live console.
 2. **Prepare, with no visible change** (`ovn-recon-gbr.2`, `ovn-recon-gbr.3`). One
    routes module; bodies split from page chrome.
 3. **Shell and Cluster scope** (`ovn-recon-gbr.4`). The first visible change: the Nodes
@@ -153,9 +180,11 @@ time.
 
 | Risk | How it is retired |
 |---|---|
-| Nested routing under one non-exact route does not behave as the source suggests. | The spike. Fallback: keep the exact routes, render the shell in each, restore tree state from user settings on each mount. |
+| Nested routing under one non-exact route does not behave as the source suggests. | Retired: the spike passed all six checks, so the fallback was not needed. |
+| Tree state is lost on a fresh page load and after leaving OVN Recon and returning. | Width and collapse are stored per user. Whether open groups are stored too is decided in `ovn-recon-gbr.9`. |
 | Tree, graph and drawer do not fit side by side. | The tree collapses to a rail; both panels have minimum sizes; below a set width the tree starts collapsed. Checked at 1280 and 1440 px. |
-| One route means one module, so the first load grows. | Lazy views. Measure the landing chunk before and after. |
+| One route means one module, so the first load grows. | Mostly retired: with lazy imports each page stayed its own chunk in the spike. Measure again once the tree and the shell-level watches move in. |
+| A test image for the plugin alone takes the collector down: the collector inherits the plugin's image tag when its own is unset (`collectorImageTagFor` in the operator). | When trying a plugin-only image, set `spec.collector.image.tag` as well as `spec.consolePlugin.image.tag`. |
 | More lazy chunks make "Failed to load module" after an upgrade more likely. | Already tracked as `ovn-recon-nt4.8`; fix or mitigate before the shell ships in a stable release. |
 | About thirty suites render pages under a router and assert on titles and breadcrumbs. | The split in `ovn-recon-gbr.3` moves chrome into thin wrappers first, so those suites change imports, not assertions. |
 | Two toolbars and two host selects are being reworked at once. | The node scope only removes what the tree replaces; the shared toolbar stays with `ovn-recon-nt4.3`. |
@@ -187,13 +216,13 @@ time.
 
 ## Initial Beads Backlog Mapping
 
-All `OPEN` as of 2026-11-12. `ovn-recon-nt4.12` (the decision between three options) is
-superseded by the epic.
+As of 2026-11-12 the spike is closed and the rest are open. `ovn-recon-nt4.12` (the
+decision between three options) is superseded by the epic.
 
 | Work Item | Type | Issue ID | Priority |
 |---|---|---|---|
 | **Explorer shell** | epic | `ovn-recon-gbr` | P2 |
-| Spike: one non-exact route with nested routing, checked on a live console | task | `ovn-recon-gbr.1` | P2 |
+| Spike: one non-exact route with nested routing, checked on a live console *(done)* | task | `ovn-recon-gbr.1` | P2 |
 | `routes.ts`: one module for every path and the URL-to-view table | task | `ovn-recon-gbr.2` | P2 |
 | Lift page chrome off the logical, construct, overview and search components | task | `ovn-recon-gbr.3` | P2 |
 | Shell: single route, title row, resizable and collapsible tree, Cluster scope | feature | `ovn-recon-gbr.4` | P2 |
@@ -215,4 +244,5 @@ Related beads that this work touches:
 | One view toolbar across the graph pages | `ovn-recon-nt4.3` | Re-scope after `ovn-recon-gbr.5` removes the host selects |
 | "Failed to load module" after a plugin upgrade | `ovn-recon-nt4.8` | Matters more once views load lazily |
 | Loading and error states | `ovn-recon-nt4.4` | The title-row collector status inherits them |
-| Drawer: one label for the full-page links | `ovn-recon-dp7.12` | Independent; in progress |
+| Missing node or network shows "Loading..." forever | `ovn-recon-nt4.13` | Found by the spike; the shell inherits it until it is fixed |
+| Drawer: one label for the full-page links | `ovn-recon-dp7.12` | Independent; merged in #189 |
