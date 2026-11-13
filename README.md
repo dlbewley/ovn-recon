@@ -44,10 +44,11 @@ Blog post: [OVN Recon: Making OpenShift Networking Connections](https://guifreel
 - Click the ➕ icon at the top right of the OpenShift Console
 - Select "Import YAML"
 - Paste in this YAML: <https://raw.githubusercontent.com/dlbewley/ovn-recon/refs/heads/main/manifests/catalogsource.yaml>
+- Click Create
 - After a few moments navigate to "Ecosystem -> Software Catalog" (or Operator Hub in older versions)
 - Search for "OVN Recon Operator"
 - Click install and accept the defaults
-- After a few moments click the tile to create a "ovnrecon" resource and accept the defaults
+- After a few moments click Create Instance in the tile to create an "ovnrecon" resource and accept the defaults
 - After a few more moments a new "OVN Recon" menu will show up within the Networking menu.
 
 ### Deep Console Integration (off by default)
