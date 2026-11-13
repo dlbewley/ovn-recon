@@ -120,6 +120,9 @@ export interface ExplorerTreeProps {
     onSelectItem: (item: ExplorerTreeItem) => void;
 }
 
+/** One object for every group, so PatternFly's memoised rows see no change. */
+const GROUP_BADGE_PROPS = { isRead: true, screenReaderText: 'shown' };
+
 /** The model's item as TreeView data; `id` carries everything back to the model. */
 const toTreeData = (item: ExplorerTreeItem): TreeViewDataItem => ({
     id: item.id,
@@ -143,6 +146,8 @@ const toTreeData = (item: ExplorerTreeItem): TreeViewDataItem => ({
         defaultExpanded: item.expanded,
         hasBadge: true,
         customBadgeContent: item.count,
+        // Read as "Nodes, 10 shown": the count is what the filter and switches leave.
+        badgeProps: GROUP_BADGE_PROPS,
     } : {}),
 });
 
@@ -175,7 +180,8 @@ const ExplorerTree: React.FC<ExplorerTreeProps> = ({
     );
 
     return (
-        <div data-testid="explorer-tree">
+        // A landmark, so a screen reader can jump between the tree and the scope.
+        <nav aria-label="OVN Recon explorer" data-testid="explorer-tree">
             <style>{TREE_ROW_STYLE}</style>
             <SearchInput
                 aria-label="Filter the tree by name"
@@ -217,7 +223,7 @@ const ExplorerTree: React.FC<ExplorerTreeProps> = ({
                 onExpand={(_event, treeItem) => onGroupToggle(String(treeItem.id), true)}
                 onCollapse={(_event, treeItem) => onGroupToggle(String(treeItem.id), false)}
             />
-        </div>
+        </nav>
     );
 };
 

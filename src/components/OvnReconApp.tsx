@@ -3,7 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-r
 import {
     Button,
     Drawer,
-    DrawerContent,
+    DrawerContext,
     DrawerPanelBody,
     DrawerPanelContent,
     EmptyState,
@@ -48,7 +48,17 @@ import {
     NODES_GROUP_ID,
     selectedItemId,
 } from './explorerTreeModel';
+import {
+    clampTreeWidth,
+    NARROW_SHELL_WIDTH,
+    readOpenGroups,
+    TREE_DEFAULT_SIZE,
+    TREE_MAX_SIZE,
+    TREE_MIN_SIZE,
+    writeOpenGroups,
+} from './treePreferencesModel';
 import { ExplorerData, useExplorerData } from './useExplorerData';
+import { useTreePreferences } from './useTreePreferences';
 
 /**
  * The OVN Recon explorer (ovn-recon-gbr.4): the one page the plugin registers. The
@@ -69,16 +79,23 @@ import { ExplorerData, useExplorerData } from './useExplorerData';
  * `useExplorerData` and feed the tree's badges and the Findings tabs alike.
  *
  * The URL holds the selection and the tab (`viewForLocation`). The tree's width and
- * whether it is collapsed are plain component state until ovn-recon-gbr.9 keeps them
- * in the console's user settings.
+ * whether it is collapsed are kept per user in the console's user settings, and which
+ * groups are open per browser tab (ovn-recon-gbr.9, `treePreferencesModel.ts`). On a
+ * shell too narrow for tree, graph and drawer the tree starts collapsed.
+ *
+ * Keyboard: the collapse button, then the divider (arrow keys resize it, and the new
+ * width is kept), then the tree's filter, switches and items, then the scope. Focus
+ * moves to the button that undoes a collapse or an expand.
  */
 
+export { TREE_DEFAULT_SIZE, TREE_MAX_SIZE, TREE_MIN_SIZE };
 export const TREE_PANEL_ID = 'ovn-recon-explorer-tree';
-// 240 px leaves the node table one line per row at 1440 px with the console nav open.
-export const TREE_DEFAULT_SIZE = '240px';
-export const TREE_MIN_SIZE = '200px';
-export const TREE_MAX_SIZE = '480px';
 const RAIL_SIZE = '48px';
+/** How far one arrow key moves the divider: PatternFly's 5 px takes 48 presses to cross the range. */
+const RESIZE_STEP = 16;
+/** Keyboard resizing writes the width once the keys have rested this long, not per press. */
+const KEY_RESIZE_SAVE_MS = 400;
+const RESIZE_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 /** Half the round collapse button, so it sits astride the divider. */
 const TOGGLE_HALF = 14;
 /** Where the divider is drawn: the middle of the panel's splitter, from the container's start. */
@@ -119,6 +136,29 @@ const ClusterIndex: React.FC<{ view: ExplorerView | null; data: ExplorerData }> 
         return <Navigate to={searchPath(view.params.q ?? '')} replace />;
     }
     return <ClusterNodesTab data={data} />;
+};
+
+/**
+ * PatternFly's DrawerContent, with the panel first in the document. Its own puts the
+ * panel after the content and moves a start panel to the left with CSS `order`, so
+ * keyboard focus and a screen reader reached the tree only after the whole scope.
+ * Here the DOM order is the visual one: title row, collapse button, divider, tree,
+ * scope. The content keeps the context's ref, which the panel measures to resize.
+ */
+const TreeFirstDrawerContent: React.FC<{ panelContent: React.ReactNode; children: React.ReactNode }> = ({
+    panelContent,
+    children,
+}) => {
+    const { drawerContentRef } = React.useContext(DrawerContext);
+    return (
+        <div className="pf-v6-c-drawer__main">
+            {panelContent}
+            {/* minWidth 0: a wide table scrolls inside the content, never shifting the tree out of view. */}
+            <div className="pf-v6-c-drawer__content" ref={drawerContentRef as React.RefObject<HTMLDivElement>} style={{ minWidth: 0 }}>
+                {children}
+            </div>
+        </div>
+    );
 };
 
 /** Where the tree's divider is, followed while it is dragged; the fallback until it is measured. */
@@ -198,11 +238,17 @@ const OvnReconApp: React.FC = () => {
         return searchMarksOf(current ? search.results : null);
     }, [search.results, search.query]);
 
-    // --- The tree's state: kept here so it outlives the tree being collapsed.
-    const [collapsed, setCollapsed] = React.useState(false);
-    const [treeSize, setTreeSize] = React.useState(TREE_DEFAULT_SIZE);
+    // --- The tree's state: kept here so it outlives the tree being collapsed. Width
+    // and collapse are the user's stored preference; this mount may override the
+    // collapse (a narrow shell starts collapsed) until the user toggles it.
+    const [preferences, setPreferences] = useTreePreferences();
+    const [collapsedHere, setCollapsedHere] = React.useState<boolean | null>(null);
+    const [narrow, setNarrow] = React.useState(false);
+    const collapsed = collapsedHere ?? (narrow || preferences.collapsed);
+    const treeSize = preferences.width;
     const [filter, setFilter] = React.useState('');
-    const [openGroups, setOpenGroups] = React.useState<ReadonlySet<string>>(() => new Set([NODES_GROUP_ID]));
+    const [openGroups, setOpenGroups] = React.useState<ReadonlySet<string>>(() => readOpenGroups([NODES_GROUP_ID]));
+    React.useEffect(() => writeOpenGroups(openGroups), [openGroups]);
     const [showAllNetworks, setShowAllNetworks] = React.useState(false);
     const [findingsOnly, setFindingsOnly] = React.useState(false);
     const selectedId = selectedItemId(view);
@@ -266,7 +312,30 @@ const OvnReconApp: React.FC = () => {
     }, [collapsed]);
     const setTreeCollapsed = (value: boolean) => {
         toggled.current = true;
-        setCollapsed(value);
+        setCollapsedHere(value);
+        setPreferences({ collapsed: value });
+    };
+    // Measured once per mount, before the first paint: a narrow shell starts collapsed.
+    // (jsdom measures nothing, so a width of 0 is no answer.)
+    React.useLayoutEffect(() => {
+        const width = container.current?.getBoundingClientRect().width ?? 0;
+        if (width > 0 && width < NARROW_SHELL_WIDTH) setNarrow(true);
+    }, []);
+
+    const saveWidth = React.useCallback((width: number) => {
+        const next = clampTreeWidth(width);
+        if (next !== preferences.width) setPreferences({ width: next });
+    }, [preferences.width, setPreferences]);
+    // PatternFly reports a drag when it ends, but arrow keys on the divider only on
+    // Enter or Escape; keep what the keys did once they rest.
+    const keyResizeTimer = React.useRef<ReturnType<typeof setTimeout>>();
+    React.useEffect(() => () => clearTimeout(keyResizeTimer.current), []);
+    const onPanelKeyUp = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        const target = event.target as HTMLElement;
+        if (!RESIZE_KEYS.has(event.key) || target.getAttribute('role') !== 'separator') return;
+        const panelElement = event.currentTarget;
+        clearTimeout(keyResizeTimer.current);
+        keyResizeTimer.current = setTimeout(() => saveWidth(panelElement.getBoundingClientRect().width), KEY_RESIZE_SAVE_MS);
     };
     const dividerAt = useDividerOffset(container, !collapsed, treeSize);
 
@@ -302,8 +371,13 @@ const OvnReconApp: React.FC = () => {
             defaultSize={treeSize}
             minSize={TREE_MIN_SIZE}
             maxSize={TREE_MAX_SIZE}
+            increment={RESIZE_STEP}
             resizeAriaLabel="Resize the tree"
-            onResize={(_event, width) => setTreeSize(`${Math.round(width)}px`)}
+            onResize={(_event, width) => {
+                clearTimeout(keyResizeTimer.current);
+                saveWidth(width);
+            }}
+            onKeyUp={onPanelKeyUp}
             data-testid="explorer-tree-panel"
         >
             <DrawerPanelBody>
@@ -377,8 +451,7 @@ const OvnReconApp: React.FC = () => {
                     />
                 )}
                 <Drawer isExpanded isInline position="start">
-                    {/* minWidth 0: a wide table scrolls inside the content, never shifting the tree out of view. */}
-                    <DrawerContent panelContent={panel} style={{ minWidth: 0 }}>
+                    <TreeFirstDrawerContent panelContent={panel}>
                         {view?.scope === 'cluster' && (
                             <ClusterScopeHeader tab={view.tab} data={data} query={searchRoute.submitted} />
                         )}
@@ -403,7 +476,7 @@ const OvnReconApp: React.FC = () => {
                                 <Route path="*" element={<NotFound />} />
                             </Routes>
                         </React.Suspense>
-                    </DrawerContent>
+                    </TreeFirstDrawerContent>
                 </Drawer>
             </div>
         </div>

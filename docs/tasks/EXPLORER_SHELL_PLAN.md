@@ -121,9 +121,10 @@ after the user leaves OVN Recon for another console page and comes back.
 - The URL holds the selection, the tab, the graph selection and the search text.
 - Console user settings (`useUserSettings` from the SDK) hold the tree's width and
   whether it is collapsed.
-- Which tree groups are open is plain component state. It survives moving around inside
-  OVN Recon, but not a fresh page load or a trip to another console page and back. If it
-  should survive those, it is stored with the width (`ovn-recon-gbr.9`).
+- Which tree groups are open is kept in sessionStorage for the browser tab
+  (`ovn-recon-gbr.9`): it survives a fresh page load and a trip to another console page
+  and back, but a new tab starts with Nodes open. It is a detail of where the user is,
+  not a preference, and user settings would cost a ConfigMap write per click.
 
 **Data.** The shell makes the cluster-wide watches the overview makes today and
 evaluates findings once, so the tree, the tab and the tables cannot disagree. The search
@@ -181,7 +182,7 @@ extension references, so they leave that list in the same change that swaps the 
 | Risk | How it is retired |
 |---|---|
 | Nested routing under one non-exact route does not behave as the source suggests. | Retired: the spike passed all six checks, so the fallback was not needed. |
-| Tree state is lost on a fresh page load and after leaving OVN Recon and returning. | Width and collapse are stored per user. Whether open groups are stored too is decided in `ovn-recon-gbr.9`. |
+| Tree state is lost on a fresh page load and after leaving OVN Recon and returning. | Width and collapse are stored per user; open groups per browser tab (`ovn-recon-gbr.9`). |
 | Tree, graph and drawer do not fit side by side. | The tree collapses to a rail; both panels have minimum sizes; below a set width the tree starts collapsed. Checked at 1280 and 1440 px. |
 | One route means one module, so the first load grows. | Mostly retired: with lazy imports each page stayed its own chunk in the spike. Measure again once the tree and the shell-level watches move in. |
 | A test image for the plugin alone takes the collector down: the collector inherits the plugin's image tag when its own is unset (`collectorImageTagFor` in the operator). | When trying a plugin-only image, set `spec.collector.image.tag` as well as `spec.consolePlugin.image.tag`. |

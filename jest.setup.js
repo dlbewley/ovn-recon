@@ -25,3 +25,21 @@ if (typeof global.TextEncoder === 'undefined') {
 jest.mock('./src/linkOut/useConsoleCapabilities', () => ({
     useConsoleCapabilities: () => jest.requireActual('./src/linkOut/registry').NO_CAPABILITIES,
 }));
+
+// The explorer tree's width and collapsed state live in the console's user settings
+// (useUserSettings), which the SDK cannot provide under jest. Suites get the same
+// contract held in component state: loaded at once, the defaults, kept for the mount.
+// A suite that needs a stored value, or one that outlives a remount, mocks this module.
+jest.mock('./src/components/useTreePreferences', () => ({
+    useTreePreferences: () => jest.requireActual('./src/components/treePreferencesModel').useMemoryTreePreferences(),
+}));
+
+// Which tree groups are open is kept in sessionStorage per browser tab; start every
+// test from an empty store so one test's open groups never reach the next.
+beforeEach(() => {
+    try {
+        window.sessionStorage.clear();
+    } catch {
+        // Not every environment is jsdom.
+    }
+});
