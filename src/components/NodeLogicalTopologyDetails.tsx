@@ -50,6 +50,7 @@ import { useChassisNodeNames } from './useChassisNodeNames';
 import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
 import { constructSelectValue, findConstructBySelectValue, useSelectionDeepLink } from './useSelectParam';
 import { detailHrefFor } from './constructDetailLinks';
+import { clusterLogicalPath, nodeLogicalPath, nodePhysicalPath, overviewPath } from '../routes';
 
 const REFRESH_INTERVAL_MS = 30000;
 
@@ -130,9 +131,9 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     const navigate = useNavigate();
     const handleHostSelect = (_event: React.FormEvent<HTMLSelectElement>, value: string) => {
         if (value === 'all') {
-            navigate('/ovn-recon/ovn');
+            navigate(clusterLogicalPath());
         } else if (value && value !== name) {
-            navigate(`/ovn-recon/ovn/${encodeURIComponent(value)}`);
+            navigate(nodeLogicalPath(value));
         }
     };
 
@@ -281,10 +282,10 @@ const NodeLogicalTopologyDetails: React.FC = () => {
             <PageSection>
                 <Breadcrumb>
                     <BreadcrumbItem>
-                        <Link to="/ovn-recon">OVN Recon</Link>
+                        <Link to={overviewPath()}>OVN Recon</Link>
                     </BreadcrumbItem>
                     <BreadcrumbItem>
-                        <Link to="/ovn-recon/ovn">Cluster logical topology</Link>
+                        <Link to={clusterLogicalPath()}>Cluster logical topology</Link>
                     </BreadcrumbItem>
                     <BreadcrumbItem isActive>Logical OVN: {name}</BreadcrumbItem>
                 </Breadcrumb>
@@ -293,7 +294,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                     for this node" link, so the two views cross-link
                     symmetrically (ovn-recon-xfr). */}
                 <p className="pf-u-mt-sm">
-                    <Link to={`/ovn-recon/node-network-state/${encodeURIComponent(name)}`}>
+                    <Link to={nodePhysicalPath(name)}>
                         View physical topology for this node
                     </Link>
                 </p>
@@ -319,7 +320,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             construct={selectedConstruct}
                                             model={model}
                                             fallbackNode={name}
-                                            physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
+                                            physicalHref={(node) => nodePhysicalPath(node)}
                                             onSelectConstruct={selectConstructFromDrawer}
                                             database={snapshot?.database ?? null}
                                             databaseNode={name}

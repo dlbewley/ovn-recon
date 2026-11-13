@@ -40,6 +40,7 @@ import FindingsCard from '../insights/ui/FindingsCard';
 import { describeCounts, SeverityCountsInline } from '../insights/ui/FindingsViews';
 import { useClusterFindings, useHideInfoFindings, visibleFindings } from '../insights/ui/useFindings';
 import { nodePagePath } from '../insights/links';
+import { clusterLogicalPath, nodeLogicalPath, nodePhysicalPath } from '../routes';
 import { fetchClusterTopology } from './collectorApi';
 import { NetworkInputs, NETWORKS_PATH } from './networkPageModel';
 import { freshnessFromAge } from './snapshotFreshness';
@@ -338,7 +339,7 @@ const CollectorStatus: React.FC<{ collector: CollectorState }> = ({ collector })
                     )}
                     {active && (
                         <FlexItem align={{ default: 'alignRight' }}>
-                            <Link to="/ovn-recon/ovn">Open cluster view</Link>
+                            <Link to={clusterLogicalPath()}>Open cluster view</Link>
                         </FlexItem>
                     )}
                 </Flex>
@@ -495,7 +496,7 @@ export const OverviewBody: React.FC<OverviewBodyProps> = ({
                                         {nnsLoaded && gateLoaded && visible.map((node) => (
                                             <Tr key={node.name} data-testid={`overview-node-${node.name}`}>
                                                 <Td dataLabel="Node">
-                                                    <Link to={`/ovn-recon/node-network-state/${encodeURIComponent(node.name)}`}>{node.name}</Link>
+                                                    <Link to={nodePhysicalPath(node.name)}>{node.name}</Link>
                                                 </Td>
                                                 <Td dataLabel="Role">{rolesByNode.get(node.name) ?? ''}</Td>
                                                 <Td dataLabel="Findings" data-testid={`overview-findings-${node.name}`}>
@@ -513,11 +514,11 @@ export const OverviewBody: React.FC<OverviewBodyProps> = ({
                                                 <Td dataLabel="Mappings">{node.bridgeMappings}</Td>
                                                 <Td dataLabel="LLDP">{node.lldpNeighbors}</Td>
                                                 <Td dataLabel="Views">
-                                                    <Link to={`/ovn-recon/node-network-state/${encodeURIComponent(node.name)}`}>Physical</Link>
+                                                    <Link to={nodePhysicalPath(node.name)}>Physical</Link>
                                                     {showLogical && (
                                                         <>
                                                             {' · '}
-                                                            <Link to={`/ovn-recon/ovn/${encodeURIComponent(node.name)}`}>Logical</Link>
+                                                            <Link to={nodeLogicalPath(node.name)}>Logical</Link>
                                                         </>
                                                     )}
                                                     {' · '}

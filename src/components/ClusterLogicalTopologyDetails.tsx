@@ -47,6 +47,7 @@ import { useChassisNodeNames } from './useChassisNodeNames';
 import { freshnessFromAge, oldestSnapshotAgeMs } from './snapshotFreshness';
 import { constructSelectValue, findConstructBySelectValue, useSelectionDeepLink } from './useSelectParam';
 import { detailHrefFor, detailZoneFor } from './constructDetailLinks';
+import { nodeLogicalPath, nodePhysicalPath, overviewPath } from '../routes';
 
 // Aggregate collection probes every zone, so refresh less eagerly than the
 // per-node view.
@@ -267,7 +268,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
             <PageSection>
                 <Breadcrumb>
                     <BreadcrumbItem>
-                        <Link to="/ovn-recon">OVN Recon</Link>
+                        <Link to={overviewPath()}>OVN Recon</Link>
                     </BreadcrumbItem>
                     <BreadcrumbItem isActive>Cluster logical topology</BreadcrumbItem>
                 </Breadcrumb>
@@ -294,8 +295,8 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                             construct={selectedConstruct}
                                             model={model}
                                             totalNodes={model.zoneCount}
-                                            nodeHref={(node) => `/ovn-recon/ovn/${encodeURIComponent(node)}`}
-                                            physicalHref={(node) => `/ovn-recon/node-network-state/${encodeURIComponent(node)}`}
+                                            nodeHref={(node) => nodeLogicalPath(node)}
+                                            physicalHref={(node) => nodePhysicalPath(node)}
                                             onSelectConstruct={selectConstructFromDrawer}
                                             database={drawerDatabase?.database}
                                             databaseNode={drawerDatabase?.node}
