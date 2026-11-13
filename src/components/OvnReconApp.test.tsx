@@ -277,6 +277,7 @@ describe('OvnReconApp, the explorer shell', () => {
             ['a node\'s routes', nodeRoutesPath(node), {
                 tab: 'node-tab-routes', page: /^routes \{"name":"worker-1"\}/, selected: nodeItemId(node),
             }],
+            ['a node\'s findings', nodeFindingsPath(node), { tab: 'node-tab-findings', selected: nodeItemId(node) }],
             ['a node zone', nodeLogicalPath(node), {
                 tab: 'node-tab-logical',
                 page: /^node-logical \{"name":"worker-1","hideHostSelect":true,"flush":true\}/,
@@ -323,7 +324,7 @@ describe('OvnReconApp, the explorer shell', () => {
             expect(container.textContent).toContain('Physical network or subnets');
 
             await go(clusterFindingsPath());
-            expect(byTestId('overview-findings-card')).not.toBeNull();
+            expect(byTestId('findings-panel')).not.toBeNull();
 
             await go(searchPath('10.0.0.1'));
             expect(byTestId('search-status')?.textContent ?? container.textContent).toContain('10.0.0.1');
@@ -337,7 +338,6 @@ describe('OvnReconApp, the explorer shell', () => {
 
         it.each([
             ['an unknown path', `${BASE_PATH}/nope`],
-            ['a node tab that arrives in ovn-recon-gbr.7', nodeFindingsPath('worker-1')],
             ['a construct path one level too deep', `${constructDetailPath('worker-1', 'switch', 'join')}/x`],
         ])('says page not found for %s, with the tree still there', async (_name, url) => {
             await render(url);
@@ -353,6 +353,7 @@ describe('OvnReconApp, the explorer shell', () => {
                 [SHELL_ROUTES.search, `${BASE_PATH}/search`],
                 [SHELL_ROUTES.nodePhysical, nodePhysicalPath('a b')],
                 [SHELL_ROUTES.nodeRoutes, nodeRoutesPath('a b')],
+                [SHELL_ROUTES.nodeFindings, nodeFindingsPath('a b')],
                 [SHELL_ROUTES.nodeLogical, nodeLogicalPath('a b')],
                 [SHELL_ROUTES.construct, constructDetailPath('a b', 'router', 'r/1').split('?')[0]],
                 [SHELL_ROUTES.cudn, networkPath({ kind: 'cudn', name: 'c' })],
@@ -434,10 +435,10 @@ describe('OvnReconApp, the explorer shell', () => {
 
         it('links each tab to the node\'s own URL; Logical only with the collector on', async () => {
             await render(nodePhysicalPath('worker-1', 'iface:br-ex'));
-            expect(nodeTabIds()).toEqual(['physical', 'routes']);
+            expect(nodeTabIds()).toEqual(['physical', 'routes', 'findings']);
             mockGate.enabled = true;
             await render(nodePhysicalPath('worker-1', 'iface:br-ex'));
-            expect(nodeTabIds()).toEqual(['physical', 'logical', 'routes']);
+            expect(nodeTabIds()).toEqual(['physical', 'logical', 'routes', 'findings']);
             const href = (key: string) => byTestId(`node-tab-${key}`)?.getAttribute('href');
             expect([href('physical'), href('logical'), href('routes')])
                 .toEqual([nodePhysicalPath('worker-1'), nodeLogicalPath('worker-1'), nodeRoutesPath('worker-1')]);

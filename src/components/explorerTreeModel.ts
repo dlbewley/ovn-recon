@@ -1,3 +1,4 @@
+import type { SeverityCounts } from '../insights/selectors';
 import type { ExplorerView } from '../routes';
 import type { NetworkAddress } from './networkPageModel';
 import { NETWORK_KIND_LABEL } from './overviewModel';
@@ -10,9 +11,13 @@ import { NETWORK_KIND_LABEL } from './overviewModel';
  * Three roots: Cluster, Nodes and Networks. Nodes show their role and networks their
  * kind. Networks come in the order they are handed over (the overview's: findings
  * first), flat, and are capped with a "Show N more" item until the user asks for the
- * rest; a filter lifts the cap, and the selected network is always listed. Finding
- * badges and the findings-only and matches-only switches are ovn-recon-gbr.7 and
- * ovn-recon-gbr.8.
+ * rest; a filter lifts the cap, and the selected network is always listed.
+ *
+ * Findings (ovn-recon-gbr.7): a node or network with findings carries their counts as
+ * a badge, and so does a closed group with such a member. The counts are the shell's
+ * one evaluation (the node table's and the networks table's own), never worked out
+ * here. "With findings only" narrows both groups to those members. The matches-only
+ * switch is ovn-recon-gbr.8.
  */
 
 /** How many networks the tree lists before "Show N more". */
@@ -45,16 +50,23 @@ export interface ExplorerTreeItem {
     expanded?: boolean;
     /** The "Show N more" item: how many networks it stands for. */
     hidden?: number;
+    /**
+     * Findings to badge: a node's or network's own, or, on a closed group, its members'
+     * (after the filter, before the cap). Unset when there are none to show.
+     */
+    findings?: SeverityCounts;
 }
 
 export interface ExplorerTreeNode {
     name: string;
     /** From the node's role labels; empty when it has none. */
     role: string;
+    /** The node's findings, as the node table counts them. */
+    findings?: SeverityCounts;
 }
 
-/** A network as the tree needs it: its address. */
-export type ExplorerTreeNetwork = NetworkAddress;
+/** A network as the tree needs it: its address, and its findings as the networks table counts them. */
+export type ExplorerTreeNetwork = NetworkAddress & { findings?: SeverityCounts };
 
 export interface ExplorerTreeInput {
     nodes: ExplorerTreeNode[];
@@ -68,6 +80,12 @@ export interface ExplorerTreeInput {
     showAllNetworks: boolean;
     /** The selected item's id (`selectedItemId`), or null. */
     selectedId: string | null;
+    /**
+     * "With findings only": list only the nodes and networks with findings (and the
+     * selection). Ignored while nothing has findings, so a switch the tree no longer
+     * offers cannot leave it empty.
+     */
+    findingsOnly?: boolean;
     limit?: number;
 }
 
@@ -88,6 +106,23 @@ export const selectedItemId = (view: ExplorerView | null): string | null => {
 const networkLabel = (network: ExplorerTreeNetwork): string =>
     (network.namespace ? `${network.namespace}/${network.name}` : network.name);
 
+const hasFindings = (counts: SeverityCounts | undefined): counts is SeverityCounts =>
+    counts !== undefined && counts.total > 0;
+
+/** Some node or network has findings: the tree offers "With findings only". */
+export const treeHasFindings = (nodes: ExplorerTreeNode[], networks: ExplorerTreeNetwork[]): boolean =>
+    nodes.some((node) => hasFindings(node.findings)) || networks.some((network) => hasFindings(network.findings));
+
+/** Members' counts added up; undefined when none has findings. */
+const sumFindings = (items: ExplorerTreeItem[]): SeverityCounts | undefined => {
+    const total = items.reduce<SeverityCounts>((sum, item) => ({
+        warning: sum.warning + (item.findings?.warning ?? 0),
+        info: sum.info + (item.findings?.info ?? 0),
+        total: sum.total + (item.findings?.total ?? 0),
+    }), { warning: 0, info: 0, total: 0 });
+    return total.total > 0 ? total : undefined;
+};
+
 /** Case-insensitive substring match; an empty filter keeps everything. */
 const matcher = (filter: string): ((label: string) => boolean) => {
     const needle = filter.trim().toLowerCase();
@@ -96,7 +131,9 @@ const matcher = (filter: string): ((label: string) => boolean) => {
 
 /**
  * The tree's items. With a filter, each group lists only the members whose name
- * holds it, opens, and badges the count that matched; Cluster always stays.
+ * holds it, opens, and badges the count that matched; Cluster always stays. With
+ * "With findings only" on, likewise for the members with findings, the selected
+ * item kept listed so the selection never vanishes from the tree.
  */
 export const buildExplorerTree = ({
     nodes,
@@ -105,20 +142,25 @@ export const buildExplorerTree = ({
     openGroups,
     showAllNetworks,
     selectedId,
+    findingsOnly = false,
     limit = TREE_NETWORK_LIMIT,
 }: ExplorerTreeInput): ExplorerTreeItem[] => {
     const matches = matcher(filter);
-    const filtering = filter.trim() !== '';
+    const onlyFindings = findingsOnly && treeHasFindings(nodes, networks);
+    const filtering = filter.trim() !== '' || onlyFindings;
+    const kept = (item: ExplorerTreeItem): boolean =>
+        matches(item.label) && (!onlyFindings || item.findings !== undefined || item.id === selectedId);
 
     const nodeItems = nodes
-        .filter((node) => matches(node.name))
         .map((node): ExplorerTreeItem => ({
             id: nodeItemId(node.name),
             kind: 'node',
             label: node.name,
             detail: node.role || undefined,
             node: node.name,
-        }));
+            ...(hasFindings(node.findings) ? { findings: node.findings } : {}),
+        }))
+        .filter(kept);
 
     const networkItems = networks
         .map((network): ExplorerTreeItem => ({
@@ -129,8 +171,9 @@ export const buildExplorerTree = ({
             network: network.namespace === undefined
                 ? { kind: network.kind, name: network.name }
                 : { kind: network.kind, namespace: network.namespace, name: network.name },
+            ...(hasFindings(network.findings) ? { findings: network.findings } : {}),
         }))
-        .filter((item) => matches(item.label));
+        .filter(kept);
 
     let shownNetworks = networkItems;
     let hidden = 0;
@@ -146,25 +189,26 @@ export const buildExplorerTree = ({
         : shownNetworks;
 
     const holds = (items: ExplorerTreeItem[]): boolean => items.some((item) => item.id === selectedId);
+    // An open group shows its members' badges; a closed one carries them.
+    const group = (id: string, label: string, members: ExplorerTreeItem[], children: ExplorerTreeItem[], open: boolean): ExplorerTreeItem => {
+        const findings = open ? undefined : sumFindings(members);
+        return {
+            id,
+            kind: 'group',
+            label,
+            children,
+            count: members.length,
+            expanded: open,
+            ...(findings ? { findings } : {}),
+        };
+    };
 
     return [
         { id: CLUSTER_ITEM_ID, kind: 'cluster', label: 'Cluster' },
-        {
-            id: NODES_GROUP_ID,
-            kind: 'group',
-            label: 'Nodes',
-            children: nodeItems,
-            count: nodeItems.length,
-            expanded: filtering || openGroups.has(NODES_GROUP_ID) || holds(nodeItems),
-        },
-        {
-            id: NETWORKS_GROUP_ID,
-            kind: 'group',
-            label: 'Networks',
-            children: networkChildren,
-            count: networkItems.length,
-            expanded: filtering || openGroups.has(NETWORKS_GROUP_ID) || holds(shownNetworks),
-        },
+        group(NODES_GROUP_ID, 'Nodes', nodeItems, nodeItems,
+            filtering || openGroups.has(NODES_GROUP_ID) || holds(nodeItems)),
+        group(NETWORKS_GROUP_ID, 'Networks', networkItems, networkChildren,
+            filtering || openGroups.has(NETWORKS_GROUP_ID) || holds(shownNetworks)),
     ];
 };
 

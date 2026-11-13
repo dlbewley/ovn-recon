@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Flex, FlexItem, PageSection, Spinner, Title } from '@patternfly/react-core';
 import { DocumentTitle } from '@openshift-console/dynamic-plugin-sdk';
 
-import FindingsCard from '../insights/ui/FindingsCard';
+import FindingsPanel from '../insights/ui/FindingsPanel';
 import {
     ClusterTab,
     clusterFindingsPath,
@@ -101,10 +101,15 @@ export const ClusterNetworksTab: React.FC<{ data: ExplorerData }> = ({ data }) =
     </TabBody>
 );
 
-/** Findings: what the overview's findings card showed. Scoped by selection in ovn-recon-gbr.7. */
+/**
+ * Findings: every finding grouped by rule, each linked to its subject, as the
+ * overview's findings card listed them once opened (ovn-recon-gbr.7). A node's own are
+ * on its Findings tab; a network's on its page.
+ */
 export const ClusterFindingsTab: React.FC<{ data: ExplorerData }> = ({ data }) => (
     <TabBody title="OVN Recon - Findings">
-        <FindingsCard
+        <FindingsPanel
+            idPrefix="cluster"
             findings={data.findings}
             allFindings={data.allFindings}
             hideInfo={data.hideInfo}

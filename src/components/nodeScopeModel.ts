@@ -18,19 +18,22 @@ import { parseConstructSelectValue } from './useSelectParam';
 export type NodeView = Extract<ExplorerView, { scope: 'node' }>;
 
 /** The tabs the node scope draws. The construct page is part of Logical topology. */
-export type NodeTabKey = 'physical' | 'logical' | 'routes';
+export type NodeTabKey = 'physical' | 'logical' | 'routes' | 'findings';
 
 export interface NodeTabLink {
     key: NodeTabKey;
     title: string;
     path: string;
+    /** The Findings tab's badge, once known. */
+    count?: number;
 }
 
-/** The tab a node view shows as active; null for one with no tab of its own yet (findings, ovn-recon-gbr.7). */
+/** The tab a node view shows as active. */
 export const activeNodeTab = (view: NodeView): NodeTabKey | null => {
     switch (view.tab) {
         case 'physical':
         case 'routes':
+        case 'findings':
             return view.tab;
         case 'logical':
         case 'construct':
@@ -44,14 +47,22 @@ export const activeNodeTab = (view: NodeView): NodeTabKey | null => {
  * A node's tabs, each a link to its own URL. Switching tab keeps the node and drops
  * the graph selection: a physical graph id and a logical KIND:NAME name different
  * things. Logical topology is offered while the collector is on, and always while it
- * is the tab on screen, so its gate state can say why it is empty.
+ * is the tab on screen, so its gate state can say why it is empty. Findings is always
+ * there (ovn-recon-gbr.7), reading 0 when the node has none; `findings` is undefined
+ * while that is not known (the NodeNetworkStates are loading, or could not be read).
  */
-export const nodeTabs = (node: string, showLogical: boolean, active: NodeTabKey | null): NodeTabLink[] => {
+export const nodeTabs = (
+    node: string,
+    showLogical: boolean,
+    active: NodeTabKey | null,
+    findings?: number,
+): NodeTabLink[] => {
     const tabs: NodeTabLink[] = [{ key: 'physical', title: 'Physical topology', path: nodePhysicalPath(node) }];
     if (showLogical || active === 'logical') {
         tabs.push({ key: 'logical', title: 'Logical topology', path: nodeLogicalPath(node) });
     }
     tabs.push({ key: 'routes', title: 'Routes', path: nodeRoutesPath(node) });
+    tabs.push({ key: 'findings', title: 'Findings', path: nodeFindingsPath(node), ...(findings === undefined ? {} : { count: findings }) });
     return tabs;
 };
 

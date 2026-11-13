@@ -13,6 +13,8 @@ import {
 } from '@patternfly/react-core';
 import { DocumentTitle } from '@openshift-console/dynamic-plugin-sdk';
 
+import { findingsForNode } from '../insights/selectors';
+import FindingsPanel from '../insights/ui/FindingsPanel';
 import { LinkOutProvider, SecondaryLinks } from '../linkOut/LinkOut';
 import { resourceTarget } from '../linkOut/registry';
 import { nnsResourcePath } from './NodesTable';
@@ -23,10 +25,11 @@ import type { ExplorerData } from './useExplorerData';
 /**
  * The node scope of the explorer (ovn-recon-gbr.5): a header whose node name is a
  * switcher, with the node's role, counts and console links, over tabs for its
- * Physical topology, Logical topology and Routes. The construct page belongs to
- * Logical topology. The bodies under the tabs are the existing views without their
- * page chrome, each loaded when first opened so the shell's own chunk carries no
- * graph code.
+ * Physical topology, Logical topology, Routes and Findings (ovn-recon-gbr.7). The
+ * construct page belongs to Logical topology. The graph bodies under the tabs are the
+ * existing views without their page chrome, each loaded when first opened so the
+ * shell's own chunk carries no graph code; Findings is drawn from the shell's one
+ * evaluation, as the node table's Findings column is.
  */
 
 const NodeNetworkStateBody = React.lazy(() => import('./NodeNetworkStateDetails')
@@ -89,7 +92,11 @@ const NodeSwitcher: React.FC<{ view: NodeView; data: ExplorerData }> = ({ view, 
     );
 };
 
-/** The node's header and tabs; nothing for a node view with no tab yet (its Findings, ovn-recon-gbr.7). */
+/** The node's findings are known: its NodeNetworkState list loaded and was readable. */
+const nodeFindingsKnown = (data: ExplorerData): boolean =>
+    data.nodeNetworkStatesLoaded && !data.nodeNetworkStatesError;
+
+/** The node's header and tabs; nothing for a node view with no tab. */
 export const NodeScopeHeader: React.FC<{ view: NodeView; data: ExplorerData }> = ({ view, data }) => {
     const node = view.params.node;
     const active = activeNodeTab(view);
@@ -130,7 +137,12 @@ export const NodeScopeHeader: React.FC<{ view: NodeView; data: ExplorerData }> =
                 </FlexItem>
             </Flex>
             <ScopeTabs
-                tabs={nodeTabs(node, data.showLogical, active)}
+                tabs={nodeTabs(
+                    node,
+                    data.showLogical,
+                    active,
+                    nodeFindingsKnown(data) ? data.findingCounts.get(node)?.total ?? 0 : undefined,
+                )}
                 active={active}
                 aria-label={`Views of node ${node}`}
                 testIdPrefix="node-tab"
@@ -143,12 +155,39 @@ const Loading: React.FC = () => (
     <PageSection><Spinner size="lg" aria-label="Loading" /></PageSection>
 );
 
+/** One node's findings: the cluster tab's list, narrowed to the node. */
+const NodeFindingsTab: React.FC<{ node: string; data: ExplorerData }> = ({ node, data }) => {
+    const findings = React.useMemo(() => findingsForNode(data.findings, node), [data.findings, node]);
+    const allFindings = React.useMemo(() => findingsForNode(data.allFindings, node), [data.allFindings, node]);
+    return (
+        <>
+            <DocumentTitle>{`OVN Recon - Findings (${node})`}</DocumentTitle>
+            <PageSection isFilled>
+                <FindingsPanel
+                    idPrefix="node"
+                    node={node}
+                    findings={findings}
+                    allFindings={allFindings}
+                    hideInfo={data.hideInfo}
+                    onHideInfoChange={data.setHideInfo}
+                    nodeNames={data.nodeNames}
+                    loaded={data.nodeNetworkStatesSettled}
+                    emptyText={`No findings on ${node}.`}
+                    unavailable={data.nodeNetworkStatesError
+                        ? 'NodeNetworkStates could not be read, so this node\'s findings are unknown.'
+                        : undefined}
+                />
+            </PageSection>
+        </>
+    );
+};
+
 /**
  * The view under the node's tabs. Physical topology and the ladder draw edge to
  * edge, without their cards, so with the tree collapsed they have the width the
  * routed pages gave them.
  */
-export const NodeScopeBody: React.FC<{ view: NodeView }> = ({ view }) => {
+export const NodeScopeBody: React.FC<{ view: NodeView; data: ExplorerData }> = ({ view, data }) => {
     const { node, kind, name } = view.params;
     let body: React.ReactNode;
     switch (view.tab) {
@@ -169,6 +208,8 @@ export const NodeScopeBody: React.FC<{ view: NodeView }> = ({ view }) => {
         case 'construct':
             body = <ConstructExplorerBody node={node} kind={kind ?? ''} name={name ?? ''} />;
             break;
+        case 'findings':
+            return <NodeFindingsTab node={node} data={data} />;
         default:
             body = null;
     }
