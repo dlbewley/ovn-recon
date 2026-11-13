@@ -217,8 +217,8 @@ extension references, so they leave that list in the same change that swaps the 
 
 ## Initial Beads Backlog Mapping
 
-As of 2026-11-12 the spike is closed and the rest are open. `ovn-recon-nt4.12` (the
-decision between three options) is superseded by the epic.
+As of 2026-11-13 every child but `ovn-recon-gbr.10` is closed, and `.10` is under way.
+`ovn-recon-nt4.12` (the decision between three options) is superseded by the epic.
 
 | Work Item | Type | Issue ID | Priority |
 |---|---|---|---|
@@ -241,9 +241,37 @@ Related beads that this work touches:
 
 | Work Item | Issue ID | Effect |
 |---|---|---|
-| Find in cluster entry on the graph views | `ovn-recon-tpp.5` | Met by `ovn-recon-gbr.8`; close when it ships |
-| One view toolbar across the graph pages | `ovn-recon-nt4.3` | Re-scope after `ovn-recon-gbr.5` removes the host selects |
+| Find in cluster entry on the graph views | `ovn-recon-tpp.5` | Closed by `ovn-recon-gbr.10`: the title-row search is on every view |
+| One view toolbar across the graph pages | `ovn-recon-nt4.3` | Re-scoped by `ovn-recon-gbr.10` to the shared toolbar inside the three bodies; the header half is done |
 | "Failed to load module" after a plugin upgrade | `ovn-recon-nt4.8` | Matters more once views load lazily |
 | Loading and error states | `ovn-recon-nt4.4` | The title-row collector status inherits them |
 | Missing node or network shows "Loading..." forever | `ovn-recon-nt4.13` | Found by the spike; the shell inherits it until it is fixed |
 | Drawer: one label for the full-page links | `ovn-recon-dp7.12` | Independent; merged in #189 |
+
+## Release notes
+
+For the release that first ships the explorer (`ovn-recon-gbr.4` to `.10`). GitHub's
+generated notes list the pull requests; this is the summary to put above them.
+
+**One page for everything.** *Networking → OVN Recon* opens an explorer: a tree of the
+cluster, its nodes and its networks beside the views of whatever is selected, as tabs.
+
+- **Cluster**: Nodes, Networks, Findings and, with the collector on, Logical topology.
+- **A node**: Physical topology, Logical topology, Routes and Findings, under a header whose
+  node name switches to another node and keeps the tab and selection. A switch or router's
+  full-width view opens inside the node's Logical topology tab.
+- **A network**: its findings, spec summary and per-node placement.
+- **Search** sits in the title row on every view. Its results get their own tab, which stays
+  until the box is cleared, and the tree marks the nodes and networks that hold results.
+- **Findings** show as badges in the tree, with a "With findings only" switch, and on Findings
+  tabs at cluster and node scope. They are evaluated once for the whole page.
+- **The tree** can be resized (by drag or arrow keys) and collapsed to a rail. Its width and
+  collapse are kept in your console user settings, and it starts collapsed on a narrow window.
+
+**Links keep working.** Every earlier OVN Recon URL opens the same object in the explorer,
+`?select=` deep links included. An old `/ovn-recon?q=` search link opens the search results.
+
+**Removed.** The old overview page (its search, findings and networks cards) and the
+breadcrumbs and page titles of the per-view pages. The explorer's header and tabs replace
+them.
+

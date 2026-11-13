@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useParams, Link, useLocation, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem, ExpandableSection, Flex, FlexItem, Spinner } from '@patternfly/react-core';
 import { LinkOutProvider, SecondaryLinks } from '../linkOut/LinkOut';
 import { resourceTarget } from '../linkOut/registry';
@@ -466,38 +466,3 @@ export const NoNodeNetworkState: React.FC<{ name: string; reason?: string }> = (
     </PageSection>
 );
 
-interface NodeNetworkStateDetailsProps {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    match?: any;
-}
-
-/** The routed physical page, /ovn-recon/node-network-state/:name. */
-const NodeNetworkStateDetails: React.FC<NodeNetworkStateDetailsProps> = (props) => {
-    const params = useParams<{ name: string }>();
-    const location = useLocation();
-
-    // Fallback to props.match.params.name if useParams is empty (common in Console plugins)
-    // Also fallback to manual URL parsing if router fails
-    let name = params.name || props?.match?.params?.name;
-    let pathSegments: string[] = [];
-
-    if (!name) {
-        // Aggressive fallback: get the last segment of the URL
-        pathSegments = location.pathname.split('/').filter(p => p);
-        if (pathSegments.length > 0) {
-            const lastSegment = pathSegments[pathSegments.length - 1];
-            // Ensure we don't pick up 'node-network-state' if the name is missing
-            if (lastSegment !== 'node-network-state') {
-                name = lastSegment;
-            }
-        }
-    }
-
-    if (!name) {
-        return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
-    }
-
-    return <NodeNetworkStateBody name={name} />;
-};
-
-export default NodeNetworkStateDetails;

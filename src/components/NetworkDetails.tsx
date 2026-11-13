@@ -1,29 +1,23 @@
 import * as React from 'react';
-import { Link, useLocation } from 'react-router';
+import { Link } from 'react-router';
 import {
     Alert,
-    Breadcrumb,
-    BreadcrumbItem,
     Card,
     CardBody,
     CardTitle,
     EmptyState,
     EmptyStateBody,
-    Flex,
-    FlexItem,
     Label,
-    LabelGroup,
     PageSection,
     Spinner,
-    Title,
 } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { DocumentTitle, K8sResourceCommon, useK8sModel, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 
 import { evaluatePhysical, findingsForNetwork } from '../insights';
 import type { ClusterNetworkInputs, Finding } from '../insights';
-import { ConsoleLink, LinkOutProvider, SecondaryLinks } from '../linkOut/LinkOut';
-import { resourceTarget } from '../linkOut/registry';
+
+
 import { FactList, ProvenanceLabel } from '../topology/facts';
 import {
     ClusterUserDefinedNetwork,
@@ -34,23 +28,19 @@ import {
 } from '../types';
 import {
     buildPlacement,
-    findNetwork,
-    listNetworks,
     NetworkAddress,
-    NETWORKS_PATH,
     networkConditions,
     networkCreationFailure,
     NetworkInputs,
     networkPath,
     NetworkRecord,
     networkSummaryFacts,
-    parseNetworkPath,
     Placement,
     PlacementRow,
     PlacementUplink,
     placementSummary,
 } from './networkPageModel';
-import { networksPath, nodePhysicalPath, overviewPath } from '../routes';
+import { networksPath, nodePhysicalPath } from '../routes';
 import { networkDisplayName, networkNotFoundText, networkScopeState } from './networkScopeModel';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 
@@ -83,8 +73,6 @@ const KIND_LABEL: Record<NetworkRecord['kind'], string> = {
     udn: 'UserDefinedNetwork',
     nad: 'NetworkAttachmentDefinition',
 };
-
-const KIND_SHORT: Record<NetworkRecord['kind'], string> = { cudn: 'CUDN', udn: 'UDN', nad: 'NAD' };
 
 /** The Summary's term column: wide enough for its longest term on one line. */
 const SUMMARY_TERM_WIDTH = '16rem';
@@ -373,110 +361,6 @@ const PlacementCard: React.FC<{
 const displayName = (record: { name: string; namespace?: string }): string =>
     (record.namespace ? `${record.namespace}/${record.name}` : record.name);
 
-const Breadcrumbs: React.FC<{ current?: string }> = ({ current }) => (
-    <Breadcrumb>
-        <BreadcrumbItem>
-            <Link to={overviewPath()}>OVN Recon</Link>
-        </BreadcrumbItem>
-        {/* Direct children only: Breadcrumb gives each item after the first its
-            separator, and does not look inside a fragment. */}
-        {current && <BreadcrumbItem><Link to={NETWORKS_PATH}>Networks</Link></BreadcrumbItem>}
-        <BreadcrumbItem isActive>{current ?? 'Networks'}</BreadcrumbItem>
-    </Breadcrumb>
-);
-
-const NetworkList: React.FC<{
-    inputs: NetworkInputs;
-    loaded: boolean;
-    nns: Watched<NodeNetworkState>;
-}> = ({ inputs, loaded, nns }) => {
-    const rows = React.useMemo(() => listNetworks(inputs), [inputs]);
-    const placements = React.useMemo(
-        () => new Map(rows.map((record) => [record, buildPlacement(record, nns.data, inputs)])),
-        [rows, nns.data, inputs],
-    );
-    const showPlacement = nns.available && nns.loaded && !nns.error && nns.data.length > 0;
-    const columns = ['Name', 'Kind', 'Namespace', 'Topology', 'Role', 'Physical network or subnets', 'Nodes wired'];
-    return (
-        <>
-            <DocumentTitle>OVN Recon - Networks</DocumentTitle>
-            <PageSection>
-                <Breadcrumbs />
-                <Title headingLevel="h1" className="pf-v6-u-mt-md">Networks</Title>
-                <p style={subtle}>
-                    Every ClusterUserDefinedNetwork, UserDefinedNetwork, and NetworkAttachmentDefinition that
-                    neither of them generated.
-                </p>
-            </PageSection>
-            <PageSection isFilled>
-                <Card>
-                    <CardBody>
-                        <Table aria-label="Networks" variant="compact">
-                            <Thead>
-                                <Tr>{columns.map((column) => <Th key={column}>{column}</Th>)}</Tr>
-                            </Thead>
-                            <Tbody>
-                                {loaded && rows.map((record) => {
-                                    const placement = placements.get(record);
-                                    const summary = placement && showPlacement
-                                        ? placementSummary(placement)
-                                        : undefined;
-                                    const carries = record.physicalNetworkName ?? record.bridge
-                                        ?? networkSummaryFacts(record, inputs).find((f) => f.label === 'Subnets')?.value;
-                                    return (
-                                        <Tr key={`${record.kind}/${displayName(record)}`} data-testid={`network-row-${record.kind}-${record.name}`}>
-                                            <Td dataLabel="Name">
-                                                <Link to={networkPath(record)}>{record.name}</Link>
-                                                {networkCreationFailure(record) && (
-                                                    <Label
-                                                        isCompact
-                                                        status="danger"
-                                                        style={{ marginInlineStart: 'var(--pf-t--global--spacer--sm)' }}
-                                                        data-testid="network-row-not-created"
-                                                    >
-                                                        Not created
-                                                    </Label>
-                                                )}
-                                            </Td>
-                                            <Td dataLabel="Kind">{KIND_SHORT[record.kind]}</Td>
-                                            <Td dataLabel="Namespace">{record.namespace ?? ''}</Td>
-                                            <Td dataLabel="Topology">{record.topology}</Td>
-                                            <Td dataLabel="Role">{record.role ?? ''}</Td>
-                                            <Td dataLabel="Physical network or subnets">{typeof carries === 'string' ? carries : ''}</Td>
-                                            <Td dataLabel="Nodes wired">
-                                                {summary && placement ? `${placement.wired} of ${placement.total}` : '-'}
-                                            </Td>
-                                        </Tr>
-                                    );
-                                })}
-                                {!loaded && <Tr><Td colSpan={columns.length}>Loading...</Td></Tr>}
-                                {loaded && rows.length === 0 && (
-                                    <Tr><Td colSpan={columns.length}>No networks found.</Td></Tr>
-                                )}
-                            </Tbody>
-                        </Table>
-                    </CardBody>
-                </Card>
-            </PageSection>
-        </>
-    );
-};
-
-const NotFound: React.FC<{ what: string }> = ({ what }) => (
-    <>
-        <DocumentTitle>OVN Recon - Networks</DocumentTitle>
-        <PageSection>
-            <Breadcrumbs current={what} />
-            <EmptyState data-testid="network-not-found">
-                <Title headingLevel="h4" size="lg">Network not found</Title>
-                <EmptyStateBody>
-                    No network named {what} is visible. <Link to={NETWORKS_PATH}>See every network</Link>.
-                </EmptyStateBody>
-            </EmptyState>
-        </PageSection>
-    </>
-);
-
 /** The "Generated by" line of a NAD or UDN that a CUDN or UDN produced. */
 const NetworkOwner: React.FC<{ record: NetworkRecord }> = ({ record }) => (record.owner ? (
     <p className="pf-v6-u-mt-sm" data-testid="network-owner">
@@ -548,38 +432,6 @@ export const NetworkBody: React.FC<NetworkBodyProps> = ({ record, inputs, nns, s
                     showLogical={showLogical}
                 />
             </PageSection>
-        </>
-    );
-};
-
-const NetworkPage: React.FC<NetworkBodyProps> = ({ record, inputs, nns, showLogical }) => {
-    const name = displayName(record);
-    return (
-        <>
-            <DocumentTitle>{`OVN Recon - ${name}`}</DocumentTitle>
-            <PageSection>
-                <Breadcrumbs current={name} />
-                <Title headingLevel="h1" className="pf-v6-u-mt-md">{name}</Title>
-                <Flex className="pf-v6-u-mt-sm" alignItems={{ default: 'alignItemsCenter' }}>
-                    <FlexItem>
-                        <LabelGroup>
-                            <Label isCompact color="blue">{KIND_LABEL[record.kind]}</Label>
-                            <Label isCompact>{record.topology}</Label>
-                            {record.role && <Label isCompact>{record.role}</Label>}
-                        </LabelGroup>
-                    </FlexItem>
-                    <FlexItem>
-                        <ConsoleLink target={resourceTarget(record.resourceRef)} hideWhenAbsent data-testid="network-console-link">
-                            View {KIND_SHORT[record.kind]} in the console
-                        </ConsoleLink>
-                    </FlexItem>
-                    <FlexItem>
-                        <SecondaryLinks target={resourceTarget(record.resourceRef)} />
-                    </FlexItem>
-                </Flex>
-                <NetworkOwner record={record} />
-            </PageSection>
-            <NetworkBody record={record} inputs={inputs} nns={nns} showLogical={showLogical} />
         </>
     );
 };
@@ -666,37 +518,3 @@ export const NetworkExplorerBody: React.FC<{ address: NetworkAddress }> = ({ add
         </>
     );
 };
-
-const NetworkPages: React.FC = () => {
-    const location = useLocation();
-    const target = React.useMemo(() => parseNetworkPath(location.pathname), [location.pathname]);
-    const { inputs, loaded, nns, showLogical } = useNetworkData();
-
-    const record = React.useMemo(
-        () => (target && !('list' in target) ? findNetwork(target, inputs) : undefined),
-        [target, inputs],
-    );
-
-    if (target && 'list' in target) {
-        return <NetworkList inputs={inputs} loaded={loaded} nns={nns} />;
-    }
-    if (!target) {
-        return <NotFound what={location.pathname.slice(NETWORKS_PATH.length + 1) || 'unknown'} />;
-    }
-    if (!loaded) {
-        return <PageSection><Title headingLevel="h1">Loading...</Title></PageSection>;
-    }
-    if (!record) {
-        return <NotFound what={displayName(target)} />;
-    }
-    return <NetworkPage record={record} inputs={inputs} nns={nns} showLogical={showLogical} />;
-};
-
-/** Reads what the console has loaded once, for every console link on the page. */
-const NetworkDetails: React.FC = () => (
-    <LinkOutProvider>
-        <NetworkPages />
-    </LinkOutProvider>
-);
-
-export default NetworkDetails;

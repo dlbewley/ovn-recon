@@ -1,13 +1,11 @@
 import * as React from 'react';
-import { DocumentTitle, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
-import { useParams, Link, useNavigate } from 'react-router';
+import { useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
+import { useNavigate } from 'react-router';
 import {
     PageSection,
     Title,
     EmptyState,
     EmptyStateBody,
-    Breadcrumb,
-    BreadcrumbItem,
     Card,
     CardTitle,
     CardBody,
@@ -50,32 +48,9 @@ import { useChassisNodeNames } from './useChassisNodeNames';
 import { freshnessFromAge, parseSnapshotAgeMs } from './snapshotFreshness';
 import { constructSelectValue, findConstructBySelectValue, useSelectionDeepLink } from './useSelectParam';
 import { detailHrefFor } from './constructDetailLinks';
-import { clusterLogicalPath, nodeLogicalPath, nodePhysicalPath, overviewPath } from '../routes';
+import { clusterLogicalPath, nodeLogicalPath, nodePhysicalPath } from '../routes';
 
 const REFRESH_INTERVAL_MS = 30000;
-
-const resolveNodeName = (routeName?: string): string => {
-    const fromRoute = routeName?.trim();
-    if (fromRoute) {
-        return fromRoute;
-    }
-
-    if (typeof window === 'undefined') {
-        return '';
-    }
-
-    const path = window.location.pathname || '';
-    const match = path.match(/\/ovn-recon\/ovn\/([^/?#]+)/);
-    if (!match || !match[1]) {
-        return '';
-    }
-
-    try {
-        return decodeURIComponent(match[1]);
-    } catch {
-        return match[1];
-    }
-};
 
 export interface NodeLogicalTopologyBodyProps {
     /** The node whose zone is drawn. */
@@ -509,38 +484,3 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
     );
 };
 
-/** The routed page's own header: document title, breadcrumb, heading and cross-link. */
-const NodeLogicalTopologyHeader: React.FC<{ name: string }> = ({ name }) => (
-    <>
-        <DocumentTitle>{`OVN Recon - Logical OVN (${name})`}</DocumentTitle>
-        <PageSection>
-            <Breadcrumb>
-                <BreadcrumbItem>
-                    <Link to={overviewPath()}>OVN Recon</Link>
-                </BreadcrumbItem>
-                <BreadcrumbItem>
-                    <Link to={clusterLogicalPath()}>Cluster logical topology</Link>
-                </BreadcrumbItem>
-                <BreadcrumbItem isActive>Logical OVN: {name}</BreadcrumbItem>
-            </Breadcrumb>
-            <Title headingLevel="h1" className="pf-u-mt-lg">Logical OVN Topology: {name}</Title>
-            {/* Mirror of the physical page's "View logical OVN topology
-                for this node" link, so the two views cross-link
-                symmetrically (ovn-recon-xfr). */}
-            <p className="pf-u-mt-sm">
-                <Link to={nodePhysicalPath(name)}>
-                    View physical topology for this node
-                </Link>
-            </p>
-        </PageSection>
-    </>
-);
-
-/** The routed logical page of one node, /ovn-recon/ovn/:name. */
-const NodeLogicalTopologyDetails: React.FC = () => {
-    const { name: routeName } = useParams<{ name?: string }>();
-    const name = React.useMemo(() => resolveNodeName(routeName), [routeName]);
-    return <NodeLogicalTopologyBody name={name} header={<NodeLogicalTopologyHeader name={name} />} />;
-};
-
-export default NodeLogicalTopologyDetails;

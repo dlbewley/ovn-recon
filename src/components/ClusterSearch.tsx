@@ -3,9 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router';
 import {
     Alert,
     Button,
-    Card,
-    CardBody,
-    CardTitle,
     ExpandableSection,
     Flex,
     FlexItem,
@@ -697,18 +694,3 @@ export const ClusterSearchResultsPanel: React.FC<{ search: ClusterSearchState }>
     );
 };
 
-/** The overview's "Find in cluster" card: the box over its answer, one lookup behind both. */
-const ClusterSearch: React.FC<ClusterSearchProps> = (props) => {
-    const search = useClusterSearch(props);
-    return (
-        <Card data-testid="overview-search">
-            <CardTitle>Find in cluster</CardTitle>
-            <CardBody>
-                <ClusterSearchInput search={search} />
-                <ClusterSearchResultsPanel search={search} />
-            </CardBody>
-        </Card>
-    );
-};
-
-export default ClusterSearch;

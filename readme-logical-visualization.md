@@ -1,7 +1,9 @@
 # Logical OVN Visualization
 
 This document explains the **logical OVN topology views**: the cluster view at
-`/ovn-recon/ovn` and the per-node view at `/ovn-recon/ovn/:name`. It is the
+`/ovn-recon/ovn` (the cluster's **Logical topology** tab in the OVN Recon
+explorer) and the per-node view at `/ovn-recon/ovn/:name` (a node's **Logical
+topology** tab). Both tabs appear only while the collector is enabled. It is the
 logical-view counterpart of [readme-visualization.md](readme-visualization.md),
 which covers the physical per-node view.
 
@@ -148,9 +150,9 @@ construct names as `example.p.cudn`.
 - **Link** to a selection: the URL carries `?select=KIND:NAME`, for example
   `?select=switch:join` or `?select=router:GR_node-1`. An unknown value is
   ignored.
-- **Find in cluster**, on the overview page, searches every node's snapshot
-  for an IP address, CIDR, MAC or name and opens the right ladder with the
-  owning switch or router selected.
+- **Find in cluster**, the search box in the explorer's title row, searches
+  every node's snapshot for an IP address, CIDR, MAC or name and opens the
+  right ladder with the owning switch or router selected.
 - **Legend**, in the toolbar, explains the card kinds, edge styles and status
   colours.
 
@@ -179,14 +181,16 @@ physical view's drawer:
   resolves each backend to its pod.
 - **Config**: the construct's raw northbound rows.
 
-**Open full page** leads to the construct's own page.
+**Open full page** leads to the construct's own view, still inside the
+node's Logical topology tab.
 
 <a href="img/logical-topology-router.png"><img src="img/logical-topology-router.png" width="80%" alt="A gateway router's drawer with NAT rules and static routes" /></a>
 
 ## The construct detail page
 
 `/ovn-recon/ovn/:node/:kind/:name` shows one switch or router from one node's
-zone at full width, for the row sets a drawer can only summarise. `kind` is
+zone at full width, in the node's Logical topology tab under a heading whose
+**Show in the logical topology** link returns to the ladder with it selected, for the row sets a drawer can only summarise. `kind` is
 `switch` or `router`.
 
 - Tabs: Overview, Relationships, Ports, Policy, Services, Routes and NAT,
@@ -197,7 +201,8 @@ zone at full width, for the row sets a drawer can only summarise. `kind` is
   switch between grouped and one row per rule.
 - Tables sort, filter and page. `?tab=`, `?q=` and `?port=` in the URL restore
   the tab, the filter and an expanded port.
-- The node selector shows the same construct in another node's zone. A
+- The node switcher in the node's header shows the same construct in another
+  node's zone (renamed where the name carries the node, such as `GR_<node>`). A
   northbound database is per zone, so the rows can differ.
 
 The toolbar's **View JSON** control shows and downloads the raw cached

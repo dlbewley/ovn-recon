@@ -4,7 +4,12 @@ import { act } from 'react';
 import { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 
 import { LookupHit, LookupResponse, NodeNetworkState } from '../types';
-import ClusterSearch, { ClusterSearchProps } from './ClusterSearch';
+import {
+    ClusterSearchInput,
+    ClusterSearchProps,
+    ClusterSearchResultsPanel,
+    useClusterSearch,
+} from './ClusterSearch';
 import { LocationRecord, TestRouter } from './testRouter';
 
 // Every address here is from a documentation range (RFC 5737, RFC 3849).
@@ -70,6 +75,17 @@ const states = [
 ] as unknown as NodeNetworkState[];
 
 const nodes = ['node-a', 'node-b'].map((name) => ({ metadata: { name } })) as K8sResourceCommon[];
+
+/** The box over its answer, one lookup behind both, as a host composes them. */
+const ClusterSearch: React.FC<ClusterSearchProps> = (props) => {
+    const search = useClusterSearch(props);
+    return (
+        <>
+            <ClusterSearchInput search={search} />
+            <ClusterSearchResultsPanel search={search} />
+        </>
+    );
+};
 
 describe('ClusterSearch', () => {
     let container: HTMLDivElement;

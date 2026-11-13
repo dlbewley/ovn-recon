@@ -12,7 +12,7 @@
 <p align="center"><b>Screenshots</b></p>
 <a href="img/physical-topology.png"><img src="img/physical-topology.png" width="25%" alt="Physical topology of a node" /></a>
 <a href="img/logical-topology-router.png"><img src="img/logical-topology-router.png" width="25%" alt="Logical OVN topology with a gateway router selected" /></a>
-<a href="img/overview-search-findings.png"><img src="img/overview-search-findings.png" width="25%" alt="Overview with cluster search and findings" /></a>
+<a href="img/explorer-cluster.png"><img src="img/explorer-cluster.png" width="25%" alt="The OVN Recon explorer: the tree beside the cluster's node table" /></a>
 </div>
 
 <br clear="all"/>
@@ -25,7 +25,8 @@ Blog post: [OVN Recon: Making OpenShift Networking Connections](https://guifreel
 
 - **Physical topology view**: per-node graph of host interfaces, bonds, VLANs, bridges, OVN bridge mappings, VRFs, CUDNs/UDNs, attached namespaces and NADs, with LLDP neighbours, SR-IOV virtual functions and EVPN devices where present. Kernel routes are shown as tables. See [readme-visualization.md](readme-visualization.md).
 - **Logical topology views**: cluster-scoped and node-scoped ladder views of the logical OVN constructs per network, with drawers for NAT, static routes, ports, policy and Services, and a full-width detail page per switch and router. See [readme-logical-visualization.md](readme-logical-visualization.md).
-- **Network pages**: every CUDN, UDN and NAD in one list, and a page per network that says on which nodes it is wired.
+- **One explorer**: a tree of the cluster, its nodes and its networks beside the selected object's views, as tabs.
+- **Network views**: every CUDN, UDN and NAD in one list, and a view per network that says on which nodes it is wired.
 - **Find in cluster**: search an IP address, CIDR, MAC or name across every node and open the result in the right view.
 - **Findings**: flags what looks broken, such as a Localnet network whose physical network no node maps to a bridge, with the evidence and a suggested remedy.
 - **Shareable views**: the selected object is kept in the page URL, so any view can be linked to.
@@ -219,23 +220,55 @@ The plugin watches these resources in real-time and renders interactive physical
 
 ## Using OVN Recon
 
-- **Overview**: `/ovn-recon` (the single *Networking → OVN Recon* menu entry): a cluster-wide search,
-  collector status, network counts, and a node table with per-node facts and links to every view.
-  `/ovn-recon/node-network-state` still lands here so older bookmarks keep working.
-  - **Find in cluster**: type an IP address, a CIDR, a MAC, or part of a pod, VM, network or interface
-    name and press Enter. Results are grouped by kind (pod and VM ports, router ports, NAT rules, Service
-    VIPs, node interfaces, routes) and each opens the logical or physical view with the object selected.
-    Routes and subnets that only contain the address are folded into a separate, collapsed section. The
-    search is kept in the page URL (`/ovn-recon?q=10.131.0.70`), so it can be bookmarked and linked to.
-    OVN objects are searched by the collector; with the collector disabled the search still covers every
-    node's NodeNetworkState and says the result is partial.
-  - **Findings**: a card counts warnings across the cluster and lists them by rule; each links to the object it is about.
-- **Networks**: `/ovn-recon/networks` lists every CUDN, UDN and NAD with the number of nodes it is wired on. A network's page
-  (`/ovn-recon/networks/cudn/:name`, `/udn/:namespace/:name`, `/nad/:namespace/:name`) shows its summary and a per-node placement table.
-- **Physical view**: `/ovn-recon/node-network-state/:name`
-- **Cluster logical OVN view**: `/ovn-recon/ovn` (shown when the collector feature gate is enabled)
-- **Node logical OVN view**: `/ovn-recon/ovn/:name` (shown when the collector feature gate is enabled)
-- **Switch or router detail page**: `/ovn-recon/ovn/:node/:kind/:name`, reached from a drawer's **Open full page** link.
+OVN Recon is one page, reached from *Networking → OVN Recon*. A title row carries the
+collector's status and the cluster search box. Below it, a tree of the cluster, its nodes and
+its networks sits beside the views of whatever is selected:
+
+- **Cluster**: tabs for Nodes (a node table with per-node facts), Networks (every CUDN, UDN and
+  NAD, findings first, with the number of nodes each is wired on), Findings (every finding grouped
+  by rule) and Logical topology (with the collector on).
+- **A node**: Physical topology, Logical topology (with the collector on), Routes (its main routing
+  table) and Findings. The node's name is a switcher that keeps the tab.
+- **A network**: its findings, a summary of its spec and a per-node placement table.
+
+The tree can be resized by dragging its divider or with the arrow keys, and collapsed to a rail.
+Its width and whether it is collapsed are kept in your console user settings; on a narrow window
+it starts collapsed. Badges in the tree count findings, and while a search is open, matches.
+
+<a href="img/explorer-cluster.png"><img src="img/explorer-cluster.png" width="45%" alt="The explorer: the tree beside the cluster's Nodes tab" /></a>
+<a href="img/explorer-search-dark.png"><img src="img/explorer-search-dark.png" width="45%" alt="Search results in the dark theme, with matches marked in the tree" /></a>
+
+Every view has its own URL:
+
+| Path | View |
+|---|---|
+| `/ovn-recon` | Cluster, Nodes tab |
+| `/ovn-recon/node-network-state` | Cluster, Nodes tab (kept for older bookmarks) |
+| `/ovn-recon/networks` | Cluster, Networks tab |
+| `/ovn-recon/findings` | Cluster, Findings tab |
+| `/ovn-recon/ovn` | Cluster, Logical topology tab (collector) |
+| `/ovn-recon/search` | Cluster, Search results tab (`?q=` holds the search) |
+| `/ovn-recon/node-network-state/:name` | A node's physical topology |
+| `/ovn-recon/node-network-state/:name/routes` | A node's routing table |
+| `/ovn-recon/node-network-state/:name/findings` | A node's findings |
+| `/ovn-recon/ovn/:name` | A node's logical OVN topology (collector) |
+| `/ovn-recon/ovn/:node/:kind/:name` | One logical switch or router from one node's zone, as full-width tables (collector) |
+| `/ovn-recon/networks/cudn/:name` | A ClusterUserDefinedNetwork |
+| `/ovn-recon/networks/udn/:namespace/:name` | A UserDefinedNetwork |
+| `/ovn-recon/networks/nad/:namespace/:name` | A NetworkAttachmentDefinition |
+
+An old `/ovn-recon?q=` link opens the search results.
+
+- **Find in cluster**: type an IP address, a CIDR, a MAC, or part of a pod, VM, network or interface
+  name and press Enter. Results are grouped by kind (pod and VM ports, router ports, NAT rules, Service
+  VIPs, node interfaces, routes) and each opens the logical or physical view with the object selected.
+  Routes and subnets that only contain the address are folded into a separate, collapsed section. The
+  search stays open while you follow its results, until you clear the box, and the tree marks the nodes
+  and networks that hold results. OVN objects are searched by the collector; with the collector disabled
+  the search still covers every node's NodeNetworkState and says the result is partial.
+- **Findings**: each finding links to the object it is about; the tree's badges and every Findings tab
+  read the same evaluation. A switch hides info-level findings.
+- **Switch or router detail**: a drawer's **Open full page** link opens the construct's own view.
 - **Linking to a selection**: selecting an object adds `?select=` to the URL (for example `?select=iface:br-ex` on the physical view or
   `?select=switch:join` on a logical view). Opening that URL selects the object again.
 

@@ -12,8 +12,7 @@ import { FindingSubjectAnchor, HideInfoSwitch, SeverityIcon } from './FindingsVi
  * so the page opens with the object selected and its drawer showing the finding.
  *
  * `FindingsPanel` is the explorer's Findings tab (ovn-recon-gbr.7), at cluster or
- * node scope: counts, every group open, and the hide-info switch. `FindingsCard`, the
- * old overview's tile, draws the same groups closed behind "Show findings".
+ * node scope: counts, every group open, and the hide-info switch.
  */
 
 const subtle: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };

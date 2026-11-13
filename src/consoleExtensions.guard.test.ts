@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { FLAG_RESOURCE_ACTIONS, FLAG_RESOURCE_TABS, TAB_HREF } from './components/consoleIntegration';
+import { BASE_PATH, SHELL_ROUTES } from './routes';
 
 /**
  * Guard for ovn-recon-zdt.7: nothing OVN Recon adds to a console page it does not own
@@ -77,6 +78,19 @@ describe('console-extensions.json integration guard (ovn-recon-zdt.7)', () => {
         expect(routes.map((extension) => extension.properties)).toEqual([
             { exact: false, path: '/ovn-recon', component: { $codeRef: 'OvnReconApp' } },
         ]);
+    });
+
+    it('documents in the README exactly the paths the shell serves (ovn-recon-gbr.10)', () => {
+        // The README's route table lists the page route itself and every path the
+        // shell's nested routes serve beneath it, and nothing else.
+        const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf-8');
+        const documented = [...readme.matchAll(/^\| `(\/ovn-recon[^`]*)` \|/gm)].map((match) => match[1]).sort();
+        const [route] = extensions.filter((extension) => extension.type === 'console.page/route');
+        const served = [
+            route.properties.path as string,
+            ...Object.values(SHELL_ROUTES).map((pattern) => `${BASE_PATH}/${pattern}`),
+        ].sort();
+        expect(documented).toEqual(served);
     });
 
     it('exposes only modules an extension references', () => {

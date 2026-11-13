@@ -5,7 +5,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
 import { NodeNetworkState } from '../types';
-import NodeNetworkStateDetails from './NodeNetworkStateDetails';
+import { NodeNetworkStateBody } from './NodeNetworkStateDetails';
 
 const loadNns = (name: string): NodeNetworkState =>
     JSON.parse(
@@ -30,7 +30,6 @@ jest.mock('./useOvnCollectorFeatureGate', () => ({
 
 jest.mock('react-router', () => ({
     Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={String(to)}>{children}</a>,
-    useParams: () => ({ name: 'worker-routes' }),
     useLocation: () => ({ pathname: '/ovn-recon/node-network-state/worker-routes', search: '', hash: '' }),
     useNavigate: () => jest.fn(),
 }));
@@ -41,7 +40,7 @@ jest.mock('./NodeVisualization', () => ({
     default: () => <div data-testid="node-visualization" />,
 }));
 
-describe('NodeNetworkStateDetails main routing table (ovn-recon-dp7.2)', () => {
+describe('NodeNetworkStateBody main routing table (ovn-recon-dp7.2)', () => {
     let container: HTMLDivElement;
     let root: Root;
 
@@ -65,7 +64,7 @@ describe('NodeNetworkStateDetails main routing table (ovn-recon-dp7.2)', () => {
 
     it('offers the main table from the page header, default routes pinned and the preferred one marked', () => {
         mockNns = loadNns('kernel-routes');
-        act(() => root.render(<NodeNetworkStateDetails />));
+        act(() => root.render(<NodeNetworkStateBody name="worker-routes" />));
         expand();
 
         const summaries = Array.from(section()!.querySelectorAll('[data-testid="kernel-route-summary"]'))
@@ -84,7 +83,7 @@ describe('NodeNetworkStateDetails main routing table (ovn-recon-dp7.2)', () => {
 
     it('leaves the section out when NodeNetworkState reports no main-table routes', () => {
         mockNns = loadNns('basic-host');
-        act(() => root.render(<NodeNetworkStateDetails />));
+        act(() => root.render(<NodeNetworkStateBody name="worker-routes" />));
         expect(container.querySelector('[data-testid="node-visualization"]')).not.toBeNull();
         expect(section()).toBeNull();
     });

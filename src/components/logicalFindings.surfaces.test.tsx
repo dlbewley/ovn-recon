@@ -5,7 +5,7 @@ import { act } from 'react';
 import { LogicalDatabase, LogicalTopologySnapshot, Pod } from '../types';
 import ConstructDrawerBody from './ConstructDrawerBody';
 import { buildLadderModel } from './logicalLadderModel';
-import NodeLogicalTopologyDetails from './NodeLogicalTopologyDetails';
+import { NodeLogicalTopologyBody } from './NodeLogicalTopologyDetails';
 import { TestRouter } from './testRouter';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
@@ -34,7 +34,6 @@ jest.mock('./useOvnCollectorFeatureGate', () => ({
 jest.mock('react-router', () => ({
     ...jest.requireActual('react-router'),
     Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={String(to)}>{children}</a>,
-    useParams: () => ({ name: 'cnv-1' }),
 }));
 
 const snapshotWith = (vary: (snapshot: LogicalTopologySnapshot) => void): LogicalTopologySnapshot => {
@@ -67,7 +66,7 @@ describe('logical findings on their surfaces', () => {
         await act(async () => {
             root.render(
                 <TestRouter initialEntry="/ovn-recon/ovn/cnv-1">
-                    <NodeLogicalTopologyDetails />
+                    <NodeLogicalTopologyBody name="cnv-1" />
                 </TestRouter>,
             );
         });
