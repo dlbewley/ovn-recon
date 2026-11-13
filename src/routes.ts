@@ -27,7 +27,9 @@ import { constructSelectValue, encodeSelectValue, withSelectParam } from './comp
  * `?select=`, `?tab=`, `?q=` and `?port=` keep their meaning. The explorer shell
  * (`OvnReconApp`, ovn-recon-gbr.4) serves every path here under one console route
  * through `SHELL_ROUTES`, except the node Findings tab, which has a builder and a
- * table entry but no route until ovn-recon-gbr.7.
+ * table entry but no route until ovn-recon-gbr.7. Each scope draws its own: Cluster
+ * (gbr.4), a node (`NodeScope`, gbr.5) and a network (`NetworkScope`, gbr.6, one view
+ * and so no tabs).
  *
  * The other modules that used to build these paths re-export the builders under their
  * old names (physicalViewPath, nodeLadderPath, NETWORKS_PATH, ...), so call sites did
