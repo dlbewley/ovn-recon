@@ -66,6 +66,7 @@ import { FindingsSection } from '../insights/ui/FindingsViews';
 import { useHideInfoFindings } from '../insights/ui/useFindings';
 import { useLogicalFindings } from '../insights/ui/useLogicalFindings';
 import { useNodePods } from '../insights/ui/useLogicalInputs';
+import { nodePhysicalPath, overviewPath } from '../routes';
 import { getResourcePath } from '../topology/links';
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
@@ -311,7 +312,7 @@ const ConstructDetails: React.FC = () => {
 
     const nodeHref = React.useCallback((target: string) => nodeLadderPath(target), []);
     const physicalHref = React.useCallback(
-        (target: string) => `/ovn-recon/node-network-state/${encodeURIComponent(target)}`,
+        (target: string) => nodePhysicalPath(target),
         [],
     );
 
@@ -374,7 +375,7 @@ const ConstructDetails: React.FC = () => {
         <PageSection>
             <Breadcrumb>
                 <BreadcrumbItem>
-                    <Link to="/ovn-recon">OVN Recon</Link>
+                    <Link to={overviewPath()}>OVN Recon</Link>
                 </BreadcrumbItem>
                 <BreadcrumbItem>
                     <Link to={clusterLadderPath(selectValue)}>Cluster logical topology</Link>

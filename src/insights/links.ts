@@ -1,6 +1,6 @@
 import { networkPath } from '../components/networkPageModel';
 import type { NetworkAddress } from '../components/networkPageModel';
-import { withSelectParam } from '../components/useSelectParam';
+import { nodePhysicalPath } from '../routes';
 import { graphNodeIdForRef } from './refs';
 import type { Finding, K8sRef } from './types';
 
@@ -22,8 +22,7 @@ export const refLabel = (ref: K8sRef): string =>
     `${ref.kind} ${ref.namespace ? `${ref.namespace}/` : ''}${ref.name}`;
 
 /** The physical page of one node, with `?select=` on one of its graph nodes. */
-export const nodePagePath = (node: string, graphNodeId?: string): string =>
-    `/ovn-recon/node-network-state/${encodeURIComponent(node)}${graphNodeId ? withSelectParam('', graphNodeId) : ''}`;
+export const nodePagePath = (node: string, graphNodeId?: string): string => nodePhysicalPath(node, graphNodeId);
 
 export interface FindingLink {
     /** A route inside the plugin, for a router Link. */

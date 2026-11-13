@@ -11,6 +11,7 @@ import { getRunningRoutes, NODE_VTEPS_ANNOTATION } from './nodeVisualizationSele
 import { MAIN_TABLE_ID } from './kernelRoutes';
 import KernelRouteTable, { InterfaceSelector } from './KernelRouteTable';
 import { logicalViewPath, physicalViewPath } from './networkPageModel';
+import { nodeLogicalPath, overviewPath } from '../routes';
 import { readSelectParam, withSelectParam } from './useSelectParam';
 import { buildGraphContext } from '../topology/context';
 import { resolveInterfaceLinkRef } from '../topology/ids';
@@ -225,14 +226,14 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({ name
                     <>
                         <Breadcrumb>
                             <BreadcrumbItem>
-                                <Link to="/ovn-recon">OVN Recon</Link>
+                                <Link to={overviewPath()}>OVN Recon</Link>
                             </BreadcrumbItem>
                             <BreadcrumbItem isActive>{displayName}</BreadcrumbItem>
                         </Breadcrumb>
                         <Title headingLevel="h1" className="pf-u-mt-lg">Node Network Topology: {displayName}</Title>
                         {ovnCollectorEnabled && (
                             <p className="pf-u-mt-sm">
-                                <Link to={`/ovn-recon/ovn/${encodeURIComponent(displayName)}`}>
+                                <Link to={nodeLogicalPath(displayName)}>
                                     View logical OVN topology for this node
                                 </Link>
                             </p>
@@ -302,7 +303,7 @@ export const NoNodeNetworkState: React.FC<{ name: string; reason?: string }> = (
                         named {name}.
                     </>
                 )}{' '}
-                <Link to="/ovn-recon">Open OVN Recon</Link>.
+                <Link to={overviewPath()}>Open OVN Recon</Link>.
             </EmptyStateBody>
         </EmptyState>
     </PageSection>

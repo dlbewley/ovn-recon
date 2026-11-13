@@ -12,7 +12,7 @@ import {
     parseNadConfig,
     PrimaryNetworkMatch
 } from './nodeVisualizationSelectors';
-import { withSelectParam } from './useSelectParam';
+import { NETWORKS_PATH, networkPath, nodeLogicalPath, nodePhysicalPath, parseNetworkPath } from '../routes';
 import { getActiveBridgeMappings, getBridgeUplinks, getLocalnetNetworks } from '../insights/network';
 import { cudnRef, nadRef, udnRef } from '../insights/refs';
 import type { K8sRef } from '../insights/types';
@@ -46,7 +46,7 @@ import type {
 
 export type NetworkKind = 'cudn' | 'udn' | 'nad';
 
-export const NETWORKS_PATH = '/ovn-recon/networks';
+export { NETWORKS_PATH };
 
 /** Where one network lives: what a network page URL carries. */
 export interface NetworkAddress {
@@ -147,43 +147,13 @@ const asPositive = (value: unknown): number | undefined => {
 
 // --- Paths -------------------------------------------------------------------
 
-/** The network page for an address. */
-export const networkPath = (address: NetworkAddress): string => {
-    const name = encodeURIComponent(address.name);
-    if (address.kind === 'cudn') return `${NETWORKS_PATH}/cudn/${name}`;
-    return `${NETWORKS_PATH}/${address.kind}/${encodeURIComponent(address.namespace || 'default')}/${name}`;
-};
-
-const decode = (value: string): string => {
-    try {
-        return decodeURIComponent(value);
-    } catch {
-        return value;
-    }
-};
-
-/**
- * What a network page URL asks for: the list, one network, or nothing this module
- * serves (a malformed path, which renders the empty state).
- */
-export const parseNetworkPath = (pathname: string): { list: true } | NetworkAddress | null => {
-    const index = pathname.indexOf(NETWORKS_PATH);
-    if (index < 0) return null;
-    const rest = pathname.slice(index + NETWORKS_PATH.length).split('/').filter(Boolean).map(decode);
-    if (rest.length === 0) return { list: true };
-    const [kind, ...parts] = rest;
-    if (kind === 'cudn' && parts.length === 1) return { kind, name: parts[0] };
-    if ((kind === 'udn' || kind === 'nad') && parts.length === 2) {
-        return { kind, namespace: parts[0], name: parts[1] };
-    }
-    return null;
-};
+/** The network page for an address, and what a network page URL asks for: src/routes.ts. */
+export { networkPath, parseNetworkPath };
 
 /** The node's physical view with one graph node selected. */
-export const physicalViewPath = (node: string, selectId?: string): string =>
-    `/ovn-recon/node-network-state/${encodeURIComponent(node)}${selectId ? withSelectParam('', selectId) : ''}`;
+export const physicalViewPath = (node: string, selectId?: string): string => nodePhysicalPath(node, selectId);
 
-export const logicalViewPath = (node: string): string => `/ovn-recon/ovn/${encodeURIComponent(node)}`;
+export const logicalViewPath = (node: string): string => nodeLogicalPath(node);
 
 // --- Owners and records ------------------------------------------------------
 

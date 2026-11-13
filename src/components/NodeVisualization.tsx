@@ -36,6 +36,7 @@ import { countBySeverity, findingsForGraphNode } from '../insights/selectors';
 import type { Finding } from '../insights/types';
 import { describeCounts, FindingsBadge, findingsBadgeWidth, HideInfoSwitch } from '../insights/ui/FindingsViews';
 import { useHideInfoFindings, useNodeFindings, visibleFindings } from '../insights/ui/useFindings';
+import { nodePhysicalPath } from '../routes';
 
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
@@ -121,7 +122,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     const handleHostSelect = (event: React.FormEvent<HTMLSelectElement>) => {
         const value = (event.target as HTMLSelectElement).value;
         if (value) {
-            navigate(`/ovn-recon/node-network-state/${value}`);
+            navigate(nodePhysicalPath(value));
         }
     };
 

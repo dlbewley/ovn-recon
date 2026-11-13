@@ -1,10 +1,11 @@
+import { constructDetailPath } from '../routes';
+import type { DetailLinkOptions } from '../routes';
 import { LadderConstruct } from './logicalLadderModel';
-import { constructSelectValue, withSelectParam } from './useSelectParam';
 
 /**
  * Addresses of the construct detail page (ovn-recon-e2b.8):
  *
- *   /ovn-recon/ovn/:node/:kind/:name?tab=&q=&port=
+ *   /ovn-recon/ovn/:node/:kind/:name?tab=&q=&port=   (built in src/routes.ts)
  *
  * `node` is the zone whose northbound database the page shows, `kind` is
  * LadderConstruct.kind (switch or router; bridge mappings are synthesized and
@@ -41,29 +42,8 @@ export const isDetailKind = (value: string | null | undefined): value is DetailK
 /** Switches and routers have a detail page; bridge mappings do not. */
 export const hasDetailPage = (construct: Pick<LadderConstruct, 'kind'>): boolean => isDetailKind(construct.kind);
 
-export interface DetailLinkOptions {
-    tab?: ConstructDetailTab;
-    q?: string;
-    port?: string;
-}
-
-/** The search string for the page's own parameters; overview is the default tab. */
-export const detailSearch = ({ tab, q, port }: DetailLinkOptions = {}): string => {
-    const params = new URLSearchParams();
-    if (tab && tab !== 'overview') params.set('tab', tab);
-    if (q) params.set('q', q);
-    if (port) params.set('port', port);
-    const search = params.toString();
-    return search ? `?${search}` : '';
-};
-
-export const constructDetailPath = (
-    node: string,
-    kind: DetailKind,
-    name: string,
-    options: DetailLinkOptions = {},
-): string =>
-    `/ovn-recon/ovn/${encodeURIComponent(node)}/${kind}/${encodeURIComponent(name)}${detailSearch(options)}`;
+export type { DetailLinkOptions } from '../routes';
+export { constructDetailPath, detailSearch } from '../routes';
 
 /**
  * The name of the same construct in another node's zone. OVN-Kubernetes names
@@ -110,13 +90,8 @@ export const detailHrefFor = (
     return (tab, options = {}) => constructDetailPath(node, kind, construct.name, { ...options, tab });
 };
 
-/** The node ladder, opened on a construct. */
-export const nodeLadderPath = (node: string, construct?: Pick<LadderConstruct, 'kind' | 'name'>): string =>
-    `/ovn-recon/ovn/${encodeURIComponent(node)}${construct ? withSelectParam('', constructSelectValue(construct)) : ''}`;
-
-/** The cluster ladder, opened on a construct. */
-export const clusterLadderPath = (construct?: Pick<LadderConstruct, 'kind' | 'name'>): string =>
-    `/ovn-recon/ovn${construct ? withSelectParam('', constructSelectValue(construct)) : ''}`;
+/** The node ladder and the cluster ladder, opened on a construct. */
+export { clusterLogicalPath as clusterLadderPath, nodeLogicalPath as nodeLadderPath } from '../routes';
 
 /**
  * The search string with `updates` applied: a null or empty value removes the

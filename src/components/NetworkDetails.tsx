@@ -48,6 +48,7 @@ import {
     PlacementUplink,
     placementSummary,
 } from './networkPageModel';
+import { overviewPath } from '../routes';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 
 /**
@@ -359,7 +360,7 @@ const displayName = (record: { name: string; namespace?: string }): string =>
 const Breadcrumbs: React.FC<{ current?: string }> = ({ current }) => (
     <Breadcrumb>
         <BreadcrumbItem>
-            <Link to="/ovn-recon">OVN Recon</Link>
+            <Link to={overviewPath()}>OVN Recon</Link>
         </BreadcrumbItem>
         {/* Direct children only: Breadcrumb gives each item after the first its
             separator, and does not look inside a fragment. */}

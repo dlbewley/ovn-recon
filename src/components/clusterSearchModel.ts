@@ -17,7 +17,8 @@ import { getResourcePath } from '../topology/links';
 import { networkCidr, ParsedPrefix, parsePrefix, prefixContains } from './ipPrefix';
 import { buildKernelRouteTables, kernelTableLabel, KernelRouteRow, KernelRouteTableGroup } from './kernelRoutes';
 import { getRunningRoutes } from './nodeVisualizationSelectors';
-import { constructSelectValue, encodeSelectValue, withSelectParam } from './useSelectParam';
+import { clusterLogicalPath, nodeLogicalPath, nodePhysicalPath, overviewSearchPath, SEARCH_PARAM } from '../routes';
+import { encodeSelectValue } from './useSelectParam';
 
 /**
  * The cluster-wide search behind the overview's search box (ovn-recon-tpp.2):
@@ -131,7 +132,7 @@ export const describeSearchQuery = (query: SearchQuery): string => {
  * the overview on a search. This is the page's own URL: the rule that query
  * strings never reach the collector does not apply to it.
  */
-export const SEARCH_PARAM = 'q';
+export { SEARCH_PARAM };
 
 /** The submitted search in a location's search string; '' when absent. */
 export const readSearchParam = (search: string): string =>
@@ -159,7 +160,7 @@ export const withSearchParam = (search: string, value: string): string => {
 };
 
 /** The overview opened on a search: the target of a "Find in cluster" link. */
-export const overviewSearchPath = (text: string): string => `/ovn-recon${withSearchParam('', text)}`;
+export { overviewSearchPath };
 
 /* ------------------------------------------------------------------ */
 /* Links                                                               */
@@ -179,16 +180,13 @@ export interface SearchConstruct {
 }
 
 /** A node's logical view, with a switch or router selected when one is given. */
-export const logicalViewPath = (node: string, construct?: SearchConstruct): string =>
-    `/ovn-recon/ovn/${encodeURIComponent(node)}${construct ? withSelectParam('', constructSelectValue(construct)) : ''}`;
+export const logicalViewPath = (node: string, construct?: SearchConstruct): string => nodeLogicalPath(node, construct);
 
 /** The cluster logical view with a switch or router selected. */
-export const clusterViewPath = (construct: SearchConstruct): string =>
-    `/ovn-recon/ovn${withSelectParam('', constructSelectValue(construct))}`;
+export const clusterViewPath = (construct: SearchConstruct): string => clusterLogicalPath(construct);
 
 /** A node's physical view, with a canonical node id (`iface:br-ex`) selected when one is given. */
-export const physicalViewPath = (node: string, nodeId?: string): string =>
-    `/ovn-recon/node-network-state/${encodeURIComponent(node)}${nodeId ? withSelectParam('', nodeId) : ''}`;
+export const physicalViewPath = (node: string, nodeId?: string): string => nodePhysicalPath(node, nodeId);
 
 const logicalLink = (node: string, construct: SearchConstruct): SearchLink =>
     ({ view: 'logical', label: 'Logical view', href: logicalViewPath(node, construct) });
