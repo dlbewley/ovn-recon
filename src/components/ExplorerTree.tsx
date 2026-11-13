@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { SearchInput, Switch, TreeView, TreeViewDataItem } from '@patternfly/react-core';
+import { SearchIcon } from '@patternfly/react-icons';
 
 import type { SeverityCounts } from '../insights/selectors';
 import { describeCounts, SeverityIcon } from '../insights/ui/FindingsViews';
@@ -10,6 +11,7 @@ import {
     ExplorerTreeNode,
     flattenTree,
     treeHasFindings,
+    treeHasMatches,
 } from './explorerTreeModel';
 
 /**
@@ -20,6 +22,8 @@ import {
  *
  * Findings (ovn-recon-gbr.7): an item with findings ends in its worst severity's icon
  * and how many it has; "With findings only" is offered while anything has findings.
+ * Search (ovn-recon-gbr.8): an item holding results of the open search ends in a
+ * search icon and how many; "Search matches only" is offered while any does.
  */
 
 /** Shrinks to an ellipsis rather than pushing the badge out of the row. */
@@ -35,8 +39,12 @@ const subtle: React.CSSProperties = {
     color: 'var(--pf-t--global--text--color--subtle)',
     marginInlineStart: 'var(--pf-t--global--spacer--sm)',
     fontSize: 'var(--pf-t--global--font--size--sm)',
-    // The role or kind gives way; the name does not.
-    flex: '0 1 auto',
+    // The role or kind starts at no width and takes only the room left over, so it
+    // gives way first; the name shrinks only when it and the marks alone do not fit.
+    // (Shrinking both by share would cut a name that fits by a fraction of a pixel,
+    // which is enough to draw its ellipsis.)
+    flex: '1 1 0px',
+    maxWidth: 'max-content',
 };
 
 /**
@@ -71,6 +79,27 @@ const FindingsBadge: React.FC<{ id: string; counts: SeverityCounts }> = ({ id, c
     );
 };
 
+/** An item's search results: a search icon and the count, read out in full. */
+const MatchesMark: React.FC<{ id: string; count: number }> = ({ id, count }) => {
+    const label = `${count} search ${count === 1 ? 'match' : 'matches'}`;
+    return (
+        <span
+            data-testid={`explorer-tree-matches-${id}`}
+            title={label}
+            style={{
+                flex: 'none',
+                marginInlineStart: 'var(--pf-t--global--spacer--sm)',
+                fontSize: 'var(--pf-t--global--font--size--sm)',
+                color: 'var(--pf-t--global--text--color--link--default)',
+            }}
+        >
+            <SearchIcon />
+            <span aria-hidden> {count}</span>
+            <span className="pf-v6-screen-reader">{`, ${label}`}</span>
+        </span>
+    );
+};
+
 export interface ExplorerTreeProps {
     nodes: ExplorerTreeNode[];
     networks: ExplorerTreeNetwork[];
@@ -84,6 +113,9 @@ export interface ExplorerTreeProps {
     /** "With findings only" is on. */
     findingsOnly: boolean;
     onFindingsOnlyChange: (on: boolean) => void;
+    /** "Search matches only" is on. */
+    matchesOnly: boolean;
+    onMatchesOnlyChange: (on: boolean) => void;
     /** A leaf was chosen: Cluster, a node, a network, or "Show N more". */
     onSelectItem: (item: ExplorerTreeItem) => void;
 }
@@ -98,15 +130,12 @@ const toTreeData = (item: ExplorerTreeItem): TreeViewDataItem => ({
             title={item.detail ? `${item.label} (${item.detail})` : item.label}
             style={{ display: 'flex', alignItems: 'baseline', minWidth: 0, whiteSpace: 'nowrap' }}
         >
-            {/*
-              * The name keeps its width (a share of a few pixels would still end it in an
-              * ellipsis); only a name longer than the row is cut, short of the badge.
-              */}
-            <span style={{ ...shrinkable, flex: '0 0 auto', maxWidth: item.findings ? 'calc(100% - 3rem)' : '100%' }}>
+            <span style={{ ...shrinkable, flex: '0 1 auto' }}>
                 {item.kind === 'more' ? <em>{item.label}</em> : item.label}
             </span>
             {item.detail && <span style={subtle}>{item.detail}</span>}
             {item.findings && <FindingsBadge id={item.id} counts={item.findings} />}
+            {item.matches ? <MatchesMark id={item.id} count={item.matches} /> : null}
         </span>
     ),
     ...(item.children ? {
@@ -128,13 +157,16 @@ const ExplorerTree: React.FC<ExplorerTreeProps> = ({
     showAllNetworks,
     findingsOnly,
     onFindingsOnlyChange,
+    matchesOnly,
+    onMatchesOnlyChange,
     onSelectItem,
 }) => {
     const items = React.useMemo(
-        () => buildExplorerTree({ nodes, networks, filter, openGroups, showAllNetworks, selectedId, findingsOnly }),
-        [nodes, networks, filter, openGroups, showAllNetworks, selectedId, findingsOnly],
+        () => buildExplorerTree({ nodes, networks, filter, openGroups, showAllNetworks, selectedId, findingsOnly, matchesOnly }),
+        [nodes, networks, filter, openGroups, showAllNetworks, selectedId, findingsOnly, matchesOnly],
     );
     const offerFindingsOnly = React.useMemo(() => treeHasFindings(nodes, networks), [nodes, networks]);
+    const offerMatchesOnly = React.useMemo(() => treeHasMatches(nodes, networks), [nodes, networks]);
     const byId = React.useMemo(() => new Map(flattenTree(items).map((item) => [item.id, item])), [items]);
     const data = React.useMemo(() => items.map(toTreeData), [items]);
     const active = React.useMemo(
@@ -159,6 +191,16 @@ const ExplorerTree: React.FC<ExplorerTreeProps> = ({
                         label="With findings only"
                         isChecked={findingsOnly}
                         onChange={(_event, checked) => onFindingsOnlyChange(checked)}
+                    />
+                </div>
+            )}
+            {offerMatchesOnly && (
+                <div style={{ marginBlockStart: 'var(--pf-t--global--spacer--sm)' }}>
+                    <Switch
+                        id="explorer-tree-matches-only"
+                        label="Search matches only"
+                        isChecked={matchesOnly}
+                        onChange={(_event, checked) => onMatchesOnlyChange(checked)}
                     />
                 </div>
             )}

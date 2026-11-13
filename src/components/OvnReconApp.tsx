@@ -27,6 +27,7 @@ import {
     viewForLocation,
 } from '../routes';
 import { ClusterSearchInput, ClusterSearchRoute, useClusterSearch } from './ClusterSearch';
+import { searchMarksOf } from './clusterSearchModel';
 import {
     ClusterFindingsTab,
     ClusterLogicalTab,
@@ -158,14 +159,28 @@ const OvnReconApp: React.FC = () => {
     const onSearchTab = view?.scope === 'cluster' && view.tab === 'search';
 
     // Search lives at its own path, never as `?q=` on whatever page is open (the
-    // construct page reads `?q=` as its own filter).
+    // construct page reads `?q=` as its own filter). Once open it stays open while
+    // the user follows a result elsewhere (ovn-recon-gbr.8): the Search results tab,
+    // the box and the tree's marks keep it until the box is cleared. It is component
+    // state, so a trip to another console page closes it; Back reopens it from its URL.
+    const urlSearch = onSearchTab ? (view.params.q ?? '').trim() : null;
+    const [openSearch, setOpenSearch] = React.useState(urlSearch ?? '');
+    React.useEffect(() => {
+        if (urlSearch !== null) setOpenSearch(urlSearch);
+    }, [urlSearch]);
+    const [matchesOnly, setMatchesOnly] = React.useState(false);
     const searchRoute = React.useMemo<ClusterSearchRoute>(() => ({
-        submitted: onSearchTab ? view.params.q ?? '' : '',
+        submitted: urlSearch ?? openSearch,
         go: (text: string) => {
-            if (text !== '') navigate(searchPath(text));
-            else if (onSearchTab) navigate(overviewPath());
+            if (text !== '') {
+                navigate(searchPath(text));
+                return;
+            }
+            setOpenSearch('');
+            setMatchesOnly(false);
+            if (onSearchTab) navigate(overviewPath());
         },
-    }), [onSearchTab, view, navigate]);
+    }), [urlSearch, openSearch, onSearchTab, navigate]);
     const search = useClusterSearch({
         nodeNetworkStates: data.nodeNetworkStates ?? undefined,
         nodes: data.nodes,
@@ -175,6 +190,13 @@ const OvnReconApp: React.FC = () => {
         gateLoaded: data.collector.gateLoaded,
         route: searchRoute,
     });
+    // The marks are the answer to the search that is open, never the last one's
+    // while the next is under way.
+    const marks = React.useMemo(() => {
+        const current = search.results && search.query
+            && search.results.query.kind === search.query.kind && search.results.query.value === search.query.value;
+        return searchMarksOf(current ? search.results : null);
+    }, [search.results, search.query]);
 
     // --- The tree's state: kept here so it outlives the tree being collapsed.
     const [collapsed, setCollapsed] = React.useState(false);
@@ -206,15 +228,19 @@ const OvnReconApp: React.FC = () => {
             name: summary.name,
             role: data.roles.get(summary.name) ?? '',
             findings: data.findingCounts.get(summary.name),
+            matches: marks.nodes.get(summary.name),
         })),
-        [data.summaries, data.roles, data.findingCounts],
+        [data.summaries, data.roles, data.findingCounts, marks],
     );
     // Badges are the tables' own counts (ovn-recon-gbr.7): one evaluation, in the shell.
     const treeNetworks = React.useMemo<ExplorerTreeNetwork[]>(
-        () => data.networkRows.map(({ record, findings }) => (record.namespace === undefined
-            ? { kind: record.kind, name: record.name, findings }
-            : { kind: record.kind, namespace: record.namespace, name: record.name, findings })),
-        [data.networkRows],
+        () => data.networkRows.map(({ key, record, findings }) => {
+            const matches = marks.networks.get(key);
+            return record.namespace === undefined
+                ? { kind: record.kind, name: record.name, findings, matches }
+                : { kind: record.kind, namespace: record.namespace, name: record.name, findings, matches };
+        }),
+        [data.networkRows, marks],
     );
 
     const selectItem = (item: ExplorerTreeItem) => {
@@ -292,6 +318,8 @@ const OvnReconApp: React.FC = () => {
                     showAllNetworks={showAllNetworks}
                     findingsOnly={findingsOnly}
                     onFindingsOnlyChange={setFindingsOnly}
+                    matchesOnly={matchesOnly}
+                    onMatchesOnlyChange={setMatchesOnly}
                     onSelectItem={selectItem}
                 />
             </DrawerPanelBody>
@@ -352,7 +380,7 @@ const OvnReconApp: React.FC = () => {
                     {/* minWidth 0: a wide table scrolls inside the content, never shifting the tree out of view. */}
                     <DrawerContent panelContent={panel} style={{ minWidth: 0 }}>
                         {view?.scope === 'cluster' && (
-                            <ClusterScopeHeader tab={view.tab} data={data} query={view.params.q} />
+                            <ClusterScopeHeader tab={view.tab} data={data} query={searchRoute.submitted} />
                         )}
                         {view?.scope === 'node' && <NodeScopeHeader view={view} data={data} />}
                         {view?.scope === 'network' && <NetworkScopeHeader view={view} data={data} />}

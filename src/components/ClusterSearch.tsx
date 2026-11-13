@@ -537,8 +537,9 @@ export interface ClusterSearchState {
 }
 
 /**
- * The lookup behind the search, for whichever component owns it: the overview's
- * card today. It reads the submitted text from the page URL, asks the collector
+ * The lookup behind the search, for whichever component owns it: the explorer
+ * shell, which also marks the tree from its answer (ovn-recon-gbr.8), or the old
+ * overview's card. It reads the submitted text from its `route` or the page URL, asks the collector
  * when that text changes, and merges the answer with the sources it is handed.
  */
 export const useClusterSearch = ({

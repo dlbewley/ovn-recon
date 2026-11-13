@@ -34,13 +34,13 @@ const plural = (count: number, noun: string): string => `${count} ${noun}${count
 export interface ClusterScopeHeaderProps {
     tab: ClusterTab;
     data: ExplorerData;
-    /** The search text, for the Search results tab's link. */
+    /** The open search, if any: the Search results tab shows while there is one, and links to it. */
     query?: string;
 }
 
 /**
  * The scope's header and its tabs (`ScopeTabs`, links to their own URLs). The
- * Search results tab is there only while a search is open; the Logical topology
+ * Search results tab is there while a search is open, on any tab, until it is cleared; the Logical topology
  * tab only while the collector is on (or its URL is open).
  */
 export const ClusterScopeHeader: React.FC<ClusterScopeHeaderProps> = ({ tab, data, query }) => {
@@ -52,7 +52,8 @@ export const ClusterScopeHeader: React.FC<ClusterScopeHeaderProps> = ({ tab, dat
     if (data.showLogical || tab === 'logical') {
         tabs.push({ key: 'logical', title: 'Logical topology', path: clusterLogicalPath() });
     }
-    if (tab === 'search') tabs.push({ key: 'search', title: 'Search results', path: searchPath(query ?? '') });
+    // Open until the search is cleared, so a followed result can come back to it (ovn-recon-gbr.8).
+    if (tab === 'search' || query) tabs.push({ key: 'search', title: 'Search results', path: searchPath(query ?? '') });
 
     return (
         <PageSection padding={{ default: 'noPadding' }} style={{ paddingInline: 'var(--pf-t--global--spacer--lg)', paddingBlockStart: 'var(--pf-t--global--spacer--md)' }}>

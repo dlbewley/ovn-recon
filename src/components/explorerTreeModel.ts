@@ -16,8 +16,12 @@ import { NETWORK_KIND_LABEL } from './overviewModel';
  * Findings (ovn-recon-gbr.7): a node or network with findings carries their counts as
  * a badge, and so does a closed group with such a member. The counts are the shell's
  * one evaluation (the node table's and the networks table's own), never worked out
- * here. "With findings only" narrows both groups to those members. The matches-only
- * switch is ovn-recon-gbr.8.
+ * here. "With findings only" narrows both groups to those members.
+ *
+ * Search (ovn-recon-gbr.8): while a search is open, a node or network holding results
+ * carries their count as a mark, and a closed group the sum. "With search matches
+ * only" narrows the tree to them. The counts are the shell's one lookup
+ * (`searchMarksOf`). With both switches on, an item must have both.
  */
 
 /** How many networks the tree lists before "Show N more". */
@@ -55,6 +59,8 @@ export interface ExplorerTreeItem {
      * (after the filter, before the cap). Unset when there are none to show.
      */
     findings?: SeverityCounts;
+    /** Search results it holds, or on a closed group its members' sum. Unset for none. */
+    matches?: number;
 }
 
 export interface ExplorerTreeNode {
@@ -63,10 +69,15 @@ export interface ExplorerTreeNode {
     role: string;
     /** The node's findings, as the node table counts them. */
     findings?: SeverityCounts;
+    /** Results of the open search on the node. */
+    matches?: number;
 }
 
-/** A network as the tree needs it: its address, and its findings as the networks table counts them. */
-export type ExplorerTreeNetwork = NetworkAddress & { findings?: SeverityCounts };
+/**
+ * A network as the tree needs it: its address, its findings as the networks table
+ * counts them, and the open search's results on it.
+ */
+export type ExplorerTreeNetwork = NetworkAddress & { findings?: SeverityCounts; matches?: number };
 
 export interface ExplorerTreeInput {
     nodes: ExplorerTreeNode[];
@@ -86,6 +97,8 @@ export interface ExplorerTreeInput {
      * offers cannot leave it empty.
      */
     findingsOnly?: boolean;
+    /** "Search matches only", likewise ignored while nothing holds a match. */
+    matchesOnly?: boolean;
     limit?: number;
 }
 
@@ -112,6 +125,15 @@ const hasFindings = (counts: SeverityCounts | undefined): counts is SeverityCoun
 /** Some node or network has findings: the tree offers "With findings only". */
 export const treeHasFindings = (nodes: ExplorerTreeNode[], networks: ExplorerTreeNetwork[]): boolean =>
     nodes.some((node) => hasFindings(node.findings)) || networks.some((network) => hasFindings(network.findings));
+
+/** Some node or network holds a result of the open search: the tree offers "Search matches only". */
+export const treeHasMatches = (nodes: ExplorerTreeNode[], networks: ExplorerTreeNetwork[]): boolean =>
+    nodes.some((node) => (node.matches ?? 0) > 0) || networks.some((network) => (network.matches ?? 0) > 0);
+
+const sumMatches = (items: ExplorerTreeItem[]): number | undefined => {
+    const total = items.reduce((sum, item) => sum + (item.matches ?? 0), 0);
+    return total > 0 ? total : undefined;
+};
 
 /** Members' counts added up; undefined when none has findings. */
 const sumFindings = (items: ExplorerTreeItem[]): SeverityCounts | undefined => {
@@ -143,13 +165,19 @@ export const buildExplorerTree = ({
     showAllNetworks,
     selectedId,
     findingsOnly = false,
+    matchesOnly = false,
     limit = TREE_NETWORK_LIMIT,
 }: ExplorerTreeInput): ExplorerTreeItem[] => {
-    const matches = matcher(filter);
+    const named = matcher(filter);
     const onlyFindings = findingsOnly && treeHasFindings(nodes, networks);
-    const filtering = filter.trim() !== '' || onlyFindings;
-    const kept = (item: ExplorerTreeItem): boolean =>
-        matches(item.label) && (!onlyFindings || item.findings !== undefined || item.id === selectedId);
+    const onlyMatches = matchesOnly && treeHasMatches(nodes, networks);
+    const filtering = filter.trim() !== '' || onlyFindings || onlyMatches;
+    const kept = (item: ExplorerTreeItem): boolean => named(item.label) && (item.id === selectedId || (
+        (!onlyFindings || item.findings !== undefined) && (!onlyMatches || item.matches !== undefined)));
+    const marks = (counts: { findings?: SeverityCounts; matches?: number }) => ({
+        ...(hasFindings(counts.findings) ? { findings: counts.findings } : {}),
+        ...((counts.matches ?? 0) > 0 ? { matches: counts.matches } : {}),
+    });
 
     const nodeItems = nodes
         .map((node): ExplorerTreeItem => ({
@@ -158,7 +186,7 @@ export const buildExplorerTree = ({
             label: node.name,
             detail: node.role || undefined,
             node: node.name,
-            ...(hasFindings(node.findings) ? { findings: node.findings } : {}),
+            ...marks(node),
         }))
         .filter(kept);
 
@@ -171,7 +199,7 @@ export const buildExplorerTree = ({
             network: network.namespace === undefined
                 ? { kind: network.kind, name: network.name }
                 : { kind: network.kind, namespace: network.namespace, name: network.name },
-            ...(hasFindings(network.findings) ? { findings: network.findings } : {}),
+            ...marks(network),
         }))
         .filter(kept);
 
@@ -192,6 +220,7 @@ export const buildExplorerTree = ({
     // An open group shows its members' badges; a closed one carries them.
     const group = (id: string, label: string, members: ExplorerTreeItem[], children: ExplorerTreeItem[], open: boolean): ExplorerTreeItem => {
         const findings = open ? undefined : sumFindings(members);
+        const matched = open ? undefined : sumMatches(members);
         return {
             id,
             kind: 'group',
@@ -200,6 +229,7 @@ export const buildExplorerTree = ({
             count: members.length,
             expanded: open,
             ...(findings ? { findings } : {}),
+            ...(matched ? { matches: matched } : {}),
         };
     };
 

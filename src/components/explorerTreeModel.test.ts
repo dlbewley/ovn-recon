@@ -12,6 +12,7 @@ import {
     NODES_GROUP_ID,
     selectedItemId,
     treeHasFindings,
+    treeHasMatches,
 } from './explorerTreeModel';
 
 const nodes = [
@@ -177,6 +178,49 @@ describe('explorerTreeModel', () => {
             expect(flattenTree(tree).some((candidate) => candidate.findings)).toBe(false);
             expect(tree.map((candidate) => candidate.expanded)).toEqual([undefined, false, false]);
             expect(childIds(tree, NETWORKS_GROUP_ID)).toHaveLength(11);
+        });
+    });
+
+    describe('search matches (ovn-recon-gbr.8)', () => {
+        const withMatches = {
+            nodes: nodes.map((node) => (node.name === 'worker-2' ? { ...node, matches: 3 } : { ...node, matches: 0 })),
+            networks: networks.map((network, index) => (index === 1 ? { ...network, matches: 2 } : network)),
+        };
+        const item = (tree: ExplorerTreeItem[], id: string) => flattenTree(tree).find((candidate) => candidate.id === id);
+
+        it('marks each node and network holding results, and a closed group with their sum', () => {
+            const open = buildExplorerTree(input({ ...withMatches, openGroups: new Set([NODES_GROUP_ID, NETWORKS_GROUP_ID]) }));
+            expect(flattenTree(open).filter((candidate) => candidate.matches).map((candidate) => [candidate.id, candidate.matches]))
+                .toEqual([[nodeItemId('worker-2'), 3], [networkItemId(networks[1]), 2]]);
+            const closed = buildExplorerTree(input({ ...withMatches, openGroups: new Set() }));
+            expect([group(closed, NODES_GROUP_ID).matches, group(closed, NETWORKS_GROUP_ID).matches]).toEqual([3, 2]);
+            expect(item(closed, nodeItemId('worker-1'))?.matches).toBeUndefined();
+        });
+
+        it('narrows to what holds results with "Search matches only", keeping the selection', () => {
+            const tree = buildExplorerTree(input({ ...withMatches, matchesOnly: true, selectedId: nodeItemId('control-0') }));
+            expect(childIds(tree, NODES_GROUP_ID)).toEqual([nodeItemId('control-0'), nodeItemId('worker-2')]);
+            expect(childIds(tree, NETWORKS_GROUP_ID)).toEqual([networkItemId(networks[1])]);
+            expect(tree.filter((candidate) => candidate.kind === 'group').every((candidate) => candidate.expanded)).toBe(true);
+        });
+
+        it('with both switches on, lists only what has findings and results', () => {
+            const both = {
+                nodes: withMatches.nodes.map((node) => (node.name !== 'control-0'
+                    ? { ...node, findings: { warning: 1, info: 0, total: 1 } } : node)),
+                networks: withMatches.networks,
+            };
+            const tree = buildExplorerTree(input({ ...both, findingsOnly: true, matchesOnly: true }));
+            expect(childIds(tree, NODES_GROUP_ID)).toEqual([nodeItemId('worker-2')]);
+            expect(childIds(tree, NETWORKS_GROUP_ID)).toEqual([]);
+        });
+
+        it('with no open search: no marks, and the switch ignored', () => {
+            expect(treeHasMatches(nodes, networks)).toBe(false);
+            expect(treeHasMatches(withMatches.nodes, withMatches.networks)).toBe(true);
+            const tree = buildExplorerTree(input({ matchesOnly: true, openGroups: new Set() }));
+            expect(flattenTree(tree).some((candidate) => candidate.matches)).toBe(false);
+            expect(childIds(tree, NODES_GROUP_ID)).toHaveLength(3);
         });
     });
 
