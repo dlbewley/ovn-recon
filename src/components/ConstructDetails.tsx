@@ -1,10 +1,8 @@
 import * as React from 'react';
 import { DocumentTitle, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
-import { Link, useLocation, useNavigate, useParams } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import {
     Alert,
-    Breadcrumb,
-    BreadcrumbItem,
     Button,
     EmptyState,
     EmptyStateBody,
@@ -39,7 +37,6 @@ import {
     useSectionStates,
 } from './ConstructDrawerBody';
 import {
-    clusterLadderPath,
     ConstructDetailTab,
     constructDetailPath,
     constructNameForNode,
@@ -66,7 +63,7 @@ import { FindingsSection } from '../insights/ui/FindingsViews';
 import { useHideInfoFindings } from '../insights/ui/useFindings';
 import { useLogicalFindings } from '../insights/ui/useLogicalFindings';
 import { useNodePods } from '../insights/ui/useLogicalInputs';
-import { nodePhysicalPath, overviewPath } from '../routes';
+import { nodePhysicalPath } from '../routes';
 import { getResourcePath } from '../topology/links';
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
@@ -593,65 +590,6 @@ export const ConstructBody: React.FC<ConstructBodyProps> = ({
 };
 
 /**
- * The routed page's own header: document title, breadcrumb and heading. The
- * breadcrumb's two ladder links carry the construct as their selection.
- */
-const ConstructPageHeader: React.FC<{
-    node: string;
-    kind: DetailKind;
-    name: string;
-    construct: LadderConstruct | null;
-}> = ({ node, kind, name, construct }) => {
-    const selectValue = { kind, name };
-    return (
-        <>
-            <DocumentTitle>{`OVN Recon - ${name} (${node})`}</DocumentTitle>
-            <Breadcrumb>
-                <BreadcrumbItem>
-                    <Link to={overviewPath()}>OVN Recon</Link>
-                </BreadcrumbItem>
-                <BreadcrumbItem>
-                    <Link to={clusterLadderPath(selectValue)}>Cluster logical topology</Link>
-                </BreadcrumbItem>
-                <BreadcrumbItem>
-                    <Link to={nodeLadderPath(node, selectValue)}>Logical OVN: {node}</Link>
-                </BreadcrumbItem>
-                <BreadcrumbItem isActive>{name}</BreadcrumbItem>
-            </Breadcrumb>
-            <Title headingLevel="h1" className="pf-u-mt-lg">
-                {construct ? (
-                    <>
-                        {roleIcon(construct.role)} {roleLabel(construct.role)}: <code>{name}</code>
-                    </>
-                ) : (
-                    <code>{name}</code>
-                )}
-            </Title>
-        </>
-    );
-};
-
-/**
- * The routed construct page, /ovn-recon/ovn/:node/:kind/:name. The URL carries
- * the zone and the construct; the body keeps the tab, filter and port in the
- * query string.
- */
-const ConstructDetails: React.FC = () => {
-    const params = useParams<{ node?: string; kind?: string; name?: string }>();
-    const node = params.node ?? '';
-    const kind = params.kind ?? '';
-    const name = params.name ?? '';
-    // The body reaches its header only for a kind it has a page for.
-    const header = React.useCallback(
-        (construct: LadderConstruct | null) => (isDetailKind(kind)
-            ? <ConstructPageHeader node={node} kind={kind} name={name} construct={construct} />
-            : null),
-        [node, kind, name],
-    );
-    return <ConstructBody node={node} kind={kind} name={name} header={header} />;
-};
-
-/**
  * The construct page in the explorer's node scope (ovn-recon-gbr.5): under the
  * shell's node header and tabs, so no breadcrumb, page heading or node select (the
  * node switcher does that job). A smaller heading names the construct and leads
@@ -693,4 +631,3 @@ const EMPTY_CONSTRUCT = {
     kind: 'switch',
 } as unknown as LadderConstruct;
 
-export default ConstructDetails;

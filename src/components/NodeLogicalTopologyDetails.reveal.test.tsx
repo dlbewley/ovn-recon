@@ -2,7 +2,7 @@ import * as React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
-import NodeLogicalTopologyDetails from './NodeLogicalTopologyDetails';
+import { NodeLogicalTopologyBody } from './NodeLogicalTopologyDetails';
 import { TestRouter } from './testRouter';
 import {
     drawnCardBoxIn,
@@ -27,7 +27,6 @@ jest.mock('./useOvnCollectorFeatureGate', () => ({
 jest.mock('react-router', () => ({
     ...jest.requireActual('react-router'),
     Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={String(to)}>{children}</a>,
-    useParams: () => ({ name: 'cnv-1' }),
 }));
 
 /**
@@ -41,7 +40,7 @@ jest.mock('react-router', () => ({
  * the drawer closed and 655px beside a half-width drawer, and the browser's
  * resize notification is delivered by hand once the "layout" has changed.
  */
-describe('NodeLogicalTopologyDetails reveal beside the inline drawer', () => {
+describe('NodeLogicalTopologyBody reveal beside the inline drawer', () => {
     const CLOSED = { width: 1310, height: 700 };
     const OPEN = { width: 655, height: 700 };
 
@@ -76,7 +75,7 @@ describe('NodeLogicalTopologyDetails reveal beside the inline drawer', () => {
         await act(async () => {
             root.render(
                 <TestRouter initialEntry={entry}>
-                    <NodeLogicalTopologyDetails />
+                    <NodeLogicalTopologyBody name="cnv-1" />
                 </TestRouter>,
             );
         });

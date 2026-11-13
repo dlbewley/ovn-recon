@@ -65,14 +65,14 @@ section rules read `ctx.snapshot.database` and `ctx.nodeName` only.
 
 The React side lives in `ui/`, apart from the pure engine:
 
-- `ui/useFindings.ts`: `useNodeFindings` (node page) and `useClusterFindings` (overview)
+- `ui/useFindings.ts`: `useNodeFindings` (node page) and `useClusterFindings` (the explorer shell, once for every scope)
   evaluate in a `useMemo` off the contexts the pages already build, never in graph
   layout; `FindingsEvaluatorContext` lets a test supply an evaluator with extra rules;
   `useHideInfoFindings` is the one "Hide info findings" toggle, kept in `localStorage`
   with every read and write in try/catch.
 - `ui/FindingsViews.tsx`: severity icons (PatternFly status colours, info subdued), the
   drawer's Findings section, the graph decorator and the toggle.
-- `ui/FindingsCard.tsx`: the overview card and its list grouped by rule.
+- `ui/FindingsPanel.tsx`: the explorer's Findings tab, at cluster or node scope, as a list grouped by rule.
 - `links.ts`: console paths for a `K8sRef`, and the `?select=` link to a finding's subject.
 
 The logical surfaces (`ovn-recon-7i6.3`):

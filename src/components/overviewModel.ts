@@ -163,8 +163,6 @@ export const groupFindingsByRule = (
 
 export const NETWORK_KIND_LABEL: Record<NetworkKind, string> = { cudn: 'CUDN', udn: 'UDN', nad: 'NAD' };
 
-/** How many networks the overview lists before it points at the networks page. */
-export const OVERVIEW_NETWORK_LIMIT = 10;
 
 export interface OverviewNetworkRow {
     /** Unique among the rows: kind, namespace and name. */

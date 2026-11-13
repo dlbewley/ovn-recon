@@ -2,15 +2,15 @@ import * as React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
-import NodeLogicalTopologyDetails from './NodeLogicalTopologyDetails';
+import { NodeLogicalTopologyBody } from './NodeLogicalTopologyDetails';
 import { LocationRecord, TestRouter } from './testRouter';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 
-// Mutable so individual tests can vary the node list and the route param;
+// Mutable so individual tests can vary the node list and the viewed node;
 // jest.mock factories may only close over identifiers prefixed `mock`.
 const mockNodeNetworkStates: { metadata: { name: string } }[] = [];
-const mockParams: { name: string } = { name: 'cnv-1' };
+const page: { name: string } = { name: 'cnv-1' };
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     DocumentTitle: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -24,10 +24,9 @@ jest.mock('./useOvnCollectorFeatureGate', () => ({
 jest.mock('react-router', () => ({
     ...jest.requireActual('react-router'),
     Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={String(to)}>{children}</a>,
-    useParams: () => ({ ...mockParams }),
 }));
 
-describe('NodeLogicalTopologyDetails', () => {
+describe('NodeLogicalTopologyBody', () => {
     let container: HTMLDivElement;
     let root: Root;
     let locations: LocationRecord[];
@@ -35,7 +34,7 @@ describe('NodeLogicalTopologyDetails', () => {
     const renderPage = (initialEntry = '/ovn-recon/ovn/cnv-1') =>
         root.render(
             <TestRouter initialEntry={initialEntry} onLocation={(record) => locations.push(record)}>
-                <NodeLogicalTopologyDetails />
+                <NodeLogicalTopologyBody name={page.name} />
             </TestRouter>,
         );
 
@@ -49,24 +48,13 @@ describe('NodeLogicalTopologyDetails', () => {
             json: async () => cnv1,
         }) as unknown as typeof fetch;
         mockNodeNetworkStates.splice(0, mockNodeNetworkStates.length);
-        mockParams.name = 'cnv-1';
+        page.name = 'cnv-1';
     });
 
     afterEach(() => {
         act(() => root.unmount());
         container.remove();
         jest.restoreAllMocks();
-    });
-
-    it('links back to the node physical view, mirroring the physical page', async () => {
-        await act(async () => {
-            renderPage();
-        });
-        const link = [...container.querySelectorAll('a')].find(
-            (anchor) => anchor.textContent === 'View physical topology for this node',
-        );
-        expect(link).toBeDefined();
-        expect(link?.getAttribute('href')).toBe('/ovn-recon/node-network-state/cnv-1');
     });
 
     /**
@@ -145,7 +133,7 @@ describe('NodeLogicalTopologyDetails', () => {
             act(() => { search.dispatchEvent(new Event('input', { bubbles: true })); });
             expect(search.value).toBe('router');
 
-            mockParams.name = 'cnv-2';
+            page.name = 'cnv-2';
             await act(async () => { renderPage(); });
 
             const urls = (global.fetch as jest.Mock).mock.calls.map(([url]) => String(url));

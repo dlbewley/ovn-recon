@@ -1,8 +1,9 @@
 # Physical Node Visualization
 
 This document explains the **physical topology view** at
-`/ovn-recon/node-network-state/:name`: what it draws, where each thing comes
-from, and how far to trust each line. Its logical-view counterpart is
+`/ovn-recon/node-network-state/:name`, a node's **Physical topology** tab in the
+OVN Recon explorer: what it draws, where each thing comes from, and how far to
+trust each line. Its logical-view counterpart is
 [readme-logical-visualization.md](readme-logical-visualization.md).
 
 <a href="img/physical-topology.png"><img src="img/physical-topology.png" width="80%" alt="Physical topology of a node" /></a>
@@ -26,7 +27,7 @@ the node.
 | Resource | Used for |
 |---|---|
 | `NodeNetworkState` of the viewed node | Interfaces, bonds, VLANs, VXLAN devices, bridges and their ports, VRFs, LLDP neighbours, kernel routes, OVN bridge mappings |
-| `NodeNetworkState` of every node | The host selector, and findings that need the whole cluster |
+| `NodeNetworkState` of every node | The explorer's node list and node switcher, and findings that need the whole cluster |
 | `ClusterUserDefinedNetwork`, `UserDefinedNetwork` | The Networks lane and the namespaces attached to each network |
 | `NetworkAttachmentDefinition` | The NADs lane, the network a NAD belongs to, SR-IOV resource names |
 | `RouteAdvertisements` | Which networks a VRF advertises |
@@ -91,10 +92,12 @@ rule and the fields each was read from.
   `?select=iface:br-ex`, `?select=vrf:blue`, `?select=cudn:blue`,
   `?select=udn:ns1/blue` or `?select=nad:ns1/blue`. An unknown value is
   ignored.
-- **Toolbar**: host selector, the lane toggles above, zoom, **Reset view**,
-  and **Legend**.
-- **Main routing table**, above the graph, lists the node's main kernel table
-  and marks which default route is in use when there is more than one.
+- **Toolbar**: the lane toggles above, zoom, **Reset view** and **Legend**.
+  The node's name in the header above the tabs switches to another node and
+  keeps the tab.
+- **Routes**, the node's next tab, lists its main kernel table and marks which
+  default route is in use when there is more than one. An interface in it opens
+  this view with the interface selected.
 
 ## The drawer
 
@@ -113,8 +116,9 @@ Three tabs:
 
 The view flags what looks broken, such as a Localnet network whose physical
 network no node maps to a bridge. A finding shows as a badge on the graph node,
-at the top of that node's drawer with its evidence and a suggested remedy, and
-on the overview page.
+at the top of that node's drawer with its evidence and a suggested remedy, on
+the node's Findings tab, as a badge on the node in the explorer's tree, and on
+the cluster's Findings tab.
 
 The rules, and the list of things deliberately not flagged, are in
 [src/insights/README.md](src/insights/README.md).

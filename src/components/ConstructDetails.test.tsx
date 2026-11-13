@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
-import { NavigationType, Route, Routes } from 'react-router';
+import { NavigationType, Route, Routes, useParams } from 'react-router';
 
 import { LogicalDatabase, LogicalTopologySnapshot } from '../types';
-import ConstructDetails from './ConstructDetails';
+import { ConstructBody } from './ConstructDetails';
 import { fetchClusterTopology, fetchCollectorSnapshot, SnapshotFetchOptions } from './collectorApi';
 import { LocationRecord, TestRouter } from './testRouter';
 import { matchRefs, policyForPort, policyIndexFor } from './policyIndex';
@@ -63,7 +63,17 @@ const FIXTURES: Record<string, unknown> = { 'cnv-1': cnv1, 'cnv-2': cnv2 };
 const requests = () =>
     fetchSnapshot.mock.calls.map(([node, options]) => [node, [...((options as SnapshotFetchOptions | undefined)?.include ?? [])]]);
 
-describe('ConstructDetails', () => {
+/**
+ * The construct body under the construct route, as the explorer shell mounts it. The
+ * routed wrapper and its page chrome are gone (ovn-recon-gbr.10); the URL still
+ * carries the zone and construct, and the body keeps ?tab=, ?q= and ?port=.
+ */
+const RoutedConstructBody: React.FC = () => {
+    const { node = '', kind = '', name = '' } = useParams<{ node?: string; kind?: string; name?: string }>();
+    return <ConstructBody node={node} kind={kind} name={name} />;
+};
+
+describe('ConstructBody', () => {
     let container: HTMLDivElement;
     let root: Root;
     let locations: LocationRecord[];
@@ -77,7 +87,7 @@ describe('ConstructDetails', () => {
             root.render(
                 <TestRouter initialEntry={entry} onLocation={(record) => locations.push(record)}>
                     <Routes>
-                        <Route path="/ovn-recon/ovn/:node/:kind/:name" element={<ConstructDetails />} />
+                        <Route path="/ovn-recon/ovn/:node/:kind/:name" element={<RoutedConstructBody />} />
                         <Route path="*" element={<div data-testid="elsewhere" />} />
                     </Routes>
                 </TestRouter>,
@@ -129,7 +139,6 @@ describe('ConstructDetails', () => {
     describe('rendering', () => {
         it('renders a switch from its node snapshot with the tabs a switch has', async () => {
             await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1');
-            expect(container.querySelector('h1')?.textContent).toContain('cnv-1');
             expect(tabLabels()).toEqual(['Overview', 'Relationships', 'Ports', 'Policy', 'Services', 'Config']);
             expect(activeTab()).toBe('Overview');
             // The overview is the drawer's, without the drawer's own link in.
@@ -154,12 +163,6 @@ describe('ConstructDetails', () => {
             mockGate.enabled = false;
             await renderAt('/ovn-recon/ovn/cnv-1/switch/cnv-1');
             expect(container.textContent).toContain('Logical OVN view is disabled');
-        });
-
-        it('links back to both ladders with select=KIND:NAME', async () => {
-            await renderAt('/ovn-recon/ovn/cnv-1/router/GR_cnv-1');
-            const hrefs = [...container.querySelectorAll('nav a')].map((anchor) => anchor.getAttribute('href'));
-            expect(hrefs).toEqual(['/ovn-recon', '/ovn-recon/ovn?select=router:GR_cnv-1', '/ovn-recon/ovn/cnv-1?select=router:GR_cnv-1']);
         });
     });
 

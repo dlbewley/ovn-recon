@@ -3,7 +3,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
 import { ClusterLogicalTopology, LogicalTopologySnapshot } from '../types';
-import ClusterLogicalTopologyDetails from './ClusterLogicalTopologyDetails';
+import { ClusterLogicalTopologyBody } from './ClusterLogicalTopologyDetails';
 import { TestRouter } from './testRouter';
 import {
     fitsIn,
@@ -46,7 +46,7 @@ const aggregate: ClusterLogicalTopology = {
  * Construct names repeat across zones here, so cards are found by their
  * selection outline rather than by name.
  */
-describe('ClusterLogicalTopologyDetails reveal beside the inline drawer', () => {
+describe('ClusterLogicalTopologyBody reveal beside the inline drawer', () => {
     const CLOSED = { width: 1310, height: 700 };
     const OPEN = { width: 655, height: 700 };
 
@@ -81,7 +81,7 @@ describe('ClusterLogicalTopologyDetails reveal beside the inline drawer', () => 
         await act(async () => {
             root.render(
                 <TestRouter initialEntry={entry}>
-                    <ClusterLogicalTopologyDetails />
+                    <ClusterLogicalTopologyBody />
                 </TestRouter>,
             );
         });

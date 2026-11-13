@@ -1,13 +1,11 @@
 import * as React from 'react';
-import { DocumentTitle } from '@openshift-console/dynamic-plugin-sdk';
-import { Link } from 'react-router';
+
+
 import {
     PageSection,
     Title,
     EmptyState,
     EmptyStateBody,
-    Breadcrumb,
-    BreadcrumbItem,
     Card,
     CardTitle,
     CardBody,
@@ -47,7 +45,7 @@ import { useChassisNodeNames } from './useChassisNodeNames';
 import { freshnessFromAge, oldestSnapshotAgeMs } from './snapshotFreshness';
 import { constructSelectValue, findConstructBySelectValue, useSelectionDeepLink } from './useSelectParam';
 import { detailHrefFor, detailZoneFor } from './constructDetailLinks';
-import { nodeLogicalPath, nodePhysicalPath, overviewPath } from '../routes';
+import { nodeLogicalPath, nodePhysicalPath } from '../routes';
 
 // Aggregate collection probes every zone, so refresh less eagerly than the
 // per-node view.
@@ -455,25 +453,3 @@ export const ClusterLogicalTopologyBody: React.FC<ClusterLogicalTopologyBodyProp
     );
 };
 
-/** The routed page's own header: document title, breadcrumb and heading. */
-const ClusterLogicalTopologyHeader: React.FC = () => (
-    <>
-        <DocumentTitle>OVN Recon - Cluster Logical Topology</DocumentTitle>
-        <PageSection>
-            <Breadcrumb>
-                <BreadcrumbItem>
-                    <Link to={overviewPath()}>OVN Recon</Link>
-                </BreadcrumbItem>
-                <BreadcrumbItem isActive>Cluster logical topology</BreadcrumbItem>
-            </Breadcrumb>
-            <Title headingLevel="h1" className="pf-u-mt-lg">Cluster Logical OVN Topology</Title>
-        </PageSection>
-    </>
-);
-
-/** The routed cluster logical page, /ovn-recon/ovn. */
-const ClusterLogicalTopologyDetails: React.FC = () => (
-    <ClusterLogicalTopologyBody header={<ClusterLogicalTopologyHeader />} />
-);
-
-export default ClusterLogicalTopologyDetails;

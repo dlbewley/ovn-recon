@@ -3,7 +3,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
 import { ClusterLogicalTopology, LogicalTopologySnapshot } from '../types';
-import ClusterLogicalTopologyDetails from './ClusterLogicalTopologyDetails';
+import { ClusterLogicalTopologyBody } from './ClusterLogicalTopologyDetails';
 import { LocationRecord, TestRouter } from './testRouter';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
@@ -35,7 +35,10 @@ const aggregate: ClusterLogicalTopology = {
     warnings: [],
 };
 
-describe('ClusterLogicalTopologyDetails', () => {
+/** What a host puts above the view; the body draws it once the collector gate passes. */
+const testHeader = <div data-testid="test-header">Cluster Logical OVN Topology</div>;
+
+describe('ClusterLogicalTopologyBody', () => {
     let container: HTMLDivElement;
     let root: Root;
     let locations: LocationRecord[];
@@ -43,7 +46,7 @@ describe('ClusterLogicalTopologyDetails', () => {
     const renderPage = (initialEntry = '/ovn-recon/ovn') =>
         root.render(
             <TestRouter initialEntry={initialEntry} onLocation={(record) => locations.push(record)}>
-                <ClusterLogicalTopologyDetails />
+                <ClusterLogicalTopologyBody header={testHeader} />
             </TestRouter>,
         );
 
@@ -142,7 +145,7 @@ describe('ClusterLogicalTopologyDetails', () => {
         });
 
         const text = container.textContent ?? '';
-        expect(text).toContain('Cluster Logical OVN Topology');
+        expect(container.querySelector('[data-testid="test-header"]')?.textContent).toBe('Cluster Logical OVN Topology');
         expect(text).toContain('Assembled from 3 nodes');
         expect(text).toContain('Default cluster network');
         // Merged zone-replicated construct renders once.

@@ -5,8 +5,14 @@ import { act } from 'react';
 import { clone, loadFixture, loadItems } from '../insights/testing';
 import type { ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState, UserDefinedNetwork } from '../types';
 import { NETOBSERV_FULL, withNetobserv } from '../linkOut/testCapabilities';
-import NetworkDetails from './NetworkDetails';
+import type { NetworkAddress } from './networkPageModel';
+import { NetworkExplorerBody } from './NetworkDetails';
+import { NetworkScopeHeader } from './NetworkScope';
+import type { NetworkView } from './networkScopeModel';
+import NetworksTable from './NetworksTable';
+import { overviewNetworkRows } from './overviewModel';
 import { TestRouter } from './testRouter';
+import type { ExplorerData } from './useExplorerData';
 
 // Mutable so tests can vary what each watch returns; jest.mock factories may only
 // close over identifiers prefixed `mock`.
@@ -37,6 +43,11 @@ const coverageCudns = loadItems<ClusterUserDefinedNetwork>('cudn', 'cluster-loca
 const coverageNads = loadItems<NetworkAttachmentDefinition>('nad', 'cluster-localnet-coverage.json');
 const coverageNns = loadItems<NodeNetworkState>('nns', 'cluster-localnet-coverage.json');
 
+/**
+ * One network as the explorer draws it: the shell's network header (name, console
+ * links, owner) over the network body (findings, summary, placement by node), and
+ * the cluster Networks tab's table that replaced the old list page.
+ */
 describe('NetworkDetails', () => {
     let container: HTMLDivElement;
     let root: Root;
@@ -59,11 +70,34 @@ describe('NetworkDetails', () => {
         container.remove();
     });
 
-    const render = async (path: string) => {
+    const inputs = () => ({
+        cudns: mockWatches.ClusterUserDefinedNetwork as ClusterUserDefinedNetwork[],
+        udns: mockWatches.UserDefinedNetwork as UserDefinedNetwork[],
+        nads: mockWatches.NetworkAttachmentDefinition as NetworkAttachmentDefinition[],
+        routeAdvertisements: [],
+    });
+
+    /** The network scope: the shell's header, from the watches the shell would hold, over the body. */
+    const render = async (address: NetworkAddress) => {
+        const view = { scope: 'network', tab: 'network', params: { network: address } } as unknown as NetworkView;
+        const data = { networkInputs: inputs(), networksLoaded: true, networkRows: [] } as unknown as ExplorerData;
         await act(async () => {
             root.render(
-                <TestRouter initialEntry={path}>
-                    <NetworkDetails />
+                <TestRouter initialEntry="/ovn-recon">
+                    <NetworkScopeHeader view={view} data={data} />
+                    <NetworkExplorerBody address={address} />
+                </TestRouter>,
+            );
+        });
+    };
+
+    /** The cluster Networks tab's table, with every network's placement. */
+    const renderList = async () => {
+        const rows = overviewNetworkRows(inputs(), mockWatches.NodeNetworkState as NodeNetworkState[], []);
+        await act(async () => {
+            root.render(
+                <TestRouter initialEntry="/ovn-recon/networks">
+                    <NetworksTable rows={rows} loaded inputs={inputs()} />
                 </TestRouter>,
             );
         });
@@ -73,18 +107,17 @@ describe('NetworkDetails', () => {
     const links = () => Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'));
 
     it('lists every network with the nodes it is wired on', async () => {
-        await render('/ovn-recon/networks');
-        const rows = container.querySelectorAll('[data-testid^="network-row-"]');
+        await renderList();
+        const rows = container.querySelectorAll('tr[data-testid^="overview-network-"]');
         expect(rows).toHaveLength(6);
-        expect(text('network-row-cudn-vlan-1924')).toContain('4 of 10');
-        expect(text('network-row-cudn-vlan-333')).toContain('0 of 10');
-        expect(text('network-row-cudn-machinenet')).toContain('10 of 10');
+        expect(text('overview-network-cudn-vlan-1924')).toContain('4 of 10');
+        expect(text('overview-network-cudn-vlan-333')).toContain('0 of 10');
+        expect(text('overview-network-cudn-machinenet')).toContain('10 of 10');
         expect(links()).toContain('/ovn-recon/networks/cudn/vlan-1924');
     });
 
     it('shows a Localnet CUDN wired on some nodes, without a finding', async () => {
-        await render('/ovn-recon/networks/cudn/vlan-1924');
-        expect(container.querySelector('h1')?.textContent).toBe('vlan-1924');
+        await render({ kind: 'cudn', name: 'vlan-1924' });
         expect(text('network-summary')).toContain('physnet-vmdata');
         expect(text('placement-summary')).toBe('Wired on 4 of 10 nodes.');
         expect(container.querySelectorAll('tr[data-testid^="placement-"]')).toHaveLength(10);
@@ -104,7 +137,7 @@ describe('NetworkDetails', () => {
     });
 
     it('shows the localnet-unmapped finding once for a network mapped on no node', async () => {
-        await render('/ovn-recon/networks/cudn/vlan-333');
+        await render({ kind: 'cudn', name: 'vlan-333' });
         expect(container.querySelectorAll('[data-testid="network-finding-localnet-unmapped"]')).toHaveLength(1);
         expect(text('network-finding-localnet-unmapped')).toContain('which no node maps to a bridge');
         expect(text('placement-summary')).toBe('Wired on 0 of 10 nodes.');
@@ -117,7 +150,7 @@ describe('NetworkDetails', () => {
         mockWatches.NodeNetworkState = [worker1, worker2];
         mockWatches.ClusterUserDefinedNetwork = loadItems<ClusterUserDefinedNetwork>('cudn', 'primary-cudn-vrf.json');
         mockWatches.NetworkAttachmentDefinition = [];
-        await render('/ovn-recon/networks/cudn/example-p-cudn');
+        await render({ kind: 'cudn', name: 'example-p-cudn' });
         expect(text('placement-summary')).toBe('Wired on 2 of 2 nodes.');
         expect(text('placement-worker-2')).toContain('example-p-cudn');
         expect(text('placement-worker-2')).toContain('inferred');
@@ -129,13 +162,13 @@ describe('NetworkDetails', () => {
         const traffic = () => Array.from(container.querySelectorAll('[data-testid="secondary-links"] a'))
             .map((a) => [a.textContent, a.getAttribute('href')]);
         try {
-            await render('/ovn-recon/networks/cudn/vlan-1924');
+            await render({ kind: 'cudn', name: 'vlan-1924' });
             expect(traffic()).toEqual([]);
             mockCapabilities.mockReturnValue(NETOBSERV_FULL);
-            await render('/ovn-recon/networks/cudn/vlan-1924');
+            await render({ kind: 'cudn', name: 'vlan-1924' });
             expect(traffic()).toEqual([['View traffic', '/netflow-traffic?filters=udns%3Dvlan-1924']]);
             mockCapabilities.mockReturnValue(withNetobserv({ loki: true, nodeMetrics: true, features: new Set() }));
-            await render('/ovn-recon/networks/cudn/vlan-1924');
+            await render({ kind: 'cudn', name: 'vlan-1924' });
             expect(traffic()).toEqual([]);
         } finally {
             mockCapabilities.mockReset();
@@ -148,8 +181,7 @@ describe('NetworkDetails', () => {
             spec: { topology: 'Layer2', layer2: { role: 'Secondary', subnets: ['10.20.0.0/24'] } },
         };
         mockWatches.UserDefinedNetwork = [udn];
-        await render('/ovn-recon/networks/udn/blue/tenant-blue');
-        expect(container.querySelector('h1')?.textContent).toBe('blue/tenant-blue');
+        await render({ kind: 'udn', namespace: 'blue', name: 'tenant-blue' });
         expect(text('network-summary')).toContain('10.20.0.0/24');
         expect(text('placement-summary')).toContain('checks nothing node-local for a Secondary Layer2 network');
         expect(links()).toContain('/k8s/ns/blue/k8s.ovn.org~v1~UserDefinedNetwork/tenant-blue');
@@ -157,41 +189,16 @@ describe('NetworkDetails', () => {
 
     it('shows a NAD with no CUDN', async () => {
         mockWatches.NetworkAttachmentDefinition = [...coverageNads, ...loadItems<NetworkAttachmentDefinition>('nad', 'sriov.json')];
-        await render('/ovn-recon/networks/nad/default/vm-igb');
-        expect(container.querySelector('h1')?.textContent).toBe('default/vm-igb');
+        await render({ kind: 'nad', namespace: 'default', name: 'vm-igb' });
         expect(text('network-summary')).toContain('sriov');
         expect(text('placement-summary')).toContain('checks nothing node-local');
         expect(container.querySelector('[data-testid="network-owner"]')).toBeNull();
     });
 
     it('names the CUDN behind a generated NAD', async () => {
-        await render('/ovn-recon/networks/nad/demo-mirror/vlan-1924');
+        await render({ kind: 'nad', namespace: 'demo-mirror', name: 'vlan-1924' });
         expect(text('network-owner')).toContain('Generated by ClusterUserDefinedNetwork vlan-1924');
         expect(links()).toContain('/ovn-recon/networks/cudn/vlan-1924');
-    });
-
-    describe('breadcrumbs', () => {
-        const crumbs = () => [...container.querySelectorAll('.pf-v6-c-breadcrumb__item')].map((item) => ({
-            text: item.textContent,
-            divided: item.querySelector('.pf-v6-c-breadcrumb__item-divider') !== null,
-        }));
-
-        it('separates the list page from the overview', async () => {
-            await render('/ovn-recon/networks');
-            expect(crumbs()).toEqual([
-                { text: 'OVN Recon', divided: false },
-                { text: 'Networks', divided: true },
-            ]);
-        });
-
-        it('separates every item after the first on a network page', async () => {
-            await render('/ovn-recon/networks/cudn/vlan-1924');
-            expect(crumbs()).toEqual([
-                { text: 'OVN Recon', divided: false },
-                { text: 'Networks', divided: true },
-                { text: 'vlan-1924', divided: true },
-            ]);
-        });
     });
 
     describe('the cluster default network', () => {
@@ -205,13 +212,14 @@ describe('NetworkDetails', () => {
         });
 
         it('is named for what it is in the list, not given an unknown topology', async () => {
-            await render('/ovn-recon/networks');
-            expect(text('network-row-nad-default')).toContain('Cluster default network');
-            expect(text('network-row-nad-default')).not.toContain('Unknown');
+            await renderList();
+            const row = text('overview-network-nad-openshift-ovn-kubernetes-default');
+            expect(row).toContain('Cluster default network');
+            expect(row).not.toContain('Unknown');
         });
 
         it('says what it is on its page', async () => {
-            await render('/ovn-recon/networks/nad/openshift-ovn-kubernetes/default');
+            await render({ kind: 'nad', namespace: 'openshift-ovn-kubernetes', name: 'default' });
             expect(text('network-summary')).toContain('Cluster default network');
             expect(text('network-summary')).not.toContain('Unknown');
             expect(text('placement-summary')).toContain('checks nothing node-local for the cluster default network;');
@@ -238,7 +246,7 @@ describe('NetworkDetails', () => {
         });
 
         it('leads its page with the failed condition and its message', async () => {
-            await render('/ovn-recon/networks/cudn/vlan-333');
+            await render({ kind: 'cudn', name: 'vlan-333' });
             const alert = container.querySelector('[data-testid="network-not-created"]')!;
             expect(alert.textContent).toContain('This network was not created: NetworkAttachmentDefinitionSyncError');
             expect(alert.textContent).toContain('failed to create NetworkAttachmentDefinition in namespace demo');
@@ -250,32 +258,33 @@ describe('NetworkDetails', () => {
         });
 
         it('marks its row in the list, and no other', async () => {
-            await render('/ovn-recon/networks');
-            expect(container.querySelectorAll('[data-testid="network-row-not-created"]')).toHaveLength(1);
-            expect(text('network-row-cudn-vlan-333')).toContain('Not created');
-            expect(text('network-row-cudn-vlan-1924')).not.toContain('Not created');
+            await renderList();
+            expect(container.querySelectorAll('[data-testid="overview-network-not-created"]')).toHaveLength(1);
+            expect(text('overview-network-cudn-vlan-333')).toContain('Not created');
+            expect(text('overview-network-cudn-vlan-1924')).not.toContain('Not created');
         });
 
         it('says nothing on a network whose condition is True', async () => {
-            await render('/ovn-recon/networks/cudn/vlan-1924');
+            await render({ kind: 'cudn', name: 'vlan-1924' });
             expect(container.querySelector('[data-testid="network-not-created"]')).toBeNull();
         });
     });
 
     it('lays the summary out one line per fact', async () => {
-        await render('/ovn-recon/networks/cudn/vlan-1924');
+        await render({ kind: 'cudn', name: 'vlan-1924' });
         const list = container.querySelector('[data-testid="network-summary"] [data-testid="fact-rows"]')!;
         expect(list.className).toContain('pf-m-horizontal');
     });
 
     it('renders an empty state for an unknown name', async () => {
-        await render('/ovn-recon/networks/cudn/no-such-network');
-        expect(text('network-not-found')).toContain('No network named no-such-network');
+        await render({ kind: 'cudn', name: 'no-such-network' });
+        expect(text('network-not-found')).toContain('No ClusterUserDefinedNetwork named no-such-network is visible.');
+        expect(container.querySelector('[data-testid="network-not-found"] a')?.getAttribute('href')).toBe('/ovn-recon/networks');
     });
 
     it('renders the summary without the matrix when NodeNetworkState is not served', async () => {
         mockModels.NodeNetworkState = undefined;
-        await render('/ovn-recon/networks/cudn/vlan-1924');
+        await render({ kind: 'cudn', name: 'vlan-1924' });
         expect(text('network-summary')).toContain('physnet-vmdata');
         expect(text('placement-unavailable')).toContain('does not serve NodeNetworkState');
         expect(container.querySelector('[data-testid="placement-summary"]')).toBeNull();
@@ -285,7 +294,7 @@ describe('NetworkDetails', () => {
 
     it('leaves out the logical links when the collector is off', async () => {
         mockGate.enabled = false;
-        await render('/ovn-recon/networks/cudn/vlan-1924');
+        await render({ kind: 'cudn', name: 'vlan-1924' });
         expect(links()).not.toContain('/ovn-recon/ovn/worker-1');
     });
 });

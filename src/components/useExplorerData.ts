@@ -5,17 +5,17 @@ import type { Finding } from '../insights/types';
 import { useClusterFindings, useHideInfoFindings, visibleFindings } from '../insights/ui/useFindings';
 import type { NetworkInputs } from './networkPageModel';
 import { findingCountsByNode, NodeSummary, nodeRole, OverviewNetworkRow, overviewNetworkRows, summarizeNode } from './overviewModel';
-import { OverviewBodyProps, useOverviewData } from './OvnReconOverview';
+import { ClusterWatches, useClusterWatches } from './useClusterWatches';
 
 /**
  * What the explorer shell reads, once for every view it draws (ovn-recon-gbr.4): the
- * cluster-wide watches the overview made (`useOverviewData`), and everything the tree
+ * cluster-wide watches (`useClusterWatches`), and everything the tree
  * and the Cluster tabs derive from them, findings included, so the tree, the tabs and
  * the tables cannot disagree. The node, network and logical bodies the scopes load
  * still make their own watches; the console shares a watch between hooks that ask
  * for the same list.
  */
-export interface ExplorerData extends OverviewBodyProps {
+export interface ExplorerData extends ClusterWatches {
     /** One per NodeNetworkState, by name. */
     summaries: NodeSummary[];
     nodeNames: string[];
@@ -38,7 +38,7 @@ export interface ExplorerData extends OverviewBodyProps {
 }
 
 /** The derived half, for a host that gathers the watches itself (and for tests). */
-export const useExplorerModel = (data: OverviewBodyProps): ExplorerData => {
+export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
     const {
         nodeNetworkStates,
         nodeNetworkStatesLoaded: nnsLoaded,
@@ -108,4 +108,4 @@ export const useExplorerModel = (data: OverviewBodyProps): ExplorerData => {
 };
 
 /** The watches and everything derived from them. */
-export const useExplorerData = (): ExplorerData => useExplorerModel(useOverviewData());
+export const useExplorerData = (): ExplorerData => useExplorerModel(useClusterWatches());

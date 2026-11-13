@@ -1,22 +1,22 @@
 import * as React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
-import { Route, Routes } from 'react-router';
 
-import ClusterLogicalTopologyDetails, { ClusterLogicalTopologyBody } from './ClusterLogicalTopologyDetails';
-import ConstructDetails, { ConstructBody, ConstructExplorerBody } from './ConstructDetails';
-import NodeLogicalTopologyDetails, { NodeLogicalTopologyBody } from './NodeLogicalTopologyDetails';
+import { ClusterLogicalTopologyBody } from './ClusterLogicalTopologyDetails';
+import { ConstructBody, ConstructExplorerBody } from './ConstructDetails';
+import { NodeLogicalTopologyBody } from './NodeLogicalTopologyDetails';
 import { TestRouter } from './testRouter';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 import cnv2 from '../../collector/fixtures/snapshots/cnv-2.json';
 
 /**
- * The logical, cluster and construct pages are a body and a thin routed wrapper
- * (ovn-recon-gbr.3). The wrapper owns the document title, the breadcrumb and the
- * heading; the body draws everything else, so a host other than the routed page can
- * render it under a header of its own. These tests hold both halves: a body alone
- * carries no page chrome, and the routed page still carries all of it.
+ * The logical, cluster and construct views are bodies (ovn-recon-gbr.3): each draws
+ * the view and none of the page chrome, so a host can render it under a header of its
+ * own. The routed wrappers that once drew the document title, breadcrumb and heading
+ * around them are gone (ovn-recon-gbr.10); that chrome now belongs to the explorer
+ * shell (OvnReconApp) and its scope headers. These tests hold that a body alone
+ * carries no page chrome, and that a host's header goes where the body puts it.
  */
 
 // jest.mock factories may only close over identifiers prefixed `mock`.
@@ -166,31 +166,6 @@ describe('page bodies without their page chrome (ovn-recon-gbr.3)', () => {
             expect(container.querySelector('[data-testid="host-header"]')).toBeNull();
             expect(container.textContent).toContain('Logical OVN view is disabled');
         });
-
-        it('is what the routed page wraps: the page adds the title, breadcrumb, heading and cross-link', async () => {
-            await render(
-                <Routes><Route path="/ovn-recon/ovn/:name" element={<NodeLogicalTopologyDetails />} /></Routes>,
-                '/ovn-recon/ovn/cnv-1',
-            );
-
-            expect(documentTitle()).toBe('OVN Recon - Logical OVN (cnv-1)');
-            expect(Array.from(breadcrumb()!.querySelectorAll('li')).map((item) => item.textContent))
-                .toEqual(['OVN Recon', 'Cluster logical topology', 'Logical OVN: cnv-1']);
-            expect(heading()!.textContent).toBe('Logical OVN Topology: cnv-1');
-            expect(linkTexts()).toContain('View physical topology for this node');
-            expect(select('Filter by host')).not.toBeNull();
-        });
-
-        it('shows none of the routed page\'s chrome while the gate is closed, as before the split', async () => {
-            mockGate.enabled = false;
-            await render(
-                <Routes><Route path="/ovn-recon/ovn/:name" element={<NodeLogicalTopologyDetails />} /></Routes>,
-                '/ovn-recon/ovn/cnv-1',
-            );
-
-            expectNoPageChrome();
-            expect(container.textContent).toContain('Logical OVN view is disabled');
-        });
     });
 
     describe('ClusterLogicalTopologyBody', () => {
@@ -220,15 +195,6 @@ describe('page bodies without their page chrome (ovn-recon-gbr.3)', () => {
             mockGate.loaded = false;
             await render(<ClusterLogicalTopologyBody header={header} />);
             expect(container.querySelector('[data-testid="host-header"]')).toBeNull();
-        });
-
-        it('is what the routed page wraps: the page adds the title, breadcrumb and heading', async () => {
-            await render(<ClusterLogicalTopologyDetails />, '/ovn-recon/ovn');
-
-            expect(documentTitle()).toBe('OVN Recon - Cluster Logical Topology');
-            expect(Array.from(breadcrumb()!.querySelectorAll('li')).map((item) => item.textContent))
-                .toEqual(['OVN Recon', 'Cluster logical topology']);
-            expect(heading()!.textContent).toBe('Cluster Logical OVN Topology');
         });
     });
 
@@ -313,19 +279,6 @@ describe('page bodies without their page chrome (ovn-recon-gbr.3)', () => {
             expect(back?.getAttribute('href')).toBe('/ovn-recon/ovn/cnv-1?select=router:GR_cnv-1');
             expect(select('Node database')).toBeNull();
             expect(watchedNodeNetworkStateList()).toBe(false);
-        });
-
-        it('is what the routed page wraps: the page adds the title, breadcrumb and heading', async () => {
-            await render(
-                <Routes><Route path="/ovn-recon/ovn/:node/:kind/:name" element={<ConstructDetails />} /></Routes>,
-                '/ovn-recon/ovn/cnv-1/switch/cnv-1',
-            );
-
-            expect(documentTitle()).toBe('OVN Recon - cnv-1 (cnv-1)');
-            expect(Array.from(breadcrumb()!.querySelectorAll('li')).map((item) => item.textContent))
-                .toEqual(['OVN Recon', 'Cluster logical topology', 'Logical OVN: cnv-1', 'cnv-1']);
-            expect(heading()!.textContent).toContain('cnv-1');
-            expect(select('Node database')).not.toBeNull();
         });
     });
 });
