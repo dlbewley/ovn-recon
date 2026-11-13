@@ -47,16 +47,22 @@ import { parseSnapshotAgeMs } from './snapshotFreshness';
 import { formatAge } from './SnapshotStatusLine';
 
 /**
- * The overview's search box (ovn-recon-tpp.2): "where is this IP, MAC, pod or
+ * The cluster search (ovn-recon-tpp.2): "where is this IP, MAC, pod or
  * network?". Thin on purpose: reading the input, merging the collector's hits
  * with what the overview already watches, folding and link building all live
- * in clusterSearchModel.ts. This component owns only the request and what is
- * on screen.
+ * in clusterSearchModel.ts. This module owns only the request and what is on
+ * screen.
  *
  * A lookup reads every cached zone snapshot and takes about a second on a
  * ten-node cluster, so it runs when the search is submitted, never while
  * typing. The submitted text lives in the page URL (`?q=`), which is what
  * lets a result link be followed and Back return to the same results.
+ *
+ * Three pieces (ovn-recon-gbr.3), so the box and the answer can sit in
+ * different places under one owner of the lookup: `useClusterSearch` holds the
+ * request and its answer, `ClusterSearchInput` is the box, and
+ * `ClusterSearchResultsPanel` is everything said back. `ClusterSearch`, the
+ * overview's card, is the three put together.
  */
 
 export interface ClusterSearchProps {
@@ -495,27 +501,46 @@ interface Answer {
     outcome: CollectorOutcome;
 }
 
-const ClusterSearch: React.FC<ClusterSearchProps> = ({
+/** One search: what was submitted, how to submit another, and the answer so far. */
+export interface ClusterSearchState {
+    /** The submitted text, as the page URL holds it (`?q=`); empty when there is none. */
+    submitted: string;
+    /** `submitted` read as an IP, CIDR, MAC or name; null when there is nothing to search for. */
+    query: SearchQuery | null;
+    /**
+     * Search for this text: writes it to the page URL, or repeats the lookup when it
+     * is the text already there. Empty text clears the search.
+     */
+    submit: (value: string) => void;
+    /** A search is under way: the collector has not answered, or NodeNetworkState has not settled. */
+    busy: boolean;
+    /** The last finished search, merged with the cluster's own hits. It stays while the next one runs. */
+    results: ClusterSearchResults | null;
+    /** The NodeNetworkState watch has settled; until then "no match" is not yet known. */
+    stateLoaded: boolean;
+    /** Why NodeNetworkState could not be read, when it could not. */
+    stateError?: string;
+}
+
+/**
+ * The lookup behind the search, for whichever component owns it: the overview's
+ * card today. It reads the submitted text from the page URL, asks the collector
+ * when that text changes, and merges the answer with the sources it is handed.
+ */
+export const useClusterSearch = ({
     nodeNetworkStates,
     nodes,
     stateLoaded,
     stateError,
     collectorEnabled,
     gateLoaded,
-}) => {
+}: ClusterSearchProps): ClusterSearchState => {
     const location = useLocation();
     const navigate = useNavigate();
 
     // The URL holds the submitted search; the box holds what is being typed.
     const submitted = readSearchParam(location.search);
     const query = React.useMemo(() => detectSearchQuery(submitted), [submitted]);
-    const [input, setInput] = React.useState(submitted);
-    const seenSubmitted = React.useRef(submitted);
-    React.useEffect(() => {
-        if (seenSubmitted.current === submitted) return;
-        seenSubmitted.current = submitted;
-        setInput(submitted);
-    }, [submitted]);
 
     // Bumped to repeat the search that is already in the URL.
     const [run, setRun] = React.useState(0);
@@ -583,45 +608,80 @@ const ClusterSearch: React.FC<ClusterSearchProps> = ({
 
     const busy = query !== null && (pending || !stateLoaded);
 
+    return { submitted, query, submit, busy, results, stateLoaded, stateError };
+};
+
+/** The search box. It holds what is being typed; the search itself is the owner's. */
+export const ClusterSearchInput: React.FC<{ search: ClusterSearchState }> = ({ search }) => {
+    const { submitted, submit } = search;
+    const [input, setInput] = React.useState(submitted);
+    const seenSubmitted = React.useRef(submitted);
+    React.useEffect(() => {
+        if (seenSubmitted.current === submitted) return;
+        seenSubmitted.current = submitted;
+        setInput(submitted);
+    }, [submitted]);
+
+    return (
+        <SearchInput
+            aria-label="Find an IP, CIDR, MAC or name in the cluster"
+            placeholder="IP address, CIDR, MAC, or part of a pod, VM, network or interface name"
+            value={input}
+            onChange={(_event, value) => setInput(value)}
+            onSearch={(_event, value) => submit(value)}
+            onClear={() => {
+                setInput('');
+                submit('');
+            }}
+            submitSearchButtonLabel="Search"
+        />
+    );
+};
+
+/**
+ * Everything the search says back: the line that reports a search under way (or,
+ * with nothing searched, what Enter will do), then the last finished answer.
+ */
+export const ClusterSearchResultsPanel: React.FC<{ search: ClusterSearchState }> = ({ search }) => {
+    const { query, busy, results, stateLoaded, stateError } = search;
+    return (
+        <>
+            <div aria-live="polite" style={{ marginTop: 8 }}>
+                {busy && query ? (
+                    <Flex spaceItems={{ default: 'spaceItemsSm' }} alignItems={{ default: 'alignItemsCenter' }} data-testid="search-status">
+                        <FlexItem><Spinner size="md" aria-label="Searching" /></FlexItem>
+                        <FlexItem>Searching for {describeSearchQuery(query)}…</FlexItem>
+                    </Flex>
+                ) : (
+                    !query && (
+                        <span style={SUBTLE} data-testid="search-hint">
+                            Press Enter to search every node: OVN ports, routers, NAT rules and Service VIPs, node
+                            interfaces and kernel routes.
+                        </span>
+                    )
+                )}
+            </div>
+            {results && (
+                <Results
+                    key={describeSearchQuery(results.query)}
+                    results={results}
+                    stateError={stateError}
+                    settled={stateLoaded}
+                />
+            )}
+        </>
+    );
+};
+
+/** The overview's "Find in cluster" card: the box over its answer, one lookup behind both. */
+const ClusterSearch: React.FC<ClusterSearchProps> = (props) => {
+    const search = useClusterSearch(props);
     return (
         <Card data-testid="overview-search">
             <CardTitle>Find in cluster</CardTitle>
             <CardBody>
-                <SearchInput
-                    aria-label="Find an IP, CIDR, MAC or name in the cluster"
-                    placeholder="IP address, CIDR, MAC, or part of a pod, VM, network or interface name"
-                    value={input}
-                    onChange={(_event, value) => setInput(value)}
-                    onSearch={(_event, value) => submit(value)}
-                    onClear={() => {
-                        setInput('');
-                        submit('');
-                    }}
-                    submitSearchButtonLabel="Search"
-                />
-                <div aria-live="polite" style={{ marginTop: 8 }}>
-                    {busy && query ? (
-                        <Flex spaceItems={{ default: 'spaceItemsSm' }} alignItems={{ default: 'alignItemsCenter' }} data-testid="search-status">
-                            <FlexItem><Spinner size="md" aria-label="Searching" /></FlexItem>
-                            <FlexItem>Searching for {describeSearchQuery(query)}…</FlexItem>
-                        </Flex>
-                    ) : (
-                        !query && (
-                            <span style={SUBTLE} data-testid="search-hint">
-                                Press Enter to search every node: OVN ports, routers, NAT rules and Service VIPs, node
-                                interfaces and kernel routes.
-                            </span>
-                        )
-                    )}
-                </div>
-                {results && (
-                    <Results
-                        key={describeSearchQuery(results.query)}
-                        results={results}
-                        stateError={stateError}
-                        settled={stateLoaded}
-                    />
-                )}
+                <ClusterSearchInput search={search} />
+                <ClusterSearchResultsPanel search={search} />
             </CardBody>
         </Card>
     );
