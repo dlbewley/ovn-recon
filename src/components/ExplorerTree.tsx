@@ -35,8 +35,8 @@ const subtle: React.CSSProperties = {
     color: 'var(--pf-t--global--text--color--subtle)',
     marginInlineStart: 'var(--pf-t--global--spacer--sm)',
     fontSize: 'var(--pf-t--global--font--size--sm)',
-    // The role or kind gives way well before the name.
-    flex: '0 100 auto',
+    // The role or kind gives way; the name does not.
+    flex: '0 1 auto',
 };
 
 /**
@@ -98,7 +98,11 @@ const toTreeData = (item: ExplorerTreeItem): TreeViewDataItem => ({
             title={item.detail ? `${item.label} (${item.detail})` : item.label}
             style={{ display: 'flex', alignItems: 'baseline', minWidth: 0, whiteSpace: 'nowrap' }}
         >
-            <span style={{ ...shrinkable, flex: '0 1 auto' }}>
+            {/*
+              * The name keeps its width (a share of a few pixels would still end it in an
+              * ellipsis); only a name longer than the row is cut, short of the badge.
+              */}
+            <span style={{ ...shrinkable, flex: '0 0 auto', maxWidth: item.findings ? 'calc(100% - 3rem)' : '100%' }}>
                 {item.kind === 'more' ? <em>{item.label}</em> : item.label}
             </span>
             {item.detail && <span style={subtle}>{item.detail}</span>}
