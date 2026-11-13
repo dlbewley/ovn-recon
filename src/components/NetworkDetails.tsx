@@ -240,18 +240,22 @@ const ViewLinks: React.FC<{ row: PlacementRow; showLogical: boolean }> = ({ row,
 interface Column {
     title: string;
     render: (row: PlacementRow) => React.ReactNode;
+    /** A short name kept on one line: beside the explorer's tree, `br-vmdata` would break at its hyphen. */
+    nowrap?: boolean;
 }
 
 const placementColumns = (placement: Placement, vlan: string | undefined, showLogical: boolean): Column[] => {
     // The node itself: in the explorer this selects the node in the tree.
     const node: Column = {
         title: 'Node',
+        nowrap: true,
         render: (row) => <Link to={nodePhysicalPath(row.node)} data-testid={`placement-node-${row.node}`}>{row.node}</Link>,
     };
     const status: Column = { title: 'Status', render: (row) => <StatusCell row={row} /> };
     const views: Column = { title: 'Views', render: (row) => <ViewLinks row={row} showLogical={showLogical} /> };
     const bridge: Column = {
         title: 'Bridge',
+        nowrap: true,
         render: (row) => (row.bridge ? row.bridge.name : <span style={subtle}>-</span>),
     };
     const uplinks: Column = { title: 'Uplinks', render: (row) => <Uplinks uplinks={row.uplinks} /> };
@@ -259,7 +263,7 @@ const placementColumns = (placement: Placement, vlan: string | undefined, showLo
         case 'localnet':
             return [
                 node, status, bridge, uplinks,
-                { title: 'VLAN', render: () => vlan ?? <span style={subtle}>none</span> },
+                { title: 'VLAN', nowrap: true, render: () => vlan ?? <span style={subtle}>none</span> },
                 views,
             ];
         case 'primary':
@@ -347,7 +351,9 @@ const PlacementCard: React.FC<{
                         {placement.rows.map((row) => (
                             <Tr key={row.node} data-testid={`placement-${row.node}`}>
                                 {columns.map((column) => (
-                                    <Td key={column.title} dataLabel={column.title}>{column.render(row)}</Td>
+                                    <Td key={column.title} dataLabel={column.title} modifier={column.nowrap ? 'nowrap' : undefined}>
+                                        {column.render(row)}
+                                    </Td>
                                 ))}
                             </Tr>
                         ))}

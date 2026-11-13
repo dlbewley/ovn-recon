@@ -91,6 +91,8 @@ describe('NetworkDetails', () => {
         expect(text('placement-worker-1')).toContain('Wired');
         expect(text('placement-worker-1')).toContain('ens224 (ethernet), up, MTU 1500');
         expect(text('placement-worker-1')).toContain('1924');
+        // Short names stay on one line beside the explorer's tree.
+        expect(container.querySelector('[data-testid="placement-worker-1"] td[data-label="Bridge"]')?.className).toContain('pf-m-nowrap');
         expect(text('placement-control-1')).toContain('No bridge mapping names physnet-vmdata.');
         // The node name opens the node; the Physical link opens it on the network's mapping.
         expect(links()).toContain('/ovn-recon/node-network-state/worker-1');
