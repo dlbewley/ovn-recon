@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useParams, Link, useLocation, useNavigate } from 'react-router';
-import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem, ExpandableSection, Flex, FlexItem } from '@patternfly/react-core';
+import { PageSection, Title, EmptyState, EmptyStateBody, Breadcrumb, BreadcrumbItem, ExpandableSection, Flex, FlexItem, Spinner } from '@patternfly/react-core';
 import { LinkOutProvider, SecondaryLinks } from '../linkOut/LinkOut';
 import { resourceTarget } from '../linkOut/registry';
 import { DocumentTitle, K8sResourceCommon, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
@@ -11,7 +11,7 @@ import { getRunningRoutes, NODE_VTEPS_ANNOTATION } from './nodeVisualizationSele
 import { MAIN_TABLE_ID } from './kernelRoutes';
 import KernelRouteTable, { InterfaceSelector } from './KernelRouteTable';
 import { logicalViewPath, physicalViewPath } from './networkPageModel';
-import { nodeLogicalPath, overviewPath } from '../routes';
+import { nodeLogicalPath, nodePhysicalPath, overviewPath } from '../routes';
 import { readSelectParam, withSelectParam } from './useSelectParam';
 import { buildGraphContext } from '../topology/context';
 import { resolveInterfaceLinkRef } from '../topology/ids';
@@ -23,6 +23,14 @@ const SRIOV_OPERATOR_NAMESPACE = 'openshift-sriov-network-operator';
 interface NodeNetworkStateBodyProps {
     /** The node, which is also its NodeNetworkState's name. */
     name: string;
+    /**
+     * Drawn in the explorer's node scope (ovn-recon-gbr.5), under a header and tabs
+     * of the shell's own: no document title, breadcrumb, heading or cross-links, no
+     * main routing table (the Routes tab has it), no host select, and the graph
+     * edge to edge, without its card, so a collapsed tree leaves it the width the
+     * routed page gave it.
+     */
+    inExplorer?: boolean;
     /**
      * Set when the body is a tab on the console's own Node details page
      * (ovn-recon-zdt.1): the host page owns the title and breadcrumbs, so the
@@ -39,15 +47,31 @@ interface NodeNetworkStateBodyProps {
  * route handling. The routed page (NodeNetworkStateDetails) and the Node details tab
  * (NodeOvnReconTab) both render this; there is no second copy.
  */
-export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
-    name,
-    embedded = false,
-    hideHostSelect = false,
-}) => {
-    const location = useLocation();
-    const navigate = useNavigate();
-    const { enabled: ovnCollectorEnabled } = useOvnCollectorFeatureGate();
+export interface NodePhysicalData {
+    nns: NodeNetworkState | undefined;
+    loaded: boolean;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    loadError: any;
+    cudns: ClusterUserDefinedNetwork[];
+    udns: UserDefinedNetwork[];
+    nads: NetworkAttachmentDefinition[];
+    routeAdvertisements: RouteAdvertisements[];
+    enactments: NodeNetworkConfigurationEnactment[];
+    vteps: Vtep[] | undefined;
+    nodeVtepsAnnotation: string | undefined;
+    sriovNodeState: SriovNetworkNodeState | undefined;
+    /** The node's main routing table; other tables belong to their VRF's drawer. */
+    mainRoutes: ReturnType<typeof getRunningRoutes>;
+    graphContext: ReturnType<typeof buildGraphContext> | null;
+}
 
+/**
+ * Everything one node's physical views read (ovn-recon-gbr.5): its NodeNetworkState,
+ * the networks, the enactments, EVPN and SR-IOV state, and the graph context built
+ * from them. The physical body and the Routes body both read it; the console shares
+ * each watch between the hooks that ask for it.
+ */
+export const useNodePhysicalData = (name: string): NodePhysicalData => {
     const watchResource = React.useMemo(() => name ? {
         groupVersionKind: {
             group: 'nmstate.io',
@@ -161,10 +185,7 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
         [nns]
     );
 
-    // An interface in the main routing table selects it in the graph below
-    // (ovn-recon-dp7.8): it writes ?select=, which NodeVisualization follows the
-    // way it follows any deep link, turning on a hidden lane when it must. One
-    // the graph never draws stays plain text.
+    // What resolves an interface name to the graph node that draws it.
     const graphContext = React.useMemo(
         () => (nns ? buildGraphContext({
             nns, cudns, udns, nads, routeAdvertisements, enactments, vteps: vteps || undefined,
@@ -172,6 +193,41 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
         }) : null),
         [nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation, sriovNodeState]
     );
+    return {
+        nns: nns ?? undefined,
+        loaded,
+        loadError,
+        cudns,
+        udns,
+        nads,
+        routeAdvertisements,
+        enactments,
+        vteps: vteps || undefined,
+        nodeVtepsAnnotation,
+        sriovNodeState: sriovNodeState || undefined,
+        mainRoutes,
+        graphContext,
+    };
+};
+
+export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
+    name,
+    embedded = false,
+    hideHostSelect = false,
+    inExplorer = false,
+}) => {
+    const location = useLocation();
+    const navigate = useNavigate();
+    const { enabled: ovnCollectorEnabled } = useOvnCollectorFeatureGate();
+    const {
+        nns, loaded, loadError, cudns, udns, nads, routeAdvertisements, enactments, vteps,
+        nodeVtepsAnnotation, sriovNodeState, mainRoutes, graphContext,
+    } = useNodePhysicalData(name);
+
+    // An interface in the main routing table selects it in the graph below
+    // (ovn-recon-dp7.8): it writes ?select=, which NodeVisualization follows the
+    // way it follows any deep link, turning on a hidden lane when it must. One
+    // the graph never draws stays plain text.
     const selectInterface = React.useMemo<InterfaceSelector | undefined>(() => {
         if (!graphContext) return undefined;
         return (interfaceName) => {
@@ -217,6 +273,24 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
     }
 
     const displayName = nns?.metadata?.name || name || 'Unknown Node';
+
+    if (inExplorer) {
+        return (
+            <>
+                <DocumentTitle>{`OVN Recon - ${displayName}`}</DocumentTitle>
+                <PageSection isFilled padding={{ default: 'noPadding' }} data-testid="node-physical-body">
+                    <NodeVisualization
+                        nns={nns} cudns={cudns} udns={udns} nads={nads}
+                        routeAdvertisements={routeAdvertisements} enactments={enactments}
+                        vteps={vteps} nodeVtepsAnnotation={nodeVtepsAnnotation}
+                        sriovNodeState={sriovNodeState}
+                        hideHostSelect
+                        plain
+                    />
+                </PageSection>
+            </>
+        );
+    }
 
     return (
         <>
@@ -272,10 +346,86 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
                 <NodeVisualization
                     nns={nns} cudns={cudns} udns={udns} nads={nads}
                     routeAdvertisements={routeAdvertisements} enactments={enactments}
-                    vteps={vteps || undefined} nodeVtepsAnnotation={nodeVtepsAnnotation}
-                    sriovNodeState={sriovNodeState || undefined}
+                    vteps={vteps} nodeVtepsAnnotation={nodeVtepsAnnotation}
+                    sriovNodeState={sriovNodeState}
                     hideHostSelect={hideHostSelect}
                 />
+            </PageSection>
+        </>
+    );
+};
+
+/** Below this width the Routes tab uses the table's narrow form: about what the six columns need. */
+const ROUTES_FULL_TABLE_MIN_WIDTH = 960;
+
+/** The element's content width, followed as it changes; 0 until measured (and where it cannot be). */
+const useContentWidth = (ref: React.RefObject<HTMLElement>): number => {
+    const [width, setWidth] = React.useState(0);
+    React.useLayoutEffect(() => {
+        const element = ref.current;
+        if (!element) return undefined;
+        const measure = () => setWidth(element.clientWidth);
+        measure();
+        if (typeof ResizeObserver === 'undefined') return undefined;
+        const observer = new ResizeObserver(measure);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [ref]);
+    return width;
+};
+
+/**
+ * One node's main routing table, on its own: the explorer's Routes tab
+ * (ovn-recon-gbr.5). It sat above the graph on the routed physical page. An
+ * interface the graph draws opens the Physical tab with that interface selected.
+ */
+export const NodeRoutesBody: React.FC<{ name: string }> = ({ name }) => {
+    const navigate = useNavigate();
+    const { nns, loaded, loadError, mainRoutes, graphContext } = useNodePhysicalData(name);
+    // Beside the tree the six columns do not fit: Metric, Source and MTU then move
+    // into each row's expansion, as in a drawer. Collapsing the tree brings them back.
+    const frame = React.useRef<HTMLDivElement>(null);
+    const width = useContentWidth(frame);
+    const narrow = width > 0 && width < ROUTES_FULL_TABLE_MIN_WIDTH;
+
+    const selectInterface = React.useMemo<InterfaceSelector | undefined>(() => {
+        if (!graphContext) return undefined;
+        return (interfaceName) => {
+            const id = resolveInterfaceLinkRef(interfaceName, graphContext);
+            if (!id || !isDrawableNode(graphContext, id)) return undefined;
+            return () => navigate(nodePhysicalPath(name, id));
+        };
+    }, [graphContext, navigate, name]);
+
+    let content: React.ReactNode;
+    if (!loaded) {
+        content = <Spinner size="lg" aria-label="Loading the routing table" />;
+    } else if (loadError) {
+        content = <p>Could not read the NodeNetworkState: {loadError.message}</p>;
+    } else if (!nns) {
+        content = <p>There is no NodeNetworkState named {name}, so its routes are unknown.</p>;
+    } else if (mainRoutes.length === 0) {
+        content = <p>The node reports no routes in its main table.</p>;
+    } else {
+        content = (
+            <>
+                <p style={{ color: 'var(--pf-t--global--text--color--subtle)' }} className="pf-u-mb-md">
+                    The main routing table. A VRF&apos;s table is in that VRF&apos;s drawer on the Physical tab.
+                </p>
+                <KernelRouteTable
+                    routes={mainRoutes}
+                    ariaLabel="Main routing table"
+                    selectInterface={selectInterface}
+                    narrow={narrow}
+                />
+            </>
+        );
+    }
+    return (
+        <>
+            <DocumentTitle>{`OVN Recon - Routes (${name})`}</DocumentTitle>
+            <PageSection isFilled data-testid="node-routes-body">
+                <div ref={frame}>{content}</div>
             </PageSection>
         </>
     );

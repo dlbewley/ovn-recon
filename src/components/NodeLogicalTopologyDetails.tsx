@@ -92,6 +92,12 @@ export interface NodeLogicalTopologyBodyProps {
      * watched either.
      */
     hideHostSelect?: boolean;
+    /**
+     * Draw the view edge to edge, without the page padding, the card's frame or its
+     * title: for a host that frames it (the explorer's node scope, ovn-recon-gbr.5),
+     * so a collapsed tree leaves the ladder the width the routed page gave it.
+     */
+    flush?: boolean;
 }
 
 /**
@@ -103,6 +109,7 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
     name,
     header,
     hideHostSelect = false,
+    flush = false,
 }) => {
     const { enabled, loaded: gateLoaded, loadError: gateError } = useOvnCollectorFeatureGate();
 
@@ -303,7 +310,7 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
     return (
         <>
             {header}
-            <PageSection isFilled>
+            <PageSection isFilled padding={flush ? { default: 'noPadding' } : undefined}>
                 <Drawer isExpanded={selectedConstruct != null} isInline>
                     <DrawerContent
                         panelContent={(
@@ -339,8 +346,8 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
                             </DrawerPanelContent>
                         )}
                     >
-                        <Card>
-                            <CardTitle>Logical Topology</CardTitle>
+                        <Card isPlain={flush}>
+                            {!flush && <CardTitle>Logical Topology</CardTitle>}
                             <CardBody>
                                 <AlertGroup isToast={false}>
                                     {snapshotError && (

@@ -1,6 +1,5 @@
 import * as React from 'react';
-import { useNavigate } from 'react-router';
-import { Badge, Flex, FlexItem, PageSection, Spinner, Tab, Tabs, TabTitleText, Title } from '@patternfly/react-core';
+import { Flex, FlexItem, PageSection, Spinner, Title } from '@patternfly/react-core';
 import { DocumentTitle } from '@openshift-console/dynamic-plugin-sdk';
 
 import FindingsCard from '../insights/ui/FindingsCard';
@@ -15,6 +14,7 @@ import {
 import { ClusterSearchResultsPanel, ClusterSearchState } from './ClusterSearch';
 import NetworksTable from './NetworksTable';
 import NodesTable from './NodesTable';
+import ScopeTabs, { ScopeTab } from './ScopeTabs';
 import type { ExplorerData } from './useExplorerData';
 
 /**
@@ -31,19 +31,6 @@ const subtle: React.CSSProperties = { color: 'var(--pf-t--global--text--color--s
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
-/** A plain click: anything else (a new tab or window) is left to the browser. */
-const isPlainClick = (event: React.MouseEvent | React.KeyboardEvent | MouseEvent): boolean => {
-    const { button, metaKey, ctrlKey, shiftKey, altKey } = event as MouseEvent;
-    return !(metaKey || ctrlKey || shiftKey || altKey) && (button === undefined || button === 0);
-};
-
-interface TabSpec {
-    key: ClusterTab;
-    title: string;
-    path: string;
-    count?: number;
-}
-
 export interface ClusterScopeHeaderProps {
     tab: ClusterTab;
     data: ExplorerData;
@@ -52,14 +39,12 @@ export interface ClusterScopeHeaderProps {
 }
 
 /**
- * The scope's header and its tabs. Each tab is a link to its own URL, so the tab is
- * in the address bar, Back returns to it, and a middle click opens it in a new tab.
- * The Search results tab is there only while a search is open; the Logical topology
+ * The scope's header and its tabs (`ScopeTabs`, links to their own URLs). The
+ * Search results tab is there only while a search is open; the Logical topology
  * tab only while the collector is on (or its URL is open).
  */
 export const ClusterScopeHeader: React.FC<ClusterScopeHeaderProps> = ({ tab, data, query }) => {
-    const navigate = useNavigate();
-    const tabs: TabSpec[] = [
+    const tabs: ScopeTab[] = [
         { key: 'nodes', title: 'Nodes', path: overviewPath(), count: data.nodeNetworkStatesSettled ? data.summaries.length : undefined },
         { key: 'networks', title: 'Networks', path: networksPath(), count: data.networksLoaded ? data.networkRows.length : undefined },
         { key: 'findings', title: 'Findings', path: clusterFindingsPath(), count: data.nodeNetworkStatesSettled ? data.findings.length : undefined },
@@ -79,35 +64,7 @@ export const ClusterScopeHeader: React.FC<ClusterScopeHeaderProps> = ({ tab, dat
                     </span>
                 </FlexItem>
             </Flex>
-            <Tabs
-                activeKey={tab}
-                aria-label="Cluster views"
-                component="nav"
-                data-testid="cluster-tabs"
-                onSelect={(event, key) => {
-                    const target = tabs.find((candidate) => candidate.key === key);
-                    if (!target || !isPlainClick(event)) return;
-                    event.preventDefault();
-                    if (key !== tab) navigate(target.path);
-                }}
-            >
-                {tabs.map(({ key, title, path, count }) => (
-                    <Tab
-                        key={key}
-                        eventKey={key}
-                        href={path}
-                        data-testid={`cluster-tab-${key}`}
-                        title={(
-                            <TabTitleText>
-                                {title}
-                                {count !== undefined && (
-                                    <Badge isRead style={{ marginInlineStart: 'var(--pf-t--global--spacer--sm)' }}>{count}</Badge>
-                                )}
-                            </TabTitleText>
-                        )}
-                    />
-                ))}
-            </Tabs>
+            <ScopeTabs tabs={tabs} active={tab} aria-label="Cluster views" testIdPrefix="cluster-tab" />
         </PageSection>
     );
 };

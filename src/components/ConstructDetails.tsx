@@ -651,6 +651,40 @@ const ConstructDetails: React.FC = () => {
     return <ConstructBody node={node} kind={kind} name={name} header={header} />;
 };
 
+/**
+ * The construct page in the explorer's node scope (ovn-recon-gbr.5): under the
+ * shell's node header and tabs, so no breadcrumb, page heading or node select (the
+ * node switcher does that job). A smaller heading names the construct and leads
+ * back to the node's ladder with the construct selected.
+ */
+export const ConstructExplorerBody: React.FC<{ node: string; kind: string; name: string }> = ({ node, kind, name }) => {
+    const header = React.useCallback(
+        (construct: LadderConstruct | null) => (isDetailKind(kind) ? (
+            <>
+                <DocumentTitle>{`OVN Recon - ${name} (${node})`}</DocumentTitle>
+                <Flex alignItems={{ default: 'alignItemsBaseline' }} spaceItems={{ default: 'spaceItemsMd' }}>
+                    <FlexItem>
+                        <Title headingLevel="h3" size="lg" data-testid="construct-explorer-heading">
+                            {construct ? (
+                                <>
+                                    {roleIcon(construct.role)} {roleLabel(construct.role)}: <code>{name}</code>
+                                </>
+                            ) : (
+                                <code>{name}</code>
+                            )}
+                        </Title>
+                    </FlexItem>
+                    <FlexItem>
+                        <Link to={nodeLadderPath(node, { kind, name })}>Show in the logical topology</Link>
+                    </FlexItem>
+                </Flex>
+            </>
+        ) : null),
+        [node, kind, name],
+    );
+    return <ConstructBody node={node} kind={kind} name={name} header={header} hideNodeSelect />;
+};
+
 /** Stands in for the construct while none is loaded; its section states are
  * never shown. */
 const EMPTY_CONSTRUCT = {

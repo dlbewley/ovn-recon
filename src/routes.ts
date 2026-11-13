@@ -26,8 +26,8 @@ import { constructSelectValue, encodeSelectValue, withSelectParam } from './comp
  *
  * `?select=`, `?tab=`, `?q=` and `?port=` keep their meaning. The explorer shell
  * (`OvnReconApp`, ovn-recon-gbr.4) serves every path here under one console route
- * through `SHELL_ROUTES`, except the node Routes and Findings tabs, which have
- * builders and table entries but no route until ovn-recon-gbr.5.
+ * through `SHELL_ROUTES`, except the node Findings tab, which has a builder and a
+ * table entry but no route until ovn-recon-gbr.7.
  *
  * The other modules that used to build these paths re-export the builders under their
  * old names (physicalViewPath, nodeLadderPath, NETWORKS_PATH, ...), so call sites did
@@ -93,7 +93,7 @@ export const nodePhysicalPath = (node: string, selectId?: string): string =>
 export const nodeLogicalPath = (node: string, construct?: Pick<LadderConstruct, 'kind' | 'name'>): string =>
     `${logicalBase(node)}${constructSearch(construct)}`;
 
-/** NEW, not served yet: one node's Routes tab. */
+/** One node's Routes tab: its main routing table. */
 export const nodeRoutesPath = (node: string): string => `${physicalBase(node)}/${ROUTES_SEGMENT}`;
 
 /** NEW, not served yet: one node's Findings tab. */
@@ -148,6 +148,7 @@ export const SHELL_ROUTES = {
     clusterLogical: LOGICAL_SEGMENT,
     search: SEARCH_SEGMENT,
     nodePhysical: `${PHYSICAL_SEGMENT}/:name`,
+    nodeRoutes: `${PHYSICAL_SEGMENT}/:name/${ROUTES_SEGMENT}`,
     nodeLogical: `${LOGICAL_SEGMENT}/:name`,
     construct: `${LOGICAL_SEGMENT}/:node/:kind/:name`,
     cudn: `${NETWORKS_SEGMENT}/cudn/:name`,

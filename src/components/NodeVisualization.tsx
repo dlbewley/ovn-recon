@@ -38,6 +38,16 @@ import { describeCounts, FindingsBadge, findingsBadgeWidth, HideInfoSwitch } fro
 import { useHideInfoFindings, useNodeFindings, visibleFindings } from '../insights/ui/useFindings';
 import { nodePhysicalPath } from '../routes';
 
+/** The card the graph sits in on the routed page, or nothing for a host that frames it. */
+const ViewFrame: React.FC<{ plain: boolean; children: React.ReactNode }> = ({ plain, children }) => (plain ? (
+    <div data-testid="node-visualization-plain">{children}</div>
+) : (
+    <Card isFullHeight>
+        <CardTitle>OVN Recon - Network Topology</CardTitle>
+        {children}
+    </Card>
+));
+
 interface NodeVisualizationProps {
     nns: NodeNetworkState;
     cudns?: ClusterUserDefinedNetwork[];
@@ -52,6 +62,11 @@ interface NodeVisualizationProps {
     sriovNodeState?: SriovNetworkNodeState;
     /** Leave the host select out of the toolbar, for a host that has its own way to change node. */
     hideHostSelect?: boolean;
+    /**
+     * Draw without the card and its title, edge to edge: for a host that frames the
+     * view itself (the explorer's node scope, ovn-recon-gbr.5).
+     */
+    plain?: boolean;
 }
 
 /** A stable default: a fresh `[]` per render would rebuild the graph context every time. */
@@ -105,7 +120,7 @@ const accentStripePath = (height: number): string => {
 
 const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [], vteps = NO_VTEPS, nodeVtepsAnnotation,
-    sriovNodeState, hideHostSelect = false
+    sriovNodeState, hideHostSelect = false, plain = false
 }) => {
 
 
@@ -941,12 +956,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
 
     if (interfaces.length === 0) {
         return (
-            <Card isFullHeight>
-                <CardTitle>OVN Recon - Network Topology</CardTitle>
+            <ViewFrame plain={plain}>
                 <CardBody>
                     No interfaces found in NodeNetworkState status.
                 </CardBody>
-            </Card>
+            </ViewFrame>
         );
     }
 
@@ -977,8 +991,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     );
 
     return (
-        <Card isFullHeight>
-            <CardTitle>OVN Recon - Network Topology</CardTitle>
+        <ViewFrame plain={plain}>
             <CardBody style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
                 <Drawer isExpanded={!!activeNode} isInline>
                     <DrawerContent
@@ -1126,7 +1139,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                     </DrawerContent>
                 </Drawer>
             </CardBody>
-        </Card >
+        </ViewFrame>
     );
 };
 
