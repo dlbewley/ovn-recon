@@ -37,6 +37,7 @@ import {
 } from './ClusterScope';
 import CollectorStatus from './CollectorStatus';
 import ExplorerTree from './ExplorerTree';
+import { NodeScopeBody, NodeScopeHeader } from './NodeScope';
 import {
     ExplorerTreeItem,
     ExplorerTreeNetwork,
@@ -59,18 +60,16 @@ import { ExplorerData, useExplorerData } from './useExplorerData';
  * search box), then an inline PatternFly Drawer whose resizable start panel holds the
  * tree and whose content is the selected scope. A round button on the divider
  * collapses the tree to a rail. The Cluster scope (Nodes, Networks, Findings, Logical
- * topology, Search results) is drawn here. Node, network and construct URLs still
- * render their own pages, loaded on demand, with the tree beside them; they move into
- * the shell as scopes of their own in ovn-recon-gbr.5 and ovn-recon-gbr.6.
+ * topology, Search results) is drawn here, and so is the node scope (`NodeScope`,
+ * ovn-recon-gbr.5: Physical topology, Logical topology, Routes, and the construct
+ * page). Network URLs still render their own page, loaded on demand, with the tree
+ * beside it, until the network scope moves in (ovn-recon-gbr.6).
  *
  * The URL holds the selection and the tab (`viewForLocation`). The tree's width and
  * whether it is collapsed are plain component state until ovn-recon-gbr.9 keeps them
  * in the console's user settings.
  */
 
-const NodeNetworkStateDetails = React.lazy(() => import('./NodeNetworkStateDetails'));
-const NodeLogicalTopologyDetails = React.lazy(() => import('./NodeLogicalTopologyDetails'));
-const ConstructDetails = React.lazy(() => import('./ConstructDetails'));
 const NetworkDetails = React.lazy(() => import('./NetworkDetails'));
 
 export const TREE_PANEL_ID = 'ovn-recon-explorer-tree';
@@ -239,6 +238,9 @@ const OvnReconApp: React.FC = () => {
     };
     const dividerAt = useDividerOffset(container, !collapsed, treeSize);
 
+    // The node routes all draw the node scope; the URL says which tab.
+    const nodeBody = view?.scope === 'node' ? <NodeScopeBody view={view} /> : <NotFound />;
+
     const panel = collapsed ? (
         <DrawerPanelContent
             id={TREE_PANEL_ID}
@@ -343,6 +345,7 @@ const OvnReconApp: React.FC = () => {
                         {view?.scope === 'cluster' && (
                             <ClusterScopeHeader tab={view.tab} data={data} query={view.params.q} />
                         )}
+                        {view?.scope === 'node' && <NodeScopeHeader view={view} data={data} />}
                         <React.Suspense fallback={<Loading />}>
                             <Routes>
                                 <Route index element={<ClusterIndex view={view} data={data} />} />
@@ -351,9 +354,10 @@ const OvnReconApp: React.FC = () => {
                                 <Route path={SHELL_ROUTES.findings} element={<ClusterFindingsTab data={data} />} />
                                 <Route path={SHELL_ROUTES.clusterLogical} element={<ClusterLogicalTab />} />
                                 <Route path={SHELL_ROUTES.search} element={<ClusterSearchTab search={search} />} />
-                                <Route path={SHELL_ROUTES.nodePhysical} element={<NodeNetworkStateDetails />} />
-                                <Route path={SHELL_ROUTES.nodeLogical} element={<NodeLogicalTopologyDetails />} />
-                                <Route path={SHELL_ROUTES.construct} element={<ConstructDetails />} />
+                                <Route path={SHELL_ROUTES.nodePhysical} element={nodeBody} />
+                                <Route path={SHELL_ROUTES.nodeRoutes} element={nodeBody} />
+                                <Route path={SHELL_ROUTES.nodeLogical} element={nodeBody} />
+                                <Route path={SHELL_ROUTES.construct} element={nodeBody} />
                                 <Route path={SHELL_ROUTES.cudn} element={<NetworkDetails />} />
                                 <Route path={SHELL_ROUTES.udn} element={<NetworkDetails />} />
                                 <Route path={SHELL_ROUTES.nad} element={<NetworkDetails />} />

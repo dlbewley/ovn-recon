@@ -12,8 +12,10 @@ import {
     constructDetailPath,
     networkPath,
     networksPath,
+    nodeFindingsPath,
     nodeLogicalPath,
     nodePhysicalPath,
+    nodeRoutesPath,
     overviewPath,
     overviewSearchPath,
     searchPath,
@@ -67,13 +69,25 @@ const mockStub = (label: string) => {
     };
     return Stub;
 };
-jest.mock('./NodeNetworkStateDetails', () => ({ __esModule: true, default: mockStub('physical') }));
-jest.mock('./NodeLogicalTopologyDetails', () => ({ __esModule: true, default: mockStub('node-logical') }));
-jest.mock('./ConstructDetails', () => ({ __esModule: true, default: mockStub('construct') }));
+/** A body stand-in: prints the props the shell hands it, and the query string. */
+const mockBodyStub = (label: string) => {
+    const Stub: React.FC<Record<string, unknown>> = (props) => {
+        const location = useLocation();
+        return <div data-testid="passthrough">{label} {JSON.stringify(props)} {location.search}</div>;
+    };
+    return Stub;
+};
+jest.mock('./NodeNetworkStateDetails', () => ({
+    __esModule: true,
+    NodeNetworkStateBody: mockBodyStub('physical'),
+    NodeRoutesBody: mockBodyStub('routes'),
+}));
+jest.mock('./NodeLogicalTopologyDetails', () => ({ __esModule: true, NodeLogicalTopologyBody: mockBodyStub('node-logical') }));
+jest.mock('./ConstructDetails', () => ({ __esModule: true, ConstructExplorerBody: mockBodyStub('construct') }));
 jest.mock('./NetworkDetails', () => ({ __esModule: true, default: mockStub('network') }));
 jest.mock('./ClusterLogicalTopologyDetails', () => ({
     __esModule: true,
-    ClusterLogicalTopologyBody: mockStub('cluster-logical'),
+    ClusterLogicalTopologyBody: mockBodyStub('cluster-logical'),
 }));
 
 const coverage = {
@@ -260,17 +274,29 @@ describe('OvnReconApp, the explorer shell', () => {
     describe('routes the shell serves', () => {
         const node = 'worker-1';
         const cases: [string, string, { tab?: string; page?: RegExp; selected: string | null }][] = [
-            ['the overview', overviewPath(), { tab: 'nodes', selected: CLUSTER_ITEM_ID }],
-            ['the overview alias', `${BASE_PATH}/${SHELL_ROUTES.nodesAlias}`, { tab: 'nodes', selected: CLUSTER_ITEM_ID }],
-            ['networks', networksPath(), { tab: 'networks', selected: CLUSTER_ITEM_ID }],
-            ['findings', clusterFindingsPath(), { tab: 'findings', selected: CLUSTER_ITEM_ID }],
-            ['the cluster ladder', clusterLogicalPath(), { tab: 'logical', page: /^cluster-logical/, selected: CLUSTER_ITEM_ID }],
-            ['search', searchPath('10.0.0.1'), { tab: 'search', selected: CLUSTER_ITEM_ID }],
-            ['a node', nodePhysicalPath(node, 'iface:br-ex'), {
-                page: /^physical \{"name":"worker-1"\} \?select=iface(:|%3A)br-ex$/, selected: nodeItemId(node),
+            ['the overview', overviewPath(), { tab: 'cluster-tab-nodes', selected: CLUSTER_ITEM_ID }],
+            ['the overview alias', `${BASE_PATH}/${SHELL_ROUTES.nodesAlias}`, { tab: 'cluster-tab-nodes', selected: CLUSTER_ITEM_ID }],
+            ['networks', networksPath(), { tab: 'cluster-tab-networks', selected: CLUSTER_ITEM_ID }],
+            ['findings', clusterFindingsPath(), { tab: 'cluster-tab-findings', selected: CLUSTER_ITEM_ID }],
+            ['the cluster ladder', clusterLogicalPath(), {
+                tab: 'cluster-tab-logical', page: /^cluster-logical/, selected: CLUSTER_ITEM_ID,
             }],
-            ['a node zone', nodeLogicalPath(node), { page: /^node-logical \{"name":"worker-1"\}/, selected: nodeItemId(node) }],
+            ['search', searchPath('10.0.0.1'), { tab: 'cluster-tab-search', selected: CLUSTER_ITEM_ID }],
+            ['a node', nodePhysicalPath(node, 'iface:br-ex'), {
+                tab: 'node-tab-physical',
+                page: /^physical \{"name":"worker-1","inExplorer":true\} \?select=iface(:|%3A)br-ex$/,
+                selected: nodeItemId(node),
+            }],
+            ['a node\'s routes', nodeRoutesPath(node), {
+                tab: 'node-tab-routes', page: /^routes \{"name":"worker-1"\}/, selected: nodeItemId(node),
+            }],
+            ['a node zone', nodeLogicalPath(node), {
+                tab: 'node-tab-logical',
+                page: /^node-logical \{"name":"worker-1","hideHostSelect":true,"flush":true\}/,
+                selected: nodeItemId(node),
+            }],
             ['a construct', constructDetailPath(node, 'switch', 'join', { tab: 'ports', q: 'abc' }), {
+                tab: 'node-tab-logical',
                 page: /^construct \{"node":"worker-1","kind":"switch","name":"join"\} \?tab=ports&q=abc$/,
                 selected: nodeItemId(node),
             }],
@@ -290,11 +316,11 @@ describe('OvnReconApp, the explorer shell', () => {
             expect(byTestId('explorer-not-found')).toBeNull();
             expect(byTestId('explorer-tree')).not.toBeNull();
             if (expected.tab) {
-                expect(container.querySelector('[data-testid="cluster-tabs"] .pf-m-current [data-testid]')?.getAttribute('data-testid'))
-                    .toBe(`cluster-tab-${expected.tab}`);
+                expect(container.querySelector('nav .pf-m-current [data-testid]')?.getAttribute('data-testid'))
+                    .toBe(expected.tab);
             } else {
-                // A page passed through draws its own header; the shell adds no scope header yet.
-                expect(byTestId('cluster-tabs')).toBeNull();
+                // A network page passed through draws its own header; the shell adds no scope header yet.
+                expect(container.querySelector('nav[aria-label$="views"], nav[aria-label^="Views of"]')).toBeNull();
             }
             if (expected.page) expect(passthrough()).toMatch(expected.page);
             else expect(passthrough()).toBeNull();
@@ -322,7 +348,7 @@ describe('OvnReconApp, the explorer shell', () => {
 
         it.each([
             ['an unknown path', `${BASE_PATH}/nope`],
-            ['a node tab that arrives in ovn-recon-gbr.5', `${nodePhysicalPath('worker-1')}/routes`],
+            ['a node tab that arrives in ovn-recon-gbr.7', nodeFindingsPath('worker-1')],
             ['a construct path one level too deep', `${constructDetailPath('worker-1', 'switch', 'join')}/x`],
         ])('says page not found for %s, with the tree still there', async (_name, url) => {
             await render(url);
@@ -337,6 +363,7 @@ describe('OvnReconApp, the explorer shell', () => {
                 [SHELL_ROUTES.clusterLogical, clusterLogicalPath()],
                 [SHELL_ROUTES.search, `${BASE_PATH}/search`],
                 [SHELL_ROUTES.nodePhysical, nodePhysicalPath('a b')],
+                [SHELL_ROUTES.nodeRoutes, nodeRoutesPath('a b')],
                 [SHELL_ROUTES.nodeLogical, nodeLogicalPath('a b')],
                 [SHELL_ROUTES.construct, constructDetailPath('a b', 'router', 'r/1').split('?')[0]],
                 [SHELL_ROUTES.cudn, networkPath({ kind: 'cudn', name: 'c' })],
@@ -358,7 +385,7 @@ describe('OvnReconApp, the explorer shell', () => {
 
             await click(treeItem(nodeItemId('worker-2')));
             expect(current.pathname).toBe(nodePhysicalPath('worker-2'));
-            expect(passthrough()).toMatch(/^physical \{"name":"worker-2"\}/);
+            expect(passthrough()).toMatch(/^physical \{"name":"worker-2","inExplorer":true\}/);
             expect(selectedTreeIds()).toEqual([nodeItemId('worker-2')]);
 
             await click(treeItem(CLUSTER_ITEM_ID));
@@ -396,6 +423,67 @@ describe('OvnReconApp, the explorer shell', () => {
             expect(cudn.textContent).toBe('extra-0CUDN');
             await click(cudn);
             expect(current.pathname).toBe(networkPath({ kind: 'cudn', name: 'extra-0' }));
+        });
+    });
+
+    describe('the node scope (ovn-recon-gbr.5)', () => {
+        const nodeTabIds = (): string[] =>
+            Array.from(container.querySelectorAll('[data-testid^="node-tab-"]'))
+                .map((tab) => tab.getAttribute('data-testid')!.replace('node-tab-', ''));
+
+        it('heads a node with its name as a switcher, its role, its counts and its NodeNetworkState', async () => {
+            await render(nodePhysicalPath('worker-1'));
+            const header = byTestId('node-scope-header')!;
+            expect(header.querySelector('h2')?.textContent).toBe('worker-1');
+            expect(byTestId('node-switcher')?.getAttribute('aria-label')).toBe('Node worker-1: switch node');
+            expect(byTestId('node-scope-facts')?.textContent).toMatch(/^worker · \d+ up \/ \d+ interfaces · \d+ bridge mappings?$/);
+            const nns = Array.from(header.querySelectorAll('a')).find((link) => link.textContent === 'NodeNetworkState');
+            expect(nns?.getAttribute('href')).toBe('/k8s/cluster/nmstate.io~v1beta1~NodeNetworkState/worker-1');
+            // One heading per level: the page's h1 is the title row's.
+            expect(container.querySelectorAll('h1')).toHaveLength(1);
+        });
+
+        it('links each tab to the node\'s own URL; Logical only with the collector on', async () => {
+            await render(nodePhysicalPath('worker-1', 'iface:br-ex'));
+            expect(nodeTabIds()).toEqual(['physical', 'routes']);
+            mockGate.enabled = true;
+            await render(nodePhysicalPath('worker-1', 'iface:br-ex'));
+            expect(nodeTabIds()).toEqual(['physical', 'logical', 'routes']);
+            const href = (key: string) => byTestId(`node-tab-${key}`)?.getAttribute('href');
+            expect([href('physical'), href('logical'), href('routes')])
+                .toEqual([nodePhysicalPath('worker-1'), nodeLogicalPath('worker-1'), nodeRoutesPath('worker-1')]);
+
+            await click(byTestId('node-tab-routes'));
+            expect(current).toEqual({ pathname: nodeRoutesPath('worker-1'), search: '' });
+            expect(passthrough()).toMatch(/^routes \{"name":"worker-1"\}/);
+            await click(byTestId('node-tab-logical'));
+            expect(current.pathname).toBe(nodeLogicalPath('worker-1'));
+            expect(selectedTreeIds()).toEqual([nodeItemId('worker-1')]);
+        });
+
+        it('switches node on the same tab, keeping the selection', async () => {
+            await render(nodePhysicalPath('worker-1', 'iface:br-ex'));
+            await click(byTestId('node-switcher'));
+            await click(document.querySelector('[data-testid="node-switcher-worker-3"] button'));
+            expect(current).toEqual({ pathname: nodePhysicalPath('worker-3'), search: '?select=iface:br-ex' });
+            expect(passthrough()).toMatch(/^physical \{"name":"worker-3","inExplorer":true\} \?select=iface:br-ex$/);
+            expect(selectedTreeIds()).toEqual([nodeItemId('worker-3')]);
+        });
+
+        it('switches a construct page to the same construct in the other node\'s zone', async () => {
+            await render(constructDetailPath('worker-1', 'router', 'GR_worker-1', { tab: 'policy' }));
+            await click(byTestId('node-switcher'));
+            await click(document.querySelector('[data-testid="node-switcher-control-2"] button'));
+            expect(current.pathname + current.search)
+                .toBe(constructDetailPath('control-2', 'router', 'GR_control-2', { tab: 'policy' }));
+        });
+
+        it('lists every node with a NodeNetworkState in the switcher, with its role', async () => {
+            await render(nodeRoutesPath('worker-1'));
+            await click(byTestId('node-switcher'));
+            const options = Array.from(document.querySelectorAll('[data-testid^="node-switcher-"]'));
+            expect(options).toHaveLength(10);
+            expect(document.querySelector('[data-testid="node-switcher-control-1"]')?.textContent).toBe('control-1control plane');
         });
     });
 

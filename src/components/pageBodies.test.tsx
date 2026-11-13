@@ -4,7 +4,7 @@ import { act } from 'react';
 import { Route, Routes } from 'react-router';
 
 import ClusterLogicalTopologyDetails, { ClusterLogicalTopologyBody } from './ClusterLogicalTopologyDetails';
-import ConstructDetails, { ConstructBody } from './ConstructDetails';
+import ConstructDetails, { ConstructBody, ConstructExplorerBody } from './ConstructDetails';
 import NodeLogicalTopologyDetails, { NodeLogicalTopologyBody } from './NodeLogicalTopologyDetails';
 import { TestRouter } from './testRouter';
 
@@ -122,6 +122,19 @@ describe('page bodies without their page chrome (ovn-recon-gbr.3)', () => {
             expect(container.textContent).toContain('Logical Topology');
             expect(container.querySelector('[data-testid="ladder-content"]')).not.toBeNull();
             expect(select('Filter by network')).not.toBeNull();
+        });
+
+        it('draws edge to edge, without the card\'s frame or title, when the host frames it (ovn-recon-gbr.5)', async () => {
+            await render(<NodeLogicalTopologyBody name="cnv-1" hideHostSelect flush />);
+
+            expectNoPageChrome();
+            const section = container.querySelector('.pf-v6-c-page__main-section')!;
+            expect(section.classList).toContain('pf-m-no-padding');
+            const card = container.querySelector('.pf-v6-c-card')!;
+            expect(card.classList).toContain('pf-m-plain');
+            expect(card.querySelector('.pf-v6-c-card__title')).toBeNull();
+            expect(container.querySelector('[data-testid="ladder-content"]')).not.toBeNull();
+            expect(select('Filter by host')).toBeNull();
         });
 
         it('keeps the host select unless the host asks for it to go', async () => {
@@ -285,6 +298,21 @@ describe('page bodies without their page chrome (ovn-recon-gbr.3)', () => {
 
             expect(header).not.toHaveBeenCalled();
             expect(container.querySelector('[data-testid="host-header"]')).toBeNull();
+        });
+
+        it('in the explorer: a construct heading and a link back to the ladder, but no node select or page chrome (ovn-recon-gbr.5)', async () => {
+            await render(<ConstructExplorerBody node="cnv-1" kind="router" name="GR_cnv-1" />);
+
+            expect(breadcrumb()).toBeNull();
+            expect(heading()).toBeNull();
+            expect(documentTitle()).toBe('OVN Recon - GR_cnv-1 (cnv-1)');
+            const constructHeading = container.querySelector('[data-testid="construct-explorer-heading"]')!;
+            expect(constructHeading.tagName).toBe('H3');
+            expect(constructHeading.textContent).toContain('GR_cnv-1');
+            const back = Array.from(container.querySelectorAll('a')).find((anchor) => anchor.textContent === 'Show in the logical topology');
+            expect(back?.getAttribute('href')).toBe('/ovn-recon/ovn/cnv-1?select=router:GR_cnv-1');
+            expect(select('Node database')).toBeNull();
+            expect(watchedNodeNetworkStateList()).toBe(false);
         });
 
         it('is what the routed page wraps: the page adds the title, breadcrumb and heading', async () => {

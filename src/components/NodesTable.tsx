@@ -25,7 +25,8 @@ const DENSE_CELLS = {
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
-const nnsResourcePath = (name: string): string =>
+/** A node's NodeNetworkState on the console's own resource page. */
+export const nnsResourcePath = (name: string): string =>
     `/k8s/cluster/nmstate.io~v1beta1~NodeNetworkState/${encodeURIComponent(name)}`;
 
 export interface NodesTableProps {
