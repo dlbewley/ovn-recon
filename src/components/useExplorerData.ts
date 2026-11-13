@@ -11,9 +11,9 @@ import { OverviewBodyProps, useOverviewData } from './OvnReconOverview';
  * What the explorer shell reads, once for every view it draws (ovn-recon-gbr.4): the
  * cluster-wide watches the overview made (`useOverviewData`), and everything the tree
  * and the Cluster tabs derive from them, findings included, so the tree, the tabs and
- * the tables cannot disagree. The node, network and logical pages the shell passes
- * through still make their own watches; the console shares a watch between hooks
- * that ask for the same list.
+ * the tables cannot disagree. The node, network and logical bodies the scopes load
+ * still make their own watches; the console shares a watch between hooks that ask
+ * for the same list.
  */
 export interface ExplorerData extends OverviewBodyProps {
     /** One per NodeNetworkState, by name. */

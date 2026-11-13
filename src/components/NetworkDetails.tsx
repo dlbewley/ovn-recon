@@ -14,6 +14,7 @@ import {
     Label,
     LabelGroup,
     PageSection,
+    Spinner,
     Title,
 } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
@@ -35,6 +36,7 @@ import {
     buildPlacement,
     findNetwork,
     listNetworks,
+    NetworkAddress,
     NETWORKS_PATH,
     networkConditions,
     networkCreationFailure,
@@ -48,14 +50,18 @@ import {
     PlacementUplink,
     placementSummary,
 } from './networkPageModel';
-import { overviewPath } from '../routes';
+import { networksPath, nodePhysicalPath, overviewPath } from '../routes';
+import { networkDisplayName, networkNotFoundText, networkScopeState } from './networkScopeModel';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 
 /**
  * The network pages (ovn-recon-nfs.1, nfs.2): a list of every CUDN, UDN and NAD-only
  * network at /ovn-recon/networks, and one page per network with its spec summary and
  * a per-node placement matrix. One module serves all four routes and reads which one
- * from the path. Everything shown is worked out in networkPageModel.ts.
+ * from the path. Everything shown is worked out in networkPageModel.ts. The explorer
+ * shell now draws these URLs itself (the Networks tab, and `NetworkExplorerBody` under
+ * its network scope, ovn-recon-gbr.6), so the default export is no longer routed; it
+ * goes with ovn-recon-gbr.10.
  */
 
 const GVK = {
@@ -237,7 +243,11 @@ interface Column {
 }
 
 const placementColumns = (placement: Placement, vlan: string | undefined, showLogical: boolean): Column[] => {
-    const node: Column = { title: 'Node', render: (row) => row.node };
+    // The node itself: in the explorer this selects the node in the tree.
+    const node: Column = {
+        title: 'Node',
+        render: (row) => <Link to={nodePhysicalPath(row.node)} data-testid={`placement-node-${row.node}`}>{row.node}</Link>,
+    };
     const status: Column = { title: 'Status', render: (row) => <StatusCell row={row} /> };
     const views: Column = { title: 'Views', render: (row) => <ViewLinks row={row} showLogical={showLogical} /> };
     const bridge: Column = {
@@ -479,9 +489,9 @@ export interface NetworkBodyProps {
 
 /**
  * One network's findings, summary and placement by node: everything on a network page
- * below its header. The routed page (NetworkPage) and the console's CUDN, UDN and NAD
- * details tabs (NetworkOvnReconTab, ovn-recon-zdt.1) both render this; there is no
- * second copy.
+ * below its header. The explorer's network scope (NetworkExplorerBody), the unrouted
+ * page (NetworkPage) and the console's CUDN, UDN and NAD details tabs
+ * (NetworkOvnReconTab, ovn-recon-zdt.1) all render this; there is no second copy.
  */
 export const NetworkBody: React.FC<NetworkBodyProps> = ({ record, inputs, nns, showLogical }) => {
     const facts = React.useMemo(() => networkSummaryFacts(record, inputs), [record, inputs]);
@@ -608,6 +618,47 @@ export const useNetworkData = (): NetworkData => {
     const loaded = cudns.loaded && udns.loaded && nads.loaded && ras.loaded;
     const showLogical = gateLoaded && collectorEnabled;
     return { inputs, loaded, nns, showLogical };
+};
+
+/**
+ * The network page in the explorer's network scope (ovn-recon-gbr.6): under the
+ * shell's network header, so no breadcrumb and no page heading; the shell's title row
+ * owns the only `h1`. It sets the document title, as the routed page did, and says
+ * when the URL names a network nobody can see rather than loading for good
+ * (ovn-recon-nt4.13).
+ */
+export const NetworkExplorerBody: React.FC<{ address: NetworkAddress }> = ({ address }) => {
+    const { inputs, loaded, nns, showLogical } = useNetworkData();
+    const state = React.useMemo(() => networkScopeState(address, inputs, loaded), [address, inputs, loaded]);
+    const title = <DocumentTitle>{`OVN Recon - ${networkDisplayName(address)}`}</DocumentTitle>;
+    if (state.status === 'loading') {
+        return (
+            <>
+                {title}
+                <PageSection><Spinner size="lg" aria-label="Loading the network" /></PageSection>
+            </>
+        );
+    }
+    if (state.status === 'missing') {
+        return (
+            <>
+                {title}
+                <PageSection>
+                    <EmptyState titleText="Network not found" headingLevel="h3" data-testid="network-not-found">
+                        <EmptyStateBody>
+                            {networkNotFoundText(address)} <Link to={networksPath()}>See every network</Link>.
+                        </EmptyStateBody>
+                    </EmptyState>
+                </PageSection>
+            </>
+        );
+    }
+    return (
+        <>
+            {title}
+            <NetworkBody record={state.record} inputs={inputs} nns={nns} showLogical={showLogical} />
+        </>
+    );
 };
 
 const NetworkPages: React.FC = () => {

@@ -37,6 +37,7 @@ import {
 } from './ClusterScope';
 import CollectorStatus from './CollectorStatus';
 import ExplorerTree from './ExplorerTree';
+import { NetworkScopeBody, NetworkScopeHeader } from './NetworkScope';
 import { NodeScopeBody, NodeScopeHeader } from './NodeScope';
 import {
     ExplorerTreeItem,
@@ -60,17 +61,15 @@ import { ExplorerData, useExplorerData } from './useExplorerData';
  * search box), then an inline PatternFly Drawer whose resizable start panel holds the
  * tree and whose content is the selected scope. A round button on the divider
  * collapses the tree to a rail. The Cluster scope (Nodes, Networks, Findings, Logical
- * topology, Search results) is drawn here, and so is the node scope (`NodeScope`,
+ * topology, Search results) is drawn here, and so are the node scope (`NodeScope`,
  * ovn-recon-gbr.5: Physical topology, Logical topology, Routes, and the construct
- * page). Network URLs still render their own page, loaded on demand, with the tree
- * beside it, until the network scope moves in (ovn-recon-gbr.6).
+ * page) and the network scope (`NetworkScope`, ovn-recon-gbr.6: a header over the
+ * network page's body).
  *
  * The URL holds the selection and the tab (`viewForLocation`). The tree's width and
  * whether it is collapsed are plain component state until ovn-recon-gbr.9 keeps them
  * in the console's user settings.
  */
-
-const NetworkDetails = React.lazy(() => import('./NetworkDetails'));
 
 export const TREE_PANEL_ID = 'ovn-recon-explorer-tree';
 // 240 px leaves the node table one line per row at 1440 px with the console nav open.
@@ -240,6 +239,7 @@ const OvnReconApp: React.FC = () => {
 
     // The node routes all draw the node scope; the URL says which tab.
     const nodeBody = view?.scope === 'node' ? <NodeScopeBody view={view} /> : <NotFound />;
+    const networkBody = view?.scope === 'network' ? <NetworkScopeBody view={view} /> : <NotFound />;
 
     const panel = collapsed ? (
         <DrawerPanelContent
@@ -346,6 +346,7 @@ const OvnReconApp: React.FC = () => {
                             <ClusterScopeHeader tab={view.tab} data={data} query={view.params.q} />
                         )}
                         {view?.scope === 'node' && <NodeScopeHeader view={view} data={data} />}
+                        {view?.scope === 'network' && <NetworkScopeHeader view={view} data={data} />}
                         <React.Suspense fallback={<Loading />}>
                             <Routes>
                                 <Route index element={<ClusterIndex view={view} data={data} />} />
@@ -358,9 +359,9 @@ const OvnReconApp: React.FC = () => {
                                 <Route path={SHELL_ROUTES.nodeRoutes} element={nodeBody} />
                                 <Route path={SHELL_ROUTES.nodeLogical} element={nodeBody} />
                                 <Route path={SHELL_ROUTES.construct} element={nodeBody} />
-                                <Route path={SHELL_ROUTES.cudn} element={<NetworkDetails />} />
-                                <Route path={SHELL_ROUTES.udn} element={<NetworkDetails />} />
-                                <Route path={SHELL_ROUTES.nad} element={<NetworkDetails />} />
+                                <Route path={SHELL_ROUTES.cudn} element={networkBody} />
+                                <Route path={SHELL_ROUTES.udn} element={networkBody} />
+                                <Route path={SHELL_ROUTES.nad} element={networkBody} />
                                 <Route path="*" element={<NotFound />} />
                             </Routes>
                         </React.Suspense>

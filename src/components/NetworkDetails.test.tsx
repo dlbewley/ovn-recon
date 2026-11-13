@@ -92,6 +92,8 @@ describe('NetworkDetails', () => {
         expect(text('placement-worker-1')).toContain('ens224 (ethernet), up, MTU 1500');
         expect(text('placement-worker-1')).toContain('1924');
         expect(text('placement-control-1')).toContain('No bridge mapping names physnet-vmdata.');
+        // The node name opens the node; the Physical link opens it on the network's mapping.
+        expect(links()).toContain('/ovn-recon/node-network-state/worker-1');
         expect(links()).toContain('/ovn-recon/node-network-state/worker-1?select=ovn:physnet-vmdata');
         expect(links()).toContain('/ovn-recon/ovn/worker-1');
         expect(links()).toContain('/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/vlan-1924');

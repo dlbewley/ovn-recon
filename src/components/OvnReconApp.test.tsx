@@ -3,7 +3,7 @@ import path from 'path';
 import * as React from 'react';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import { matchPath, MemoryRouter, NavigateFunction, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
+import { matchPath, MemoryRouter, NavigateFunction, Route, Routes, useLocation, useNavigate } from 'react-router';
 
 import {
     BASE_PATH,
@@ -28,10 +28,11 @@ import OvnReconApp, { TREE_DEFAULT_SIZE } from './OvnReconApp';
 
 /**
  * The explorer shell (ovn-recon-gbr.4), mounted as console 4.22 mounts a non-exact
- * plugin route: `<Route path="/ovn-recon/*">` (usePluginRoutes). The pages the shell
- * passes through are stood in for by stubs that print their route parameters, so
- * each URL shows which page it reached; the Cluster scope is drawn for real from the
- * ten-node localnet-coverage capture, with the collector disabled.
+ * plugin route: `<Route path="/ovn-recon/*">` (usePluginRoutes). The bodies the shell
+ * loads on demand are stood in for by stubs that print the props they are handed, so
+ * each URL shows which body it reached; the shell, the scope headers and the Cluster
+ * scope are drawn for real from the ten-node localnet-coverage capture, with the
+ * collector disabled. OvnReconApp.network.test.tsx draws the network body for real.
  */
 
 const items = <T,>(...segments: string[]): T[] => {
@@ -55,20 +56,6 @@ jest.mock('./useOvnCollectorFeatureGate', () => ({
     useOvnCollectorFeatureGate: () => ({ ...mockGate }),
 }));
 
-const mockStub = (label: string) => {
-    const Stub: React.FC = () => {
-        // Without the console route's own splat.
-        const params: Record<string, string | undefined> = { ...useParams() };
-        delete params['*'];
-        const location = useLocation();
-        return (
-            <div data-testid="passthrough">
-                {label} {JSON.stringify(params)} {location.search}
-            </div>
-        );
-    };
-    return Stub;
-};
 /** A body stand-in: prints the props the shell hands it, and the query string. */
 const mockBodyStub = (label: string) => {
     const Stub: React.FC<Record<string, unknown>> = (props) => {
@@ -84,7 +71,7 @@ jest.mock('./NodeNetworkStateDetails', () => ({
 }));
 jest.mock('./NodeLogicalTopologyDetails', () => ({ __esModule: true, NodeLogicalTopologyBody: mockBodyStub('node-logical') }));
 jest.mock('./ConstructDetails', () => ({ __esModule: true, ConstructExplorerBody: mockBodyStub('construct') }));
-jest.mock('./NetworkDetails', () => ({ __esModule: true, default: mockStub('network') }));
+jest.mock('./NetworkDetails', () => ({ __esModule: true, NetworkExplorerBody: mockBodyStub('network') }));
 jest.mock('./ClusterLogicalTopologyDetails', () => ({
     __esModule: true,
     ClusterLogicalTopologyBody: mockBodyStub('cluster-logical'),
@@ -301,13 +288,14 @@ describe('OvnReconApp, the explorer shell', () => {
                 selected: nodeItemId(node),
             }],
             ['a CUDN', networkPath({ kind: 'cudn', name: 'vlan-1924' }), {
-                page: /^network \{"name":"vlan-1924"\}/, selected: networkItemId({ kind: 'cudn', name: 'vlan-1924' }),
+                page: /^network \{"address":\{"kind":"cudn","name":"vlan-1924"\}\}/,
+                selected: networkItemId({ kind: 'cudn', name: 'vlan-1924' }),
             }],
             ['a UDN', networkPath({ kind: 'udn', namespace: 'team', name: 'blue' }), {
-                page: /^network \{"namespace":"team","name":"blue"\}/, selected: null,
+                page: /^network \{"address":\{"kind":"udn","namespace":"team","name":"blue"\}\}/, selected: null,
             }],
             ['a NAD', networkPath({ kind: 'nad', namespace: 'default', name: 'vlan-999' }), {
-                page: /^network \{"namespace":"default","name":"vlan-999"\}/, selected: null,
+                page: /^network \{"address":\{"kind":"nad","namespace":"default","name":"vlan-999"\}\}/, selected: null,
             }],
         ];
 
@@ -319,7 +307,8 @@ describe('OvnReconApp, the explorer shell', () => {
                 expect(container.querySelector('nav .pf-m-current [data-testid]')?.getAttribute('data-testid'))
                     .toBe(expected.tab);
             } else {
-                // A network page passed through draws its own header; the shell adds no scope header yet.
+                // A network has one view: a header and no tabs.
+                expect(byTestId('network-scope-header')).not.toBeNull();
                 expect(container.querySelector('nav[aria-label$="views"], nav[aria-label^="Views of"]')).toBeNull();
             }
             if (expected.page) expect(passthrough()).toMatch(expected.page);
@@ -484,6 +473,50 @@ describe('OvnReconApp, the explorer shell', () => {
             const options = Array.from(document.querySelectorAll('[data-testid^="node-switcher-"]'));
             expect(options).toHaveLength(10);
             expect(document.querySelector('[data-testid="node-switcher-control-1"]')?.textContent).toBe('control-1control plane');
+        });
+    });
+
+    describe('the network scope (ovn-recon-gbr.6)', () => {
+        it('heads a CUDN with its name, kind, facts and console link, with no tabs', async () => {
+            await render(networkPath({ kind: 'cudn', name: 'vlan-1924' }));
+            const header = byTestId('network-scope-header')!;
+            expect(header.querySelector('h2')?.textContent).toBe('vlan-1924');
+            expect(header.querySelector('.pf-v6-c-label')?.textContent).toBe('CUDN');
+            expect(byTestId('network-scope-facts')?.textContent).toMatch(/^Localnet( · \w+)? · wired on 4 of 10 nodes$/);
+            expect(byTestId('network-console-link')?.getAttribute('href'))
+                .toBe('/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/vlan-1924');
+            expect(byTestId('network-owner')).toBeNull();
+            // One heading per level: the page's h1 is the title row's.
+            expect(container.querySelectorAll('h1')).toHaveLength(1);
+            expect(container.querySelector('[role="tablist"]')).toBeNull();
+            // The tree opens Networks to show the selection.
+            expect(treeItem('networks')?.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('true');
+            expect(selectedTreeIds()).toEqual([networkItemId({ kind: 'cudn', name: 'vlan-1924' })]);
+        });
+
+        it('names the network behind a generated NAD, which the tree does not list', async () => {
+            await render(networkPath({ kind: 'nad', namespace: 'demo-mirror', name: 'vlan-1924' }));
+            expect(byTestId('network-scope-name')?.textContent).toBe('demo-mirror/vlan-1924');
+            expect(byTestId('network-owner')?.textContent).toBe('Generated by ClusterUserDefinedNetwork vlan-1924');
+            await click(byTestId('network-owner')!.querySelector('a'));
+            expect(current.pathname).toBe(networkPath({ kind: 'cudn', name: 'vlan-1924' }));
+            expect(selectedTreeIds()).toEqual([networkItemId({ kind: 'cudn', name: 'vlan-1924' })]);
+        });
+
+        it('keeps a missing network\'s name in the header, with no facts or links', async () => {
+            await render(networkPath({ kind: 'udn', namespace: 'team', name: 'blue' }));
+            expect(byTestId('network-scope-name')?.textContent).toBe('team/blue');
+            expect(byTestId('network-scope-facts')).toBeNull();
+            expect(byTestId('network-console-link')).toBeNull();
+        });
+
+        it('lists the network in the tree even past the cap, and selecting another opens it', async () => {
+            await render(networkPath({ kind: 'cudn', name: 'extra-7' }));
+            expect(selectedTreeIds()).toEqual([networkItemId({ kind: 'cudn', name: 'extra-7' })]);
+            await click(treeItem(networkItemId({ kind: 'cudn', name: 'vlan-333' })));
+            expect(current.pathname).toBe(networkPath({ kind: 'cudn', name: 'vlan-333' }));
+            expect(byTestId('network-scope-name')?.textContent).toBe('vlan-333');
+            expect(passthrough()).toMatch(/^network \{"address":\{"kind":"cudn","name":"vlan-333"\}\}/);
         });
     });
 
