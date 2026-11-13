@@ -23,8 +23,10 @@ import {
     parseVip,
     physicalViewPath,
     readSearchParam,
+    networkRowKeyOfOvnNetwork,
     resultOfHit,
     SearchQuery,
+    searchMarksOf,
     SearchResult,
     searchWatchedResources,
     serviceOfLoadBalancerName,
@@ -1058,5 +1060,39 @@ describe('the jump list (ovn-recon-tpp.8)', () => {
             { id: 'ovn-recon-search-node-interface', label: 'Node interfaces', count: 1 },
             { id: 'ovn-recon-search-covering', label: 'Covering routes and subnets', count: 1 },
         ]);
+    });
+});
+
+describe('marks in the explorer tree (ovn-recon-gbr.8)', () => {
+    it('reads a CUDN or UDN row key from an OVN network name, and nothing from default', () => {
+        expect(networkRowKeyOfOvnNetwork('cluster_udn_blue')).toBe('cudn//blue');
+        expect(networkRowKeyOfOvnNetwork('shop_web')).toBe('udn/shop/web');
+        expect(networkRowKeyOfOvnNetwork('default')).toBeUndefined();
+        expect(networkRowKeyOfOvnNetwork(undefined)).toBeUndefined();
+    });
+
+    it('counts each result once per node holding it and once on its network, never a covering route', () => {
+        const hits = [
+            hit({ node: 'node-a', rowName: 'blue-port-1', network: 'cluster_udn_blue', matchedValue: '203.0.113.70', construct: { kind: 'switch', name: 'blue_switch', uuid: 's1' } }),
+            hit({ node: 'node-b', rowName: 'blue-port-2', network: 'cluster_udn_blue', matchedValue: '203.0.113.70', construct: { kind: 'switch', name: 'blue_switch', uuid: 's1' } }),
+            hit({ node: 'node-b', rowName: 'shop-port', network: 'shop_web', matchedValue: '203.0.113.70' }),
+            hit({ node: 'node-c', table: 'Logical_Router_Static_Route', rowName: '', matchedField: 'ipPrefix', matchedValue: '203.0.113.0/24', matchType: 'containment', network: 'default' }),
+        ];
+        const results = buildClusterSearchResults(query('203.0.113.70'), searched(hits), { nodeNetworkStates: [] });
+        expect(results.coveringCount).toBe(1);
+        const marks = searchMarksOf(results);
+        expect(Object.fromEntries(marks.nodes)).toEqual({ 'node-a': 1, 'node-b': 2 });
+        expect(Object.fromEntries(marks.networks)).toEqual({ 'cudn//blue': 2, 'udn/shop/web': 1 });
+    });
+
+    it('counts a result folded across nodes on each of them', () => {
+        const states = ['node-a', 'node-b'].map((name) => nns(name, [{ name: 'br-ex', type: 'ovs-bridge', state: 'up' }]));
+        const results = buildClusterSearchResults(query('br-ex'), { state: 'disabled' }, { nodeNetworkStates: states });
+        expect(Object.fromEntries(searchMarksOf(results).nodes)).toEqual({ 'node-a': 1, 'node-b': 1 });
+    });
+
+    it('marks nothing with no search', () => {
+        const marks = searchMarksOf(null);
+        expect([marks.nodes.size, marks.networks.size]).toEqual([0, 0]);
     });
 });

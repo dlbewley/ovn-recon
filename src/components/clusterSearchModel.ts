@@ -16,6 +16,7 @@ import { resolveInterfaceLinkRef } from '../topology/ids';
 import { getResourcePath } from '../topology/links';
 import { networkCidr, ParsedPrefix, parsePrefix, prefixContains } from './ipPrefix';
 import { buildKernelRouteTables, kernelTableLabel, KernelRouteRow, KernelRouteTableGroup } from './kernelRoutes';
+import { networkResourceRef } from './logicalClassification';
 import { getRunningRoutes } from './nodeVisualizationSelectors';
 import { clusterLogicalPath, nodeLogicalPath, nodePhysicalPath, overviewSearchPath, SEARCH_PARAM } from '../routes';
 import { encodeSelectValue } from './useSelectParam';
@@ -1292,6 +1293,49 @@ export const buildClusterSearchResults = (
         coveringCount: covering.reduce((total, group) => total + group.hitCount, 0),
         coverage: describeCoverage(outcome, sources),
     };
+};
+
+/* ------------------------------------------------------------------ */
+/* Marks in the explorer's tree (ovn-recon-gbr.8)                      */
+/* ------------------------------------------------------------------ */
+
+/** How many results each node and network holds, for the explorer tree's marks. */
+export interface SearchMarks {
+    /** Results with a place on the node, by node name. */
+    nodes: ReadonlyMap<string, number>;
+    /**
+     * Results on a ClusterUserDefinedNetwork or UserDefinedNetwork, keyed as the
+     * overview's network rows are (`kind/namespace/name`, kind `cudn` or `udn`).
+     * Read from the OVN network name (`cluster_udn_<name>`, `<namespace>_<name>`);
+     * the default network and NADs are not marked.
+     */
+    networks: ReadonlyMap<string, number>;
+}
+
+/** The overview network row key of an OVN network name, when it names a CUDN or UDN. */
+export const networkRowKeyOfOvnNetwork = (network: string | undefined): string | undefined => {
+    const ref = network ? networkResourceRef(network) : undefined;
+    if (!ref) return undefined;
+    return ref.kind === 'ClusterUserDefinedNetwork' ? `cudn//${ref.name}` : `udn/${ref.namespace ?? ''}/${ref.name}`;
+};
+
+/**
+ * Each result counts once on every node that holds it (a folded row counts on each
+ * of its nodes) and once on its network. Covering routes and subnets are not
+ * matches: they only contain the searched address.
+ */
+export const searchMarksOf = (results: ClusterSearchResults | null): SearchMarks => {
+    const nodes = new Map<string, number>();
+    const networks = new Map<string, number>();
+    const bump = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1);
+    for (const group of results?.groups ?? []) {
+        for (const result of group.results) {
+            new Set(result.places.map((place) => place.node)).forEach((name) => bump(nodes, name));
+            const network = networkRowKeyOfOvnNetwork(result.network);
+            if (network) bump(networks, network);
+        }
+    }
+    return { nodes, networks };
 };
 
 /* ------------------------------------------------------------------ */
