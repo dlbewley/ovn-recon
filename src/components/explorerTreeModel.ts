@@ -97,7 +97,7 @@ export interface ExplorerTreeInput {
      * offers cannot leave it empty.
      */
     findingsOnly?: boolean;
-    /** "With search matches only", likewise ignored while nothing holds a match. */
+    /** "Search matches only", likewise ignored while nothing holds a match. */
     matchesOnly?: boolean;
     limit?: number;
 }
@@ -126,7 +126,7 @@ const hasFindings = (counts: SeverityCounts | undefined): counts is SeverityCoun
 export const treeHasFindings = (nodes: ExplorerTreeNode[], networks: ExplorerTreeNetwork[]): boolean =>
     nodes.some((node) => hasFindings(node.findings)) || networks.some((network) => hasFindings(network.findings));
 
-/** Some node or network holds a result of the open search: the tree offers "With search matches only". */
+/** Some node or network holds a result of the open search: the tree offers "Search matches only". */
 export const treeHasMatches = (nodes: ExplorerTreeNode[], networks: ExplorerTreeNetwork[]): boolean =>
     nodes.some((node) => (node.matches ?? 0) > 0) || networks.some((network) => (network.matches ?? 0) > 0);
 

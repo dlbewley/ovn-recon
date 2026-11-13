@@ -197,7 +197,7 @@ describe('explorerTreeModel', () => {
             expect(item(closed, nodeItemId('worker-1'))?.matches).toBeUndefined();
         });
 
-        it('narrows to what holds results with "With search matches only", keeping the selection', () => {
+        it('narrows to what holds results with "Search matches only", keeping the selection', () => {
             const tree = buildExplorerTree(input({ ...withMatches, matchesOnly: true, selectedId: nodeItemId('control-0') }));
             expect(childIds(tree, NODES_GROUP_ID)).toEqual([nodeItemId('control-0'), nodeItemId('worker-2')]);
             expect(childIds(tree, NETWORKS_GROUP_ID)).toEqual([networkItemId(networks[1])]);

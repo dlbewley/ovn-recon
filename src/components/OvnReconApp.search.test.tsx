@@ -210,7 +210,7 @@ describe('OvnReconApp search (ovn-recon-gbr.8)', () => {
             expect(current).toEqual({ pathname: `${BASE_PATH}/search`, search: '?q=br-vmdata' });
         });
 
-        it('narrows the tree to what holds results with "With search matches only"', async () => {
+        it('narrows the tree to what holds results with "Search matches only"', async () => {
             await render(searchPath('br-vmdata'));
             await click(switchInput());
             expect(groupMembers(NODES_GROUP_ID)).toEqual(WORKERS.map(nodeItemId));
