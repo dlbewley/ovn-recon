@@ -76,8 +76,13 @@ const CardSwatch: React.FC<{ accent: string; icon: React.ReactNode; radius?: num
             alignItems: 'center',
             justifyContent: 'center',
             background: SURFACE.card,
-            border: `${border ? 1.5 : 1}px ${dashed ? 'dashed' : 'solid'} ${border ?? SURFACE.border}`,
-            borderLeft: border ? undefined : `4px solid ${accent}`,
+            // Longhands only (ovn-recon-nt4.14): a border shorthand holding a var()
+            // beside a borderLeft that React clears with '' loses its left side.
+            borderStyle: dashed ? 'dashed' : 'solid',
+            borderWidth: border ? 1.5 : 1,
+            borderColor: border ?? SURFACE.border,
+            // The physical cards' accent stripe; logical cards have none, only a border.
+            ...(border ? {} : { borderLeftWidth: 4, borderLeftStyle: 'solid', borderLeftColor: accent }),
             borderRadius: radius,
             color: accent,
             fontSize: 14,

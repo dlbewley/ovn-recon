@@ -56,6 +56,13 @@ describe('graph legends', () => {
             });
         });
 
+        it('gives each node kind\'s swatch its accent stripe on the left (ovn-recon-nt4.14)', () => {
+            const swatch = container.querySelector<HTMLElement>(`[data-legend-entry="node:${NODE_TYPES[0].type}"] [data-swatch-accent]`)!;
+            expect(swatch.style.borderLeftWidth).toBe('4px');
+            expect(swatch.style.borderLeftStyle).toBe('solid');
+            expect(swatch.style.borderTopWidth).toBe('1px');
+        });
+
         it('has a row for every edge kind, every provenance and every state', () => {
             const expected = [
                 ...Object.keys(EDGE_KIND_STYLES).map((kind) => `edge:${kind}`),
@@ -118,6 +125,18 @@ describe('graph legends', () => {
                 ...model.edges.map((edge) => `ladder-edge:${edge.kind}`),
             ]);
             expect(entries()).toEqual(expect.arrayContaining(Array.from(drawn)));
+        });
+
+        it('draws every construct swatch with all four sides (ovn-recon-nt4.14)', () => {
+            const swatches = Array.from(container.querySelectorAll<HTMLElement>('[data-legend-entry^="role:"] [data-swatch-accent]'));
+            expect(swatches.length).toBe(Object.keys(ROLE_DESCRIPTIONS).length);
+            swatches.forEach((swatch) => {
+                ['Left', 'Right', 'Top', 'Bottom'].forEach((side) => {
+                    const style = swatch.style as unknown as Record<string, string>;
+                    expect(style[`border${side}Style`]).toBe('solid');
+                    expect(style[`border${side}Width`]).toBe('1.5px');
+                });
+            });
         });
 
         it('draws router peering dashed, as the ladder does', () => {
