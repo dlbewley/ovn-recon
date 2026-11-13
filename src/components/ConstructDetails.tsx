@@ -218,18 +218,45 @@ const PageMessage: React.FC<{ title: string; children?: React.ReactNode; footer?
     </PageSection>
 );
 
+export interface ConstructBodyProps {
+    /** The node whose northbound database is read. */
+    node: string;
+    /** `switch` or `router`. Anything else gets the "no detail page" message. */
+    kind: string;
+    /** The construct's OVN row name. */
+    name: string;
+    /**
+     * What the host puts at the top of the page, above the network, node and
+     * refresh row. It is handed the construct once the snapshot holds one, and
+     * null until then or when there is none, because a heading that names the
+     * construct's role can only come from the row. The routed page passes its
+     * document title, breadcrumb and heading; a host with a header of its own
+     * passes nothing.
+     */
+    header?: (construct: LadderConstruct | null) => React.ReactNode;
+    /**
+     * Leave the "Node database" select out, for a host that has its own way to
+     * change node. The NodeNetworkState list that fills it is then not watched
+     * either.
+     */
+    hideNodeSelect?: boolean;
+}
+
 /**
- * The construct detail page (ovn-recon-e2b.8): one logical switch or router
+ * The construct detail view (ovn-recon-e2b.8): one logical switch or router
  * from one node's northbound database, full width and tabbed, for the row
- * sets the ladder drawer can only summarise. The URL carries the zone, the
- * construct, the tab, the active tab's filter and one port, so the page can
- * be linked to and reloaded.
+ * sets the ladder drawer can only summarise. Which construct comes from the
+ * host; the tab, the active tab's filter and one port live in the query string
+ * of whatever page hosts it (`?tab=`, `?q=`, `?port=`), so the view can be
+ * linked to and reloaded.
  */
-const ConstructDetails: React.FC = () => {
-    const params = useParams<{ node?: string; kind?: string; name?: string }>();
-    const node = params.node ?? '';
-    const kindParam = params.kind ?? '';
-    const name = params.name ?? '';
+export const ConstructBody: React.FC<ConstructBodyProps> = ({
+    node,
+    kind: kindParam,
+    name,
+    header,
+    hideNodeSelect = false,
+}) => {
     const kind = isDetailKind(kindParam) ? kindParam : undefined;
 
     const location = useLocation();
@@ -241,7 +268,7 @@ const ConstructDetails: React.FC = () => {
     const port = search.get('port') ?? undefined;
 
     const { enabled, loaded: gateLoaded, loadError: gateError } = useOvnCollectorFeatureGate();
-    const [nodeNetworkStates] = useK8sWatchResource<NodeNetworkState[]>({
+    const [nodeNetworkStates] = useK8sWatchResource<NodeNetworkState[]>(hideNodeSelect ? null : {
         groupVersionKind: { group: 'nmstate.io', version: 'v1beta1', kind: 'NodeNetworkState' },
         isList: true,
     });
@@ -357,7 +384,6 @@ const ConstructDetails: React.FC = () => {
         );
     }
 
-    const selectValue = { kind, name };
     const ageMs = snapshot?.metadata?.generatedAt ? parseSnapshotAgeMs(snapshot.metadata.generatedAt) : null;
     const networkRef = construct ? networkResourceRef(construct.network) : undefined;
 
@@ -371,29 +397,9 @@ const ConstructDetails: React.FC = () => {
         }
     };
 
-    const header = (
+    const headerSection = (
         <PageSection>
-            <Breadcrumb>
-                <BreadcrumbItem>
-                    <Link to={overviewPath()}>OVN Recon</Link>
-                </BreadcrumbItem>
-                <BreadcrumbItem>
-                    <Link to={clusterLadderPath(selectValue)}>Cluster logical topology</Link>
-                </BreadcrumbItem>
-                <BreadcrumbItem>
-                    <Link to={nodeLadderPath(node, selectValue)}>Logical OVN: {node}</Link>
-                </BreadcrumbItem>
-                <BreadcrumbItem isActive>{name}</BreadcrumbItem>
-            </Breadcrumb>
-            <Title headingLevel="h1" className="pf-u-mt-lg">
-                {construct ? (
-                    <>
-                        {roleIcon(construct.role)} {roleLabel(construct.role)}: <code>{name}</code>
-                    </>
-                ) : (
-                    <code>{name}</code>
-                )}
-            </Title>
+            {header?.(construct)}
             <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }} alignItems={{ default: 'alignItemsCenter' }}>
                 {construct && (
                     <FlexItem data-testid="detail-network">
@@ -405,25 +411,27 @@ const ConstructDetails: React.FC = () => {
                         )}
                     </FlexItem>
                 )}
-                <FlexItem>
-                    <FormSelect
-                        aria-label="Node database"
-                        value={node}
-                        onChange={(_event, value) => {
-                            if (value && value !== node) {
-                                navigate(
-                                    constructDetailPath(value, kind, constructNameForNode(name, node, value), {
-                                        tab: requestedTab,
-                                    }),
-                                );
-                            }
-                        }}
-                    >
-                        {nodeNames.map((nodeName) => (
-                            <FormSelectOption key={nodeName} value={nodeName} label={`Node ${nodeName}`} />
-                        ))}
-                    </FormSelect>
-                </FlexItem>
+                {!hideNodeSelect && (
+                    <FlexItem>
+                        <FormSelect
+                            aria-label="Node database"
+                            value={node}
+                            onChange={(_event, value) => {
+                                if (value && value !== node) {
+                                    navigate(
+                                        constructDetailPath(value, kind, constructNameForNode(name, node, value), {
+                                            tab: requestedTab,
+                                        }),
+                                    );
+                                }
+                            }}
+                        >
+                            {nodeNames.map((nodeName) => (
+                                <FormSelectOption key={nodeName} value={nodeName} label={`Node ${nodeName}`} />
+                            ))}
+                        </FormSelect>
+                    </FlexItem>
+                )}
                 <FlexItem>
                     <Button variant="tertiary" onClick={data.refresh} isDisabled={data.loading}>
                         Refresh
@@ -578,11 +586,69 @@ const ConstructDetails: React.FC = () => {
 
     return (
         <>
-            <DocumentTitle>{`OVN Recon - ${name} (${node})`}</DocumentTitle>
-            {header}
+            {headerSection}
             {body}
         </>
     );
+};
+
+/**
+ * The routed page's own header: document title, breadcrumb and heading. The
+ * breadcrumb's two ladder links carry the construct as their selection.
+ */
+const ConstructPageHeader: React.FC<{
+    node: string;
+    kind: DetailKind;
+    name: string;
+    construct: LadderConstruct | null;
+}> = ({ node, kind, name, construct }) => {
+    const selectValue = { kind, name };
+    return (
+        <>
+            <DocumentTitle>{`OVN Recon - ${name} (${node})`}</DocumentTitle>
+            <Breadcrumb>
+                <BreadcrumbItem>
+                    <Link to={overviewPath()}>OVN Recon</Link>
+                </BreadcrumbItem>
+                <BreadcrumbItem>
+                    <Link to={clusterLadderPath(selectValue)}>Cluster logical topology</Link>
+                </BreadcrumbItem>
+                <BreadcrumbItem>
+                    <Link to={nodeLadderPath(node, selectValue)}>Logical OVN: {node}</Link>
+                </BreadcrumbItem>
+                <BreadcrumbItem isActive>{name}</BreadcrumbItem>
+            </Breadcrumb>
+            <Title headingLevel="h1" className="pf-u-mt-lg">
+                {construct ? (
+                    <>
+                        {roleIcon(construct.role)} {roleLabel(construct.role)}: <code>{name}</code>
+                    </>
+                ) : (
+                    <code>{name}</code>
+                )}
+            </Title>
+        </>
+    );
+};
+
+/**
+ * The routed construct page, /ovn-recon/ovn/:node/:kind/:name. The URL carries
+ * the zone and the construct; the body keeps the tab, filter and port in the
+ * query string.
+ */
+const ConstructDetails: React.FC = () => {
+    const params = useParams<{ node?: string; kind?: string; name?: string }>();
+    const node = params.node ?? '';
+    const kind = params.kind ?? '';
+    const name = params.name ?? '';
+    // The body reaches its header only for a kind it has a page for.
+    const header = React.useCallback(
+        (construct: LadderConstruct | null) => (isDetailKind(kind)
+            ? <ConstructPageHeader node={node} kind={kind} name={name} construct={construct} />
+            : null),
+        [node, kind, name],
+    );
+    return <ConstructBody node={node} kind={kind} name={name} header={header} />;
 };
 
 /** Stands in for the construct while none is loaded; its section states are

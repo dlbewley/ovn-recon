@@ -50,6 +50,8 @@ interface NodeVisualizationProps {
     nodeVtepsAnnotation?: string;
     /** This node's SriovNetworkNodeState, when the SR-IOV Network Operator is present. */
     sriovNodeState?: SriovNetworkNodeState;
+    /** Leave the host select out of the toolbar, for a host that has its own way to change node. */
+    hideHostSelect?: boolean;
 }
 
 /** A stable default: a fresh `[]` per render would rebuild the graph context every time. */
@@ -103,12 +105,12 @@ const accentStripePath = (height: number): string => {
 
 const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [], vteps = NO_VTEPS, nodeVtepsAnnotation,
-    sriovNodeState
+    sriovNodeState, hideHostSelect = false
 }) => {
 
 
 
-    // Fetch all NodeNetworkState resources for the dropdown
+    // Every NodeNetworkState: the host select's options, and the cluster half of the findings.
     const [allNodeNetworkStates, allNodeNetworkStatesLoaded] = useK8sWatchResource<NodeNetworkState[]>({
         groupVersionKind: {
             group: 'nmstate.io',
@@ -985,26 +987,28 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                     >
                         <DrawerContentBody style={{ padding: '12px 24px', overflow: 'auto' }}>
                             <Flex style={{ marginBottom: '16px', alignItems: 'center', gap: '16px' }}>
-                                <FlexItem>
-                                    <FormSelect
-                                        value={nns?.metadata?.name || ''}
-                                        onChange={handleHostSelect}
-                                        aria-label="Host selector"
-                                        style={{ minWidth: '200px' }}
-                                    >
-                                        <FormSelectOption key="placeholder" value="" label="Select host" isPlaceholder />
-                                        {allNodeNetworkStates
-                                            ?.slice()
-                                            .sort((a: NodeNetworkState, b: NodeNetworkState) => {
-                                                const nameA = a.metadata?.name || '';
-                                                const nameB = b.metadata?.name || '';
-                                                return nameA.localeCompare(nameB);
-                                            })
-                                            .map((nnsItem: NodeNetworkState) => (
-                                                <FormSelectOption key={nnsItem.metadata?.name} value={nnsItem.metadata?.name || ''} label={nnsItem.metadata?.name || 'Unknown'} />
-                                            ))}
-                                    </FormSelect>
-                                </FlexItem>
+                                {!hideHostSelect && (
+                                    <FlexItem>
+                                        <FormSelect
+                                            value={nns?.metadata?.name || ''}
+                                            onChange={handleHostSelect}
+                                            aria-label="Host selector"
+                                            style={{ minWidth: '200px' }}
+                                        >
+                                            <FormSelectOption key="placeholder" value="" label="Select host" isPlaceholder />
+                                            {allNodeNetworkStates
+                                                ?.slice()
+                                                .sort((a: NodeNetworkState, b: NodeNetworkState) => {
+                                                    const nameA = a.metadata?.name || '';
+                                                    const nameB = b.metadata?.name || '';
+                                                    return nameA.localeCompare(nameB);
+                                                })
+                                                .map((nnsItem: NodeNetworkState) => (
+                                                    <FormSelectOption key={nnsItem.metadata?.name} value={nnsItem.metadata?.name || ''} label={nnsItem.metadata?.name || 'Unknown'} />
+                                                ))}
+                                        </FormSelect>
+                                    </FlexItem>
+                                )}
                                 <FlexItem>
                                     <Switch
                                         id="show-nads-toggle"

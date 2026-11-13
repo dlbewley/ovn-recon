@@ -30,6 +30,8 @@ interface NodeNetworkStateBodyProps {
      * the node has no NodeNetworkState.
      */
     embedded?: boolean;
+    /** Leave the host select out of the graph toolbar, for a host that has its own way to change node. */
+    hideHostSelect?: boolean;
 }
 
 /**
@@ -37,7 +39,11 @@ interface NodeNetworkStateBodyProps {
  * route handling. The routed page (NodeNetworkStateDetails) and the Node details tab
  * (NodeOvnReconTab) both render this; there is no second copy.
  */
-export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({ name, embedded = false }) => {
+export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
+    name,
+    embedded = false,
+    hideHostSelect = false,
+}) => {
     const location = useLocation();
     const navigate = useNavigate();
     const { enabled: ovnCollectorEnabled } = useOvnCollectorFeatureGate();
@@ -268,6 +274,7 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({ name
                     routeAdvertisements={routeAdvertisements} enactments={enactments}
                     vteps={vteps || undefined} nodeVtepsAnnotation={nodeVtepsAnnotation}
                     sriovNodeState={sriovNodeState || undefined}
+                    hideHostSelect={hideHostSelect}
                 />
             </PageSection>
         </>

@@ -1,33 +1,18 @@
 import * as React from 'react';
 import { Link } from 'react-router';
 import {
-    Button,
     Card,
     CardBody,
     CardFooter,
     CardTitle,
-    DescriptionList,
-    DescriptionListDescription,
-    DescriptionListGroup,
-    DescriptionListTerm,
-    Flex,
-    FlexItem,
     Grid,
     GridItem,
-    Label,
     PageSection,
-    Popover,
-    SearchInput,
     Title,
-    Toolbar,
-    ToolbarContent,
-    ToolbarItem,
 } from '@patternfly/react-core';
-import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { DocumentTitle, K8sResourceCommon, useK8sWatchResource } from '@openshift-console/dynamic-plugin-sdk';
 
 import {
-    ClusterLogicalTopology,
     ClusterUserDefinedNetwork,
     NetworkAttachmentDefinition,
     NodeNetworkConfigurationEnactment,
@@ -36,26 +21,19 @@ import {
     UserDefinedNetwork,
 } from '../types';
 import ClusterSearch from './ClusterSearch';
+import CollectorStatus, { CollectorState, useCollectorState } from './CollectorStatus';
 import FindingsCard from '../insights/ui/FindingsCard';
-import { describeCounts, SeverityCountsInline } from '../insights/ui/FindingsViews';
 import { useClusterFindings, useHideInfoFindings, visibleFindings } from '../insights/ui/useFindings';
-import { nodePagePath } from '../insights/links';
-import { clusterLogicalPath, nodeLogicalPath, nodePhysicalPath } from '../routes';
-import { fetchClusterTopology } from './collectorApi';
+import { clusterLogicalPath } from '../routes';
 import { NetworkInputs, NETWORKS_PATH } from './networkPageModel';
-import { freshnessFromAge } from './snapshotFreshness';
-import SnapshotStatusLine, { formatAge, ovnReleaseOf, summarizeOvnZones } from './SnapshotStatusLine';
-import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
+import NetworksTable from './NetworksTable';
+import NodesTable from './NodesTable';
 import {
-    filterNodeSummaries,
     findingCountsByNode,
-    NETWORK_KIND_LABEL,
     nodeRole,
     OVERVIEW_NETWORK_LIMIT,
     OverviewNetworkRow,
     overviewNetworkRows,
-    snapshotAges,
-    summarizeFleet,
     summarizeNode,
 } from './overviewModel';
 
@@ -73,12 +51,11 @@ import {
  * with it disabled the status line says so and nothing else moves.
  *
  * `OverviewBody` draws the page from what it is handed; the routed page only gathers
- * it (`useOverviewData`), as the other routed pages wrap their bodies.
+ * it (`useOverviewData`), as the other routed pages wrap their bodies. The nodes
+ * table, the networks table and the collector line are components of their own
+ * (`NodesTable`, `NetworksTable`, `CollectorStatus`, ovn-recon-gbr.3) that this page
+ * places in its grid, so another host can place them elsewhere.
  */
-
-// Same cadence as the cluster view: the aggregate probes every zone, so it
-// is not something to hammer from a page people leave open.
-const COLLECTOR_REFRESH_MS = 60000;
 
 const subtle: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
 
@@ -94,21 +71,8 @@ const NO_ENACTMENTS: NodeNetworkConfigurationEnactment[] = [];
 
 const listOr = <T,>(list: T[] | undefined | null, empty: T[]): T[] => (Array.isArray(list) ? list : empty);
 
-const nnsResourcePath = (name: string): string =>
-    `/k8s/cluster/nmstate.io~v1beta1~NodeNetworkState/${encodeURIComponent(name)}`;
-
-/** What the page knows about the collector without asking it anything new. */
-export interface CollectorState {
-    /** `spec.collector.enabled` on the OvnRecon resource. */
-    enabled: boolean;
-    /** Whether `enabled` is known yet. */
-    gateLoaded: boolean;
-    /** The last aggregate the collector answered with. */
-    topology: ClusterLogicalTopology | null;
-    /** Why the last request failed; empty after one that worked. */
-    error: string;
-    loading: boolean;
-}
+// Part of OverviewBodyProps, so it stays importable from here.
+export type { CollectorState };
 
 export interface OverviewBodyProps {
     /** Every node's NodeNetworkState; undefined or null while loading, refused or absent. */
@@ -129,19 +93,11 @@ export interface OverviewBodyProps {
 
 // --- Networks ---------------------------------------------------------------------
 
-const NETWORK_COLUMNS = ['Name', 'Kind', 'Topology', 'Role', 'Nodes wired', 'Findings'];
-
-const networkLabel = (row: OverviewNetworkRow): string =>
-    (row.record.namespace ? `${row.record.namespace}/${row.record.name}` : row.record.name);
-
-const networkTestId = (row: OverviewNetworkRow): string =>
-    [row.record.kind, row.record.namespace, row.record.name].filter(Boolean).join('-');
-
 /**
- * The networks table (ovn-recon-nfs.6): every CUDN, UDN and NAD-only network with the
- * nodes it is wired on and what was found about it, each row opening its network page.
- * Capped, so a cluster with many networks still shows its nodes without a long scroll;
- * the rows come sorted with findings first, so the cap hides nothing that needs a look.
+ * The networks card (ovn-recon-nfs.6): the networks table under a title that opens the
+ * networks page. Capped, so a cluster with many networks still shows its nodes without
+ * a long scroll; the rows come sorted with findings first, so the cap hides nothing
+ * that needs a look.
  */
 const NetworksCard: React.FC<{ rows: OverviewNetworkRow[]; loaded: boolean }> = ({ rows, loaded }) => {
     const shown = rows.slice(0, OVERVIEW_NETWORK_LIMIT);
@@ -152,48 +108,7 @@ const NetworksCard: React.FC<{ rows: OverviewNetworkRow[]; loaded: boolean }> = 
                 {loaded && <span style={{ ...subtle, fontWeight: 'normal', marginInlineStart: '0.5em' }}>{rows.length}</span>}
             </CardTitle>
             <CardBody>
-                <Table aria-label="Networks" variant="compact">
-                    <Thead>
-                        {/* nowrap: a compact table otherwise cuts "Nodes wired" short with room to spare. */}
-                        <Tr>{NETWORK_COLUMNS.map((column) => <Th key={column} modifier="nowrap">{column}</Th>)}</Tr>
-                    </Thead>
-                    <Tbody>
-                        {loaded && shown.map((row) => (
-                            <Tr key={row.key} data-testid={`overview-network-${networkTestId(row)}`}>
-                                <Td dataLabel="Name">
-                                    <Link to={row.path}>{networkLabel(row)}</Link>
-                                    {row.notCreated && (
-                                        <Label
-                                            isCompact
-                                            status="danger"
-                                            style={{ marginInlineStart: 'var(--pf-t--global--spacer--sm)' }}
-                                            data-testid="overview-network-not-created"
-                                        >
-                                            Not created
-                                        </Label>
-                                    )}
-                                </Td>
-                                <Td dataLabel="Kind">{NETWORK_KIND_LABEL[row.record.kind]}</Td>
-                                <Td dataLabel="Topology">{row.record.topology}</Td>
-                                <Td dataLabel="Role">{row.record.role ?? ''}</Td>
-                                <Td dataLabel="Nodes wired">
-                                    {row.wired ? `${row.wired.wired} of ${row.wired.total}` : '-'}
-                                </Td>
-                                <Td dataLabel="Findings" data-testid={`overview-network-findings-${networkTestId(row)}`}>
-                                    {row.findings.total > 0 && (
-                                        <Link to={row.path} aria-label={`${describeCounts(row.findings)} on ${networkLabel(row)}`}>
-                                            <SeverityCountsInline counts={row.findings} />
-                                        </Link>
-                                    )}
-                                </Td>
-                            </Tr>
-                        ))}
-                        {!loaded && <Tr><Td colSpan={NETWORK_COLUMNS.length}>Loading...</Td></Tr>}
-                        {loaded && rows.length === 0 && (
-                            <Tr><Td colSpan={NETWORK_COLUMNS.length}>No networks found.</Td></Tr>
-                        )}
-                    </Tbody>
-                </Table>
+                <NetworksTable rows={shown} loaded={loaded} />
             </CardBody>
             {loaded && rows.length > shown.length && (
                 <CardFooter data-testid="overview-networks-more">
@@ -205,152 +120,7 @@ const NetworksCard: React.FC<{ rows: OverviewNetworkRow[]; loaded: boolean }> = 
     );
 };
 
-// --- Collector --------------------------------------------------------------------
-
-const MAX_WARNINGS_SHOWN = 5;
-
-const Detail: React.FC<{ term: string; children: React.ReactNode }> = ({ term, children }) => (
-    <DescriptionListGroup>
-        <DescriptionListTerm>{term}</DescriptionListTerm>
-        <DescriptionListDescription>{children}</DescriptionListDescription>
-    </DescriptionListGroup>
-);
-
-/**
- * The collector in one line (ovn-recon-nt4.9): freshness, how many node databases the
- * cluster view is assembled from, and anything degraded, with the rest behind
- * "Collector details". It replaces the Cluster logical topology card, so it also
- * carries that card's way into the cluster view. Only what the aggregate response and
- * the feature gate already say is shown here.
- */
-const CollectorStatus: React.FC<{ collector: CollectorState }> = ({ collector }) => {
-    const { enabled, gateLoaded, topology, error, loading } = collector;
-
-    // Keep the age text moving between refetches.
-    const [ageTick, setAgeTick] = React.useState(0);
-    React.useEffect(() => {
-        const timer = window.setInterval(() => setAgeTick((tick) => tick + 1), 30000);
-        return () => window.clearInterval(timer);
-    }, []);
-    const ages = React.useMemo(
-        () => snapshotAges((topology?.snapshots ?? []).map((snapshot) => snapshot.metadata?.generatedAt)),
-        // ageTick is a deliberate extra dependency: it forces the ages to recompute.
-        [topology, ageTick],
-    );
-    const ovn = React.useMemo(
-        () => summarizeOvnZones((topology?.snapshots ?? []).map((snapshot) => snapshot.database?.nbGlobal)),
-        [topology],
-    );
-
-    const active = gateLoaded && enabled;
-    const unreachable = active && Boolean(error) && !topology;
-    const warnings = topology?.warnings ?? [];
-    const releases = [...new Set((ovn?.versions ?? []).map(ovnReleaseOf))];
-
-    let details: React.ReactNode;
-    if (!active) {
-        details = (
-            <p>
-                The logical topology views and the OVN part of search need the collector. It is switched on
-                with <code>spec.collector.enabled</code> on the OvnRecon resource.
-            </p>
-        );
-    } else if (unreachable) {
-        details = (
-            <>
-                <p>The collector did not answer: {error}</p>
-                <p style={subtle}>Retried every {COLLECTOR_REFRESH_MS / 1000} seconds.</p>
-            </>
-        );
-    } else if (!topology) {
-        details = <p>Waiting for the collector&apos;s first answer.</p>;
-    } else {
-        details = (
-            <DescriptionList isCompact isHorizontal horizontalTermWidthModifier={{ default: '16ch' }}>
-                <Detail term="Source health">{topology.metadata.sourceHealth || 'unknown'}</Detail>
-                <Detail term="Node databases">{topology.snapshots.length}</Detail>
-                {ages.oldestMs != null && <Detail term="Oldest snapshot">{formatAge(ages.oldestMs)}</Detail>}
-                {ages.newestMs != null && <Detail term="Newest snapshot">{formatAge(ages.newestMs)}</Detail>}
-                {releases.length > 0 && <Detail term="OVN version">{releases.join(', ')}</Detail>}
-                <Detail term="Refreshed">every {COLLECTOR_REFRESH_MS / 1000} seconds</Detail>
-                {error && <Detail term="Last refresh failed">{error}</Detail>}
-                {warnings.length > 0 && (
-                    <Detail term="Warnings">
-                        {warnings.slice(0, MAX_WARNINGS_SHOWN).map((warning) => (
-                            <div key={`${warning.code}:${warning.message}`} style={{ overflowWrap: 'anywhere' }}>
-                                {warning.code}: {warning.message}
-                            </div>
-                        ))}
-                        {warnings.length > MAX_WARNINGS_SHOWN && (
-                            <div style={subtle}>and {warnings.length - MAX_WARNINGS_SHOWN} more</div>
-                        )}
-                    </Detail>
-                )}
-            </DescriptionList>
-        );
-    }
-
-    return (
-        <Card data-testid="overview-collector-status">
-            <CardBody>
-                <Flex
-                    spaceItems={{ default: 'spaceItemsMd' }}
-                    alignItems={{ default: 'alignItemsCenter' }}
-                    rowGap={{ default: 'rowGapSm' }}
-                >
-                    <FlexItem>
-                        <strong>Cluster logical topology</strong>
-                    </FlexItem>
-                    {!gateLoaded && <FlexItem><span style={subtle}>Loading...</span></FlexItem>}
-                    {gateLoaded && !enabled && (
-                        <FlexItem><Label isCompact color="grey">Collector not enabled</Label></FlexItem>
-                    )}
-                    {unreachable && (
-                        <FlexItem><Label isCompact status="warning">Collector unreachable</Label></FlexItem>
-                    )}
-                    {active && !unreachable && (
-                        <FlexItem>
-                            <SnapshotStatusLine
-                                freshness={freshnessFromAge(ages.oldestMs)}
-                                ageMs={ages.oldestMs}
-                                ageQualifier="oldest node "
-                                zoneCount={topology?.snapshots.length}
-                                sourceHealth={topology?.metadata.sourceHealth}
-                                isLoading={loading && !topology}
-                            />
-                        </FlexItem>
-                    )}
-                    {active && warnings.length > 0 && (
-                        <FlexItem>
-                            <Label isCompact color="yellow">{plural(warnings.length, 'collector warning')}</Label>
-                        </FlexItem>
-                    )}
-                    {gateLoaded && (
-                        <FlexItem>
-                            <Popover
-                                aria-label="Collector details"
-                                headerContent="Collector"
-                                bodyContent={<div data-testid="overview-collector-details">{details}</div>}
-                                minWidth="min(24rem, 90vw)"
-                            >
-                                <Button variant="link" isInline>Collector details</Button>
-                            </Popover>
-                        </FlexItem>
-                    )}
-                    {active && (
-                        <FlexItem align={{ default: 'alignRight' }}>
-                            <Link to={clusterLogicalPath()}>Open cluster view</Link>
-                        </FlexItem>
-                    )}
-                </Flex>
-            </CardBody>
-        </Card>
-    );
-};
-
 // --- The page ---------------------------------------------------------------------
-
-const NODE_COLUMNS = ['Node', 'Role', 'Findings', 'Interfaces', 'Bridges', 'Mappings', 'LLDP', 'Views'];
 
 export const OverviewBody: React.FC<OverviewBodyProps> = ({
     nodeNetworkStates,
@@ -383,8 +153,6 @@ export const OverviewBody: React.FC<OverviewBodyProps> = ({
     const findings = React.useMemo(() => visibleFindings(allFindings, hideInfo), [allFindings, hideInfo]);
     const findingCounts = React.useMemo(() => findingCountsByNode(findings), [findings]);
 
-    const [query, setQuery] = React.useState('');
-
     const summaries = React.useMemo(
         () => (nodeNetworkStates ?? []).map(summarizeNode).sort((a, b) => a.name.localeCompare(b.name)),
         [nodeNetworkStates],
@@ -396,8 +164,6 @@ export const OverviewBody: React.FC<OverviewBodyProps> = ({
         }
         return roles;
     }, [nodes]);
-    const fleet = React.useMemo(() => summarizeFleet(summaries), [summaries]);
-    const visible = React.useMemo(() => filterNodeSummaries(summaries, query), [summaries, query]);
     const nodeNames = React.useMemo(() => summaries.map((summary) => summary.name), [summaries]);
 
     const networkInputs = React.useMemo<NetworkInputs>(
@@ -419,7 +185,7 @@ export const OverviewBody: React.FC<OverviewBodyProps> = ({
             <PageSection>
                 <Title headingLevel="h1">OVN Recon</Title>
                 <p style={subtle}>
-                    Physical and logical network topology across {plural(fleet.nodes, 'node')}
+                    Physical and logical network topology across {plural(summaries.length, 'node')}
                 </p>
             </PageSection>
 
@@ -455,94 +221,30 @@ export const OverviewBody: React.FC<OverviewBodyProps> = ({
                         <Card data-testid="overview-nodes-card">
                             <CardTitle>Nodes</CardTitle>
                             <CardBody>
-                                <Toolbar inset={{ default: 'insetNone' }}>
-                                    <ToolbarContent>
-                                        <ToolbarItem>
-                                            <SearchInput
-                                                aria-label="Filter nodes by name"
-                                                placeholder="Filter by name"
-                                                value={query}
-                                                onChange={(_event, value) => setQuery(value)}
-                                                onClear={() => setQuery('')}
-                                            />
-                                        </ToolbarItem>
-                                        <ToolbarItem>
-                                            <span style={subtle}>
-                                                {visible.length === summaries.length
-                                                    ? plural(summaries.length, 'node')
-                                                    : `${visible.length} of ${plural(summaries.length, 'node')}`}
-                                                {' with NodeNetworkState'}
-                                            </span>
-                                        </ToolbarItem>
-                                        {/* What the Physical card said, in the one place the nodes are. */}
-                                        <ToolbarItem align={{ default: 'alignEnd' }}>
-                                            <span style={subtle} data-testid="overview-fleet-summary">
-                                                {plural(fleet.bridgeMappings, 'bridge mapping')} across {plural(fleet.bridges, 'bridge')}
-                                                {' · '}
-                                                {fleet.nodesWithLldp === 0
-                                                    ? 'no node reports LLDP neighbors'
-                                                    : `${plural(fleet.nodesWithLldp, 'node')} report${fleet.nodesWithLldp === 1 ? 's' : ''} LLDP neighbors`}
-                                            </span>
-                                        </ToolbarItem>
-                                    </ToolbarContent>
-                                </Toolbar>
-                                <Table aria-label="Nodes" variant="compact">
-                                    <Thead>
-                                        <Tr>
-                                            {NODE_COLUMNS.map((column) => <Th key={column} modifier="nowrap">{column}</Th>)}
-                                        </Tr>
-                                    </Thead>
-                                    <Tbody>
-                                        {nnsLoaded && gateLoaded && visible.map((node) => (
-                                            <Tr key={node.name} data-testid={`overview-node-${node.name}`}>
-                                                <Td dataLabel="Node">
-                                                    <Link to={nodePhysicalPath(node.name)}>{node.name}</Link>
-                                                </Td>
-                                                <Td dataLabel="Role">{rolesByNode.get(node.name) ?? ''}</Td>
-                                                <Td dataLabel="Findings" data-testid={`overview-findings-${node.name}`}>
-                                                    {findingCounts.has(node.name) && (
-                                                        <Link
-                                                            to={nodePagePath(node.name)}
-                                                            aria-label={`${describeCounts(findingCounts.get(node.name)!)} on ${node.name}`}
-                                                        >
-                                                            <SeverityCountsInline counts={findingCounts.get(node.name)!} />
-                                                        </Link>
-                                                    )}
-                                                </Td>
-                                                <Td dataLabel="Interfaces">{node.interfacesUp} up / {node.interfacesTotal}</Td>
-                                                <Td dataLabel="Bridges">{node.bridges.join(', ')}</Td>
-                                                <Td dataLabel="Mappings">{node.bridgeMappings}</Td>
-                                                <Td dataLabel="LLDP">{node.lldpNeighbors}</Td>
-                                                <Td dataLabel="Views">
-                                                    <Link to={nodePhysicalPath(node.name)}>Physical</Link>
-                                                    {showLogical && (
-                                                        <>
-                                                            {' · '}
-                                                            <Link to={nodeLogicalPath(node.name)}>Logical</Link>
-                                                        </>
-                                                    )}
-                                                    {' · '}
-                                                    <a href={nnsResourcePath(node.name)} target="_blank" rel="noopener noreferrer">NNS</a>
-                                                </Td>
-                                            </Tr>
-                                        ))}
-                                        {(!nnsLoaded || !gateLoaded) && !nnsError && (
-                                            <Tr><Td colSpan={NODE_COLUMNS.length}>Loading...</Td></Tr>
-                                        )}
-                                        {nnsError && (
-                                            <Tr><Td colSpan={NODE_COLUMNS.length}>Error loading NodeNetworkStates: {nnsError}</Td></Tr>
-                                        )}
-                                        {nnsLoaded && gateLoaded && !nnsError && visible.length === 0 && (
-                                            <Tr><Td colSpan={NODE_COLUMNS.length}>{summaries.length === 0 ? 'No NodeNetworkState resources found.' : 'No nodes match.'}</Td></Tr>
-                                        )}
-                                    </Tbody>
-                                </Table>
+                                <NodesTable
+                                    summaries={summaries}
+                                    roles={rolesByNode}
+                                    findingCounts={findingCounts}
+                                    loaded={nnsLoaded && gateLoaded}
+                                    error={nnsError}
+                                    showLogical={showLogical}
+                                />
                             </CardBody>
                         </Card>
                     </GridItem>
 
                     <GridItem span={12}>
-                        <CollectorStatus collector={collector} />
+                        {/* The line replaced the Cluster logical topology card, so here it
+                            also carries that card's way into the cluster view. */}
+                        <Card data-testid="overview-collector-status">
+                            <CardBody>
+                                <CollectorStatus
+                                    collector={collector}
+                                    label={<strong>Cluster logical topology</strong>}
+                                    action={showLogical ? <Link to={clusterLogicalPath()}>Open cluster view</Link> : undefined}
+                                />
+                            </CardBody>
+                        </Card>
                     </GridItem>
                 </Grid>
             </PageSection>
@@ -555,47 +257,6 @@ export const OverviewBody: React.FC<OverviewBodyProps> = ({
 const errorText = (error: unknown): string | undefined => {
     if (!error) return undefined;
     return (error instanceof Error ? error.message : (error as { message?: string }).message) || String(error);
-};
-
-/**
- * The collector's aggregate, polled while the gate is on. A disabled collector is
- * never asked.
- */
-const useCollectorState = (): CollectorState => {
-    const { enabled, loaded: gateLoaded } = useOvnCollectorFeatureGate();
-    const [topology, setTopology] = React.useState<ClusterLogicalTopology | null>(null);
-    const [error, setError] = React.useState<string>('');
-    const [loading, setLoading] = React.useState<boolean>(false);
-    React.useEffect(() => {
-        if (!enabled) return undefined;
-        let cancelled = false;
-        const load = async () => {
-            setLoading(true);
-            try {
-                const payload = await fetchClusterTopology();
-                if (!cancelled) {
-                    setTopology(payload);
-                    setError('');
-                }
-            } catch (caught) {
-                if (!cancelled) {
-                    setError(caught instanceof Error ? caught.message : 'Failed to reach the collector');
-                }
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        };
-        load();
-        const timer = window.setInterval(load, COLLECTOR_REFRESH_MS);
-        return () => {
-            cancelled = true;
-            window.clearInterval(timer);
-        };
-    }, [enabled]);
-    return React.useMemo(
-        () => ({ enabled, gateLoaded, topology, error, loading }),
-        [enabled, gateLoaded, topology, error, loading],
-    );
 };
 
 /** Everything the overview reads: the watches the plugin already makes, and the collector. */

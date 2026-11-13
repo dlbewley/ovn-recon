@@ -77,9 +77,33 @@ const resolveNodeName = (routeName?: string): string => {
     }
 };
 
-const NodeLogicalTopologyDetails: React.FC = () => {
-    const { name: routeName } = useParams<{ name?: string }>();
-    const name = React.useMemo(() => resolveNodeName(routeName), [routeName]);
+export interface NodeLogicalTopologyBodyProps {
+    /** The node whose zone is drawn. */
+    name: string;
+    /**
+     * What the host puts above the view, drawn once the collector gate has let the
+     * view through. The routed page passes its document title, breadcrumb, heading
+     * and cross-link; a host with a header of its own passes nothing.
+     */
+    header?: React.ReactNode;
+    /**
+     * Leave the "Filter by host" select out of the toolbar, for a host that has its
+     * own way to change node. The NodeNetworkState list that fills it is then not
+     * watched either.
+     */
+    hideHostSelect?: boolean;
+}
+
+/**
+ * One node's logical OVN topology: the ladder, its toolbar and its drawer, and the
+ * states of the collector gate. Everything the routed page shows below its own
+ * header. It reads and writes `?select=` on whatever page hosts it.
+ */
+export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = ({
+    name,
+    header,
+    hideHostSelect = false,
+}) => {
     const { enabled, loaded: gateLoaded, loadError: gateError } = useOvnCollectorFeatureGate();
 
     // The host selector lists every NodeNetworkState, the plugin's node index
@@ -87,7 +111,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
     // entry point agrees on what the nodes are. The collector's own node set is
     // not used on purpose: a node with an NNS the collector cannot snapshot
     // should appear here and fail visibly, not vanish (ovn-recon-60x).
-    const [nodeNetworkStates] = useK8sWatchResource<NodeNetworkState[]>({
+    const [nodeNetworkStates] = useK8sWatchResource<NodeNetworkState[]>(hideHostSelect ? null : {
         groupVersionKind: { group: 'nmstate.io', version: 'v1beta1', kind: 'NodeNetworkState' },
         isList: true,
     });
@@ -278,27 +302,7 @@ const NodeLogicalTopologyDetails: React.FC = () => {
 
     return (
         <>
-            <DocumentTitle>{`OVN Recon - Logical OVN (${name})`}</DocumentTitle>
-            <PageSection>
-                <Breadcrumb>
-                    <BreadcrumbItem>
-                        <Link to={overviewPath()}>OVN Recon</Link>
-                    </BreadcrumbItem>
-                    <BreadcrumbItem>
-                        <Link to={clusterLogicalPath()}>Cluster logical topology</Link>
-                    </BreadcrumbItem>
-                    <BreadcrumbItem isActive>Logical OVN: {name}</BreadcrumbItem>
-                </Breadcrumb>
-                <Title headingLevel="h1" className="pf-u-mt-lg">Logical OVN Topology: {name}</Title>
-                {/* Mirror of the physical page's "View logical OVN topology
-                    for this node" link, so the two views cross-link
-                    symmetrically (ovn-recon-xfr). */}
-                <p className="pf-u-mt-sm">
-                    <Link to={nodePhysicalPath(name)}>
-                        View physical topology for this node
-                    </Link>
-                </p>
-            </PageSection>
+            {header}
             <PageSection isFilled>
                 <Drawer isExpanded={selectedConstruct != null} isInline>
                     <DrawerContent
@@ -396,18 +400,20 @@ const NodeLogicalTopologyDetails: React.FC = () => {
                                             onReveal={selectConstructFromDrawer}
                                         />
                                     </FlexItem>
-                                    <FlexItem>
-                                        <FormSelect
-                                            aria-label="Filter by host"
-                                            value={name}
-                                            onChange={handleHostSelect}
-                                        >
-                                            <FormSelectOption value="all" label="All hosts" />
-                                            {nodeNames.map((nodeName) => (
-                                                <FormSelectOption key={nodeName} value={nodeName} label={nodeName} />
-                                            ))}
-                                        </FormSelect>
-                                    </FlexItem>
+                                    {!hideHostSelect && (
+                                        <FlexItem>
+                                            <FormSelect
+                                                aria-label="Filter by host"
+                                                value={name}
+                                                onChange={handleHostSelect}
+                                            >
+                                                <FormSelectOption value="all" label="All hosts" />
+                                                {nodeNames.map((nodeName) => (
+                                                    <FormSelectOption key={nodeName} value={nodeName} label={nodeName} />
+                                                ))}
+                                            </FormSelect>
+                                        </FlexItem>
+                                    )}
                                     <FlexItem>
                                         <FormSelect
                                             aria-label="Filter by network"
@@ -494,6 +500,40 @@ const NodeLogicalTopologyDetails: React.FC = () => {
             </PageSection>
         </>
     );
+};
+
+/** The routed page's own header: document title, breadcrumb, heading and cross-link. */
+const NodeLogicalTopologyHeader: React.FC<{ name: string }> = ({ name }) => (
+    <>
+        <DocumentTitle>{`OVN Recon - Logical OVN (${name})`}</DocumentTitle>
+        <PageSection>
+            <Breadcrumb>
+                <BreadcrumbItem>
+                    <Link to={overviewPath()}>OVN Recon</Link>
+                </BreadcrumbItem>
+                <BreadcrumbItem>
+                    <Link to={clusterLogicalPath()}>Cluster logical topology</Link>
+                </BreadcrumbItem>
+                <BreadcrumbItem isActive>Logical OVN: {name}</BreadcrumbItem>
+            </Breadcrumb>
+            <Title headingLevel="h1" className="pf-u-mt-lg">Logical OVN Topology: {name}</Title>
+            {/* Mirror of the physical page's "View logical OVN topology
+                for this node" link, so the two views cross-link
+                symmetrically (ovn-recon-xfr). */}
+            <p className="pf-u-mt-sm">
+                <Link to={nodePhysicalPath(name)}>
+                    View physical topology for this node
+                </Link>
+            </p>
+        </PageSection>
+    </>
+);
+
+/** The routed logical page of one node, /ovn-recon/ovn/:name. */
+const NodeLogicalTopologyDetails: React.FC = () => {
+    const { name: routeName } = useParams<{ name?: string }>();
+    const name = React.useMemo(() => resolveNodeName(routeName), [routeName]);
+    return <NodeLogicalTopologyBody name={name} header={<NodeLogicalTopologyHeader name={name} />} />;
 };
 
 export default NodeLogicalTopologyDetails;
