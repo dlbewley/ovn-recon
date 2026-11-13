@@ -8,6 +8,7 @@ import * as yaml from 'js-yaml';
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
 import NodeVisualizationComponent from './NodeVisualization';
 import { routed } from './testRouter';
+import { viewOptionInput } from './viewToolbarTestUtils';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
@@ -124,7 +125,7 @@ describe('NodeVisualization node placement', () => {
         // that; now there is only one.
         render(loadFixture('basic-host'));
 
-        const toggle = container.querySelector<HTMLInputElement>('#show-hidden-columns-toggle');
+        const toggle = viewOptionInput(container, 'show-hidden-columns-toggle');
         expect(toggle).not.toBeNull();
         act(() => toggle!.click());
 
@@ -169,7 +170,7 @@ describe('NodeVisualization node placement', () => {
             // is hidden by default -- so revealing it is the interesting case, not a
             // corner one. See ovn-recon-x23.
             render(loadFixture('primary-cudn-vrf'), loadCudns('primary-cudn-vrf'));
-            const toggle = container.querySelector<HTMLInputElement>('#show-hidden-columns-toggle')!;
+            const toggle = viewOptionInput(container, 'show-hidden-columns-toggle')!;
             act(() => toggle.click());
             expectEdgesToMeetNodes();
         });
@@ -188,7 +189,7 @@ describe('NodeVisualization node placement', () => {
 
         it('gives the shadowing ovs-interface its own node, distinct from the bridge', () => {
             render(loadFixture('primary-cudn-vrf'), loadCudns('primary-cudn-vrf'));
-            const toggle = container.querySelector<HTMLInputElement>('#show-hidden-columns-toggle')!;
+            const toggle = viewOptionInput(container, 'show-hidden-columns-toggle')!;
             act(() => toggle.click());
 
             const titles = Array.from(container.querySelectorAll('title')).map((t) => t.textContent ?? '');
@@ -210,7 +211,7 @@ describe('NodeVisualization node placement', () => {
 
         it('stays aligned with LLDP neighbours shown', () => {
             render(loadFixture('bonded-lldp'));
-            const toggle = container.querySelector<HTMLInputElement>('#show-lldp-neighbors-toggle');
+            const toggle = viewOptionInput(container, 'show-lldp-neighbors-toggle');
             expect(toggle).not.toBeNull();
             act(() => toggle!.click());
             expectEdgesToMeetNodes();

@@ -15,11 +15,9 @@ import {
     DrawerHead,
     DrawerActions,
     DrawerCloseButton,
-    Flex,
-    FlexItem,
     FormSelect,
     FormSelectOption,
-    Button,
+    ToolbarItem,
     Alert,
     AlertGroup,
 } from '@patternfly/react-core';
@@ -28,14 +26,14 @@ import { LogicalTopologySnapshot, NodeNetworkState } from '../types';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { fetchCollectorSnapshot } from './collectorApi';
 import { buildLadderModel, LadderConstruct } from './logicalLadderModel';
-import { FindingsSection, HideInfoSwitch } from '../insights/ui/FindingsViews';
+import { FindingsSection } from '../insights/ui/FindingsViews';
 import { useHideInfoFindings, visibleFindings } from '../insights/ui/useFindings';
 import { constructFindings, useLogicalFindings, zoneFindings } from '../insights/ui/useLogicalFindings';
 import { useLogicalClusterInputs, useNodePods } from '../insights/ui/useLogicalInputs';
 import ConstructDrawerBody, { LOGICAL_DRAWER_WIDTH } from './ConstructDrawerBody';
 import { useLadderViewport } from './useLadderViewport';
-import SnapshotJsonControls from './SnapshotJsonControls';
-import { LegendButton, LogicalLegend } from './GraphLegend';
+import ViewToolbar from './ViewToolbar';
+import { LogicalLegend } from './GraphLegend';
 import LogicalLadderView, {
     LadderSearch,
     ladderSearchMatches,
@@ -372,76 +370,61 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
                                     </div>
                                 )}
 
-                                <Flex className="pf-u-mt-md" spaceItems={{ default: 'spaceItemsMd' }} alignItems={{ default: 'alignItemsCenter' }}>
-                                    <FlexItem>
-                                        <LadderSearch
-                                            value={search}
-                                            onChange={setSearch}
-                                            matches={searchMatches}
-                                            selectedUuid={selectedUuid}
-                                            onReveal={selectConstructFromDrawer}
-                                        />
-                                    </FlexItem>
-                                    {!hideHostSelect && (
-                                        <FlexItem>
-                                            <FormSelect
-                                                aria-label="Filter by host"
-                                                value={name}
-                                                onChange={handleHostSelect}
-                                            >
-                                                <FormSelectOption value="all" label="All hosts" />
-                                                {nodeNames.map((nodeName) => (
-                                                    <FormSelectOption key={nodeName} value={nodeName} label={nodeName} />
-                                                ))}
-                                            </FormSelect>
-                                        </FlexItem>
-                                    )}
-                                    <FlexItem>
-                                        <FormSelect
-                                            aria-label="Filter by network"
-                                            value={networkFilter}
-                                            onChange={(_event, value) => setNetworkFilter(value)}
-                                        >
-                                            <FormSelectOption value="all" label="All networks" />
-                                            {model?.networks.map((network) => (
-                                                <FormSelectOption
-                                                    key={network}
-                                                    value={network}
-                                                    label={networkDisplayName(network)}
-                                                />
-                                            ))}
-                                        </FormSelect>
-                                    </FlexItem>
-                                    <FlexItem><Button variant="secondary" onClick={viewport.zoomOut}>-</Button></FlexItem>
-                                    <FlexItem><Button variant="secondary" onClick={viewport.zoomIn}>+</Button></FlexItem>
-                                    <FlexItem><Button variant="link" onClick={viewport.resetView}>Reset view</Button></FlexItem>
-                                    <FlexItem><LegendButton><LogicalLegend /></LegendButton></FlexItem>
-                                    {allFindings.some((finding) => finding.severity === 'info') && (
-                                        <FlexItem>
-                                            <HideInfoSwitch
-                                                id="hide-info-findings-toggle"
-                                                findings={allFindings}
-                                                hideInfo={hideInfo}
-                                                onChange={setHideInfo}
-                                            />
-                                        </FlexItem>
-                                    )}
-                                    <FlexItem>
-                                        <Button variant="tertiary" onClick={() => loadSnapshot()} isDisabled={isLoading}>
-                                            Refresh now
-                                        </Button>
-                                    </FlexItem>
-                                    {snapshot && (
-                                        <FlexItem>
-                                            <SnapshotJsonControls
-                                                label={`${name} cached snapshot`}
-                                                filename={`${name}-snapshot.json`}
-                                                payload={snapshot}
-                                            />
-                                        </FlexItem>
-                                    )}
-                                    {snapshot && !needsCollectorUpgrade && (
-                                        <FlexItem align={{ default: 'alignRight' }}>
+                                <div className="pf-u-mt-md">
+                                    <ViewToolbar
+                                        label="Logical topology view"
+                                        filters={(
+                                            <>
+                                                <ToolbarItem>
+                                                    <LadderSearch
+                                                        value={search}
+                                                        onChange={setSearch}
+                                                        matches={searchMatches}
+                                                        selectedUuid={selectedUuid}
+                                                        onReveal={selectConstructFromDrawer}
+                                                    />
+                                                </ToolbarItem>
+                                                {!hideHostSelect && (
+                                                    <ToolbarItem>
+                                                        <FormSelect
+                                                            aria-label="Filter by host"
+                                                            style={{ minWidth: '10rem' }}
+                                                            value={name}
+                                                            onChange={handleHostSelect}
+                                                        >
+                                                            <FormSelectOption value="all" label="All hosts" />
+                                                            {nodeNames.map((nodeName) => (
+                                                                <FormSelectOption key={nodeName} value={nodeName} label={nodeName} />
+                                                            ))}
+                                                        </FormSelect>
+                                                    </ToolbarItem>
+                                                )}
+                                                <ToolbarItem>
+                                                    <FormSelect
+                                                        aria-label="Filter by network"
+                                                        value={networkFilter}
+                                                        onChange={(_event, value) => setNetworkFilter(value)}
+                                                    >
+                                                        <FormSelectOption value="all" label="All networks" />
+                                                        {model?.networks.map((network) => (
+                                                            <FormSelectOption
+                                                                key={network}
+                                                                value={network}
+                                                                label={networkDisplayName(network)}
+                                                            />
+                                                        ))}
+                                                    </FormSelect>
+                                                </ToolbarItem>
+                                            </>
+                                        )}
+                                        viewOptions={allFindings.some((finding) => finding.severity === 'info')
+                                            ? [{ id: 'hide-info-findings-toggle', label: 'Hide info findings', checked: hideInfo, onChange: setHideInfo }]
+                                            : undefined}
+                                        zoom={{ onZoomOut: viewport.zoomOut, onZoomIn: viewport.zoomIn, onReset: viewport.resetView }}
+                                        legend={<LogicalLegend />}
+                                        refresh={{ onRefresh: () => loadSnapshot(), isLoading }}
+                                        json={snapshot ? { label: `${name} cached snapshot`, filename: `${name}-snapshot.json`, payload: snapshot } : undefined}
+                                        status={snapshot && !needsCollectorUpgrade ? (
                                             <SnapshotStatusLine
                                                 freshness={freshnessState}
                                                 ageMs={snapshotAgeMs}
@@ -449,9 +432,9 @@ export const NodeLogicalTopologyBody: React.FC<NodeLogicalTopologyBodyProps> = (
                                                 ovn={summarizeOvnZones([snapshot.database?.nbGlobal])}
                                                 isLoading={isLoading}
                                             />
-                                        </FlexItem>
-                                    )}
-                                </Flex>
+                                        ) : undefined}
+                                    />
+                                </div>
 
                                 <div
                                     {...viewport.canvasProps}

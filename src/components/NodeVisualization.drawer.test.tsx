@@ -8,6 +8,7 @@ import { ClusterUserDefinedNetwork, NodeNetworkConfigurationEnactment, NodeNetwo
 import * as viewModel from '../topology/viewModel';
 import NodeVisualizationComponent from './NodeVisualization';
 import { routed } from './testRouter';
+import { viewOptionInput } from './viewToolbarTestUtils';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
@@ -75,7 +76,7 @@ describe('NodeVisualization drawer', () => {
     };
 
     const toggle = (id: string) => {
-        const input = container.querySelector<HTMLInputElement>(`#${id}`);
+        const input = viewOptionInput(container, id);
         expect(input).not.toBeNull();
         act(() => input!.click());
     };

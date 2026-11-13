@@ -14,6 +14,7 @@ import type { PhysicalRule } from '../insights/types';
 import { FindingsEvaluatorContext, HIDE_INFO_STORAGE_KEY } from '../insights/ui/useFindings';
 import NodeVisualization from './NodeVisualization';
 import { TestRouter } from './testRouter';
+import { hasViewOption, toggleViewOption, viewOptionInput } from './viewToolbarTestUtils';
 
 /**
  * Findings on the physical page (ovn-recon-7i6.1): the graph decorator, the drawer's
@@ -151,7 +152,7 @@ describe('NodeVisualization findings', () => {
             expect(badges()).toHaveLength(0);
             expect(container.querySelector('.pf-v6-c-drawer.pf-m-expanded')).not.toBeNull();
             expect(drawerFindings()).toBeNull();
-            expect(container.querySelector('#hide-info-findings-toggle')).toBeNull();
+            expect(hasViewOption(container, 'hide-info-findings-toggle')).toBe(false);
         });
     });
 
@@ -165,7 +166,7 @@ describe('NodeVisualization findings', () => {
         it('still shows an ordinary down port of the same VRF', () => {
             render({ ...evpn, nns: withState(evpn.nns, 'ovn-k8s-mp9', 'down') });
             // ovn-k8s-mp9 draws in the Logical Interfaces lane, hidden by default.
-            act(() => container.querySelector<HTMLInputElement>('#show-hidden-columns-toggle')!.click());
+            toggleViewOption(container, 'show-hidden-columns-toggle');
             expect(badges()).toHaveLength(1);
             expect(nodeByName('ovn-k8s-mp9')?.getAttribute('aria-label')).toMatch(/, 1 warning$/);
             expect(nodeByName('svl2.9')?.getAttribute('aria-label')).not.toMatch(/warning/);
@@ -182,7 +183,7 @@ describe('NodeVisualization findings', () => {
             expect(entry.getAttribute('data-severity')).toBe('info');
             expect(entry.style.color).toContain('--pf-t--global--text--color--subtle');
 
-            const toggle = container.querySelector<HTMLInputElement>('#hide-info-findings-toggle');
+            const toggle = viewOptionInput(container, 'hide-info-findings-toggle');
             expect(toggle).not.toBeNull();
             act(() => toggle!.click());
             expect(badges()).toHaveLength(0);
@@ -194,7 +195,7 @@ describe('NodeVisualization findings', () => {
             window.localStorage.setItem(HIDE_INFO_STORAGE_KEY, 'true');
             render(worker, { evaluator });
             expect(badges()).toHaveLength(0);
-            expect(container.querySelector<HTMLInputElement>('#hide-info-findings-toggle')?.checked).toBe(true);
+            expect(viewOptionInput(container, 'hide-info-findings-toggle')?.checked).toBe(true);
         });
 
         it('still works for the page when storage refuses every read and write', () => {
@@ -202,7 +203,7 @@ describe('NodeVisualization findings', () => {
             jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('SecurityError'); });
             render(worker, { evaluator });
             expect(badges()).toHaveLength(1);
-            act(() => container.querySelector<HTMLInputElement>('#hide-info-findings-toggle')!.click());
+            toggleViewOption(container, 'hide-info-findings-toggle');
             expect(badges()).toHaveLength(0);
         });
     });

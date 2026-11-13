@@ -14,6 +14,7 @@ import {
 } from './canvasTestGeometry';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
+import { toolbarButton } from './viewToolbarTestUtils';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     DocumentTitle: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -189,7 +190,7 @@ describe('NodeLogicalTopologyBody reveal beside the inline drawer', () => {
         await load();
         const canvas = container.querySelector('[data-testid="ladder-canvas"]')!;
         // The user zooms and pans first.
-        const plus = [...container.querySelectorAll('button')].find((button) => button.textContent === '+')!;
+        const plus = toolbarButton(container, 'Zoom in')!;
         click(plus);
         drag(canvas, { bubbles: true, clientX: 100, clientY: 100 }, { bubbles: true, clientX: 140, clientY: 120 });
         const userView = ladderTransform(container);

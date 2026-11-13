@@ -8,6 +8,7 @@ import * as yaml from 'js-yaml';
 import { NodeNetworkState } from '../types';
 import NodeVisualizationComponent from './NodeVisualization';
 import { routed } from './testRouter';
+import { viewOptionInput } from './viewToolbarTestUtils';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
@@ -53,7 +54,7 @@ describe('NodeVisualization LLDP', () => {
             );
         });
 
-        const lldpToggle = container.querySelector<HTMLInputElement>('#show-lldp-neighbors-toggle');
+        const lldpToggle = viewOptionInput(container, 'show-lldp-neighbors-toggle');
         expect(lldpToggle).not.toBeNull();
         expect(lldpToggle?.checked).toBe(false);
 

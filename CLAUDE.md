@@ -119,6 +119,8 @@ React Router ranks the shell's nested routes by specificity, so the node ladder 
 4. `nodeVisualizationLayout.ts` — assigns grid positions using gravity-based column sorting (no external graph library)
 5. `NodeVisualization.tsx` — renders the graph as an SVG/HTML grid using PatternFly components
 
+**View toolbar** (`ViewToolbar.tsx`, `ovn-recon-nt4.3`): the physical graph and both logical ladders draw their controls through one PatternFly Toolbar, in a fixed left-to-right (and keyboard) order: filters, a "View options" menu of display toggles as checkboxes, zoom out / zoom in / reset as icon buttons, Legend, and at the end one group that wraps together: the freshness line, refresh and a "More actions" menu (View JSON, `SnapshotJsonModal`). Add a control there, not as a row of its own; `ViewToolbar.test.tsx` checks the order and that the three bodies use it. The options menu renders into `document.body`, so tests reach options through `viewToolbarTestUtils.ts`.
+
 **Logical topology** (`NodeLogicalTopologyBody`, `ClusterLogicalTopologyBody`): Fetches JSON snapshots from the collector service at `/api/v1/snapshots/:nodeName`. Feature-gated by `useOvnCollectorFeatureGate`, which watches the `OvnRecon` CR for `spec.collector.enabled`.
 
 **Cluster search** (`useClusterSearch` in the shell's title row): merges the collector's `/api/v1/lookup/{ip|mac|cidr|name}/{value}` hits with browser-side hits from the NodeNetworkStates the shell already watches. `clusterSearchModel.ts` is the pure part (input detection, merging, folding of covering routes, link building); result links use the `?select=` deep links of the three graph pages.

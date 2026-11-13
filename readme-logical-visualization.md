@@ -156,6 +156,12 @@ construct names as `example.p.cudn`.
 - **Legend**, in the toolbar, explains the card kinds, edge styles and status
   colours.
 
+The toolbar is the one the physical view uses (`ViewToolbar`), left to right:
+search, the host and network filters, **View options** (with **Hide info
+findings** when the node has info findings), zoom out, zoom in and **Reset
+view**, **Legend**, and at the end the snapshot's freshness beside **Refresh
+now** and a **More actions** menu (⋮).
+
 ## The drawer
 
 Selecting any card opens a drawer beside the ladder. Its tabs mirror the
@@ -205,7 +211,7 @@ zone at full width, in the node's Logical topology tab under a heading whose
   node's zone (renamed where the name carries the node, such as `GR_<node>`). A
   northbound database is per zone, so the rows can differ.
 
-The toolbar's **View JSON** control shows and downloads the raw cached
+**View JSON**, in the toolbar's **More actions** menu, shows and downloads the raw cached
 collector payload — the selected node's snapshot on the per-node page (and
 on the cluster page when filtered to one host), or the whole aggregate.
 

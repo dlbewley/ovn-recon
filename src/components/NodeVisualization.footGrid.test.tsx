@@ -7,6 +7,7 @@ import { act } from 'react';
 import { Interface, NodeNetworkState } from '../types';
 import NodeVisualizationComponent from './NodeVisualization';
 import { routed } from './testRouter';
+import { toggleViewOption } from './viewToolbarTestUtils';
 
 jest.mock('@openshift-console/dynamic-plugin-sdk', () => ({
     useK8sWatchResource: () => [[]]
@@ -52,7 +53,7 @@ const renderAndRead = (nns: NodeNetworkState) => {
     act(() => {
         root.render(<NodeVisualization nns={nns} cudns={[]} udns={[]} nads={[]} routeAdvertisements={[]} />);
     });
-    act(() => container.querySelector<HTMLInputElement>('#show-lldp-neighbors-toggle')!.click());
+    toggleViewOption(container, 'show-lldp-neighbors-toggle');
     const result = { edges: edgeGeometry(container), titles: nodeTitles(container) };
     act(() => root.unmount());
     container.remove();
