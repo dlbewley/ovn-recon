@@ -202,9 +202,9 @@ describe('OvnReconApp findings (ovn-recon-gbr.7)', () => {
             expect(switchInput()?.checked).toBe(true);
             expect(groupMembers(NODES_GROUP_ID)).toEqual([nodeItemId('worker-2')]);
             expect(groupMembers(NETWORKS_GROUP_ID)).toEqual(LOCALNET_UNMAPPED);
-            // The group badges count what is listed.
+            // The group badges count what is listed, read out as "1 shown".
             expect(byTestId(`explorer-tree-${NODES_GROUP_ID}`)?.closest('[role="treeitem"]')?.querySelector('.pf-v6-c-tree-view__node-count')?.textContent)
-                .toBe('1');
+                .toBe('1shown');
 
             // The selection stays listed though it has no findings.
             await go(nodePhysicalPath('worker-1'));

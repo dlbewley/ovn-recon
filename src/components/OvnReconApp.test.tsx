@@ -305,7 +305,7 @@ describe('OvnReconApp, the explorer shell', () => {
             expect(byTestId('explorer-not-found')).toBeNull();
             expect(byTestId('explorer-tree')).not.toBeNull();
             if (expected.tab) {
-                expect(container.querySelector('nav .pf-m-current [data-testid]')?.getAttribute('data-testid'))
+                expect(container.querySelector('.pf-v6-c-drawer__content nav .pf-m-current [data-testid]')?.getAttribute('data-testid'))
                     .toBe(expected.tab);
             } else {
                 // A network has one view: a header and no tabs.
