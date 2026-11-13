@@ -327,6 +327,7 @@ const OvnReconApp: React.FC = () => {
                             insetInlineStart: `${dividerAt - TOGGLE_HALF}px`,
                             zIndex: 'var(--pf-t--global--z-index--md)',
                             width: `${TOGGLE_HALF * 2}px`,
+                            minWidth: `${TOGGLE_HALF * 2}px`,
                             height: `${TOGGLE_HALF * 2}px`,
                             padding: 0,
                             justifyContent: 'center',

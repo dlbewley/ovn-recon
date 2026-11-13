@@ -40,7 +40,8 @@ export interface ExplorerTreeProps {
 const toTreeData = (item: ExplorerTreeItem): TreeViewDataItem => ({
     id: item.id,
     name: (
-        <span data-testid={`explorer-tree-${item.id}`}>
+        // One line per item: a role or kind wrapping under the name doubles the row.
+        <span data-testid={`explorer-tree-${item.id}`} style={{ whiteSpace: 'nowrap' }}>
             {item.kind === 'more' ? <em>{item.label}</em> : item.label}
             {item.detail && <span style={subtle}>{item.detail}</span>}
         </span>
