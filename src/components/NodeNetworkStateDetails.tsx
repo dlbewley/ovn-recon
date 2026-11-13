@@ -71,6 +71,18 @@ export interface NodePhysicalData {
  * from them. The physical body and the Routes body both read it; the console shares
  * each watch between the hooks that ask for it.
  */
+/**
+ * Whether a watch's error says the object does not exist (ovn-recon-nt4.13). The
+ * console's watch errors carry the HTTP status as `response.status` or the API
+ * status as `json.code`; a 404 means "no such NodeNetworkState", not a failure.
+ */
+export const isNotFoundError = (error: unknown): boolean => {
+    if (!error || typeof error !== 'object') return false;
+    const value = error as { response?: { status?: number }; json?: { code?: number; reason?: string }; code?: number };
+    return value.response?.status === 404 || value.json?.code === 404 || value.json?.reason === 'NotFound'
+        || value.code === 404;
+};
+
 export const useNodePhysicalData = (name: string): NodePhysicalData => {
     const watchResource = React.useMemo(() => name ? {
         groupVersionKind: {
@@ -82,7 +94,14 @@ export const useNodePhysicalData = (name: string): NodePhysicalData => {
         isList: false,
     } : null, [name]);
 
-    const [nns, loaded, loadError] = useK8sWatchResource<NodeNetworkState>(watchResource);
+    const [watchedNns, watchLoaded, watchError] = useK8sWatchResource<NodeNetworkState>(watchResource);
+    // A watch on one named object that fails never reports loaded (ovn-recon-nt4.13):
+    // a failed watch has settled, and a 404 is the answer "there is none", which the
+    // views draw as their no-NodeNetworkState state rather than "Loading..." forever.
+    const missing = isNotFoundError(watchError);
+    const loaded = watchLoaded || Boolean(watchError);
+    const loadError = missing ? null : watchError;
+    const nns = missing ? undefined : watchedNns;
 
     const [cudns] = useK8sWatchResource<ClusterUserDefinedNetwork[]>({
         groupVersionKind: {
