@@ -22,11 +22,30 @@ import {
  * and how many it has; "With findings only" is offered while anything has findings.
  */
 
+/** Shrinks to an ellipsis rather than pushing the badge out of the row. */
+const shrinkable: React.CSSProperties = {
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+};
+
 const subtle: React.CSSProperties = {
+    ...shrinkable,
     color: 'var(--pf-t--global--text--color--subtle)',
     marginInlineStart: 'var(--pf-t--global--spacer--sm)',
     fontSize: 'var(--pf-t--global--font--size--sm)',
+    // The role or kind gives way well before the name.
+    flex: '0 100 auto',
 };
+
+/**
+ * One line per item, at any tree width: the row's text box may shrink (PatternFly
+ * sizes it to its content), so a long name or role ends in an ellipsis and a
+ * findings badge stays in view. At the default 240 px "ctrl-1 control plane" alone
+ * fills the row.
+ */
+const TREE_ROW_STYLE = '[data-testid="explorer-tree"] .pf-v6-c-tree-view__node-text { min-width: 0; overflow: hidden; }';
 
 /**
  * An item's findings: the worst severity's icon and the total, read out in full. Kept
@@ -39,6 +58,7 @@ const FindingsBadge: React.FC<{ id: string; counts: SeverityCounts }> = ({ id, c
             data-testid={`explorer-tree-findings-${id}`}
             title={label}
             style={{
+                flex: 'none',
                 marginInlineStart: 'var(--pf-t--global--spacer--sm)',
                 fontSize: 'var(--pf-t--global--font--size--sm)',
                 ...(counts.warning > 0 ? {} : { color: 'var(--pf-t--global--text--color--subtle)' }),
@@ -73,8 +93,14 @@ const toTreeData = (item: ExplorerTreeItem): TreeViewDataItem => ({
     id: item.id,
     name: (
         // One line per item: a role or kind wrapping under the name doubles the row.
-        <span data-testid={`explorer-tree-${item.id}`} style={{ whiteSpace: 'nowrap' }}>
-            {item.kind === 'more' ? <em>{item.label}</em> : item.label}
+        <span
+            data-testid={`explorer-tree-${item.id}`}
+            title={item.detail ? `${item.label} (${item.detail})` : item.label}
+            style={{ display: 'flex', alignItems: 'baseline', minWidth: 0, whiteSpace: 'nowrap' }}
+        >
+            <span style={{ ...shrinkable, flex: '0 1 auto' }}>
+                {item.kind === 'more' ? <em>{item.label}</em> : item.label}
+            </span>
             {item.detail && <span style={subtle}>{item.detail}</span>}
             {item.findings && <FindingsBadge id={item.id} counts={item.findings} />}
         </span>
@@ -114,6 +140,7 @@ const ExplorerTree: React.FC<ExplorerTreeProps> = ({
 
     return (
         <div data-testid="explorer-tree">
+            <style>{TREE_ROW_STYLE}</style>
             <SearchInput
                 aria-label="Filter the tree by name"
                 placeholder="Filter by name"
