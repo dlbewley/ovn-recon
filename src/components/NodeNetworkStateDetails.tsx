@@ -355,6 +355,25 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
     );
 };
 
+/** Below this width the Routes tab uses the table's narrow form: about what the six columns need. */
+const ROUTES_FULL_TABLE_MIN_WIDTH = 960;
+
+/** The element's content width, followed as it changes; 0 until measured (and where it cannot be). */
+const useContentWidth = (ref: React.RefObject<HTMLElement>): number => {
+    const [width, setWidth] = React.useState(0);
+    React.useLayoutEffect(() => {
+        const element = ref.current;
+        if (!element) return undefined;
+        const measure = () => setWidth(element.clientWidth);
+        measure();
+        if (typeof ResizeObserver === 'undefined') return undefined;
+        const observer = new ResizeObserver(measure);
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [ref]);
+    return width;
+};
+
 /**
  * One node's main routing table, on its own: the explorer's Routes tab
  * (ovn-recon-gbr.5). It sat above the graph on the routed physical page. An
@@ -363,6 +382,11 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
 export const NodeRoutesBody: React.FC<{ name: string }> = ({ name }) => {
     const navigate = useNavigate();
     const { nns, loaded, loadError, mainRoutes, graphContext } = useNodePhysicalData(name);
+    // Beside the tree the six columns do not fit: Metric, Source and MTU then move
+    // into each row's expansion, as in a drawer. Collapsing the tree brings them back.
+    const frame = React.useRef<HTMLDivElement>(null);
+    const width = useContentWidth(frame);
+    const narrow = width > 0 && width < ROUTES_FULL_TABLE_MIN_WIDTH;
 
     const selectInterface = React.useMemo<InterfaceSelector | undefined>(() => {
         if (!graphContext) return undefined;
@@ -388,14 +412,21 @@ export const NodeRoutesBody: React.FC<{ name: string }> = ({ name }) => {
                 <p style={{ color: 'var(--pf-t--global--text--color--subtle)' }} className="pf-u-mb-md">
                     The main routing table. A VRF&apos;s table is in that VRF&apos;s drawer on the Physical tab.
                 </p>
-                <KernelRouteTable routes={mainRoutes} ariaLabel="Main routing table" selectInterface={selectInterface} />
+                <KernelRouteTable
+                    routes={mainRoutes}
+                    ariaLabel="Main routing table"
+                    selectInterface={selectInterface}
+                    narrow={narrow}
+                />
             </>
         );
     }
     return (
         <>
             <DocumentTitle>{`OVN Recon - Routes (${name})`}</DocumentTitle>
-            <PageSection isFilled data-testid="node-routes-body">{content}</PageSection>
+            <PageSection isFilled data-testid="node-routes-body">
+                <div ref={frame}>{content}</div>
+            </PageSection>
         </>
     );
 };

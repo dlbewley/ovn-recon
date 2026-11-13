@@ -106,6 +106,25 @@ describe('node physical views in the explorer', () => {
             expect(current().navigationType).toBe('PUSH');
         });
 
+        it('moves Metric, Source and MTU into the rows when its width is short of the full table', () => {
+            const widths = jest.spyOn(HTMLElement.prototype, 'clientWidth', 'get');
+            widths.mockReturnValue(780);
+            render(nodeRoutesPath('worker-1'), <NodeRoutesBody name="worker-1" />);
+            const headers = () => Array.from(container.querySelectorAll('[data-testid="node-routes-body"] thead th'))
+                .map((th) => th.textContent?.trim()).filter(Boolean);
+            expect(headers()).not.toContain('Metric');
+            expect(headers()).not.toContain('MTU');
+            expect(headers()).toEqual(expect.arrayContaining(['Destination', 'Gateway', 'Interface']));
+
+            widths.mockReturnValue(1000);
+            act(() => root.unmount());
+            root = createRoot(container);
+            render(nodeRoutesPath('worker-1'), <NodeRoutesBody name="worker-1" />);
+            // Source is a column only when some route has one; this capture's have none.
+            expect(headers()).toEqual(expect.arrayContaining(['Destination', 'Gateway', 'Interface', 'Metric', 'MTU']));
+            widths.mockRestore();
+        });
+
         it('says so when the node has no NodeNetworkState', () => {
             mockNns = undefined;
             render(nodeRoutesPath('nope'), <NodeRoutesBody name="nope" />);
