@@ -53,7 +53,29 @@ import { nodeLogicalPath, nodePhysicalPath, overviewPath } from '../routes';
 // per-node view.
 const REFRESH_INTERVAL_MS = 60000;
 
-const ClusterLogicalTopologyDetails: React.FC = () => {
+export interface ClusterLogicalTopologyBodyProps {
+    /**
+     * What the host puts above the view, drawn once the collector gate has let the
+     * view through. The routed page passes its document title, breadcrumb and
+     * heading; a host with a header of its own passes nothing.
+     */
+    header?: React.ReactNode;
+    /**
+     * Leave the "Filter by host" select out of the toolbar, for a host that has its
+     * own way to choose a node. The view then always merges every zone.
+     */
+    hideHostSelect?: boolean;
+}
+
+/**
+ * The logical OVN topology merged across node zones: the ladder, its toolbar and its
+ * drawer, and the states of the collector gate. Everything the routed page shows
+ * below its own header. It reads and writes `?select=` on whatever page hosts it.
+ */
+export const ClusterLogicalTopologyBody: React.FC<ClusterLogicalTopologyBodyProps> = ({
+    header,
+    hideHostSelect = false,
+}) => {
     const { enabled, loaded: gateLoaded, loadError: gateError } = useOvnCollectorFeatureGate();
 
     const [topology, setTopology] = React.useState<ClusterLogicalTopology | null>(null);
@@ -264,16 +286,7 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
 
     return (
         <>
-            <DocumentTitle>OVN Recon - Cluster Logical Topology</DocumentTitle>
-            <PageSection>
-                <Breadcrumb>
-                    <BreadcrumbItem>
-                        <Link to={overviewPath()}>OVN Recon</Link>
-                    </BreadcrumbItem>
-                    <BreadcrumbItem isActive>Cluster logical topology</BreadcrumbItem>
-                </Breadcrumb>
-                <Title headingLevel="h1" className="pf-u-mt-lg">Cluster Logical OVN Topology</Title>
-            </PageSection>
+            {header}
             <PageSection isFilled>
                 <Drawer isExpanded={selectedConstruct != null} isInline>
                     <DrawerContent
@@ -346,18 +359,20 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
                                             onReveal={selectConstructFromDrawer}
                                         />
                                     </FlexItem>
-                                    <FlexItem>
-                                        <FormSelect
-                                            aria-label="Filter by host"
-                                            value={hostFilter}
-                                            onChange={(_event, value) => selectHost(value)}
-                                        >
-                                            <FormSelectOption value="all" label="All hosts" />
-                                            {hosts.map((host) => (
-                                                <FormSelectOption key={host} value={host} label={host} />
-                                            ))}
-                                        </FormSelect>
-                                    </FlexItem>
+                                    {!hideHostSelect && (
+                                        <FlexItem>
+                                            <FormSelect
+                                                aria-label="Filter by host"
+                                                value={hostFilter}
+                                                onChange={(_event, value) => selectHost(value)}
+                                            >
+                                                <FormSelectOption value="all" label="All hosts" />
+                                                {hosts.map((host) => (
+                                                    <FormSelectOption key={host} value={host} label={host} />
+                                                ))}
+                                            </FormSelect>
+                                        </FlexItem>
+                                    )}
                                     <FlexItem>
                                         <FormSelect
                                             aria-label="Filter by network"
@@ -439,5 +454,26 @@ const ClusterLogicalTopologyDetails: React.FC = () => {
         </>
     );
 };
+
+/** The routed page's own header: document title, breadcrumb and heading. */
+const ClusterLogicalTopologyHeader: React.FC = () => (
+    <>
+        <DocumentTitle>OVN Recon - Cluster Logical Topology</DocumentTitle>
+        <PageSection>
+            <Breadcrumb>
+                <BreadcrumbItem>
+                    <Link to={overviewPath()}>OVN Recon</Link>
+                </BreadcrumbItem>
+                <BreadcrumbItem isActive>Cluster logical topology</BreadcrumbItem>
+            </Breadcrumb>
+            <Title headingLevel="h1" className="pf-u-mt-lg">Cluster Logical OVN Topology</Title>
+        </PageSection>
+    </>
+);
+
+/** The routed cluster logical page, /ovn-recon/ovn. */
+const ClusterLogicalTopologyDetails: React.FC = () => (
+    <ClusterLogicalTopologyBody header={<ClusterLogicalTopologyHeader />} />
+);
 
 export default ClusterLogicalTopologyDetails;
