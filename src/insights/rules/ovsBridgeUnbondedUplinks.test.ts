@@ -127,6 +127,68 @@ describe('ovs-bridge-unbonded-uplinks', () => {
         expect(evaluate(nns)).toEqual([]);
     });
 
+    /*
+     * Uplinks counted by the link they leave on (ovn-recon-vb1). VLANs of one NIC
+     * bridged together join two VLANs; a broadcast never returns on the other one.
+     */
+    describe('VLAN uplinks (ovn-recon-vb1)', () => {
+        const vlan = (name: string, base: string, id: number, controller = 'br-vmdata'): Interface => ({
+            name, type: 'vlan', state: 'up', controller, vlan: { 'base-iface': base, id }
+        });
+        /** br-vmdata with bond1 dropped and these VLANs (and any extra ports) as its ports. */
+        const withPorts = (
+            vlans: Interface[], extraPorts: string[] = [], keepBond = false, others: Interface[] = []
+        ): NodeNetworkState => {
+            const nns = clone(fixture);
+            const bridge = find(nns, 'br-vmdata', 'ovs-bridge');
+            const bond = bridge.bridge!.port!.find((port) => port.name === 'bond1')!;
+            bridge.bridge!.port = [
+                { name: 'ovs-br1' },
+                ...(keepBond ? [bond] : []),
+                ...vlans.map((v) => ({ name: v.name })),
+                ...extraPorts.map((name) => ({ name }))
+            ];
+            const nics = interfacesOf(nns).filter((iface) => iface.name === 'ens161' || iface.name === 'ens256');
+            // Without the bond, ens161 and ens256 are free NICs, not ports of the bridge.
+            if (!keepBond) nics.forEach((nic) => { if (!extraPorts.includes(nic.name)) delete nic.controller; });
+            interfacesOf(nns).push(...vlans, ...others);
+            return nns;
+        };
+
+        it('is quiet for two VLANs of one NIC: one link, no loop', () => {
+            expect(evaluate(withPorts([vlan('ens161.10', 'ens161', 10), vlan('ens161.20', 'ens161', 20)]))).toEqual([]);
+        });
+
+        it('is quiet for stacked VLANs and a sibling on one NIC', () => {
+            // ens161.10.20 rides ens161.10, which is not on the bridge, which rides ens161.
+            const outer: Interface = { name: 'ens161.10', type: 'vlan', state: 'up', vlan: { 'base-iface': 'ens161', id: 10 } };
+            expect(evaluate(withPorts(
+                [vlan('ens161.10.20', 'ens161.10', 20), vlan('ens161.30', 'ens161', 30)], [], false, [outer]
+            ))).toEqual([]);
+        });
+
+        it('fires for VLANs on two different NICs, naming each link and its VLANs', () => {
+            const findings = evaluate(withPorts([vlan('ens161.10', 'ens161', 10), vlan('ens256.20', 'ens256', 20)]));
+            expect(findings).toHaveLength(1);
+            expect(findings[0].summary).toBe('OVS bridge br-vmdata on worker-1 has 2 uplinks not aggregated in one '
+                + 'bond (ens161 (ens161.10), ens256 (ens256.20)) with STP and RSTP off.');
+            expect(findings[0].evidence.map((e) => e.fact)).toContain(
+                'ens161.10 leaves the node on ens161, counted as one uplink: VLANs of one link join VLANs, '
+                    + 'they do not loop one.');
+        });
+
+        it('fires for a VLAN of kernel bond0 beside a plain NIC', () => {
+            const findings = evaluate(withPorts([vlan('bond0.30', 'bond0', 30)], ['ens161']));
+            expect(findings).toHaveLength(1);
+            // In the node's interface order: ens161 is reported before the appended VLAN.
+            expect(findings[0].summary).toContain('(ens161, bond0 (bond0.30))');
+        });
+
+        it('counts a VLAN of an OVS bond member with that bond: one path, quiet', () => {
+            expect(evaluate(withPorts([vlan('ens161.10', 'ens161', 10)], [], true))).toEqual([]);
+        });
+    });
+
     it('is quiet without a node', () => {
         expect(ovsBridgeUnbondedUplinks.evaluate({ domain: 'physical', cluster: { cudns: [], udns: [], nads: [] } }))
             .toEqual([]);
