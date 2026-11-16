@@ -305,6 +305,7 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
                         sriovNodeState={sriovNodeState}
                         hideHostSelect
                         plain
+                        collectorEnabled={ovnCollectorEnabled}
                     />
                 </PageSection>
             </>
@@ -368,6 +369,7 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
                     vteps={vteps} nodeVtepsAnnotation={nodeVtepsAnnotation}
                     sriovNodeState={sriovNodeState}
                     hideHostSelect={hideHostSelect}
+                    collectorEnabled={ovnCollectorEnabled}
                 />
             </PageSection>
         </>

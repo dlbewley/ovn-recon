@@ -146,6 +146,36 @@ func validateAgainst(schema jsonObject, value any, path string) []string {
 		problems = append(problems, path+": "+fmt.Sprintf(format, args...))
 	}
 
+	// A list of types (the OVS bonds schema's ["string", "null"]) accepts a
+	// value any one of them accepts.
+	if types, ok := schema["type"].([]any); ok {
+		var first []string
+		for _, typ := range types {
+			if typ == "null" {
+				if value == nil {
+					return nil
+				}
+				continue
+			}
+			single := jsonObject{}
+			for key, child := range schema {
+				single[key] = child
+			}
+			single["type"] = typ
+			found := validateAgainst(single, value, path)
+			if len(found) == 0 {
+				return nil
+			}
+			if first == nil {
+				first = found
+			}
+		}
+		if first == nil {
+			first = []string{path + ": " + fmt.Sprintf("%v is none of %v", value, types)}
+		}
+		return first
+	}
+
 	switch schema["type"] {
 	case "object":
 		object, ok := value.(jsonObject)

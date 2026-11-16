@@ -881,6 +881,53 @@ export interface LookupResponse {
     warnings: LogicalTopologyWarning[];
 }
 
+// OVS bond runtime contract: the response of GET /api/v1/ovs/bonds/<node>
+// (ovn-recon-1tw.7), the collector's parse of `ovs-appctl bond/show` (no argument:
+// every bond on the node) run in the node's ovnkube-node pod. NodeNetworkState
+// carries an OVS bond's configuration only; this is what OVS is doing with it.
+// Runtime state that moves (active member, rebalance timer), so the collector
+// keeps no snapshot of it and the plugin fetches it fresh. Every field but `name`
+// and `members` is absent when bond/show does not print its line.
+
+/** One `member <name>:` block of bond/show, in OVS's order. */
+export interface OvsBondRuntimeMember {
+    name: string;
+    /** `member <name>: enabled|disabled`: whether OVS sends traffic over it. */
+    enabled: boolean;
+    /** The block carries an `active member` line. */
+    active: boolean;
+    /** `may_enable:`: whether OVS would enable it (carrier, LACP). */
+    mayEnable: boolean;
+}
+
+/** One `---- <name> ----` section of bond/show. */
+export interface OvsBondRuntime {
+    name: string;
+    /** `bond_mode:` */
+    mode?: string;
+    /** `lacp_status:` (off, negotiated, configured). */
+    lacpStatus?: string;
+    lacpFallbackAb?: boolean;
+    allMembersActive?: boolean;
+    updelayMs?: number;
+    downdelayMs?: number;
+    /** `next rebalance:`; volatile, a timer. */
+    nextRebalanceMs?: number;
+    /** `active-backup primary:`; null or absent for `<none>`. */
+    activeBackupPrimary?: string | null;
+    /** `active member mac:`; absent for `<none>` or no such line. */
+    activeMember?: { name: string; mac: string };
+    members: OvsBondRuntimeMember[];
+}
+
+export interface OvsBondsResponse {
+    /** The logical snapshot's metadata shape; `sourceHealth: "degraded"` on LIVE_PROBE_FAILED. */
+    metadata: LogicalTopologyMetadata;
+    warnings: LogicalTopologyWarning[];
+    /** Empty for a node without OVS bonds, or a failed probe with no fixture. */
+    bonds: OvsBondRuntime[];
+}
+
 /** spec.consolePlugin.integration and its resolved form in status.effective (ovn-recon-zdt.7). */
 export interface OvnReconIntegration {
     resourceTabs?: boolean;

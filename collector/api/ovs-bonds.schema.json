@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dlbewley/ovn-recon/collector/api/ovs-bonds.schema.json",
+  "title": "OVSBondsResponse",
+  "description": "Payload from GET /api/v1/ovs/bonds/{node} (ovn-recon-1tw.7): the runtime state of the bonds inside one node's OVS bridges, parsed from `ovs-appctl bond/show` (no argument: every bond) run in the node's ovnkube-node pod, container ovn-controller. Read live on every request (a memo of a few seconds aside), never cached. NodeNetworkState carries the bonds' configuration; this carries what OVS is doing with it.",
+  "type": "object",
+  "required": [
+    "metadata",
+    "warnings",
+    "bonds"
+  ],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "generatedAt",
+        "sourceHealth",
+        "nodeName"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "v1alpha1"
+          ]
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sourceHealth": {
+          "description": "`ok` when read live; `degraded` when the live probe failed and the node's fixture, or an empty list, is served instead (with a `LIVE_PROBE_FAILED` warning).",
+          "type": "string"
+        },
+        "nodeName": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "warnings": {
+      "description": "`LIVE_PROBE_FAILED`: bond/show could not be run on the node; `bonds` is the node's fixture or empty, not live state.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "bonds": {
+      "description": "One entry per `---- <name> ----` block, in OVS's order. Empty on a node without OVS bonds. Every field but `name` and `members` is absent when OVS printed no line for it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "members"
+        ],
+        "properties": {
+          "name": {
+            "description": "The bond's OVS port name, as NodeNetworkState's bridge.port[].name spells it.",
+            "type": "string"
+          },
+          "mode": {
+            "description": "bond_mode: active-backup, balance-slb or balance-tcp.",
+            "type": "string"
+          },
+          "lacpStatus": {
+            "description": "lacp_status: off, negotiated or configured.",
+            "type": "string"
+          },
+          "lacpFallbackAb": {
+            "description": "lacp_fallback_ab.",
+            "type": "boolean"
+          },
+          "allMembersActive": {
+            "description": "all members active.",
+            "type": "boolean"
+          },
+          "updelayMs": {
+            "description": "updelay.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "downdelayMs": {
+            "description": "downdelay.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "nextRebalanceMs": {
+            "description": "next rebalance; printed only for a balancing mode.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "activeBackupPrimary": {
+            "description": "active-backup primary: the configured primary member. Absent (or null) when OVS prints <none>.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "activeMember": {
+            "description": "active member mac: <mac>(<member>). Absent when no member is active.",
+            "type": "object",
+            "required": [
+              "name",
+              "mac"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "mac": {
+                "description": "Lower-case colon form.",
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "members": {
+            "description": "One entry per `member <name>: enabled|disabled` block, in OVS's order.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "enabled",
+                "active",
+                "mayEnable"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "description": "The block's heading says enabled.",
+                  "type": "boolean"
+                },
+                "active": {
+                  "description": "The block carries an `active member` line.",
+                  "type": "boolean"
+                },
+                "mayEnable": {
+                  "description": "may_enable: OVS would enable the member (carrier up, LACP in agreement); differs from `enabled` during updelay or downdelay.",
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

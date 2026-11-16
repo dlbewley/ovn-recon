@@ -1,0 +1,39 @@
+{
+  "metadata": {
+    "schemaVersion": "v1alpha1",
+    "generatedAt": "2026-11-16T20:15:00Z",
+    "sourceHealth": "ok",
+    "nodeName": "cnv-1"
+  },
+  "warnings": [],
+  "bonds": [
+    {
+      "name": "bond1",
+      "mode": "balance-slb",
+      "lacpStatus": "off",
+      "lacpFallbackAb": false,
+      "allMembersActive": false,
+      "updelayMs": 0,
+      "downdelayMs": 0,
+      "nextRebalanceMs": 9036,
+      "activeMember": {
+        "name": "ens161",
+        "mac": "00:50:56:b4:1b:27"
+      },
+      "members": [
+        {
+          "name": "ens161",
+          "enabled": true,
+          "active": true,
+          "mayEnable": true
+        },
+        {
+          "name": "ens256",
+          "enabled": true,
+          "active": false,
+          "mayEnable": true
+        }
+      ]
+    }
+  ]
+}

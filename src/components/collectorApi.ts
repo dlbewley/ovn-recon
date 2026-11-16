@@ -3,6 +3,7 @@ import {
     LogicalTopologySnapshot,
     LookupKind,
     LookupResponse,
+    OvsBondsResponse,
     SnapshotSection,
 } from '../types';
 
@@ -276,3 +277,14 @@ export const fetchCollectorLookup = (kind: LookupKind, value: string): Promise<L
     const encodedValue = encodeURIComponent(value.trim());
     return fetchFirst((prefix) => `${prefix}/lookup/${kind}/${encodedValue}`, { refusedStatuses: [400] });
 };
+
+/**
+ * Every OVS bond's runtime state on one node: `GET /ovs/bonds/<node>`
+ * (ovn-recon-1tw.7), the collector's parse of `ovs-appctl bond/show`. It moves
+ * (the active member, the rebalance timer), so it is never remembered for the tab
+ * the way ladder payloads are: each call asks the collector, sharing only a request
+ * for the same node already in flight (the cold double mount of the shell). The
+ * node travels in the path, encoded, as everything does (see COLLECTOR_PROXY_PREFIXES).
+ */
+export const fetchOvsBondState = (nodeName: string): Promise<OvsBondsResponse> =>
+    fetchShared(`/ovs/bonds/${encodeURIComponent(nodeName)}`, false);

@@ -54,6 +54,7 @@ import type { Finding } from '../insights/types';
 import { describeCounts, FindingsBadge, findingsBadgeWidth } from '../insights/ui/FindingsViews';
 import { useHideInfoFindings, useNodeFindings, visibleFindings } from '../insights/ui/useFindings';
 import { nodePhysicalPath } from '../routes';
+import { useOvsBondState } from './useOvsBondState';
 
 /** The card the graph sits in on the routed page, or nothing for a host that frames it. */
 const ViewFrame: React.FC<{ plain: boolean; children: React.ReactNode }> = ({ plain, children }) => (plain ? (
@@ -84,6 +85,12 @@ interface NodeVisualizationProps {
      * view itself (the explorer's node scope, ovn-recon-gbr.5).
      */
     plain?: boolean;
+    /**
+     * The collector gate (useOvnCollectorFeatureGate), from the host that already
+     * reads it. With it on and an OVS bond on the node, the view asks the collector
+     * for the bonds' runtime state (ovn-recon-1tw.7); off, it never does.
+     */
+    collectorEnabled?: boolean;
 }
 
 /** A stable default: a fresh `[]` per render would rebuild the graph context every time. */
@@ -137,7 +144,7 @@ const accentStripePath = (height: number): string => {
 
 const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [], vteps = NO_VTEPS, nodeVtepsAnnotation,
-    sriovNodeState, hideHostSelect = false, plain = false
+    sriovNodeState, hideHostSelect = false, plain = false, collectorEnabled = false
 }) => {
 
 
@@ -160,18 +167,29 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         }
     };
 
-    const ctx: GraphContext = React.useMemo(
+    const watchedCtx: GraphContext = React.useMemo(
         () => buildGraphContext({
             nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation, sriovNodeState
         }),
         [nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation, sriovNodeState]
+    );
+    // OVS bond runtime state (ovn-recon-1tw.7): asked of the collector only with its
+    // gate on and an OVS bond on this node, then laid over the context the watches
+    // built, so the drawer's facts and the bond's state line stay pure functions of
+    // the context. Findings keep the watched context: they read NodeNetworkState,
+    // and an answer arriving must not evaluate them again.
+    const ovsBondRuntime = useOvsBondState(
+        nns?.metadata?.name || '', collectorEnabled && watchedCtx.ovsBonds.length > 0);
+    const ctx: GraphContext = React.useMemo(
+        () => (ovsBondRuntime ? { ...watchedCtx, ovsBondRuntime } : watchedCtx),
+        [watchedCtx, ovsBondRuntime]
     );
     const { interfaces } = ctx;
     const { lldpNeighbors } = ctx;
 
     // Findings (ovn-recon-7i6.1). Evaluated here, off the same context, and never in
     // the layout below: the badge reads them, the layout does not.
-    const allFindings = useNodeFindings(ctx, allNodeNetworkStates, allNodeNetworkStatesLoaded);
+    const allFindings = useNodeFindings(watchedCtx, allNodeNetworkStates, allNodeNetworkStatesLoaded);
     const [hideInfo, setHideInfo] = useHideInfoFindings();
     const findings = React.useMemo(() => visibleFindings(allFindings, hideInfo), [allFindings, hideInfo]);
     const nodeName = nns?.metadata?.name || '';

@@ -25,6 +25,8 @@ This scaffold includes:
   same two endpoints with optional sections added (see below)
 - `GET /api/v1/lookup/<ip|mac|cidr|name>/<value>`: where an address or a name
   is, across every stored zone snapshot (see [Lookup](#lookup))
+- `GET /api/v1/ovs/bonds/:nodeName`: runtime state of the bonds inside one
+  node's OVS bridges, read live (see [OVS bonds](#ovs-bonds))
 
 Example:
 
@@ -231,6 +233,81 @@ The search itself is `snapshot.Lookup` / `snapshot.LookupSearch` in
 `internal/snapshot/lookup.go`, a pure function over snapshots, for any other
 caller that needs the same answer.
 
+### OVS bonds
+
+`GET /api/v1/ovs/bonds/<node>` answers what OVS is doing with the bonds
+that live inside a node's OVS bridges (`ovn-recon-1tw.7`): the mode, which
+member is active, each member's enabled and `may_enable` state, LACP status
+and the up/down delays. NodeNetworkState reports a bond's configuration but
+none of its runtime state.
+
+```bash
+curl -s --compressed http://localhost:8090/api/v1/ovs/bonds/cnv-1
+```
+
+```json
+{
+  "metadata": { "schemaVersion": "v1alpha1", "generatedAt": "2026-11-16T20:15:00Z", "sourceHealth": "ok", "nodeName": "cnv-1" },
+  "warnings": [],
+  "bonds": [
+    {
+      "name": "bond1", "mode": "balance-slb", "lacpStatus": "off", "lacpFallbackAb": false,
+      "allMembersActive": false, "updelayMs": 0, "downdelayMs": 0, "nextRebalanceMs": 9036,
+      "activeMember": { "name": "ens161", "mac": "00:50:56:b4:1b:27" },
+      "members": [
+        { "name": "ens161", "enabled": true, "active": true, "mayEnable": true },
+        { "name": "ens256", "enabled": true, "active": false, "mayEnable": true }
+      ]
+    }
+  ]
+}
+```
+
+**What it runs.** One exec per request: `ovs-appctl --timeout=10 bond/show`
+(no bond argument, so every bond on the node) in the node's own
+`ovnkube-node` pod, container `ovn-controller` first, which mounts the
+host's `/var/run/openvswitch` and so reaches the host `ovs-vswitchd`. The
+exec never falls back to another node's pod, as a zone snapshot may: from
+there `ovs-appctl` would describe the wrong machine. `bond/show` has no JSON
+mode, so `probe.ParseOVSBondShow` reads its text; lines it does not know
+(per-member hash loads, the MACs an SLB bucket carries, LACP details) are
+skipped. The exec is capped at 20 seconds on top of the request's own
+context.
+
+**Not cached.** The active member and the rebalance timer move, so nothing
+is written to the snapshot cache. A live answer is reused for 3 seconds per
+node, to absorb the double request a cold console load makes; a failure is
+never reused.
+
+**Fields.** Every bond field but `name` and `members` is absent when OVS
+printed no line for it (`nextRebalanceMs` exists only for a balancing mode).
+`activeBackupPrimary` is absent for `<none>`, `activeMember` when no member
+is active. `members` keep OVS's order; `active` marks the member whose block
+says `active member`. A node without OVS bonds answers `bonds: []` with
+`sourceHealth: "ok"`.
+
+**Fallback.** When the exec fails the response is the node's fixture,
+`${OVS_BONDS_DIR}/<node>.json`, or an empty `bonds` list when there is none
+(there is no `default.json`: a bond is not invented for a node), with a
+`LIVE_PROBE_FAILED` warning and `sourceHealth: "degraded"`, as a zone
+snapshot served from a fixture is marked. Without a cluster (`make run` with
+no kubeconfig) the fixture is served as it is, and a node without one is an
+empty list.
+
+- Default (local): `./fixtures/ovs-bonds`
+- Default (container image): `/app/fixtures/ovs-bonds`
+
+The fixtures follow the snapshot corpus's node names: `cnv-1` carries the
+`balance-slb` `bond1` captured from OVS 3.5.2, `cnv-2` and `ctrl-1` have no
+bonds.
+
+Errors: `404` with the usage line for a path that is not
+`/api/v1/ovs/bonds/<node>`, and for a node the collector's node discovery
+does not list and no fixture names (when discovery itself fails, the probe
+decides); `405` for anything but `GET`. Responses carry
+`X-OVN-Recon-Snapshot-Source-Health` and `X-OVN-Recon-Snapshot-Node-Name`
+besides the headers below.
+
 ### Response headers
 
 - `Cache-Control: no-store`
@@ -262,12 +339,16 @@ Lookup order:
 
 ## Contract Artifacts
 
-- Go types: `internal/snapshot/types.go`, `internal/snapshot/lookup_types.go`
+- Go types: `internal/snapshot/types.go`, `internal/snapshot/lookup_types.go`,
+  `internal/snapshot/ovs_bonds_types.go`
 - JSON schemas: `api/logical-topology-snapshot.schema.json`,
   `api/cluster-logical-topology.schema.json`,
-  `api/lookup-response.schema.json`
+  `api/lookup-response.schema.json`, `api/ovs-bonds.schema.json`
 - UI TypeScript types: `../src/types.ts`
-- Fixture corpus: `fixtures/snapshots/*.json`
+- Fixture corpus: `fixtures/snapshots/*.json`, `fixtures/ovs-bonds/*.json`
+
+`ovs_bonds_contract_test.go` keeps `ovs-bonds.schema.json` and the Go types
+in step the same way, and validates the fixtures against the schema.
 
 The lookup contract is checked on both sides: the collector's tests compare
 the Go types and enums with `lookup-response.schema.json` and validate real
@@ -311,7 +392,9 @@ probe namespaces. Current logical topology collection reads the OVN NB
 database in one `ovsdb-client transact` exec against the `nbdb` container
 (falling back to per-table `ovn-nbctl list` with an `NB_TRANSACT_FAILED`
 warning) plus one `ovn-sbctl` exec for chassis bridge mappings, and can remain
-healthy when `openshift-ovn-kubernetes` is available.
+healthy when `openshift-ovn-kubernetes` is available. The OVS bonds endpoint
+adds one `ovs-appctl` exec into the node's `ovnkube-node` pod
+(`ovn-controller` container); the same `pods/exec` grant covers it.
 
 Namespace targets should remain configurable.
 

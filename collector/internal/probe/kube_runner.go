@@ -60,6 +60,22 @@ func (f *KubernetesExecRunnerFactory) RunnerForNode(nodeName string) (Runner, er
 	}, nil
 }
 
+// NodeLocalRunnerForNode returns a runner that executes only in pods
+// scheduled on the target node, never falling back to another node's pod.
+// A zone snapshot can be read from any pod that reaches the zone's
+// databases, but a command that reads the host itself (ovs-appctl against
+// ovs-vswitchd, ovn-recon-1tw.7) would answer about the wrong machine from
+// another node's pod, so it fails instead.
+func (f *KubernetesExecRunnerFactory) NodeLocalRunnerForNode(nodeName string) (Runner, error) {
+	runner, err := f.RunnerForNode(nodeName)
+	if err != nil {
+		return nil, err
+	}
+	kubeRunner := runner.(*KubernetesExecRunner)
+	kubeRunner.nodeLocal = true
+	return kubeRunner, nil
+}
+
 // ListNodes discovers probeable nodes: the nodes hosting running pods in the
 // first target namespace that has any. Namespace order encodes preference,
 // matching exec target resolution, so the OVN namespace is the authority for
@@ -110,6 +126,10 @@ type KubernetesExecRunner struct {
 	nodeName         string
 	logger           *slog.Logger
 	execPod          podExecFunc
+
+	// nodeLocal drops the other nodes' pods from the exec targets
+	// (NodeLocalRunnerForNode).
+	nodeLocal bool
 
 	// cachedTargets memoizes exec target resolution for this runner's
 	// lifetime (one snapshot collection): the NB transact, the SB chassis
@@ -179,7 +199,9 @@ type execTarget struct {
 // orderTargetsForCommand fronts the container the command's database lives
 // in (ovn-nbctl or the NB socket -> nbdb, ovn-sbctl or the SB socket ->
 // sbdb), so the exec loop stops burning failed attempts on the ovnkube-node
-// pod's other containers.
+// pod's other containers. ovs-appctl goes to ovn-controller, which mounts
+// the host's /var/run/openvswitch and so reaches ovs-vswitchd
+// (ovn-recon-1tw.7).
 func orderTargetsForCommand(targets []execTarget, command []string) []execTarget {
 	if len(command) == 0 {
 		return targets
@@ -190,6 +212,8 @@ func orderTargetsForCommand(targets []execTarget, command []string) []execTarget
 		preferred = "nbdb"
 	case "ovn-sbctl":
 		preferred = "sbdb"
+	case "ovs-appctl":
+		preferred = "ovn-controller"
 	case "ovsdb-client":
 		for _, arg := range command[1:] {
 			switch {
@@ -254,6 +278,17 @@ func (r *KubernetesExecRunner) resolveExecTargets(ctx context.Context) ([]execTa
 				fallback = append(fallback, targets...)
 			}
 		}
+	}
+
+	if r.nodeLocal {
+		if len(preferred) == 0 {
+			return nil, fmt.Errorf(
+				"no running pods on node %q in namespaces %q",
+				r.nodeName,
+				strings.Join(r.targetNamespaces, ","),
+			)
+		}
+		return preferred, nil
 	}
 
 	if len(preferred) == 0 && len(fallback) == 0 {

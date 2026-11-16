@@ -26,6 +26,7 @@ COPY fixtures ./fixtures
 COPY api ./api
 
 ENV SNAPSHOT_DIR=/app/fixtures/snapshots
+ENV OVS_BONDS_DIR=/app/fixtures/ovs-bonds
 
 EXPOSE 8090
 USER app

@@ -110,8 +110,10 @@ Three tabs:
   tables appear where they apply: a VRF shows its own table, and an interface
   or bridge shows the routes that leave through it. Bonds show their mode and
   members; an OVS bond also its members' state, speed and MTU, the policy
-  that configured its bridge, and that `ovs-appctl bond/show` holds its runtime
-  state. SR-IOV devices show their virtual functions, and networks their
+  that configured its bridge, and its runtime state: with the collector on, the
+  active member, which members OVS has enabled and LACP, read by the collector
+  from `ovs-appctl bond/show` (marked when it is the collector's sample data
+  rather than live); with it off, where to run that command. SR-IOV devices show their virtual functions, and networks their
   topology, role, subnets and namespaces. A name in a fact that is another node
   of the graph, such as a bridge's OVS bond uplink, moves the selection to it.
 - **Relationships**: every edge of the selected node as a link that moves the

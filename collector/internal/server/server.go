@@ -81,6 +81,12 @@ type Server struct {
 	// can tell a probe that failed during start-up (an upgrade rolling the
 	// collector and ovnkube-node together) from a lasting failure.
 	warming atomic.Bool
+
+	// OVS bond runtime state (ovn-recon-1tw.7): read live per request,
+	// with a few seconds' memo and the fixtures as the fallback.
+	ovsBondCollector OVSBondCollector
+	ovsBondFixtures  OVSBondFixtures
+	ovsBonds         ovsBondsMemo
 }
 
 // warningCollectorWarming marks a zone snapshot served while the start-up
@@ -126,6 +132,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle(snapshotsPrefix, withGzip(http.HandlerFunc(s.handleSnapshotByNode)))
 	mux.Handle(sectionsPrefix, withGzip(http.HandlerFunc(s.handleSectionsPath)))
 	mux.Handle(lookupPrefix, withGzip(http.HandlerFunc(s.handleLookup)))
+	mux.Handle(ovsPrefix, withGzip(http.HandlerFunc(s.handleOVSBonds)))
 	return mux
 }
 

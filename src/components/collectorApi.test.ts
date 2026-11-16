@@ -6,6 +6,7 @@ import {
     fetchClusterTopology,
     fetchCollectorLookup,
     fetchCollectorSnapshot,
+    fetchOvsBondState,
     rememberedClusterTopology,
     rememberedCollectorSnapshot,
     sectionsPath,
@@ -324,5 +325,54 @@ describe('remembered ladder payloads', () => {
         answer({ snapshots: [] });
         await fetchClusterTopology();
         expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+});
+
+// ovn-recon-1tw.7: OVS bond runtime state is fetched fresh, through the same routes.
+describe('fetchOvsBondState', () => {
+    const answer = (payload: unknown) =>
+        fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => payload });
+
+    it('asks /ovs/bonds/<node>, the node encoded in the path', async () => {
+        await fetchOvsBondState('worker-1');
+        await fetchOvsBondState('node/with space');
+        expect(requestedUrls()).toEqual([
+            `${API}/ovs/bonds/worker-1`,
+            `${API}/ovs/bonds/node%2Fwith%20space`,
+        ]);
+    });
+
+    it('asks again each time, and is never remembered as a ladder payload', async () => {
+        answer({ metadata: { nodeName: 'worker-1' }, warnings: [], bonds: [] });
+        await fetchOvsBondState('worker-1');
+        await fetchOvsBondState('worker-1');
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(rememberedCollectorSnapshot('worker-1')).toBeNull();
+        expect(rememberedClusterTopology()).toBeNull();
+    });
+
+    it('shares a request for the same node already in flight', async () => {
+        let resolve: (value: unknown) => void = () => undefined;
+        fetchMock.mockReset();
+        fetchMock.mockReturnValue(new Promise((done) => { resolve = done; }));
+        const first = fetchOvsBondState('worker-1');
+        const second = fetchOvsBondState('worker-1');
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        resolve({ ok: true, status: 200, json: async () => ({ bonds: [] }) });
+        expect(await second).toBe(await first);
+    });
+
+    it('falls through the proxy routes and rejects as the snapshot fetches do', async () => {
+        fetchMock.mockReset();
+        fetchMock.mockImplementation(async (url: string) => ({ ok: false, status: url.startsWith(API) ? 502 : 404 }));
+        const failure = await fetchOvsBondState('worker-1').catch((error: unknown) => error);
+        expect(failure).toBeInstanceOf(CollectorUnreachableError);
+        expect(describeCollectorFailure(failure).summary).toBe('Collector is not answering (HTTP 502)');
+        expect(requestedUrls()).toEqual([
+            `${API}/ovs/bonds/worker-1`,
+            '/api/plugins/ovn-recon/backend/api/v1/ovs/bonds/worker-1',
+            '/api/proxy/plugin/ovn-recon/backend/api/v1/ovs/bonds/worker-1',
+            '/api/proxy/plugin/ovn-recon/api/v1/ovs/bonds/worker-1',
+        ]);
     });
 });
