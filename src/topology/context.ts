@@ -8,8 +8,10 @@ import {
     Interface,
     NetworkAttachmentDefinition,
     NodeNetworkConfigurationEnactment,
+    LogicalTopologyWarning,
     NodeNetworkState,
     OvnBridgeMapping,
+    OvsBondRuntime,
     RouteAdvertisements,
     SriovNetworkNodeState,
     UserDefinedNetwork,
@@ -85,12 +87,39 @@ export interface GraphContext {
      */
     ovsBonds: OvsBond[];
     /**
+     * What OVS is doing with this node's OVS bonds (ovn-recon-1tw.7), from the
+     * collector's `ovs-appctl bond/show`. Not built by buildGraphContext: the
+     * physical view fetches it (useOvsBondState) only with the collector on and a
+     * bond on the node, and lays it over the context it built, so facts() stays a
+     * pure function of the context. Undefined with the collector off, for a node
+     * without OVS bonds, and until the first answer; the drawer then says only
+     * where to read the state, as it did before.
+     */
+    ovsBondRuntime?: OvsBondRuntimeState;
+    /**
      * Synthetic nodes for the namespaces attached to each network. Derived rather than
      * reported: CUDN namespaces are scraped from a status condition message, and each
      * UDN implies one attachment for the NAD its controller creates.
      */
     attachmentNodes: AttachmentNode[];
 }
+
+/**
+ * The collector's answer for a node's OVS bonds, as the drawer reads it
+ * (ovn-recon-1tw.7): the bonds keyed by name, which OVS keeps unique per node
+ * (bond/show names bonds, not bridges; a bond is matched to ctx.ovsBonds by name),
+ * with the answer's provenance; or the one-line reason the request failed.
+ */
+export type OvsBondRuntimeState =
+    | {
+        byBond: Map<string, OvsBondRuntime>;
+        nodeName: string;
+        generatedAt: string;
+        /** "ok", or "degraded" when the live probe failed and a fixture (or nothing) was served. */
+        sourceHealth: string;
+        warnings: LogicalTopologyWarning[];
+    }
+    | { error: string };
 
 /** Namespaces attached to each CUDN, plus one node per UDN. */
 const buildAttachmentNodes = (

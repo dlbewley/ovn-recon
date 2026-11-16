@@ -45,7 +45,8 @@ beforeEach(() => {
 });
 
 // The collector client remembers its last ladder payloads for the browser tab and
-// shares in-flight requests (ovn-recon-nt4.4); start every test with none, so one
+// shares in-flight requests (ovn-recon-nt4.4), OVS bond state's included
+// (ovn-recon-1tw.7, never remembered); start every test with none, so one
 // test's aggregate never paints in the next. A suite that mocks collectorApi with a
 // factory has no such function, and nothing to forget.
 beforeEach(() => {

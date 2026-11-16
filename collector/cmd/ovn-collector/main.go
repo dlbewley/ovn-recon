@@ -22,6 +22,7 @@ import (
 func main() {
 	port := envOrDefault("PORT", "8090")
 	snapshotDir := envOrDefault("SNAPSHOT_DIR", "./fixtures/snapshots")
+	ovsBondsDir := envOrDefault("OVS_BONDS_DIR", "./fixtures/ovs-bonds")
 	targetNamespaces := parseCSV(envOrDefault("COLLECTOR_TARGET_NAMESPACES", "openshift-ovn-kubernetes,openshift-frr-k8s"))
 	logLevel := parseLogLevel(envOrDefault("COLLECTOR_LOG_LEVEL", "info"))
 	includeProbeOutput := parseBool(envOrDefault("COLLECTOR_INCLUDE_PROBE_OUTPUT", "false"))
@@ -36,7 +37,8 @@ func main() {
 	})
 
 	store := snapshot.NewFileStore(snapshotDir, "default.json")
-	srv := server.New(store).WithNodeLister(store)
+	ovsBondFixtures := snapshot.NewOVSBondFixtures(ovsBondsDir)
+	srv := server.New(store).WithNodeLister(store).WithOVSBonds(nil, ovsBondFixtures)
 	liveCollector, runnerFactory, err := buildLiveCollector(targetNamespaces, logger, includeProbeOutput)
 	if err != nil {
 		logger.Warn("live OVN probing disabled; serving file snapshots only", "error", err)
@@ -44,7 +46,10 @@ func main() {
 		// Aggregate node discovery prefers live pod placement, with the
 		// fixture store's file list as the offline fallback.
 		lister := fallbackNodeLister{primary: runnerFactory, fallback: store, logger: logger}
-		srv = server.NewWithLiveCollector(store, liveCollector).WithNodeLister(lister)
+		// OVS bonds are read on the node itself, never from another
+		// node's pod (ovn-recon-1tw.7).
+		bondCollector := probe.NewOVSBondCollector(runnerFactory, logger.With("component", "ovs-bonds"), includeProbeOutput)
+		srv = server.NewWithLiveCollector(store, liveCollector).WithNodeLister(lister).WithOVSBonds(bondCollector, ovsBondFixtures)
 		logger.Info("live OVN probing enabled", "targetNamespaces", targetNamespaces)
 
 		// The cache only makes sense in front of live probing; in
@@ -81,6 +86,7 @@ func main() {
 	logger.Info("starting ovn-collector",
 		"addr", addr,
 		"snapshotDir", snapshotDir,
+		"ovsBondsDir", ovsBondsDir,
 		"targetNamespaces", targetNamespaces,
 		"logLevel", logLevel.String(),
 		"includeProbeOutput", includeProbeOutput,

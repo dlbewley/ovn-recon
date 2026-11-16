@@ -22,7 +22,7 @@ const path = require('path');
 
 const repoRoot = path.resolve(__dirname, '..');
 
-const CONTRACT_DIRS = ['collector/api', 'collector/fixtures/snapshots'];
+const CONTRACT_DIRS = ['collector/api', 'collector/fixtures/snapshots', 'collector/fixtures/ovs-bonds'];
 
 /** Every JSON file under the contract directories, repo-relative, sorted. */
 const contractJsonFiles = () =>

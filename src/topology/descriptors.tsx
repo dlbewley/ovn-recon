@@ -43,6 +43,7 @@ import {
     integrationBridgeNodeId, interfaceNodeId, nadNodeId, ovsBondNodeId, udnNodeId
 } from './ids';
 import { CATEGORICAL, NodeStatus } from './palette';
+import { liveOvsBondRuntime } from './ovsBondRuntime';
 import { getUdnTopologyAndRole } from './registry';
 import {
     AttachmentNode, IntegrationBridgeNode, NetworkColumnItem, NodeKind, ResourceRef
@@ -426,11 +427,20 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
             const up = states.filter((state) => state === 'up').length;
             // The member count only when some are not up: that is when it says something.
             const partial = states.length > 0 && up < states.length ? `${up}/${states.length} up` : undefined;
+            // With live bond/show state (ovn-recon-1tw.7), the count OVS has enabled, but
+            // only when OVS disabled a member whose link is up: the one case the up count
+            // reads as healthy. A disabled member that is down is already in "1/2 up".
+            const runtime = liveOvsBondRuntime(bond.name, ctx);
+            const disabledButUp = runtime?.members.some((member) => !member.enabled
+                && ctx.interfaces.find((iface) => iface.name === member.name)?.state === 'up');
+            const enabled = runtime && disabledButUp
+                ? `${runtime.members.filter((member) => member.enabled).length}/${runtime.members.length} enabled`
+                : undefined;
             return {
                 label: bond.name,
                 // nmstate's word for an interface is its type; this is OVS's own term.
                 subtitle: 'ovs-bond',
-                state: [bond.mode, partial].filter(Boolean).join(' · ') || undefined
+                state: [bond.mode, partial, enabled].filter(Boolean).join(' · ') || undefined
             };
         },
         raw: (bond) => bond.raw,

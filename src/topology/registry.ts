@@ -51,6 +51,7 @@ import {
     EvpnVrfConfig,
     Interface,
     NetworkAttachmentDefinition,
+    OvsBondRuntimeMember,
     RouteAdvertisements,
     UserDefinedNetwork
 } from '../types';
@@ -62,6 +63,7 @@ import {
 } from './sriovNodeState';
 import { getApiResourcePath, getNamespaceQueryPath, getProjectPath } from './links';
 import { ovsBondNodeId, resolveInterfaceRef } from './ids';
+import { isDegradedOvsBondRuntime, isLoadedOvsBondRuntime, LIVE_PROBE_FAILED } from './ovsBondRuntime';
 import {
     AttachmentNode, Fact, FactItem, IntegrationBridgeNode, NodeKind, NodeKindDefinition,
     NodeViewModel, ResourceRef
@@ -905,13 +907,13 @@ const unresolvedVrfNetworkIdFacts = (unresolved: UnresolvedVrfNetworkId | undefi
  * An OVS bond's drawer (ovn-recon-1tw.2). Everything is read from NodeNetworkState:
  * the bond from its bridge's bridge.port entry, each member from its own interface
  * entry. What NNS does not carry -- which member is active, which OVS has enabled --
- * is named, with where to read it, rather than guessed.
+ * is named, with where to read it, rather than guessed; with the collector on, the
+ * Runtime State row shows it from bond/show (ovn-recon-1tw.7).
  */
 const ovsBondFacts = (node: NodeViewModel, ctx: GraphContext): Fact[] => {
     const bond = ctx.ovsBonds.find((candidate) => ovsBondNodeId(candidate.bridge, candidate.name) === node.id);
     if (!bond) return baseFacts(node, 'observed', NNS_API);
     const entry = `${bond.bridge}'s bridge.port entry ${bond.name}`;
-    const nodeName = ctx.nns?.metadata?.name;
     const memberItem = (member: OvsBond['members'][number]): FactItem => {
         const iface = member.present
             ? ctx.interfaces.find((candidate) => candidate.name === member.name)
@@ -968,16 +970,97 @@ const ovsBondFacts = (node: NodeViewModel, ctx: GraphContext): Fact[] => {
                 + 'own NodeNetworkState entry: whether the link is up, not whether OVS has enabled it in the bond.',
             emptyText: 'No members reported.'
         },
-        {
-            label: 'Runtime State',
-            value: `ovs-appctl bond/show ${bond.name}`,
-            provenance: 'observed',
-            hint: `ip link does not show ${bond.name}: an OVS bond has no kernel device, and NodeNetworkState carries `
-                + `its configuration only. Run ovs-appctl bond/show ${bond.name} on ${nodeName ?? 'the node'} `
-                + '(oc debug node, then chroot /host) for the active member, which members OVS has enabled, and '
-                + 'how the hash buckets are spread.'
-        }
+        ovsBondRuntimeFact(bond, ctx)
     ];
+};
+
+/** A runtime member's line: whether OVS sends traffic over it, and why not when it cannot. */
+const runtimeMemberText = (member: OvsBondRuntimeMember): string =>
+    `${member.name}: ${member.enabled ? 'enabled' : 'disabled'}${member.mayEnable ? '' : ' (may_enable: false)'}`;
+
+/**
+ * An OVS bond's Runtime State row (ovn-recon-1tw.7). NodeNetworkState carries the
+ * bond's configuration only; with the collector on, the physical view lays the
+ * collector's parse of `ovs-appctl bond/show` over the context (ctx.ovsBondRuntime)
+ * and this row shows it: the active member, each member as OVS has it, LACP. With
+ * no answer (collector off, or not yet answered) the row is the pointer it always
+ * was. A failed request keeps the pointer and says why in one line. A degraded
+ * answer (LIVE_PROBE_FAILED: the collector served its fixture) is shown, marked as
+ * not live. The rebalance timer is left out: it is stale before it is read.
+ */
+const ovsBondRuntimeFact = (bond: OvsBond, ctx: GraphContext): Fact => {
+    const runtime = ctx.ovsBondRuntime;
+    const nodeName = (isLoadedOvsBondRuntime(runtime) ? runtime.nodeName : undefined)
+        || ctx.nns?.metadata?.name || 'the node';
+    const command = `ovs-appctl bond/show ${bond.name}`;
+    const pointerHint = `ip link does not show ${bond.name}: an OVS bond has no kernel device, and NodeNetworkState `
+        + `carries its configuration only. Run ${command} on ${ctx.nns?.metadata?.name ?? 'the node'} `
+        + '(oc debug node, then chroot /host) for the active member, which members OVS has enabled, and '
+        + 'how the hash buckets are spread.';
+    const pointer: Fact = { label: 'Runtime State', value: command, provenance: 'observed', hint: pointerHint };
+    if (!runtime) return pointer;
+    if (!isLoadedOvsBondRuntime(runtime)) {
+        return { ...pointer, value: [{ text: command }, { text: `Collector: ${runtime.error}` }] };
+    }
+
+    const degraded = isDegradedOvsBondRuntime(runtime);
+    const state = runtime.byBond.get(bond.name);
+    const notLive = `The collector could not run ovs-appctl bond/show on ${nodeName} (${LIVE_PROBE_FAILED}) `
+        + `and served the sample data it ships instead, at ${runtime.generatedAt}: this is not ${nodeName}'s `
+        + 'live state.';
+    if (!state) {
+        return {
+            ...pointer,
+            value: [
+                { text: command },
+                degraded
+                    ? { text: `⚠ Collector could not read ${nodeName}'s bonds (${LIVE_PROBE_FAILED})` }
+                    : { text: `⚠ bond/show on ${nodeName} lists no bond ${bond.name}` }
+            ],
+            hint: degraded
+                ? `${notLive} ${pointerHint}`
+                : `The collector read ovs-appctl bond/show on ${nodeName} at ${runtime.generatedAt}, and OVS `
+                    + `reports no bond named ${bond.name}, though NodeNetworkState configures one in ${bond.bridge}. `
+                    + pointerHint
+        };
+    }
+
+    const configured = new Set(bond.members.map((member) => member.name));
+    const reported = new Set(state.members.map((member) => member.name));
+    const items: FactItem[] = [
+        ...(degraded ? [{ text: `⚠ Not live: sample data from the collector (${LIVE_PROBE_FAILED})` }] : []),
+        state.activeMember
+            ? {
+                text: `Active member: ${state.activeMember.name}`,
+                node: resolveInterfaceRef(state.activeMember.name, ctx)
+            }
+            : { text: 'Active member: none' },
+        // OVS's order, which is the order bond/show prints.
+        ...state.members.map((member): FactItem => ({
+            text: runtimeMemberText(member),
+            node: resolveInterfaceRef(member.name, ctx),
+            ...(configured.has(member.name) ? {} : { detail: `not in ${bond.bridge}'s link-aggregation.port` })
+        })),
+        // Configured, but OVS does not have it in the bond: the NIC is missing or was
+        // never added, and nothing else on the page says so at runtime.
+        ...bond.members
+            .filter((member) => !reported.has(member.name))
+            .map((member): FactItem => ({
+                text: `${member.name}: not in bond/show`,
+                detail: 'configured in NodeNetworkState, but OVS does not list it as a member'
+            })),
+        ...(state.lacpStatus ? [{ text: `LACP: ${state.lacpStatus}` }] : [])
+    ];
+    const source = `ovs-appctl bond/show on ${nodeName}, read by the collector at ${runtime.generatedAt}.`;
+    return {
+        label: 'Runtime State',
+        value: items,
+        provenance: 'observed',
+        hint: degraded
+            ? notLive
+            : `${source} Enabled is whether OVS sends traffic over a member; may_enable, whether it could `
+                + '(carrier, and LACP where negotiated). Runtime state: it can change between reads.'
+    };
 };
 
 export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
