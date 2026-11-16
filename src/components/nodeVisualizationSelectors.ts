@@ -1569,6 +1569,7 @@ export const findEvpnNetworkForDevice = (
 /**
  * A gloss for the kernel bonding modes whose names do not say what they do. The mode
  * is always shown as the kernel spells it; this only adds what an operator would call it.
+ * OVS bond modes are glossed apart, in OVS_BOND_MODE_GLOSS (ovn-recon-1tw.3).
  */
 const BOND_MODE_GLOSS: Record<string, string> = {
     'balance-rr': 'round-robin',
@@ -1742,4 +1743,48 @@ export const getOvsBonds = (interfaces: Interface[]): OvsBond[] => {
             });
         });
     return bonds;
+};
+
+/**
+ * A gloss for each OVS bond mode (ovn-recon-1tw.3), kept apart from the kernel's
+ * BOND_MODE_GLOSS because the two share a name with different consequences: an
+ * OVS bond is never a kernel bond, and its modes say most about what the switch
+ * side must (or must not) be. From ovs-vswitchd.conf.db(5), "Bonding Configuration":
+ * balance-slb hashes on source MAC and VLAN and rebalances on a timer without any
+ * negotiation, so the switch must see independent ports, not a port-channel or
+ * static LAG that would hash replies across members on its own terms; balance-tcp
+ * hashes on L2 to L4 headers and requires LACP, so both ends need it.
+ */
+const OVS_BOND_MODE_GLOSS: Record<string, string> = {
+    'active-backup': 'one member carries all traffic, another takes over when it fails; no LACP or switch-side LAG',
+    'balance-slb': 'source MAC and VLAN hashing, rebalanced periodically; no LACP, and the switch ports must not '
+        + 'be a port-channel or static LAG',
+    'balance-tcp': 'L2 to L4 hashing; needs LACP on both the bond and the switch ports'
+};
+
+/**
+ * An OVS bond's members as one line (ovn-recon-1tw.3), in the bridge's order. A
+ * member NodeNetworkState does not list is kept and marked, so a bond that lost a
+ * NIC still says which.
+ */
+export const formatOvsBondMembers = (bond: OvsBond): string =>
+    bond.members.map((member) => (member.present ? member.name : `${member.name} (not in NNS)`)).join(', ');
+
+/**
+ * What an OVS bond is, as drawer lines (ovn-recon-1tw.3): its mode with a gloss,
+ * its members, and its up and down delays when reported. The one source for every
+ * drawer that describes an OVS bond, the bond's own (ovn-recon-1tw.2) included.
+ * NNS carries no runtime bond state (the active member, per-member enable), so
+ * none is claimed; `ovs-appctl bond/show` holds that.
+ */
+export const describeOvsBond = (bond: OvsBond): string[] => {
+    const lines: string[] = [];
+    if (bond.mode) {
+        const gloss = OVS_BOND_MODE_GLOSS[bond.mode];
+        lines.push(`Mode: ${bond.mode}${gloss ? ` (${gloss})` : ''}`);
+    }
+    lines.push(bond.members.length > 0 ? `Members: ${formatOvsBondMembers(bond)}` : 'Members: none reported');
+    if (bond.updelay) lines.push(`Up delay: ${bond.updelay} ms`);
+    if (bond.downdelay) lines.push(`Down delay: ${bond.downdelay} ms`);
+    return lines;
 };

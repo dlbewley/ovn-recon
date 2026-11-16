@@ -20,6 +20,7 @@ import {
     findUnresolvedVrfNetworkId,
     findVtepForDevice,
     formatLabelSelector,
+    formatOvsBondMembers,
     getCudnAssociatedNamespaces,
     getCudnsSelectedByRouteAdvertisement,
     getCudnsUsingVtep,
@@ -37,6 +38,7 @@ import {
     NetworkPatchPort,
     NncpClaim,
     NODE_VTEPS_ANNOTATION,
+    OvsBond,
     parseNadConfig,
     parsePatchPortName,
     resolvePatchPortCudn,
@@ -119,6 +121,14 @@ const linkFacts = (raw: Interface): Fact[] => {
 };
 
 /**
+ * The OVS bonds that name an interface as a member (ovn-recon-1tw.3). Normally
+ * one; a bridge.port list naming a NIC in two bonds is a misconfiguration, and
+ * each is reported rather than one picked.
+ */
+const ovsBondsOfMember = (name: string | undefined, ctx: GraphContext): OvsBond[] =>
+    (name ? ctx.ovsBonds.filter((bond) => bond.members.some((member) => member.name === name)) : []);
+
+/**
  * Shown only when it differs from the address in use, which is when it says something:
  * the NIC is answering to an address other than its own.
  */
@@ -130,14 +140,40 @@ const permanentMacFacts = (raw: Interface, macAddress: string | undefined, ctx: 
     }
     const controllerName = raw.controller || raw.master;
     const bond = ctx.interfaces.find((iface) => iface.name === controllerName && iface.type === 'bond');
+    // An OVS bond leaves its members' addresses alone (ovn-recon-1tw.3): the
+    // shared-address explanation is a kernel bond's, and must not be borrowed.
+    const ovsBond = bond ? undefined : ovsBondsOfMember(raw.name, ctx)[0];
+    const hint = bond
+        ? `The address the hardware reports. ${raw.name} is a member of bond ${bond.name}, and a bond gives `
+            + 'its members a shared address, so the address in use differs.'
+        : ovsBond
+            ? `The address the hardware reports. ${raw.name} is a member of OVS bond ${ovsBond.name}, which does not `
+                + 'change its members\' addresses, so the address in use was set by configuration.'
+            : 'The address the hardware reports. The address in use differs, so it was set by configuration.';
+    return [{ label: 'Permanent MAC', value: permanent, provenance: 'observed', hint }];
+};
+
+/**
+ * The OVS bond an interface belongs to (ovn-recon-1tw.3). The member itself
+ * reports only `controller: <bridge>`; the bond is read from the bridge's
+ * bridge.port entry, so the drawer says where, lest the bridge be taken for the
+ * member's direct parent.
+ */
+const ovsBondMemberFacts = (raw: Interface | undefined, ctx: GraphContext): Fact[] => {
+    const bonds = ovsBondsOfMember(raw?.name, ctx);
+    if (!raw || bonds.length === 0) return [];
+    const controller = raw.controller || raw.master;
     return [{
-        label: 'Permanent MAC',
-        value: permanent,
+        // A kernel bond enslaved to an OVS bond already has a Bond row of its
+        // own, and the drawer keys its rows by label.
+        label: raw.type === 'bond' ? 'OVS bond' : 'Bond',
+        value: bonds.map((bond) => ({
+            text: `Member of OVS bond ${bond.name} on ${bond.bridge}${bond.mode ? ` (${bond.mode})` : ''}`
+        })),
         provenance: 'observed',
-        hint: bond
-            ? `The address the hardware reports. ${raw.name} is a member of bond ${bond.name}, and a bond gives `
-                + 'its members a shared address, so the address in use differs.'
-            : 'The address the hardware reports. The address in use differs, so it was set by configuration.'
+        hint: `Read from ${bonds.map((bond) => `${bond.bridge}'s bridge.port entry ${bond.name}`).join(' and ')}, `
+            + `whose link-aggregation.port lists ${raw.name}. `
+            + (controller ? `${raw.name} itself reports only controller: ${controller}.` : `${raw.name} itself names no bond.`)
     }];
 };
 
@@ -379,9 +415,19 @@ const getBridgePortNames = (raw: Interface | undefined): string[] => {
 /** nmstate types of a port that carries the bridge's traffic off the node. */
 const UPLINK_TYPES = new Set(['ethernet', 'bond', 'vlan', 'team']);
 
-/** A bridge's ports by role (ovn-recon-dp7.1): every port lands in exactly one. */
+/**
+ * A bridge's ports by role (ovn-recon-dp7.1): every port lands in exactly one.
+ * An OVS bond's members are not ports of the bridge but interfaces of the bond's
+ * port, so they land in `bonds` with it, not in `uplinks` (ovn-recon-1tw.3).
+ */
 export interface BridgePortGroups {
+    /** Uplinks that are interfaces of their own: a NIC, a kernel bond, a VLAN, a team. */
     uplinks: string[];
+    /**
+     * OVS bonds on this bridge (ovn-recon-1tw.3), each standing for its port entry
+     * and all of its members. The drawer lists them as uplinks.
+     */
+    bonds: OvsBond[];
     /**
      * The bridge's internal ports: the one named as the bridge is, then any
      * other non-patch ovs-interface on it. An NNCP can give a bridge an
@@ -421,8 +467,14 @@ export const groupBridgePorts = (raw: Interface, ctx: GraphContext): BridgePortG
             .filter((port) => port.bridge === raw.name)
             .map((port) => [port.portName, port])
     );
-    const groups: BridgePortGroups = { uplinks: [], internal: [], patches: [], other: [] };
+    // An OVS bond is reported only as a bridge.port entry, and its members only
+    // as `controller: <bridge>` (ovn-recon-1tw.3), so both its name and its
+    // members' names reach this list; the bond takes all of them.
+    const bonds = ctx.ovsBonds.filter((bond) => bond.bridge === raw.name);
+    const bonded = new Set(bonds.flatMap((bond) => [bond.name, ...bond.members.map((member) => member.name)]));
+    const groups: BridgePortGroups = { uplinks: [], bonds, internal: [], patches: [], other: [] };
     names.forEach((name) => {
+        if (bonded.has(name)) return;
         const patch = patchByName.get(name);
         const iface = ctx.interfaces.find((candidate) => candidate.name === name);
         if (name === raw.name) groups.internal.push(name);
@@ -462,12 +514,31 @@ const bridgePortFacts = (raw: Interface, ctx: GraphContext): Fact[] => {
         return { text: name, detail: addresses.length > 0 ? addresses.join(', ') : '(no address)' };
     };
     const mappings = ctx.bridgeMappings.filter((mapping) => mapping.bridge === raw.name);
-    const hasPorts = groups.uplinks.length + groups.internal.length + groups.patches.length + groups.other.length > 0;
+    const hasPorts = groups.uplinks.length + groups.bonds.length + groups.internal.length + groups.patches.length
+        + groups.other.length > 0;
     if (!hasPorts) {
         return [{ label: 'Ports', value: [], provenance: 'observed', emptyText: 'No bridge ports reported in NNS.' }];
     }
+    // An OVS bond is the uplink in place of its members (ovn-recon-1tw.3). It
+    // links to nothing yet: the ovs-bond node arrives with ovn-recon-1tw.2.
+    const bondItem = (bond: OvsBond): FactItem => ({
+        text: bond.name,
+        detail: `OVS bond${bond.mode ? `, ${bond.mode}` : ''}: `
+            + (bond.members.length > 0 ? formatOvsBondMembers(bond) : 'no members reported')
+    });
     return [
-        { label: 'Uplink', value: groups.uplinks.map((text) => ({ text })), provenance: 'observed' },
+        {
+            label: 'Uplink',
+            value: [...groups.bonds.map(bondItem), ...groups.uplinks.map((text) => ({ text }))],
+            provenance: 'observed',
+            ...(groups.bonds.length > 0
+                ? {
+                    hint: `${groups.bonds.map((bond) => bond.name).join(', ')}: read from ${raw.name}'s bridge.port, `
+                        + 'whose link-aggregation names the members. nmstate reports no interface for an OVS bond, '
+                        + 'and ip link does not show one; ovs-appctl bond/show holds its runtime state.'
+                }
+                : {})
+        },
         ...(groups.internal.length > 0
             ? [{
                 label: groups.internal.length === 1 ? 'Internal Port' : 'Internal Ports',
@@ -854,6 +925,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                         + 'reads. The Config tab lists every bonding option.'
                 });
             }
+            facts.push(...ovsBondMemberFacts(raw, ctx));
             // EVPN: which VTEP this device was created for, or which network it serves.
             facts.push(...evpnVtepFacts(raw, ctx), ...evpnNetworkFacts(raw, ctx));
             // A NIC says what it is before what it is addressed as (ovn-recon-s3t.62).

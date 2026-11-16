@@ -4,7 +4,9 @@ import path from 'path';
 import { buildGraphContext, GraphContext } from '../topology/context';
 import { layoutLanes, LaneViewState } from '../topology/lanes';
 import { buildTopologyEdges } from './nodeVisualizationModel';
-import { getBondMembers, getOvsBonds } from './nodeVisualizationSelectors';
+import {
+    describeBond, describeOvsBond, formatOvsBondMembers, getBondMembers, getOvsBonds, OvsBond
+} from './nodeVisualizationSelectors';
 import { Interface, NodeNetworkState } from '../types';
 
 /**
@@ -142,5 +144,54 @@ describe('the OVS bonds in the graph context', () => {
 
         expect(edges.length).toBeGreaterThan(0);
         expect(Object.keys(layout.positions).length).toBeGreaterThan(0);
+    });
+});
+
+/**
+ * The drawer lines for an OVS bond (ovn-recon-1tw.3), the one source the bridge's,
+ * the members' and the bond's own drawers share.
+ */
+describe('describing an OVS bond', () => {
+    const bond = (mode: string | undefined, members: OvsBond['members'], extra: Partial<OvsBond> = {}): OvsBond => ({
+        bridge: 'br-vmdata', name: 'bond1', mode, members, raw: { name: 'bond1' }, ...extra
+    });
+    const both = [{ name: 'ens161', present: true }, { name: 'ens256', present: true }];
+
+    it('reads the captured balance-slb bond with its gloss and members', () => {
+        expect(describeOvsBond(getOvsBonds(interfaces)[0])).toEqual([
+            'Mode: balance-slb (source MAC and VLAN hashing, rebalanced periodically; no LACP, and the switch '
+                + 'ports must not be a port-channel or static LAG)',
+            'Members: ens161, ens256'
+        ]);
+    });
+
+    it('glosses balance-tcp as needing LACP, and active-backup as needing no LAG', () => {
+        expect(describeOvsBond(bond('balance-tcp', both))[0])
+            .toBe('Mode: balance-tcp (L2 to L4 hashing; needs LACP on both the bond and the switch ports)');
+        expect(describeOvsBond(bond('active-backup', both))[0]).toBe('Mode: active-backup (one member carries all '
+            + 'traffic, another takes over when it fails; no LACP or switch-side LAG)');
+    });
+
+    it('leaves the kernel glosses alone: a kernel active-backup bond is not glossed as OVS', () => {
+        const kernel: Interface = {
+            name: 'bond0', type: 'bond', state: 'up', 'link-aggregation': { mode: 'active-backup', port: ['eno3'] }
+        } as Interface;
+        expect(describeBond(kernel)[0]).toBe('Mode: active-backup');
+    });
+
+    it('marks a member NNS does not list, and states the delays when reported', () => {
+        const degraded = bond('balance-slb', [{ name: 'ens161', present: true }, { name: 'ens256', present: false }],
+            { updelay: 100, downdelay: 50 });
+        expect(formatOvsBondMembers(degraded)).toBe('ens161, ens256 (not in NNS)');
+        expect(describeOvsBond(degraded).slice(1)).toEqual([
+            'Members: ens161, ens256 (not in NNS)',
+            'Up delay: 100 ms',
+            'Down delay: 50 ms'
+        ]);
+    });
+
+    it('says what it can of a bond with no mode, an unknown mode or no members', () => {
+        expect(describeOvsBond(bond(undefined, []))).toEqual(['Members: none reported']);
+        expect(describeOvsBond(bond('some-future-mode', both))[0]).toBe('Mode: some-future-mode');
     });
 });
