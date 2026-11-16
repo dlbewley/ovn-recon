@@ -129,12 +129,13 @@ Rules must:
 |---|---|---|
 | `localnet-unmapped` | network | A Localnet CUDN or standalone NAD names a physical network that no node maps to a bridge |
 | `mapping-bridge-missing` | node | A bridge mapping names an OVS bridge the node does not report |
-| `interface-down` | node | A VRF port, a mapped bridge's uplink, or a NAD's bridge (or its uplink) is down; bond members are left to `bond-degraded` |
-| `bond-degraded` | node | A bond has members down or missing among those configured (reported, plus any an enactment declares); `ignore` is not down |
+| `interface-down` | node | A VRF port, a mapped bridge's uplink, or a NAD's bridge (or its uplink) is down; members of a kernel or OVS bond are left to `bond-degraded` |
+| `bond-degraded` | node | A kernel bond, or an OVS bond in a bridge's `bridge.port` list, has members down or missing among those configured (reported, plus any an enactment declares); `ignore` is not down. An OVS bond's finding is on its bridge's graph node (`ovn-recon-1tw.4`) |
 | `nnce-failing` | node | An enactment on the node is Failing or Degraded |
 | `mtu-exceeds-uplink` | node-network | A Localnet network's declared MTU exceeds the smallest MTU of its bridge's uplinks on that node |
 | `nad-config-unparsed` | network | A NAD's `spec.config` is not a JSON object, so the view fell back to pattern matching |
 | `vrf-port-unmatched` | node | A VRF declares a port no interface carries |
+| `ovs-bridge-unbonded-uplinks` | node | An OVS bridge (not br-int) has two or more uplinks, an OVS bond counting as one, with STP stated off and RSTP not on (`ovn-recon-1tw.5`); an uplink that is down still counts, a bridge reporting no STP setting is quiet, Linux bridges are out of scope |
 
 Logical side (`ovn-recon-7i6.3`), evaluated over one zone's collector snapshot:
 
