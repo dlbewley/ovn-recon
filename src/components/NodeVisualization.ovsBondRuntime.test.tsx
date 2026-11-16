@@ -5,7 +5,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
 import { NodeNetworkState, OvsBondsResponse } from '../types';
-import { CollectorUnreachableError } from './collectorApi';
+import { CollectorEndpointMissingError, CollectorUnreachableError } from './collectorApi';
 import NodeVisualizationComponent from './NodeVisualization';
 import { routed } from './testRouter';
 
@@ -123,5 +123,16 @@ describe('NodeVisualization: OVS bond runtime state', () => {
         openBond();
         expect(panelText()).toContain('ovs-appctl bond/show bond1');
         expect(panelText()).toContain('Collector: Collector is not answering (HTTP 502)');
+    });
+
+    it('says the collector is older than the plugin when it lacks the bond route (ovn-recon-2am)', async () => {
+        mockFetchOvsBondState.mockRejectedValue(new CollectorEndpointMissingError('OVS bond state', [
+            { url: '/api/plugins/ovn-recon/api/v1/ovs/bonds/worker-1', status: 404 }
+        ]));
+        await render(fixture('ovs-bond-slb.json'), true);
+        openBond();
+        expect(panelText()).toContain('ovs-appctl bond/show bond1');
+        expect(panelText()).toContain('Collector: Collector does not report OVS bond state: it is older than this plugin');
+        expect(panelText()).not.toContain('not answering');
     });
 });

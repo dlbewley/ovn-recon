@@ -53,6 +53,12 @@ interface FetchFirstOptions {
      * does not route; the request stops there with a CollectorRequestError.
      */
     refusedStatuses?: readonly number[];
+    /**
+     * A failed answer that is the collector's own, told apart by its body
+     * (ovn-recon-2am): a 404 the collector words itself means the request
+     * reached it, where a proxy route that does not exist answers 404 too.
+     */
+    refuses?: (status: number, body: string) => boolean;
 }
 
 /** One proxy route tried for a request, and what came back. */
@@ -89,6 +95,23 @@ export class CollectorUnreachableError extends Error {
     }
 }
 
+/**
+ * The collector answers on its other routes but not on this one (ovn-recon-2am):
+ * it is older than the plugin asking. Every route answered 404 for `what`, while a
+ * route every collector this plugin knows serves answered on the same proxy.
+ */
+export class CollectorEndpointMissingError extends Error {
+    readonly what: string;
+    readonly attempts: CollectorAttempt[];
+
+    constructor(what: string, attempts: CollectorAttempt[]) {
+        super(`The collector does not serve ${what}. Attempts: ${attempts.map(attemptText).join('; ')}`);
+        this.name = 'CollectorEndpointMissingError';
+        this.what = what;
+        this.attempts = attempts;
+    }
+}
+
 /** A failed collector request, as a status line and its details show it. */
 export interface CollectorFailure {
     /** One line: "Collector is not answering (HTTP 502)". */
@@ -111,13 +134,38 @@ export const describeCollectorFailure = (error: unknown): CollectorFailure => {
             message: error.message,
         };
     }
+    if (error instanceof CollectorEndpointMissingError) {
+        return {
+            summary: `Collector does not report ${error.what}: it is older than this plugin`,
+            status: 404,
+            attempts: error.attempts.map(attemptText),
+            message: error.message,
+        };
+    }
+    if (error instanceof CollectorRequestError) {
+        return {
+            summary: `Collector answered HTTP ${error.status}: ${error.message}`,
+            status: error.status,
+            attempts: [],
+            message: error.message,
+        };
+    }
     const message = error instanceof Error ? error.message : String(error || 'Failed to reach the collector');
     return { summary: 'Collector request failed', attempts: [], message };
 };
 
+/** A failed answer's body, or '' when it has none that can be read. */
+const readBody = async (response: Response): Promise<string> => {
+    try {
+        return (await response.text()).trim();
+    } catch {
+        return '';
+    }
+};
+
 const fetchFirst = async <T>(
     buildUrl: (prefix: string) => string,
-    { refusedStatuses = [] }: FetchFirstOptions = {},
+    { refusedStatuses = [], refuses }: FetchFirstOptions = {},
 ): Promise<T> => {
     const attempts: CollectorAttempt[] = [];
 
@@ -136,6 +184,13 @@ const fetchFirst = async <T>(
             }
 
             if (!response.ok) {
+                if (refuses) {
+                    const body = await readBody(response);
+                    if (refuses(response.status, body)) {
+                        lastWorkingPrefix = prefix;
+                        throw new CollectorRequestError(response.status, body || `HTTP ${response.status}`);
+                    }
+                }
                 attempts.push({ url, status: response.status });
                 continue;
             }
@@ -165,10 +220,10 @@ const fetchFirst = async <T>(
 const remembered = new Map<string, unknown>();
 const inFlight = new Map<string, Promise<unknown>>();
 
-const fetchShared = <T>(path: string, remember: boolean): Promise<T> => {
+const fetchShared = <T>(path: string, remember: boolean, options: FetchFirstOptions = {}): Promise<T> => {
     const pending = inFlight.get(path);
     if (pending) return pending as Promise<T>;
-    const request = fetchFirst<T>((prefix) => `${prefix}${path}`)
+    const request = fetchFirst<T>((prefix) => `${prefix}${path}`, options)
         .then((payload) => {
             if (remember) remembered.set(path, payload);
             return payload;
@@ -286,5 +341,44 @@ export const fetchCollectorLookup = (kind: LookupKind, value: string): Promise<L
  * for the same node already in flight (the cold double mount of the shell). The
  * node travels in the path, encoded, as everything does (see COLLECTOR_PROXY_PREFIXES).
  */
-export const fetchOvsBondState = (nodeName: string): Promise<OvsBondsResponse> =>
-    fetchShared(`/ovs/bonds/${encodeURIComponent(nodeName)}`, false);
+export const fetchOvsBondState = async (nodeName: string): Promise<OvsBondsResponse> => {
+    try {
+        return await fetchShared<OvsBondsResponse>(`/ovs/bonds/${encodeURIComponent(nodeName)}`, false, {
+            // The collector words its own 404 (an unknown node) with this route's
+            // usage line; a proxy route that does not exist says nothing of the kind.
+            refuses: (status, body) => status === 404 && body.includes(OVS_BONDS_ROUTE),
+        });
+    } catch (error) {
+        if (error instanceof CollectorUnreachableError
+            && error.attempts.some((attempt) => attempt.status === 404)
+            && await collectorAnswers()) {
+            throw new CollectorEndpointMissingError('OVS bond state', error.attempts);
+        }
+        throw error;
+    }
+};
+
+/** The collector's usage line for the bond route names it so (collector/internal/server/ovs_bonds.go). */
+const OVS_BONDS_ROUTE = '/ovs/bonds/';
+
+/**
+ * Whether a collector answers on any proxy route (ovn-recon-2am), asked only after a
+ * route 404'd on every prefix, to tell a collector older than that route from one
+ * that cannot be reached. `/lookup/` with no kind is the probe: every collector since
+ * ovn-recon-tpp.1 answers it 400 with its usage line, from memory, never collecting.
+ * A collector older still is reported as not answering, as before.
+ */
+const collectorAnswers = async (): Promise<boolean> => {
+    for (const prefix of orderedPrefixes()) {
+        try {
+            const response = await fetch(`${prefix}/lookup/`, { headers: { Accept: 'application/json' } });
+            if (response.status === 400 && (await readBody(response)).includes('/lookup/')) {
+                lastWorkingPrefix = prefix;
+                return true;
+            }
+        } catch {
+            // A route that does not complete says nothing; try the next.
+        }
+    }
+    return false;
+};
