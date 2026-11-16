@@ -182,9 +182,34 @@ describe('NodeVisualization node placement', () => {
             expect(titles).toContain('example-p-cudn (VRF)');
             expect(titles).toContain('br-ex (ovs-bridge)');
             expect(titles).toContain('br-vmdata (ovs-bridge)');
-            expect(titles).toContain('physnet (OVN Bridge Mapping)');
-            expect(titles).toContain('physnet-vmdata (OVN Bridge Mapping)');
+            expect(titles).toContain('physnet (Physical Network)');
+            expect(titles).toContain('physnet-vmdata (Physical Network)');
             expect(titles).toContain('ens224.456 (vlan)');
+        });
+
+        it('heads the Physical Networks group on the lane-title row, however far its nodes sink (ovn-recon-nt4.15)', () => {
+            render(loadFixture('primary-cudn-vrf'), loadCudns('primary-cudn-vrf'));
+
+            const laneHeadings = Array.from(container.querySelectorAll('[data-testid="lane-heading"]'));
+            const physical = laneHeadings.find((h) => h.textContent === 'Physical Networks');
+            expect(physical).toBeDefined();
+            // Every lane's first heading sits on one row.
+            const rows = new Set(laneHeadings.map((h) => h.getAttribute('y')));
+            expect(rows.size).toBe(1);
+
+            // Its nodes sink to their bridges, below the heading row.
+            const headingY = Number(physical!.getAttribute('y'));
+            const x = Number(physical!.getAttribute('x'));
+            const physnetTops = nodeOrigins(container).filter((o) => o.x === x).map((o) => o.y);
+            expect(Math.min(...physnetTops)).toBeGreaterThan(headingY + 15);
+
+            // The VRFs sub-header still sits above the first VRF.
+            const vrfs = Array.from(container.querySelectorAll('[data-testid="group-heading"]'))
+                .find((h) => h.textContent === 'VRFs');
+            expect(vrfs).toBeDefined();
+            expect(Number(vrfs!.getAttribute('x'))).toBe(x);
+            const vrfHeadingY = Number(vrfs!.getAttribute('y'));
+            expect(physnetTops).toContain(vrfHeadingY + 15);
         });
 
         it('gives the shadowing ovs-interface its own node, distinct from the bridge', () => {
@@ -220,7 +245,7 @@ describe('NodeVisualization node placement', () => {
         it('stays aligned at a 27-mapping fan-out on one bridge', () => {
             render(loadFixture('bonded-lldp'));
             const titles = Array.from(container.querySelectorAll('title')).map((t) => t.textContent ?? '');
-            expect(titles.filter((t) => t.endsWith('(OVN Bridge Mapping)')).length).toBe(28);
+            expect(titles.filter((t) => t.endsWith('(Physical Network)')).length).toBe(28);
             expectEdgesToMeetNodes();
         });
 

@@ -561,7 +561,7 @@ const bridgePortFacts = (raw: Interface, ctx: GraphContext): Fact[] => {
         },
         { label: 'Other Ports', value: groups.other.map((text) => ({ text })), provenance: 'observed' },
         {
-            label: 'Bridge Mappings',
+            label: 'Physical Networks',
             value: mappings.map((mapping) => ({ text: mapping.localnet })),
             provenance: 'observed'
         }
@@ -1152,7 +1152,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
         }
     },
     'ovn-mapping': {
-        label: 'OVN Mapping',
+        label: 'Physical Network',
         // No State fact: a mapping is never up or down -- it is a name OVN gives a bridge.
         facts: (node, ctx) => {
             const localnetName = node.raw?.localnet;

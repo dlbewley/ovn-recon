@@ -130,7 +130,7 @@ describe('NodeVisualization drawer', () => {
         it.each([
             ['interface (ethernet)', 'ens192 (ethernet)', 'ens192'],
             ['interface (ovs-bridge)', 'br-ex (ovs-bridge)', 'br-ex'],
-            ['ovn-mapping', 'physnet (OVN Bridge Mapping)', 'physnet'],
+            ['ovn-mapping', 'physnet (Physical Network)', 'physnet'],
             ['vrf', 'example-p-cudn (VRF)', 'example-p-cudn'],
             ['cudn', 'machinenet (CUDN)', 'machinenet'],
             ['attachment', 'machinenet (NAD)', 'machinenet']
@@ -228,7 +228,7 @@ describe('NodeVisualization drawer', () => {
 
         it('shows which CUDNs reference a bridge mapping', () => {
             renderPrimary();
-            clickNode('physnet (OVN Bridge Mapping)');
+            clickNode('physnet (Physical Network)');
             selectTab('Overview');
             const text = panelText();
 
@@ -470,7 +470,7 @@ describe('NodeVisualization drawer', () => {
     describe('content corrections', () => {
         it('labels the bridge mapping summary with Bridge, not State -- a mapping is never up or down', () => {
             renderPrimary();
-            clickNode('physnet (OVN Bridge Mapping)');
+            clickNode('physnet (Physical Network)');
             selectTab('Overview');
             const text = panelText();
 
@@ -656,7 +656,7 @@ describe('NodeVisualization drawer', () => {
             renderPrimary();
             clickNode('ens192 (ethernet)');
             expect(panel().querySelector('button[aria-label="Copy 02:00:00:00:00:01"]')).not.toBeNull();
-            clickNode('physnet (OVN Bridge Mapping)');
+            clickNode('physnet (Physical Network)');
             const referenced = [...panel().querySelectorAll('dt')].find((dt) => dt.textContent === 'Referenced by CUDNs');
             const value = referenced!.parentElement!.querySelector('dd')!;
             expect(value.textContent).toBe('machinenet');
@@ -676,7 +676,7 @@ describe('NodeVisualization drawer', () => {
                 'CUDN example-p-cudnpatch-br-ex_cluster_udn_example.p.cudn_worker-1-to-br-int'
                 + 'cluster default networkpatch-br-ex_worker-1-to-br-int'
             );
-            expect(value('Bridge Mappings')).toBe('physnet');
+            expect(value('Physical Networks')).toBe('physnet');
             expect([...panel().querySelectorAll('dt')].map((dt) => dt.textContent)).not.toContain('Ports');
         });
 
