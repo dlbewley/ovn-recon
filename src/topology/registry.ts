@@ -38,6 +38,7 @@ import {
     NncpClaim,
     NODE_VTEPS_ANNOTATION,
     parseNadConfig,
+    parsePatchPortName,
     resolvePatchPortCudn,
     UnresolvedVrfNetworkId
 } from '../components/nodeVisualizationSelectors';
@@ -381,12 +382,30 @@ const UPLINK_TYPES = new Set(['ethernet', 'bond', 'vlan', 'team']);
 /** A bridge's ports by role (ovn-recon-dp7.1): every port lands in exactly one. */
 export interface BridgePortGroups {
     uplinks: string[];
-    /** The bridge's own internal port, named as the bridge is. */
-    internal?: string;
+    /**
+     * The bridge's internal ports: the one named as the bridge is, then any
+     * other non-patch ovs-interface on it. An NNCP can give a bridge an
+     * internal interface of another name (ovs-br1 on br-vmdata, ovn-recon-1tw.6),
+     * and a bridge can carry several.
+     */
+    internal: string[];
     /** Network patch ports on this bridge, as parsed from their names. */
     patches: NetworkPatchPort[];
     other: string[];
 }
+
+/**
+ * An OVS internal port that is not named after its bridge (ovn-recon-1tw.6):
+ * nmstate reports it as an ovs-interface, the type it gives every OVS internal
+ * port. A patch port is one too, so one carrying a `patch` peer or named as
+ * OVN names patch ports is left where it was grouped before (Patch Ports when
+ * getNetworkPatchPorts places it on this bridge, Other Ports when not). State
+ * is not consulted: an internal port nmstate leaves at state: ignore
+ * (ovn-k8s-mp0 on br-int) is still internal.
+ */
+const isInternalPort = (name: string, ctx: GraphContext): boolean =>
+    !parsePatchPortName(name)
+    && ctx.interfaces.some((iface) => iface.name === name && iface.type === 'ovs-interface' && !iface.patch);
 
 export const groupBridgePorts = (raw: Interface, ctx: GraphContext): BridgePortGroups => {
     // The bridge's own port list, then any port that names the bridge as its
@@ -402,15 +421,18 @@ export const groupBridgePorts = (raw: Interface, ctx: GraphContext): BridgePortG
             .filter((port) => port.bridge === raw.name)
             .map((port) => [port.portName, port])
     );
-    const groups: BridgePortGroups = { uplinks: [], patches: [], other: [] };
+    const groups: BridgePortGroups = { uplinks: [], internal: [], patches: [], other: [] };
     names.forEach((name) => {
         const patch = patchByName.get(name);
         const iface = ctx.interfaces.find((candidate) => candidate.name === name);
-        if (name === raw.name) groups.internal = name;
+        if (name === raw.name) groups.internal.push(name);
         else if (patch) groups.patches.push(patch);
+        else if (isInternalPort(name, ctx)) groups.internal.push(name);
         else if (iface && UPLINK_TYPES.has(iface.type)) groups.uplinks.push(name);
         else groups.other.push(name);
     });
+    // The port named after the bridge first, as the drawer always showed it.
+    groups.internal.sort((a, b) => Number(b === raw.name) - Number(a === raw.name));
     return groups;
 };
 
@@ -425,31 +447,31 @@ const patchNetworkItem = (port: NetworkPatchPort, ctx: GraphContext): FactItem =
 
 /**
  * A bridge's ports grouped by role, where a flat list of raw names used to
- * be: the uplink, the bridge's own internal port with its address, the patch
+ * be: the uplink, the bridge's internal ports with their addresses, the patch
  * ports labelled with the network each serves, and the rest. Then the bridge
  * mappings that name the bridge.
  */
 const bridgePortFacts = (raw: Interface, ctx: GraphContext): Fact[] => {
     const groups = groupBridgePorts(raw, ctx);
-    const internal = groups.internal
-        ? ctx.interfaces.find((iface) => iface.name === groups.internal && iface !== raw)
-            ?? ctx.interfaces.find((iface) => iface.name === groups.internal)
-        : undefined;
-    const internalAddresses = internal ? getIpv4Addresses(internal) : [];
+    // The bridge's own internal port shares its name with the ovs-bridge
+    // entry, so the address is read from the entry that is not the bridge.
+    const internalItem = (name: string): FactItem => {
+        const iface = ctx.interfaces.find((candidate) => candidate.name === name && candidate !== raw)
+            ?? ctx.interfaces.find((candidate) => candidate.name === name);
+        const addresses = iface ? getIpv4Addresses(iface) : [];
+        return { text: name, detail: addresses.length > 0 ? addresses.join(', ') : '(no address)' };
+    };
     const mappings = ctx.bridgeMappings.filter((mapping) => mapping.bridge === raw.name);
-    const hasPorts = groups.uplinks.length + groups.patches.length + groups.other.length > 0 || Boolean(groups.internal);
+    const hasPorts = groups.uplinks.length + groups.internal.length + groups.patches.length + groups.other.length > 0;
     if (!hasPorts) {
         return [{ label: 'Ports', value: [], provenance: 'observed', emptyText: 'No bridge ports reported in NNS.' }];
     }
     return [
         { label: 'Uplink', value: groups.uplinks.map((text) => ({ text })), provenance: 'observed' },
-        ...(groups.internal
+        ...(groups.internal.length > 0
             ? [{
-                label: 'Internal Port',
-                value: [{
-                    text: groups.internal,
-                    detail: internalAddresses.length > 0 ? internalAddresses.join(', ') : '(no address)'
-                }],
+                label: groups.internal.length === 1 ? 'Internal Port' : 'Internal Ports',
+                value: groups.internal.map(internalItem),
                 provenance: 'observed'
             } as Fact]
             : []),
