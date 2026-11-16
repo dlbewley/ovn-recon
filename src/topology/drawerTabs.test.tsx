@@ -153,7 +153,7 @@ describe('physical drawer links, rendered (ovn-recon-zdt.4)', () => {
 
     it('offers Physical networks for a bridge mapping where that page exists', () => {
         mockCapabilities.mockReturnValue(OCP_4_22);
-        open('physnet (OVN Bridge Mapping)');
+        open('physnet (Physical Network)');
         expect(elsewhere().map(([text, href]) => [text, href])).toContainEqual(
             ['Open in Physical networks', '/physical-networks'],
         );

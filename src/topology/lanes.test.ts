@@ -109,7 +109,7 @@ describe('the Layer 3 lane carries two groups', () => {
     it('stacks bridge mappings above VRFs, each under its own sub-header', () => {
         const l3 = layout().lanes.find(({ lane }) => lane.id === 'l3')!;
 
-        expect(l3.groups.map((g) => g.title)).toEqual(['Bridge Mappings', 'VRFs']);
+        expect(l3.groups.map((g) => g.title)).toEqual(['Physical Networks', 'VRFs']);
         expect(l3.groups[0].nodes.map((n) => n.id)).toEqual(['ovn:physnet', 'ovn:physnet-vmdata']);
         expect(l3.groups[1].nodes.map((n) => n.id)).toEqual(['vrf:example-p-cudn']);
     });

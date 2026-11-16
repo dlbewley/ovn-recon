@@ -1090,17 +1090,32 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                                   * branches keyed on a column name, each of which had to
                                   * repeat the filter, the position lookup and the colour.
                                   */}
-                                {laneLayout.lanes.map(({ lane, x, groups }) => (
+                                {laneLayout.lanes.map(({ lane, x, groups }) => {
+                                    // A lane with no title of its own (l3) is headed by its first
+                                    // populated group's title, on the lane-title row: its nodes sink
+                                    // to their anchors, and the heading must not sink with them
+                                    // (ovn-recon-nt4.15). Later groups keep their title above their
+                                    // first node.
+                                    const headGroupIndex = lane.title
+                                        ? -1
+                                        : groups.findIndex((group) => group.nodes.length > 0);
+                                    return (
                                     <React.Fragment key={lane.id}>
                                         {lane.title && (
-                                            <text x={x} y={padding - 10} fontWeight="bold" fill="currentColor">
+                                            <text x={x} y={padding - 10} fontWeight="bold" fill="currentColor" data-testid="lane-heading">
                                                 {lane.title}
                                             </text>
                                         )}
                                         {groups.map((group, groupIndex) => (
                                             <React.Fragment key={group.title ?? groupIndex}>
                                                 {group.title && group.nodes.length > 0 && (
-                                                    <text x={x} y={group.nodes[0].y - 15} fontWeight="bold" fill="currentColor">
+                                                    <text
+                                                        x={x}
+                                                        y={groupIndex === headGroupIndex ? padding - 10 : group.nodes[0].y - 15}
+                                                        fontWeight="bold"
+                                                        fill="currentColor"
+                                                        data-testid={groupIndex === headGroupIndex ? 'lane-heading' : 'group-heading'}
+                                                    >
                                                         {group.title}
                                                     </text>
                                                 )}
@@ -1112,7 +1127,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
                                             </React.Fragment>
                                         ))}
                                     </React.Fragment>
-                                ))}
+                                    );
+                                })}
 
                                 {/* Layer 8: Others */}
                                 <text x={padding} y={calculatedHeight - 150} fontWeight="bold" fill="currentColor">Other Interfaces</text>

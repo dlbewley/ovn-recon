@@ -193,7 +193,7 @@ describe('NodeVisualization rendered structure', () => {
     it.each([
         ['ens192 (ethernet)'],
         ['br-ex (ovs-bridge)'],
-        ['physnet (OVN Bridge Mapping)'],
+        ['physnet (Physical Network)'],
         ['example-p-cudn (VRF)'],
         ['machinenet (CUDN)'],
         ['machinenet (NAD)']

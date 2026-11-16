@@ -467,9 +467,9 @@ describe('facts builders', () => {
         });
 
         it('lists the bridge mappings that name the bridge', () => {
-            expect(items(byLabel(brExFacts(), 'Bridge Mappings'))).toEqual([{ text: 'physnet' }]);
+            expect(items(byLabel(brExFacts(), 'Physical Networks'))).toEqual([{ text: 'physnet' }]);
             const vmdata = factsFor('interface', bridge, 'bridge' as NodeKind);
-            expect(items(byLabel(vmdata, 'Bridge Mappings'))).toEqual([{ text: 'physnet-vmdata' }]);
+            expect(items(byLabel(vmdata, 'Physical Networks'))).toEqual([{ text: 'physnet-vmdata' }]);
             expect(items(byLabel(vmdata, 'Patch Ports'))[0]).toMatchObject({
                 text: 'CUDN vlan-1924 (localnet)',
                 detail: 'patch-cluster_udn_vlan.1924_ovn_localnet_port-to-br-int'

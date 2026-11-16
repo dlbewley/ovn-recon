@@ -51,7 +51,7 @@ something in it, unless noted.
 | VLAN Interfaces | VLAN and VXLAN devices | |
 | Bridges | Linux and OVS bridges, and under an **Integration** heading the OVN integration bridge | The integration bridge is derived from its ports; nmstate does not report it as a bridge |
 | Logical Interfaces | OVS internal ports | Hidden unless **Hidden columns** is checked in **View options** |
-| Bridge Mappings and VRFs | The names OVN uses for a bridge, and VRF devices | One lane with two headings |
+| Physical Networks and VRFs | Physical network names, each paired with a bridge by an OVN bridge mapping, and VRF devices | One lane with two headings; Physical Networks sits on the lane-title row |
 | Networks | CUDNs and UDNs | |
 | Attachments | The namespaces attached to each network | Always shown |
 | NADs | NetworkAttachmentDefinitions | Behind **Net Attach Defs** in **View options** |

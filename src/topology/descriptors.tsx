@@ -502,26 +502,26 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         type: 'ovn-mapping',
         kind: 'ovn-mapping',
         lane: 'l3',
-        groupTitle: 'Bridge Mappings',
+        groupTitle: 'Physical Networks',
         icon: <RouteIcon />,
         color: CATEGORICAL.jade.css,
         legend: {
-            label: 'OVN bridge mapping',
-            description: 'The name OVN uses for a provider bridge (ovn.bridge-mappings). Nothing flows through it.'
+            label: 'Physical network',
+            description: 'A physical network name, paired with a provider bridge by an OVN bridge mapping (ovn.bridge-mappings). Nothing flows through it.'
         },
         items: (ctx) => ctx.bridgeMappings,
         id: (mapping) => bridgeMappingNodeId(mapping.localnet),
         present: (mapping) => ({
             label: mapping.localnet,
-            subtitle: 'OVN Bridge Mapping',
-            graphLabel: 'OVN Bridge Mapping',
+            subtitle: 'Physical Network (OVN bridge mapping)',
+            graphLabel: 'Physical Network',
             state: mapping.bridge ? `Bridge: ${mapping.bridge}` : undefined
         }),
         edges: (mapping, _ctx, out) => {
             out.named('bridge-mapping', bridgeMappingNodeId(mapping.localnet), mapping.bridge, 'from', {
                 kind: 'reference',
                 provenance: 'observed',
-                rationale: `Bridge mapping ${mapping.localnet} resolves to bridge ${mapping.bridge}: `
+                rationale: `Physical network ${mapping.localnet} resolves to bridge ${mapping.bridge}: `
                     + 'ovn.bridge-mappings in NodeNetworkState. Nothing flows through the mapping; it is the name OVN uses for the bridge.'
             });
         }
