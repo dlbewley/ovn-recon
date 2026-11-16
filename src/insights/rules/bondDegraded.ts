@@ -1,6 +1,6 @@
 import { getBondMembers, getOvsBonds } from '../../components/nodeVisualizationSelectors';
 import type { GraphContext } from '../../topology/context';
-import { interfaceNodeId } from '../../topology/ids';
+import { interfaceNodeId, ovsBondNodeId } from '../../topology/ids';
 import type { Interface, NodeNetworkConfigurationEnactment } from '../../types';
 import { interfacePath, interfaceRemedy, nnsFact, nodeNameOf } from '../node';
 import { makeFinding, nnceRef } from '../refs';
@@ -56,8 +56,6 @@ interface BondUnderTest {
     /** The interface a policy configures the bond through: the bond, or its bridge. */
     owner: string;
     subject: FindingSubject;
-    /** Tells apart several OVS bonds on one bridge, which share the bridge as subject. */
-    discriminator?: string;
     /** A last line for the remedy, after the members to check. */
     remedyHint?: string;
 }
@@ -113,7 +111,7 @@ const degradedFinding = (
         summary: `${bond.title} on ${node} has ${notUp.length} of ${configured.length} members down.`,
         evidence,
         remedy
-    }, bond.discriminator)];
+    })];
 };
 
 /**
@@ -128,8 +126,8 @@ const degradedFinding = (
  * Kernel bonds are `type: bond` interfaces. An OVS bond (ovn-recon-1tw.4) has no
  * interface of its own: nmstate reports it only as an entry in its bridge's
  * `bridge.port` list, and its members report nothing but `controller: <bridge>`. Its
- * finding is on the bridge's graph node, the nearest thing the graph draws, until
- * ovn-recon-1tw.2 gives the bond a node of its own.
+ * finding is on the bond's own graph node (ovn-recon-1tw.2), drawn between its members
+ * and its bridge; it was on the bridge's until the bond had one.
  */
 export const bondDegraded: PhysicalRule = {
     id: 'bond-degraded',
@@ -175,12 +173,9 @@ export const bondDegraded: PhysicalRule = {
                     + '.link-aggregation.port',
                 reporter: `bridge ${bond.bridge}`,
                 owner: bond.bridge,
-                subject: {
-                    kind: 'graph-node',
-                    node,
-                    graphNodeId: interfaceNodeId(bridge ?? { name: bond.bridge, type: 'ovs-bridge' }, ctx)
-                },
-                discriminator: `ovs-bond:${bond.name}`,
+                // The bond's own node: its id carries the bridge, so two bonds on one
+                // bridge are two subjects and need no discriminator.
+                subject: { kind: 'graph-node', node, graphNodeId: ovsBondNodeId(bond.bridge, bond.name) },
                 // NNS carries no runtime bond state; OVS's own view of each member is here.
                 remedyHint: `ovs-appctl bond/show ${bond.name} on the node shows which members OVS has enabled.`
             });

@@ -63,9 +63,9 @@ ens256 ─┘
 - **Model.** One selector, `getOvsBonds`, reads every `ovs-bridge`'s `bridge.port`
   entries that carry `link-aggregation`, and `GraphContext` holds the result once. The
   edges, drawers and findings all read it.
-- **Node.** Kind `ovs-bond`, in the Bonds lane, with the bond icon and the subtitle
-  `ovs-bond · <mode>`. Its id is `ovs-bond:<bridge>:<name>`, so it cannot collide with a
-  kernel bond of the same name.
+- **Node.** Kind `ovs-bond`, in the Bonds lane, with the bond icon, the subtitle
+  `ovs-bond` and its mode on the state line. Its id is `ovs-bond:<bridge>/<name>`, so it
+  cannot collide with a kernel bond of the same name.
 - **Edges.** member -> bond, and bond -> bridge, both membership and observed. When a
   member belongs to an OVS bond, its own `controller` edge to the bridge is not drawn;
   the member edge's rationale cites both facts. The flow-path walk needs no change.
@@ -104,6 +104,8 @@ ens256 ─┘
 
 ## Open questions
 
-- The bond's visual cue: a dashed border, or the bridges' purple accent on the bond
-  colour. Settle it against the `ovn-recon-nt4` palette in `1tw.2`.
+- The bond's visual cue: settled in `1tw.2` as the bridges' purple accent. The nt4
+  palette gives purple to "host bridges and their ports", which an OVS bond is; a dashed
+  frame was rejected because a dash already means "nothing flows" on this canvas.
+  The id is `ovs-bond:<bridge>/<bond>`, `/` being the separator every compound id uses.
 - `1tw.7`: extend the snapshot contract, or add a small bond endpoint to the collector.

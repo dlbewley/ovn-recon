@@ -635,7 +635,7 @@ describe('facts builders', () => {
                 facts: nodeKindRegistry.interface.facts!(node, localCtx)
             };
         };
-        const items = (fact: Fact) => fact.value as { text: string; detail?: string; ref?: unknown }[];
+        const items = (fact: Fact) => fact.value as { text: string; detail?: string; ref?: unknown; node?: string }[];
         const allNames = (groups: ReturnType<typeof groupBridgePorts>) => [
             ...groups.uplinks,
             ...groups.bonds.flatMap((bond) => [bond.name, ...bond.members.map((member) => member.name)]),
@@ -647,11 +647,13 @@ describe('facts builders', () => {
         it('lists bond1 as br-vmdata\'s uplink with its mode and members, not ens161 and ens256 one by one', () => {
             const { facts } = drawer(captured, 'br-vmdata', 'ovs-bridge');
             const uplink = byLabel(facts, 'Uplink');
-            expect(items(uplink)).toEqual([{ text: 'bond1', detail: 'OVS bond, balance-slb: ens161, ens256' }]);
+            expect(items(uplink)).toEqual([{
+                text: 'bond1', detail: 'OVS bond, balance-slb: ens161, ens256', node: 'ovs-bond:br-vmdata/bond1'
+            }]);
             expect(uplink.provenance).toBe('observed');
             expect(uplink.hint).toContain('br-vmdata\'s bridge.port');
             expect(uplink.hint).toContain('ovs-appctl bond/show');
-            // No link until the ovs-bond node exists (ovn-recon-1tw.2).
+            // It links to the bond's own node (ovn-recon-1tw.2), not to a console page.
             expect(items(uplink)[0].ref).toBeUndefined();
         });
 
@@ -685,7 +687,9 @@ describe('facts builders', () => {
         it('names bond1 and br-vmdata in ens161\'s drawer, saying where that was read', () => {
             const { facts } = drawer(captured, 'ens161', 'ethernet');
             const bond = byLabel(facts, 'Bond');
-            expect(items(bond)).toEqual([{ text: 'Member of OVS bond bond1 on br-vmdata (balance-slb)' }]);
+            expect(items(bond)).toEqual([{
+                text: 'Member of OVS bond bond1 on br-vmdata (balance-slb)', node: 'ovs-bond:br-vmdata/bond1'
+            }]);
             expect(bond.provenance).toBe('observed');
             expect(bond.hint).toBe('Read from br-vmdata\'s bridge.port entry bond1, whose link-aggregation.port lists '
                 + 'ens161. ens161 itself reports only controller: br-vmdata.');
@@ -718,7 +722,7 @@ describe('facts builders', () => {
             ]);
             const { groups, facts } = drawer(source, 'br-vmdata', 'ovs-bridge');
             expect(items(byLabel(facts, 'Uplink'))).toEqual([
-                { text: 'bond1', detail: 'OVS bond, balance-slb: ens161, ens256 (not in NNS)' }
+                { text: 'bond1', detail: 'OVS bond, balance-slb: ens161, ens256 (not in NNS)', node: 'ovs-bond:br-vmdata/bond1' }
             ]);
             expect(groups!.other).toEqual([]);
         });

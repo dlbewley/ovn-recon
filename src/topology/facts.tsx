@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Button } from '@patternfly/react-core';
 
 import {
     CopyValue, FactRow, FactRows, InferredLabel, InfoPopover, isCopyableAddress, ValueList, WideFactRow
@@ -50,12 +51,16 @@ const itemTarget = (item: FactItem): LinkTarget | undefined => {
     return item.href ? { type: 'path', path: item.href } : undefined;
 };
 
-const renderItem = (item: FactItem) => {
+const renderItem = (item: FactItem, hooks: FactRenderHooks) => {
     const target = itemTarget(item);
+    // A node of this graph moves the selection; it needs no page of the console.
+    const selectNode = item.node ? hooks.selectNode?.(item.node) : undefined;
     // No page for the target on this console: the text alone, as any other value.
-    const main = target
-        ? <ConsoleLink target={target} className={LINK_CLASS}>{item.text}</ConsoleLink>
-        : renderText(item.text);
+    const main = selectNode
+        ? <Button variant="link" isInline onClick={selectNode}>{item.text}</Button>
+        : target
+            ? <ConsoleLink target={target} className={LINK_CLASS}>{item.text}</ConsoleLink>
+            : renderText(item.text);
     if (!item.detail) return main;
     return (
         <>
@@ -79,6 +84,11 @@ export const isFactTable = (value: Fact['value']): value is FactTable =>
  */
 export interface FactRenderHooks {
     selectInterface?: InterfaceSelector;
+    /**
+     * A FactItem's `node`, as a handler that selects it, or undefined when that
+     * node cannot be selected here (not drawn, or the one already open).
+     */
+    selectNode?: (id: string) => (() => void) | undefined;
 }
 
 const renderTable = (fact: Fact, table: FactTable, hooks: FactRenderHooks) => {
@@ -114,7 +124,7 @@ const renderValue = (fact: Fact, hooks: FactRenderHooks) => {
         return <span style={subtle}>{fact.emptyText}</span>;
     }
     // One item is a value, not a one-item bullet list (ovn-recon-dp7.1).
-    return <ValueList items={fact.value.map((item) => renderItem(item))} />;
+    return <ValueList items={fact.value.map((item) => renderItem(item, hooks))} />;
 };
 
 /**

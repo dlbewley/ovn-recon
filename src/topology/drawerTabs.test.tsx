@@ -8,7 +8,7 @@ import NodeVisualizationComponent from '../components/NodeVisualization';
 import { routed } from '../components/testRouter';
 import { NETOBSERV_FULL, OCP_4_22, withNetobserv } from '../linkOut/testCapabilities';
 import { ClusterUserDefinedNetwork, NodeNetworkState } from '../types';
-import { elsewhereTarget, ownerTarget } from './drawerTabs';
+import { DrawerTabHooks, elsewhereTarget, nodeSelector, ownerTarget } from './drawerTabs';
 import { GraphContext } from './context';
 import { NodeViewModel } from './types';
 
@@ -48,6 +48,9 @@ describe('physical drawer link targets (ovn-recon-zdt.4)', () => {
         expect(ownerTarget(node({ kind: 'interface' }), ctx)).toEqual(nns);
         expect(ownerTarget(node({ kind: 'vrf' }), ctx)).toEqual(nns);
         expect(ownerTarget(node({ kind: 'ovn-mapping' }), ctx)).toEqual(nns);
+        // An OVS bond is a bridge.port entry of the same resource (ovn-recon-1tw.2).
+        expect(ownerTarget(node({ kind: 'ovs-bond' }), ctx)).toEqual(nns);
+        expect(elsewhereTarget(node({ kind: 'ovs-bond', raw: { name: 'bond1' } }), ctx)).toBeUndefined();
     });
 
     it('has no owner page for a kind that is neither', () => {
@@ -65,6 +68,24 @@ describe('physical drawer link targets (ovn-recon-zdt.4)', () => {
         expect(elsewhereTarget(node({ kind: 'ovn-mapping', raw: { localnet: 'physnet', bridge: 'br-ex' } }), ctx))
             .toEqual({ type: 'physical-network', name: 'physnet' });
         expect(elsewhereTarget(node({ kind: 'cudn', raw: {} }), ctx)).toBeUndefined();
+    });
+});
+
+describe('fact items naming a graph node (ovn-recon-1tw.2)', () => {
+    const selected: string[] = [];
+    const hooks: DrawerTabHooks = {
+        edges: [],
+        labelFor: (id) => id,
+        onSelectNode: (id) => selected.push(id),
+        isDrawn: (id) => id !== 'iface:hidden',
+    };
+
+    it('selects a drawn node, and offers no link to a hidden one or to the node already open', () => {
+        const select = nodeSelector(hooks, 'iface:br-vmdata');
+        select('ovs-bond:br-vmdata/bond1')!();
+        expect(selected).toEqual(['ovs-bond:br-vmdata/bond1']);
+        expect(select('iface:hidden')).toBeUndefined();
+        expect(select('iface:br-vmdata')).toBeUndefined();
     });
 });
 

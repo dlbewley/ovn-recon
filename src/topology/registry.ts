@@ -1,6 +1,7 @@
 import {
     CUDN_NETWORK_PREFIX,
     describeBond,
+    describeOvsBond,
     EVPN_NETWORK_DEVICES,
     EVPN_VTEP_DEVICES,
     describeSriovNadSettings,
@@ -60,6 +61,7 @@ import {
     describeVfIds, findSriovPoolForVf, findSriovPoolsForResource, getSriovVfPoolsForPf, getSriovVfState
 } from './sriovNodeState';
 import { getApiResourcePath, getNamespaceQueryPath, getProjectPath } from './links';
+import { ovsBondNodeId, resolveInterfaceRef } from './ids';
 import {
     AttachmentNode, Fact, FactItem, IntegrationBridgeNode, NodeKind, NodeKindDefinition,
     NodeViewModel, ResourceRef
@@ -167,8 +169,10 @@ const ovsBondMemberFacts = (raw: Interface | undefined, ctx: GraphContext): Fact
         // A kernel bond enslaved to an OVS bond already has a Bond row of its
         // own, and the drawer keys its rows by label.
         label: raw.type === 'bond' ? 'OVS bond' : 'Bond',
+        // Links to the bond's own node (ovn-recon-1tw.2), which holds its mode and members.
         value: bonds.map((bond) => ({
-            text: `Member of OVS bond ${bond.name} on ${bond.bridge}${bond.mode ? ` (${bond.mode})` : ''}`
+            text: `Member of OVS bond ${bond.name} on ${bond.bridge}${bond.mode ? ` (${bond.mode})` : ''}`,
+            node: ovsBondNodeId(bond.bridge, bond.name)
         })),
         provenance: 'observed',
         hint: `Read from ${bonds.map((bond) => `${bond.bridge}'s bridge.port entry ${bond.name}`).join(' and ')}, `
@@ -519,10 +523,11 @@ const bridgePortFacts = (raw: Interface, ctx: GraphContext): Fact[] => {
     if (!hasPorts) {
         return [{ label: 'Ports', value: [], provenance: 'observed', emptyText: 'No bridge ports reported in NNS.' }];
     }
-    // An OVS bond is the uplink in place of its members (ovn-recon-1tw.3). It
-    // links to nothing yet: the ovs-bond node arrives with ovn-recon-1tw.2.
+    // An OVS bond is the uplink in place of its members (ovn-recon-1tw.3), and
+    // links to its own node, drawn between them and the bridge (ovn-recon-1tw.2).
     const bondItem = (bond: OvsBond): FactItem => ({
         text: bond.name,
+        node: ovsBondNodeId(bond.bridge, bond.name),
         detail: `OVS bond${bond.mode ? `, ${bond.mode}` : ''}: `
             + (bond.members.length > 0 ? formatOvsBondMembers(bond) : 'no members reported')
     });
@@ -877,6 +882,85 @@ const unresolvedVrfNetworkIdFacts = (unresolved: UnresolvedVrfNetworkId | undefi
                     + 'cannot read.'
                 : 'This VRF could not be matched to a Primary network through it.')
     }];
+};
+
+/**
+ * An OVS bond's drawer (ovn-recon-1tw.2). Everything is read from NodeNetworkState:
+ * the bond from its bridge's bridge.port entry, each member from its own interface
+ * entry. What NNS does not carry -- which member is active, which OVS has enabled --
+ * is named, with where to read it, rather than guessed.
+ */
+const ovsBondFacts = (node: NodeViewModel, ctx: GraphContext): Fact[] => {
+    const bond = ctx.ovsBonds.find((candidate) => ovsBondNodeId(candidate.bridge, candidate.name) === node.id);
+    if (!bond) return baseFacts(node, 'observed', NNS_API);
+    const entry = `${bond.bridge}'s bridge.port entry ${bond.name}`;
+    const nodeName = ctx.nns?.metadata?.name;
+    const memberItem = (member: OvsBond['members'][number]): FactItem => {
+        const iface = member.present
+            ? ctx.interfaces.find((candidate) => candidate.name === member.name)
+            : undefined;
+        if (!iface) return { text: member.name, detail: '(not reported by NodeNetworkState)' };
+        const parts = [
+            iface.state,
+            formatLinkSpeed(iface.ethernet?.speed),
+            iface.mtu ? `MTU ${iface.mtu}` : undefined
+        ].filter((part): part is string => Boolean(part));
+        return {
+            text: member.name,
+            node: resolveInterfaceRef(member.name, ctx),
+            ...(parts.length > 0 ? { detail: parts.join(' · ') } : {})
+        };
+    };
+    // The NNCP configures the bridge, and the bond with it as one of its ports.
+    const configuredBy = configuredByFacts(getPoliciesClaimingInterface(bond.bridge, ctx.enactments), ctx)
+        .map((fact) => (fact.provenance === 'observed'
+            ? {
+                ...fact,
+                hint: `The policy configures ${bond.bridge}, whose bridge.port declares ${bond.name}: this node's `
+                    + `enactment for it lists ${bond.bridge} in the applied desiredState.`
+            }
+            : fact));
+    return [
+        {
+            label: 'Type',
+            value: [{ text: node.subtitle, href: NNS_API }],
+            provenance: 'observed',
+            hint: `A port of ${bond.bridge} that aggregates NICs inside the bridge. It has no kernel device: `
+                + `nmstate reports it only as ${entry}, with its link-aggregation.`
+        },
+        {
+            label: 'Bridge',
+            value: [{ text: bond.bridge, node: resolveInterfaceRef(bond.bridge, ctx) }],
+            provenance: 'observed'
+        },
+        ...configuredBy,
+        {
+            // The members have a row of their own, with their state.
+            label: 'Bond',
+            value: describeOvsBond(bond)
+                .filter((line) => !line.startsWith('Members:'))
+                .map((text) => ({ text })),
+            provenance: 'observed',
+            hint: `link-aggregation of ${entry} in NodeNetworkState: the mode, and the up and down delays when set.`
+        },
+        {
+            label: 'Members',
+            value: bond.members.map(memberItem),
+            provenance: 'observed',
+            hint: `In ${bond.bridge}'s order, from link-aggregation.port. State, speed and MTU are each member's `
+                + 'own NodeNetworkState entry: whether the link is up, not whether OVS has enabled it in the bond.',
+            emptyText: 'No members reported.'
+        },
+        {
+            label: 'Runtime State',
+            value: `ovs-appctl bond/show ${bond.name}`,
+            provenance: 'observed',
+            hint: `ip link does not show ${bond.name}: an OVS bond has no kernel device, and NodeNetworkState carries `
+                + `its configuration only. Run ovs-appctl bond/show ${bond.name} on ${nodeName ?? 'the node'} `
+                + '(oc debug node, then chroot /host) for the active member, which members OVS has enabled, and '
+                + 'how the hash buckets are spread.'
+        }
+    ];
 };
 
 export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
@@ -1477,6 +1561,10 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     : [])
             ];
         }
+    },
+    'ovs-bond': {
+        label: 'OVS bond',
+        facts: ovsBondFacts
     },
     other: {
         label: 'Other'

@@ -47,7 +47,7 @@ something in it, unless noted.
 | LLDP Neighbors | The device at the far end of each cable | Behind **LLDP neighbors** in **View options**, offered only when LLDP data exists |
 | Physical Interfaces | Ethernet devices | |
 | Virtual Functions | SR-IOV virtual functions present on the host | |
-| Bonds | Bond interfaces | |
+| Bonds | Bond interfaces, then bonds inside an OVS bridge (**OVS bond**, in the bridges' purple) | An OVS bond has no kernel device: nmstate reports it only in its bridge's `bridge.port`, so it is drawn from there, between its members and its bridge |
 | VLAN Interfaces | VLAN and VXLAN devices | |
 | Bridges | Linux and OVS bridges, and under an **Integration** heading the OVN integration bridge | The integration bridge is derived from its ports; nmstate does not report it as a bridge |
 | Logical Interfaces | OVS internal ports | Hidden unless **Hidden columns** is checked in **View options** |
@@ -90,7 +90,8 @@ rule and the fields each was read from.
 
 - **Link** to a selection: the URL carries `?select=`, for example
   `?select=iface:br-ex`, `?select=vrf:blue`, `?select=cudn:blue`,
-  `?select=udn:ns1/blue` or `?select=nad:ns1/blue`. An unknown value is
+  `?select=udn:ns1/blue`, `?select=nad:ns1/blue` or, for an OVS bond,
+  `?select=ovs-bond:br-vmdata/bond1` (bridge, then bond). An unknown value is
   ignored.
 - **Toolbar** (the same one the logical views use): **View options**, a menu of
   the lane toggles above and **Hide info findings**; zoom out, zoom in and
@@ -108,8 +109,11 @@ Three tabs:
 - **Overview**: findings first (see below), then the node's facts. Route
   tables appear where they apply: a VRF shows its own table, and an interface
   or bridge shows the routes that leave through it. Bonds show their mode and
-  members, SR-IOV devices their virtual functions, and networks their
-  topology, role, subnets and namespaces.
+  members; an OVS bond also its members' state, speed and MTU, the policy
+  that configured its bridge, and that `ovs-appctl bond/show` holds its runtime
+  state. SR-IOV devices show their virtual functions, and networks their
+  topology, role, subnets and namespaces. A name in a fact that is another node
+  of the graph, such as a bridge's OVS bond uplink, moves the selection to it.
 - **Relationships**: every edge of the selected node as a link that moves the
   selection.
 - **Config**: the underlying resource as YAML.

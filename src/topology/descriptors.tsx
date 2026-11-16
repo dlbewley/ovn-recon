@@ -25,6 +25,7 @@ import {
     LldpNeighborNode,
     NETWORK_ID_ANNOTATION,
     NODE_VTEPS_ANNOTATION,
+    OvsBond,
     SRIOV_RESOURCE_NAME_ANNOTATION
 } from '../components/nodeVisualizationSelectors';
 import { describeVfIds, findSriovPoolsForResource } from './sriovNodeState';
@@ -39,7 +40,7 @@ import { EdgeMeaning } from '../components/nodeVisualizationModel';
 import { GraphContext } from './context';
 import {
     attachmentNodeId, attachmentSourceNodeId, bridgeMappingNodeId, cudnNodeId,
-    integrationBridgeNodeId, interfaceNodeId, nadNodeId, udnNodeId
+    integrationBridgeNodeId, interfaceNodeId, nadNodeId, ovsBondNodeId, udnNodeId
 } from './ids';
 import { CATEGORICAL, NodeStatus } from './palette';
 import { getUdnTopologyAndRole } from './registry';
@@ -64,7 +65,8 @@ import {
  */
 
 export type NodeTypeId =
-    | 'physical' | 'sriov-vf' | 'bond' | 'vlan' | 'vxlan' | 'bridge' | 'bridge-port' | 'vrf' | 'integration-bridge'
+    | 'physical' | 'sriov-vf' | 'bond' | 'ovs-bond' | 'vlan' | 'vxlan' | 'bridge' | 'bridge-port' | 'vrf'
+    | 'integration-bridge'
     | 'ovn-mapping' | 'cudn' | 'udn' | 'attachment' | 'nad' | 'lldp-neighbor' | 'other';
 
 /** What the node shows on the canvas and in the drawer header. */
@@ -142,8 +144,17 @@ export interface NodeTypeDescriptor<T = never> {
     /** Node height when it varies with content. */
     height?: (item: T, defaultHeight: number) => number;
     present: (item: T, ctx: GraphContext) => NodePresentation;
-    /** State icon on the node. Omitted by types that have no meaningful up/down. */
-    status?: (item: T) => NodeStatus;
+    /**
+     * What the drawer's Config tab shows as YAML, when not the item itself: an OVS
+     * bond's item is the model getOvsBonds built, but what NodeNetworkState reports
+     * is the bridge.port entry it was read from (ovn-recon-1tw.2).
+     */
+    raw?: (item: T) => unknown;
+    /**
+     * State icon on the node. Omitted by types that have no meaningful up/down. The
+     * context is there for a kind whose state is its members' (an OVS bond).
+     */
+    status?: (item: T, ctx: GraphContext) => NodeStatus;
     /** Extra content drawn inside the node box, e.g. the attachment namespace list. */
     detail?: (item: T, box: { width: number; height: number }) => React.ReactNode;
     edges?: (item: T, ctx: GraphContext, out: EdgeSink) => void;
@@ -169,11 +180,44 @@ export interface NodeTypeDescriptor<T = never> {
 const interfaceStatus = (state: string | undefined): NodeStatus =>
     (state === 'up' ? 'up' : state === 'down' ? 'down' : 'unknown');
 
+/**
+ * Each member's nmstate state, in the bridge's order; undefined for a member the node
+ * does not report (ovn-recon-1tw.2).
+ */
+const ovsBondMemberStates = (bond: OvsBond, ctx: GraphContext): (string | undefined)[] =>
+    bond.members.map((member) => ctx.interfaces.find((iface) => iface.name === member.name)?.state);
+
+/**
+ * An OVS bond has no state of its own in NodeNetworkState, so it is read off its
+ * members (ovn-recon-1tw.2), a member the node does not report counting as not up.
+ * Up when any member is up: the bond forwards over the members it has, as a kernel
+ * bond does, which nmstate reports up with a member lost. NodeStatus has no
+ * degraded state, so a partial bond says how many are up on its state line and
+ * bond-degraded puts its warning on the node; painting it down would be the alarm
+ * the nt4 palette set out to stop. Down only when every member is down or missing;
+ * a member nmstate does not manage (ignore) says nothing either way.
+ */
+const ovsBondStatus = (states: (string | undefined)[]): NodeStatus => {
+    if (states.length === 0) return 'unknown';
+    if (states.includes('up')) return 'up';
+    return states.every((state) => state === undefined || state === 'down') ? 'down' : 'unknown';
+};
+
 const presentInterface = (iface: Interface): NodePresentation => ({
     label: iface.name,
     subtitle: iface.type,
     state: iface.state
 });
+
+/**
+ * The OVS bond on `bridge` that has `name` as a member, if any (ovn-recon-1tw.2). Such
+ * a member reports `controller: <bridge>` like any port, but it is an interface of the
+ * bond's port, not a port of the bridge.
+ */
+const ovsBondHolding = (name: string, bridge: string | undefined, ctx: GraphContext): OvsBond | undefined =>
+    (bridge
+        ? ctx.ovsBonds.find((bond) => bond.bridge === bridge && bond.members.some((member) => member.name === name))
+        : undefined);
 
 const interfaceEdges = (iface: Interface, ctx: GraphContext, out: EdgeSink) => {
     const id = interfaceNodeId(iface, ctx);
@@ -181,11 +225,17 @@ const interfaceEdges = (iface: Interface, ctx: GraphContext, out: EdgeSink) => {
     const controller = iface.controller || iface.master;
     // An OVS bridge's internal port shares the bridge's name; say which one this is.
     const self = iface.name === controller ? `${iface.name} (${iface.type})` : iface.name;
-    out.named('controller', id, controller, 'to', {
-        kind: 'membership',
-        provenance: 'observed',
-        rationale: `${self} is a port of ${controller}: NodeNetworkState reports controller: ${controller}.`
-    });
+    // Not for a member of an OVS bond on that bridge (ovn-recon-1tw.2): the ovs-bond
+    // descriptor draws member -> bond -> bridge instead. Drawing both put two
+    // independent uplinks on a bridge configured with one bonded uplink -- with STP
+    // off, the picture of a switching loop.
+    if (!ovsBondHolding(iface.name, controller, ctx)) {
+        out.named('controller', id, controller, 'to', {
+            kind: 'membership',
+            provenance: 'observed',
+            rationale: `${self} is a port of ${controller}: NodeNetworkState reports controller: ${controller}.`
+        });
+    }
     // Layering: a VLAN or MACVLAN device is built on its base interface.
     const vlanBase = iface.vlan?.['base-iface'];
     const macvlanBase = iface['mac-vlan']?.['base-iface'];
@@ -315,12 +365,13 @@ const resourceRefOf = (
 
 /**
  * ACCENTS FOLLOW THE LANES, left to right: blue for NICs and bonds, cyan for devices cut
- * or tagged from them (VFs, VLANs), purple for host bridges and their ports, jade for
- * OVN's own plumbing and the Layer 3 lane (br-int, bridge mappings, VRFs) and for
- * tunnels, magenta for CUDNs, violet for attachments, gray for what sits outside the
- * lanes. Within a family the icon tells kinds apart; where two kinds share a lane AND
- * an icon (br-int and the bridges, a UDN and a CUDN) their accents differ instead, and
- * topology.test.ts holds that.
+ * or tagged from them (VFs, VLANs), purple for host bridges and their ports (an OVS
+ * bond among them, though it draws in the Bonds lane), jade for OVN's own plumbing and
+ * the Layer 3 lane (br-int, bridge mappings, VRFs) and for tunnels, magenta for CUDNs,
+ * violet for attachments, gray for what sits outside the lanes. Within a family the
+ * icon tells kinds apart; where two kinds share a lane AND an icon (br-int and the
+ * bridges, a kernel bond and an OVS bond, a UDN and a CUDN) their accents differ
+ * instead, and topology.test.ts holds that.
  *
  * ORDER MATTERS WITHIN A LANE. Descriptors sharing a lane stack in table order and take
  * their group rank from it, so bridge mappings must precede VRFs in the Layer 3 lane.
@@ -346,6 +397,73 @@ export const NODE_TYPES: AnyNodeTypeDescriptor[] = [
         label: 'Bond',
         description: 'Several NICs aggregated into one link.'
     }),
+    {
+        type: 'ovs-bond',
+        kind: 'ovs-bond',
+        // Beside the kernel bonds, below them: between its members and its bridge,
+        // where the kernel bond0 -> bond0.1926 -> br-ex chain already reads.
+        lane: 'bond',
+        icon: <PficonVcenterIcon />,
+        // The bridges' purple, not the kernel bond's blue (ovn-recon-1tw.2). The
+        // palette's rule is "purple for host bridges and their ports", and an OVS
+        // bond is exactly that: a port of its bridge, with no kernel device. It also
+        // keeps the two bonds apart where they share a lane and an icon, which
+        // topology.test.ts requires. A dashed frame was the other candidate and was
+        // rejected: on this canvas a dash means "nothing flows" (reference edges)
+        // and on the ladder a folded group, while every frame of the bridge's
+        // traffic flows through this one.
+        color: CATEGORICAL.purple.css,
+        legend: {
+            label: 'OVS bond',
+            description: 'A port of an OVS bridge that aggregates NICs. No kernel device.'
+        },
+        // Read once into the context from each ovs-bridge's bridge.port (ovn-recon-1tw.1).
+        // Not synthetic: the bond is reported, nested in its bridge, not derived.
+        items: (ctx) => ctx.ovsBonds,
+        id: (bond) => ovsBondNodeId(bond.bridge, bond.name),
+        present: (bond, ctx) => {
+            const states = ovsBondMemberStates(bond, ctx);
+            const up = states.filter((state) => state === 'up').length;
+            // The member count only when some are not up: that is when it says something.
+            const partial = states.length > 0 && up < states.length ? `${up}/${states.length} up` : undefined;
+            return {
+                label: bond.name,
+                // nmstate's word for an interface is its type; this is OVS's own term.
+                subtitle: 'ovs-bond',
+                state: [bond.mode, partial].filter(Boolean).join(' · ') || undefined
+            };
+        },
+        raw: (bond) => bond.raw,
+        status: (bond, ctx) => ovsBondStatus(ovsBondMemberStates(bond, ctx)),
+        edges: (bond, ctx, out) => {
+            const id = ovsBondNodeId(bond.bridge, bond.name);
+            const entry = `${bond.bridge}'s bridge.port entry ${bond.name}`;
+            // A member NNS does not list has no node to draw from. It is not reported
+            // as an unresolved reference: the bond's drawer lists it, marked, and
+            // bond-degraded raises it as a finding.
+            bond.members.filter((member) => member.present).forEach((member) => {
+                const iface = ctx.interfaces.find((candidate) => candidate.name === member.name);
+                const controller = iface?.controller || iface?.master;
+                const own = controller === bond.bridge
+                    ? `and ${member.name} reports controller: ${bond.bridge}`
+                    : controller
+                        ? `though ${member.name} reports controller: ${controller}`
+                        : `though ${member.name} reports no controller`;
+                out.named('ovs-bond-member', id, member.name, 'from', {
+                    kind: 'membership',
+                    provenance: 'observed',
+                    rationale: `${member.name} is a member of OVS bond ${bond.name}: ${entry} lists it in `
+                        + `link-aggregation.port, ${own}.`
+                });
+            });
+            out.named('ovs-bond-port', id, bond.bridge, 'to', {
+                kind: 'membership',
+                provenance: 'observed',
+                rationale: `${bond.name} is a port of ${bond.bridge}: ${bond.bridge}'s bridge.port lists it `
+                    + 'with link-aggregation.'
+            });
+        }
+    } as NodeTypeDescriptor<OvsBond>,
     interfaceType('vlan', 'vlan', 'vlan', <TagIcon />, CATEGORICAL.cyan.css, {
         label: 'VLAN',
         description: 'A tagged device on a base interface. MACVLAN devices draw here too.'

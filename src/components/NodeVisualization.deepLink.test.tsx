@@ -98,6 +98,36 @@ describe('NodeVisualization deep-linked selection', () => {
         expect(current().search).toBe('?select=iface:ovn-k8s-mp0');
     });
 
+    describe('an OVS bond (ovn-recon-1tw.2)', () => {
+        const drawerLink = (text: string) => Array.from(
+            container.querySelectorAll<HTMLButtonElement>('.pf-v6-c-drawer.pf-m-expanded button.pf-m-link')
+        ).find((button) => button.textContent === text);
+
+        it('opens its drawer from ?select=, with its flow path lit', () => {
+            render('/ovn-recon/node-network-state/worker-1?select=ovs-bond:br-vmdata/bond1', 'ovs-bond-slb.json');
+            expect(drawerTitle()).toContain('bond1');
+            expect(container.querySelector('.pf-v6-c-drawer.pf-m-expanded')?.textContent).toContain('ovs-appctl bond/show bond1');
+            expect(dimmed()).not.toContain(nodeGroup('bond1'));
+            expect(dimmed()).not.toContain(nodeGroup('br-vmdata'));
+            expect(dimmed()).toContain(nodeGroup('bond0'));
+            expect(current().search).toBe('?select=ovs-bond:br-vmdata/bond1');
+        });
+
+        it('is reached from the bridge drawer\'s uplink, and reaches its members and bridge', () => {
+            render('/ovn-recon/node-network-state/worker-1?select=iface:br-vmdata', 'ovs-bond-slb.json');
+            act(() => { drawerLink('bond1')!.click(); });
+            expect(drawerTitle()).toContain('bond1');
+            expect(current().search).toBe('?select=ovs-bond:br-vmdata/bond1');
+
+            act(() => { drawerLink('ens256')!.click(); });
+            expect(drawerTitle()).toContain('ens256');
+            act(() => { drawerLink('Member of OVS bond bond1 on br-vmdata (balance-slb)')!.click(); });
+            expect(current().search).toBe('?select=ovs-bond:br-vmdata/bond1');
+            act(() => { drawerLink('br-vmdata')!.click(); });
+            expect(current().search).toBe('?select=iface:br-vmdata');
+        });
+    });
+
     it('writes a click with replace, keeps other parameters, and removes it on close', () => {
         render('/ovn-recon/node-network-state/worker-1?keep=1');
         act(() => { nodeGroup('ens192')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });

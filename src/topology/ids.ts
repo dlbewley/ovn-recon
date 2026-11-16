@@ -22,16 +22,26 @@ import { AttachmentNode, NetworkColumnItem } from './types';
  *   attachment:cudn/blue         namespaces attached to a CUDN
  *   attachment:udn/ns1/blue      namespaces attached to a UDN
  *   lldp:eno1/0                  the nth LLDP neighbour seen on an interface
+ *   ovs-bond:br-vmdata/bond1     a bond inside an OVS bridge: <bridge>/<bond port>
  *
  * `port:` exists because that collision is the only one nmstate actually produces: an
  * OVS bridge and its internal port share a name. Giving the port its own kind keeps
  * `iface:<name>` unambiguous, which is what makes name-based edge references resolvable
  * without a lookup table. It also matches where ovn-recon-s3t.26 is heading, where an
  * internal port is drawn on its bridge rather than beside it.
+ *
+ * `ovs-bond:` (ovn-recon-1tw.2) is the second such case. An OVS bond is a port of its
+ * bridge with no kernel device, so nmstate reports it only in the bridge's bridge.port
+ * list, and its name is unique only within that bridge: a kernel bond elsewhere on the
+ * node may carry the same name, and owns `iface:<name>`. The key is therefore the
+ * bridge and the bond, and it parses back without ambiguity by splitting at the FIRST
+ * `/`: the bridge is a kernel netdev, and the kernel refuses `/` (and `:`) in a device
+ * name (dev_valid_name), so whatever follows the first slash is the bond's port name.
+ * Both separators survive `?select=` unencoded (encodeSelectValue).
  */
 
 export type NodeIdKind =
-    | 'iface' | 'port' | 'vrf' | 'ovn' | 'cudn' | 'udn' | 'nad' | 'attachment' | 'lldp';
+    | 'iface' | 'port' | 'vrf' | 'ovn' | 'cudn' | 'udn' | 'nad' | 'attachment' | 'lldp' | 'ovs-bond';
 
 export const nodeId = (kind: NodeIdKind, ...parts: (string | number)[]): string =>
     `${kind}:${parts.map((p) => String(p)).join('/')}`;
@@ -50,6 +60,8 @@ export const bridgeMappingNodeId = (localnet: string | undefined): string => nod
 export const cudnNodeId = (name: string | undefined): string => nodeId('cudn', name ?? '');
 export const lldpNodeId = (localInterface: string, index: number): string =>
     nodeId('lldp', localInterface, index);
+/** A bond inside an OVS bridge (ovn-recon-1tw.2): keyed by the bridge too, see the header. */
+export const ovsBondNodeId = (bridge: string, name: string): string => nodeId('ovs-bond', bridge, name);
 
 export const udnNodeId = (udn: UserDefinedNetwork): string =>
     nodeId('udn', udn.metadata?.namespace || 'default', udn.metadata?.name || 'unknown-udn');

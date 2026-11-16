@@ -76,7 +76,7 @@ describe('bond-degraded', () => {
     });
 
     describe('OVS bonds (ovn-recon-1tw.4)', () => {
-        it('fires on the bridge when a member of an OVS bond is down', () => {
+        it('fires on the bond\'s own node when a member of an OVS bond is down (ovn-recon-1tw.2)', () => {
             const nns = withInterfaces(ovsBonded, (interfaces) => interfaces.forEach((iface) => {
                 if (iface.name === 'ens256') iface.state = 'down';
             }));
@@ -85,7 +85,7 @@ describe('bond-degraded', () => {
 
             expect(findings).toHaveLength(1);
             expect(findings[0]).toEqual(expect.objectContaining({
-                subject: { kind: 'graph-node', node: 'worker-1', graphNodeId: 'iface:br-vmdata' },
+                subject: { kind: 'graph-node', node: 'worker-1', graphNodeId: 'ovs-bond:br-vmdata/bond1' },
                 summary: 'OVS bond bond1 in bridge br-vmdata on worker-1 has 1 of 2 members down.'
             }));
             expect(findings[0].evidence.map((e) => [e.fact, e.path])).toEqual([
@@ -169,6 +169,24 @@ describe('bond-degraded', () => {
                 { kind: 'graph-node', node: 'worker-1', graphNodeId: 'iface:bond0' },
                 'Bond bond0 on worker-1 has 1 of 2 members down.'
             ]]);
+        });
+
+        it('puts two degraded OVS bonds on one bridge on two nodes, with two keys (ovn-recon-1tw.2)', () => {
+            const nns = withInterfaces(ovsBonded, (interfaces) => {
+                const bridge = interfaces.find((iface) => iface.name === 'br-vmdata' && iface.type === 'ovs-bridge')!;
+                (bridge.bridge!.port as unknown[]).push({
+                    name: 'bond2', 'link-aggregation': { mode: 'active-backup', port: [{ name: 'ens300' }] }
+                });
+                interfaces.forEach((iface) => { if (iface.name === 'ens256') iface.state = 'down'; });
+            });
+
+            const findings = bondDegraded.evaluate(physicalContext({ nns }));
+
+            expect(findings.map((f) => f.subject)).toEqual([
+                { kind: 'graph-node', node: 'worker-1', graphNodeId: 'ovs-bond:br-vmdata/bond1' },
+                { kind: 'graph-node', node: 'worker-1', graphNodeId: 'ovs-bond:br-vmdata/bond2' }
+            ]);
+            expect(new Set(findings.map((f) => f.key)).size).toBe(2);
         });
 
         it('is quiet when every member of the OVS bond is up', () => {

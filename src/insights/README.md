@@ -130,7 +130,7 @@ Rules must:
 | `localnet-unmapped` | network | A Localnet CUDN or standalone NAD names a physical network that no node maps to a bridge |
 | `mapping-bridge-missing` | node | A bridge mapping names an OVS bridge the node does not report |
 | `interface-down` | node | A VRF port, a mapped bridge's uplink, or a NAD's bridge (or its uplink) is down; members of a kernel or OVS bond are left to `bond-degraded` |
-| `bond-degraded` | node | A kernel bond, or an OVS bond in a bridge's `bridge.port` list, has members down or missing among those configured (reported, plus any an enactment declares); `ignore` is not down. An OVS bond's finding is on its bridge's graph node (`ovn-recon-1tw.4`) |
+| `bond-degraded` | node | A kernel bond, or an OVS bond in a bridge's `bridge.port` list, has members down or missing among those configured (reported, plus any an enactment declares); `ignore` is not down. An OVS bond's finding is on the bond's own graph node, `ovs-bond:<bridge>/<bond>` (`ovn-recon-1tw.4`, `ovn-recon-1tw.2`) |
 | `nnce-failing` | node | An enactment on the node is Failing or Degraded |
 | `mtu-exceeds-uplink` | node-network | A Localnet network's declared MTU exceeds the smallest MTU of its bridge's uplinks on that node |
 | `nad-config-unparsed` | network | A NAD's `spec.config` is not a JSON object, so the view fell back to pattern matching |
