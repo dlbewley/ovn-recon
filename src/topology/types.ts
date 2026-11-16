@@ -18,7 +18,7 @@ import type { LinkTarget } from '../linkOut/registry';
  */
 export type NodeKind =
     | 'interface' | 'ovn-mapping' | 'cudn' | 'udn'
-    | 'attachment' | 'nad' | 'vrf' | 'lldp-neighbor' | 'integration-bridge' | 'other';
+    | 'attachment' | 'nad' | 'vrf' | 'lldp-neighbor' | 'integration-bridge' | 'ovs-bond' | 'other';
 
 /**
  * The OVS integration bridge, synthesized from its ports: nmstate holds no
@@ -104,6 +104,12 @@ export interface FactItem {
     target?: LinkTarget;
     /** A second, subtle line under the item: the raw name behind a label, or an address. */
     detail?: string;
+    /**
+     * A node of the same graph (its canonical id): the item moves the drawer's
+     * selection there, as a Relationships entry does, when the canvas draws it
+     * (ovn-recon-1tw.2). Plain text where nothing can be selected.
+     */
+    node?: string;
 }
 
 /**

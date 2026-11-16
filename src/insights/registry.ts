@@ -10,6 +10,7 @@ import { mnpMissingNad } from './rules/mnpMissingNad';
 import { mtuExceedsUplink } from './rules/mtuExceedsUplink';
 import { nadConfigUnparsed } from './rules/nadConfigUnparsed';
 import { nnceFailing } from './rules/nnceFailing';
+import { ovsBridgeUnbondedUplinks } from './rules/ovsBridgeUnbondedUplinks';
 import { vrfPortUnmatched } from './rules/vrfPortUnmatched';
 import type { LogicalRule, PhysicalRule, Rule } from './types';
 
@@ -26,7 +27,8 @@ export const PHYSICAL_RULES: readonly PhysicalRule[] = [
     nnceFailing,
     mtuExceedsUplink,
     nadConfigUnparsed,
-    vrfPortUnmatched
+    vrfPortUnmatched,
+    ovsBridgeUnbondedUplinks
 ];
 
 /**

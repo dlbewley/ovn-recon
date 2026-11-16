@@ -322,7 +322,7 @@ describe('nodeKindRegistry', () => {
     it('has an entry for every node kind', () => {
         expect(Object.keys(nodeKindRegistry).sort()).toEqual([
             'attachment', 'cudn', 'integration-bridge', 'interface', 'lldp-neighbor',
-            'nad', 'other', 'ovn-mapping', 'udn', 'vrf'
+            'nad', 'other', 'ovn-mapping', 'ovs-bond', 'udn', 'vrf'
         ]);
     });
 

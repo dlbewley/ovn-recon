@@ -871,7 +871,7 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         // model -- badges, links, drawer data -- is built for the selected node alone.
         const presentation = descriptor.present(item, ctx);
         const displayType = presentation.graphLabel || presentation.subtitle;
-        const status = descriptor.status?.(item);
+        const status = descriptor.status?.(item, ctx);
         const isFocused = focusedNodeId === node.id;
         // Selection draws the same ring as focus, so a node selected from the drawer,
         // a search result or a deep link is marked even while focus is elsewhere.

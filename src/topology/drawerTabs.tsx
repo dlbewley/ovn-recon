@@ -70,6 +70,17 @@ export const interfaceSelector = (ctx: GraphContext, hooks: DrawerTabHooks, self
         return () => hooks.onSelectNode(id);
     };
 
+/**
+ * A fact item naming another node of the graph (FactItem.node) as a link that
+ * moves the selection, on the same terms as interfaceSelector: only to a node
+ * the canvas draws, and never to the one already open (ovn-recon-1tw.2).
+ */
+export const nodeSelector = (hooks: DrawerTabHooks, selfId?: string) =>
+    (id: string): (() => void) | undefined => {
+        if (id === selfId || (hooks.isDrawn && !hooks.isDrawn(id))) return undefined;
+        return () => hooks.onSelectNode(id);
+    };
+
 const subtle: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
 
 /**
@@ -92,8 +103,11 @@ const ThemedYamlEditor: React.FC<{ code: string }> = ({ code }) => {
     );
 };
 
-/** Kinds whose raw item is one interface of the node's NodeNetworkState. */
-const NNS_BACKED_KINDS = new Set(['interface', 'vrf', 'ovn-mapping', 'other']);
+/**
+ * Kinds whose raw item is an entry of the node's NodeNetworkState: an interface,
+ * a bridge mapping, or an OVS bond's bridge.port entry (ovn-recon-1tw.2).
+ */
+const NNS_BACKED_KINDS = new Set(['interface', 'vrf', 'ovn-mapping', 'ovs-bond', 'other']);
 
 /**
  * The console page that owns the selection (ovn-recon-zdt.4). A network or a
@@ -200,7 +214,11 @@ export const buildDrawerTabs = (
                 <LinkOutProvider>
                     <div style={{ padding: '16px', overflow: 'auto', flex: 1 }}>
                         <FindingsSection findings={hooks.findingsFor?.(node.id) ?? []} />
-                        <FactList facts={facts ?? baseFacts(node)} selectInterface={interfaceSelector(ctx, hooks, node.id)} />
+                        <FactList
+                            facts={facts ?? baseFacts(node)}
+                            selectInterface={interfaceSelector(ctx, hooks, node.id)}
+                            selectNode={nodeSelector(hooks, node.id)}
+                        />
                         <IdentifiersSection identifiers={physicalIdentifiers(node)} />
                     </div>
                     <ElsewhereLinks node={node} ctx={ctx} />

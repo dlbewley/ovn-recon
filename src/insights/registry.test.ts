@@ -16,7 +16,8 @@ describe('the rule registry', () => {
             ['nnce-failing', 'warning'],
             ['mtu-exceeds-uplink', 'warning'],
             ['nad-config-unparsed', 'warning'],
-            ['vrf-port-unmatched', 'warning']
+            ['vrf-port-unmatched', 'warning'],
+            ['ovs-bridge-unbonded-uplinks', 'warning']
         ]);
     });
 

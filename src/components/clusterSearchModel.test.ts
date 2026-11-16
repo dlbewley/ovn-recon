@@ -598,6 +598,33 @@ describe('searchWatchedResources', () => {
         expect(results[0].places[0].link?.href).toBe('/ovn-recon/node-network-state/worker-1?select=vrf:example-p-cudn');
     });
 
+    it('finds an OVS bond by name, though no interface carries it, and links to its node (ovn-recon-1tw.2)', () => {
+        const ovsBonded = fixture<NodeNetworkState>('nns', 'ovs-bond-slb.json');
+        const { results } = searchWatchedResources(query('bond1'), { nodeNetworkStates: [ovsBonded] });
+        expect(results).toHaveLength(1);
+        expect(results[0]).toMatchObject({
+            kind: 'node-interface',
+            title: 'bond1',
+            subtitle: 'ovs-bond · balance-slb',
+            context: 'OVS bridge br-vmdata',
+            match: { type: 'exact', field: 'name', value: 'bond1' },
+        });
+        expect(results[0].places[0].link?.href)
+            .toBe('/ovn-recon/node-network-state/worker-1?select=ovs-bond:br-vmdata/bond1');
+
+        // A prefix finds the kernel bond and its VLAN as interfaces, and the OVS bond as its own row.
+        expect(searchWatchedResources(query('bond'), { nodeNetworkStates: [ovsBonded] }).results
+            .map((result) => [result.title, result.places[0].link?.href.split('select=')[1]]))
+            .toEqual([
+                ['bond0', 'iface:bond0'],
+                ['bond0.1926', 'iface:bond0.1926'],
+                ['bond1', 'ovs-bond:br-vmdata/bond1'],
+            ]);
+        // An address query reads no bond names.
+        expect(searchWatchedResources(query('192.0.2.1'), { nodeNetworkStates: [ovsBonded] }).results
+            .some((result) => result.title === 'bond1')).toBe(false);
+    });
+
     it('searches kernel routes for addresses only', () => {
         expect(searchWatchedResources(query('br-ex'), { nodeNetworkStates: [routesNode] }).covering).toEqual([]);
         expect(searchWatchedResources(query('02:00:00:00:00:04'), { nodeNetworkStates: [routesNode] }).results.map((result) => result.kind))

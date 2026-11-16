@@ -30,7 +30,8 @@ export const buildNodeViewModel = (
         namespaces: presentation.namespaces,
         resourceRef: presentation.resourceRef,
         isSynthetic: presentation.isSynthetic,
-        raw: item
+        // What the Config tab dumps: the item, unless the kind reports something else.
+        raw: descriptor.raw ? descriptor.raw(item) : item
     };
 
     // Drawer badges still come from the per-kind registry.

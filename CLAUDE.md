@@ -115,7 +115,7 @@ React Router ranks the shell's nested routes by specificity, so the node ladder 
 
 1. `useK8sWatchResource` watches live K8s resources: `NodeNetworkState`, `ClusterUserDefinedNetwork`, `UserDefinedNetwork`, `NetworkAttachmentDefinition`, `RouteAdvertisements`, `NodeNetworkConfigurationEnactment`, `VTEP` (EVPN; absent on clusters without it), and the viewed node's own `Node` (for its `k8s.ovn.org/vteps` annotation only)
 2. `nodeVisualizationSelectors.ts` — pure functions that extract relationships from raw resource data (VRF routes, CUDN/NAD associations, LLDP neighbors, route advertisement lookups)
-3. `nodeVisualizationModel.ts` — builds a graph model: nodes typed as `interface | ovn-mapping | cudn | udn | attachment | nad | vrf | lldp-neighbor | other`, and edges between them
+3. `nodeVisualizationModel.ts` — builds a graph model: nodes typed as `interface | ovn-mapping | cudn | udn | attachment | nad | vrf | lldp-neighbor | integration-bridge | ovs-bond | other`, and edges between them. An `ovs-bond` (`ovn-recon-1tw.2`) is a bond inside an OVS bridge, read from the bridge's `bridge.port` (nmstate reports no interface for it); its id is `ovs-bond:<bridge>/<bond>` and it sits in the Bonds lane between its members and its bridge, whose direct `controller` edges it replaces
 4. `nodeVisualizationLayout.ts` — assigns grid positions using gravity-based column sorting (no external graph library)
 5. `NodeVisualization.tsx` — renders the graph as an SVG/HTML grid using PatternFly components
 

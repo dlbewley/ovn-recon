@@ -430,7 +430,7 @@ describe('facts builders', () => {
             const groups = groupBridgePorts(brEx, ctx);
             const grouped = [
                 ...groups.uplinks,
-                ...(groups.internal ? [groups.internal] : []),
+                ...groups.internal,
                 ...groups.patches.map((port) => port.portName),
                 ...groups.other
             ];
@@ -474,6 +474,271 @@ describe('facts builders', () => {
                 text: 'CUDN vlan-1924 (localnet)',
                 detail: 'patch-cluster_udn_vlan.1924_ovn_localnet_port-to-br-int'
             });
+        });
+    });
+
+    /**
+     * An NNCP can give an OVS bridge an internal interface not named after it
+     * (ovn-recon-1tw.6). The interfaces are the shape a 4.22 NodeNetworkState
+     * reported for br-vmdata with a balance-slb bond, built here rather than
+     * read from a fixture so the grouping rule is pinned on its own.
+     */
+    describe('internal ports not named after their bridge (ovn-recon-1tw.6)', () => {
+        const nnsWith = (interfaces: unknown[]): NodeNetworkState => ({
+            apiVersion: 'nmstate.io/v1beta1',
+            kind: 'NodeNetworkState',
+            metadata: { name: 'worker-1' },
+            status: { currentState: { interfaces } }
+        } as unknown as NodeNetworkState);
+        const bridgeFacts = (interfaces: unknown[], bridgeName: string) => {
+            const localCtx = buildGraphContext({ nns: nnsWith(interfaces) });
+            const bridge = localCtx.interfaces.find((i) => i.name === bridgeName && i.type === 'ovs-bridge')!;
+            const node = buildNodeViewModel(bridge, descriptorFor('bridge' as never)!, localCtx);
+            return {
+                groups: groupBridgePorts(bridge, localCtx),
+                facts: nodeKindRegistry.interface.facts!(node, localCtx)
+            };
+        };
+        const items = (fact: Fact) => fact.value as { text: string; detail?: string }[];
+        const brVmdata = (extra: unknown[] = [], extraPorts: unknown[] = []) => [
+            {
+                name: 'br-vmdata',
+                type: 'ovs-bridge',
+                state: 'up',
+                bridge: {
+                    options: { stp: { enabled: false }, rstp: false },
+                    port: [
+                        { name: 'ovs-br1' },
+                        ...extraPorts,
+                        {
+                            name: 'bond1',
+                            'link-aggregation': { mode: 'balance-slb', port: [{ name: 'ens161' }, { name: 'ens256' }] }
+                        }
+                    ]
+                }
+            },
+            { name: 'ovs-br1', type: 'ovs-interface', state: 'up', controller: 'br-vmdata', mtu: 1500, ipv4: { enabled: false } },
+            { name: 'ens161', type: 'ethernet', state: 'up', controller: 'br-vmdata' },
+            { name: 'ens256', type: 'ethernet', state: 'up', controller: 'br-vmdata' },
+            ...extra
+        ];
+
+        it('lists ovs-br1 on br-vmdata under Internal Port, not Other Ports', () => {
+            const { groups, facts } = bridgeFacts(brVmdata(), 'br-vmdata');
+            expect(groups.internal).toEqual(['ovs-br1']);
+            expect(groups.other).not.toContain('ovs-br1');
+            expect(items(byLabel(facts, 'Internal Port'))).toEqual([{ text: 'ovs-br1', detail: '(no address)' }]);
+            expect(items(byLabel(facts, 'Other Ports')).map((item) => item.text)).not.toContain('ovs-br1');
+            expect(facts.some((fact) => fact.label === 'Internal Ports')).toBe(false);
+        });
+
+        it('keeps the port named after the bridge as its internal port, with the address of the ovs-interface', () => {
+            const { groups, facts } = bridgeFacts([
+                {
+                    name: 'br-ex',
+                    type: 'ovs-bridge',
+                    state: 'up',
+                    bridge: { port: [{ name: 'br-ex' }, { name: 'ens192' }] }
+                },
+                {
+                    name: 'br-ex',
+                    type: 'ovs-interface',
+                    state: 'up',
+                    controller: 'br-ex',
+                    ipv4: { enabled: true, address: [{ ip: '192.0.2.72', 'prefix-length': 24 }] }
+                },
+                { name: 'ens192', type: 'ethernet', state: 'up', controller: 'br-ex' }
+            ], 'br-ex');
+            expect(groups.internal).toEqual(['br-ex']);
+            expect(groups.uplinks).toEqual(['ens192']);
+            expect(items(byLabel(facts, 'Internal Port'))).toEqual([{ text: 'br-ex', detail: '192.0.2.72/24' }]);
+        });
+
+        it('says Internal Ports for a bridge with two, each with its addresses, the bridge\'s own first', () => {
+            const { groups, facts } = bridgeFacts(brVmdata([
+                {
+                    name: 'ovs-br2',
+                    type: 'ovs-interface',
+                    state: 'up',
+                    controller: 'br-vmdata',
+                    ipv4: { enabled: true, address: [{ ip: '198.51.100.5', 'prefix-length': 24 }] }
+                },
+                { name: 'br-vmdata', type: 'ovs-interface', state: 'up', controller: 'br-vmdata', ipv4: { enabled: false } }
+            ], [{ name: 'ovs-br2' }, { name: 'br-vmdata' }]), 'br-vmdata');
+            expect(groups.internal).toEqual(['br-vmdata', 'ovs-br1', 'ovs-br2']);
+            expect(facts.some((fact) => fact.label === 'Internal Port')).toBe(false);
+            expect(items(byLabel(facts, 'Internal Ports'))).toEqual([
+                { text: 'br-vmdata', detail: '(no address)' },
+                { text: 'ovs-br1', detail: '(no address)' },
+                { text: 'ovs-br2', detail: '198.51.100.5/24' }
+            ]);
+        });
+
+        it('leaves patch ports in their own group, recognised or not', () => {
+            const { groups, facts } = bridgeFacts(brVmdata([
+                {
+                    name: 'patch-cluster_udn_vlan.1924_ovn_localnet_port-to-br-int',
+                    type: 'ovs-interface',
+                    state: 'ignore',
+                    controller: 'br-vmdata',
+                    patch: { peer: 'patch-br-int-to-cluster_udn_vlan.1924_ovn_localnet_port' }
+                },
+                // A patch peer whose name is not one OVN gives a network: not a
+                // network patch port, and not an internal port either.
+                { name: 'to-elsewhere', type: 'ovs-interface', state: 'up', controller: 'br-vmdata', patch: { peer: 'from-elsewhere' } }
+            ]), 'br-vmdata');
+            expect(groups.patches.map((port) => port.portName)).toEqual([
+                'patch-cluster_udn_vlan.1924_ovn_localnet_port-to-br-int'
+            ]);
+            expect(groups.internal).toEqual(['ovs-br1']);
+            expect(groups.other).toContain('to-elsewhere');
+            expect(items(byLabel(facts, 'Patch Ports')).map((item) => item.detail)).toEqual([
+                'patch-cluster_udn_vlan.1924_ovn_localnet_port-to-br-int'
+            ]);
+        });
+
+        it('groups both bridges of the ovs-bond-slb capture as the bead\'s acceptance names', () => {
+            const captured = fixture<NodeNetworkState>('nns', 'ovs-bond-slb.json').status!.currentState!.interfaces;
+            const vmdata = bridgeFacts(captured, 'br-vmdata');
+            expect(vmdata.groups.internal).toEqual(['ovs-br1']);
+            expect(vmdata.groups.other).not.toContain('ovs-br1');
+            const brEx = bridgeFacts(captured, 'br-ex');
+            expect(brEx.groups.internal).toEqual(['br-ex']);
+            expect(items(byLabel(brEx.facts, 'Internal Port'))).toEqual([
+                { text: 'br-ex', detail: '192.0.2.101/24, 169.254.0.2/17' }
+            ]);
+            expect(brEx.groups.patches.map((port) => port.portName)).toEqual(['patch-br-ex_worker-1-to-br-int']);
+        });
+    });
+
+    /**
+     * An OVS bond is reported only as a bridge.port entry with link-aggregation,
+     * its members only as `controller: <bridge>` (ovn-recon-1tw.3). The bridge's
+     * drawer names the bond as its uplink in place of the members, and each
+     * member's drawer names its bond.
+     */
+    describe('OVS bonds in the bridge and member drawers (ovn-recon-1tw.3)', () => {
+        const captured = fixture<NodeNetworkState>('nns', 'ovs-bond-slb.json');
+        const nnsWith = (interfaces: unknown[]): NodeNetworkState => ({
+            apiVersion: 'nmstate.io/v1beta1',
+            kind: 'NodeNetworkState',
+            metadata: { name: 'worker-1' },
+            status: { currentState: { interfaces } }
+        } as unknown as NodeNetworkState);
+        const drawer = (source: NodeNetworkState, name: string, type: string) => {
+            const localCtx = buildGraphContext({ nns: source });
+            const raw = localCtx.interfaces.find((i) => i.name === name && i.type === type)!;
+            const descriptor = type === 'ovs-bridge' ? 'bridge' : 'physical';
+            const node = buildNodeViewModel(raw, descriptorFor(descriptor as never)!, localCtx);
+            return {
+                groups: type === 'ovs-bridge' ? groupBridgePorts(raw, localCtx) : undefined,
+                facts: nodeKindRegistry.interface.facts!(node, localCtx)
+            };
+        };
+        const items = (fact: Fact) => fact.value as { text: string; detail?: string; ref?: unknown; node?: string }[];
+        const allNames = (groups: ReturnType<typeof groupBridgePorts>) => [
+            ...groups.uplinks,
+            ...groups.bonds.flatMap((bond) => [bond.name, ...bond.members.map((member) => member.name)]),
+            ...groups.internal,
+            ...groups.patches.map((port) => port.portName),
+            ...groups.other
+        ];
+
+        it('lists bond1 as br-vmdata\'s uplink with its mode and members, not ens161 and ens256 one by one', () => {
+            const { facts } = drawer(captured, 'br-vmdata', 'ovs-bridge');
+            const uplink = byLabel(facts, 'Uplink');
+            expect(items(uplink)).toEqual([{
+                text: 'bond1', detail: 'OVS bond, balance-slb: ens161, ens256', node: 'ovs-bond:br-vmdata/bond1'
+            }]);
+            expect(uplink.provenance).toBe('observed');
+            expect(uplink.hint).toContain('br-vmdata\'s bridge.port');
+            expect(uplink.hint).toContain('ovs-appctl bond/show');
+            // It links to the bond's own node (ovn-recon-1tw.2), not to a console page.
+            expect(items(uplink)[0].ref).toBeUndefined();
+        });
+
+        it('keeps bond1 out of Other Ports and ovs-br1 under Internal Port, each port in exactly one group', () => {
+            const { groups, facts } = drawer(captured, 'br-vmdata', 'ovs-bridge');
+            expect(groups!.uplinks).toEqual([]);
+            expect(groups!.bonds.map((bond) => bond.name)).toEqual(['bond1']);
+            expect(groups!.internal).toEqual(['ovs-br1']);
+            expect(groups!.other).toEqual([]);
+            expect(items(byLabel(facts, 'Other Ports'))).toEqual([]);
+            expect(items(byLabel(facts, 'Internal Port'))).toEqual([{ text: 'ovs-br1', detail: '(no address)' }]);
+            const grouped = allNames(groups!);
+            expect([...grouped].sort()).toEqual(['bond1', 'ens161', 'ens256', 'ovs-br1']);
+            expect(new Set(grouped).size).toBe(grouped.length);
+        });
+
+        it('leaves br-ex\'s uplink as the VLAN over the kernel bond, with no hint', () => {
+            const { groups, facts } = drawer(captured, 'br-ex', 'ovs-bridge');
+            expect(groups!.bonds).toEqual([]);
+            expect(items(byLabel(facts, 'Uplink'))).toEqual([{ text: 'bond0.1926' }]);
+            expect(byLabel(facts, 'Uplink').hint).toBeUndefined();
+        });
+
+        it('leaves a bridge with a plain NIC uplink as it was', () => {
+            const plain = drawer(nns, 'br-ex', 'ovs-bridge');
+            expect(plain.groups!.bonds).toEqual([]);
+            expect(items(byLabel(plain.facts, 'Uplink'))).toEqual([{ text: 'ens192' }]);
+            expect(byLabel(plain.facts, 'Uplink').hint).toBeUndefined();
+        });
+
+        it('names bond1 and br-vmdata in ens161\'s drawer, saying where that was read', () => {
+            const { facts } = drawer(captured, 'ens161', 'ethernet');
+            const bond = byLabel(facts, 'Bond');
+            expect(items(bond)).toEqual([{
+                text: 'Member of OVS bond bond1 on br-vmdata (balance-slb)', node: 'ovs-bond:br-vmdata/bond1'
+            }]);
+            expect(bond.provenance).toBe('observed');
+            expect(bond.hint).toBe('Read from br-vmdata\'s bridge.port entry bond1, whose link-aggregation.port lists '
+                + 'ens161. ens161 itself reports only controller: br-vmdata.');
+        });
+
+        it('gives a kernel bond member no OVS bond row', () => {
+            const { facts } = drawer(captured, 'ens192', 'ethernet');
+            expect(facts.some((fact) => fact.label === 'Bond')).toBe(false);
+        });
+
+        const vmdata = (members: unknown[], extra: unknown[] = []) => nnsWith([
+            {
+                name: 'br-vmdata',
+                type: 'ovs-bridge',
+                state: 'up',
+                bridge: {
+                    port: [
+                        { name: 'ovs-br1' },
+                        { name: 'bond1', 'link-aggregation': { mode: 'balance-slb', port: members } }
+                    ]
+                }
+            },
+            { name: 'ovs-br1', type: 'ovs-interface', state: 'up', controller: 'br-vmdata' },
+            ...extra
+        ]);
+
+        it('marks a member NodeNetworkState does not list', () => {
+            const source = vmdata([{ name: 'ens161' }, { name: 'ens256' }], [
+                { name: 'ens161', type: 'ethernet', state: 'up', controller: 'br-vmdata' }
+            ]);
+            const { groups, facts } = drawer(source, 'br-vmdata', 'ovs-bridge');
+            expect(items(byLabel(facts, 'Uplink'))).toEqual([
+                { text: 'bond1', detail: 'OVS bond, balance-slb: ens161, ens256 (not in NNS)', node: 'ovs-bond:br-vmdata/bond1' }
+            ]);
+            expect(groups!.other).toEqual([]);
+        });
+
+        it('does not explain an OVS bond member\'s changed MAC as a kernel bond\'s shared address', () => {
+            const source = vmdata([{ name: 'ens161' }], [{
+                name: 'ens161',
+                type: 'ethernet',
+                state: 'up',
+                controller: 'br-vmdata',
+                'mac-address': '02:00:00:00:00:01',
+                'permanent-mac-address': '00:50:56:B4:1B:27'
+            }]);
+            const hint = byLabel(drawer(source, 'ens161', 'ethernet').facts, 'Permanent MAC').hint!;
+            expect(hint).toContain('member of OVS bond bond1, which does not change its members\' addresses');
+            expect(hint).not.toContain('shared address');
         });
     });
 });

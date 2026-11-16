@@ -12,12 +12,12 @@ import {
     LookupTable,
     NodeNetworkState,
 } from '../types';
-import { resolveInterfaceLinkRef } from '../topology/ids';
+import { ovsBondNodeId, resolveInterfaceLinkRef } from '../topology/ids';
 import { getResourcePath } from '../topology/links';
 import { networkCidr, ParsedPrefix, parsePrefix, prefixContains } from './ipPrefix';
 import { buildKernelRouteTables, kernelTableLabel, KernelRouteRow, KernelRouteTableGroup } from './kernelRoutes';
 import { networkResourceRef } from './logicalClassification';
-import { getRunningRoutes } from './nodeVisualizationSelectors';
+import { getOvsBonds, getRunningRoutes } from './nodeVisualizationSelectors';
 import { clusterLogicalPath, nodeLogicalPath, nodePhysicalPath, overviewSearchPath, SEARCH_PARAM } from '../routes';
 import { encodeSelectValue } from './useSelectParam';
 
@@ -915,6 +915,15 @@ interface InterfaceMatch {
     match: SearchMatch;
 }
 
+/** A name query against one name: exact, prefix or substring, case aside. */
+const matchName = (query: SearchQuery, name: string): SearchMatch | undefined => {
+    const needle = query.value.toLowerCase();
+    const value = name.toLowerCase();
+    if (value === needle) return { type: 'exact', field: 'name', value: name };
+    if (value.includes(needle)) return { type: value.startsWith(needle) ? 'prefix' : 'substring', field: 'name', value: name };
+    return undefined;
+};
+
 const matchInterface = (query: SearchQuery, iface: Interface, nodeAddresses: NodeAddress[]): InterfaceMatch[] => {
     const matches: InterfaceMatch[] = [];
     if (query.kind === 'ip' || query.kind === 'cidr') {
@@ -944,11 +953,9 @@ const matchInterface = (query: SearchQuery, iface: Interface, nodeAddresses: Nod
         }
     } else {
         const needle = query.value.toLowerCase();
-        const name = (iface.name ?? '').toLowerCase();
-        if (name === needle) {
-            matches.push({ match: { type: 'exact', field: 'name', value: iface.name } });
-        } else if (name.includes(needle)) {
-            matches.push({ match: { type: name.startsWith(needle) ? 'prefix' : 'substring', field: 'name', value: iface.name } });
+        const byName = matchName(query, iface.name ?? '');
+        if (byName) {
+            matches.push({ match: byName });
         } else {
             const altNames = Array.isArray(iface['alt-names']) ? iface['alt-names'] : [];
             const alt = altNames
@@ -1026,6 +1033,27 @@ export const searchWatchedResources = (query: SearchQuery, sources: WatchedSourc
                 if (subtitle) result.subtitle = subtitle;
                 if (vrf) result.context = `VRF ${vrf}`;
                 results.push(result);
+            }
+        }
+
+        // An OVS bond is no interface (ovn-recon-1tw.2): nmstate reports it only in its
+        // bridge's bridge.port, so a name search reads it there and lands on the bond's
+        // own node in the physical view.
+        if (query.kind === 'name') {
+            for (const bond of getOvsBonds(interfaces)) {
+                const match = matchName(query, bond.name);
+                if (!match) continue;
+                results.push({
+                    key: ['cluster|ovs-bond', bond.bridge, bond.name, bond.mode ?? '', match.type].join('|'),
+                    kind: 'node-interface',
+                    source: 'cluster',
+                    title: bond.name,
+                    subtitle: ['ovs-bond', bond.mode].filter(Boolean).join(' · '),
+                    context: `OVS bridge ${bond.bridge}`,
+                    match,
+                    places: [{ node, link: physicalLink(node, ovsBondNodeId(bond.bridge, bond.name)) }],
+                    links: [],
+                });
             }
         }
 

@@ -1,4 +1,4 @@
-import { getBondMembers, parseNadConfig } from '../../components/nodeVisualizationSelectors';
+import { getBondMembers, getOvsBonds, parseNadConfig } from '../../components/nodeVisualizationSelectors';
 import { interfaceNodeId } from '../../topology/ids';
 import type { Interface } from '../../types';
 import { getActiveBridgeMappings, getBridgeUplinks, getVrfPorts } from '../network';
@@ -16,7 +16,9 @@ const NAD_BRIDGE_TYPES = ['bridge', 'cnv-bridge'];
  *   - a bridge a bridge-type NAD attaches to, or an uplink of one.
  *
  * Unused NICs are down on most hosts and are not reported. Bond members are left to
- * bond-degraded, which can say how many of the bond's members remain.
+ * bond-degraded, which can say how many of the bond's members remain. That holds for
+ * the members of an OVS bond too (ovn-recon-1tw.4): they report only `controller:
+ * <bridge>`, so they would otherwise be reported here as uplinks of the bridge as well.
  */
 export const interfaceDown: PhysicalRule = {
     id: 'interface-down',
@@ -67,9 +69,10 @@ export const interfaceDown: PhysicalRule = {
                 `${uplink.name} is an uplink of bridge ${bridge}, which NetworkAttachmentDefinition ${nadName} attaches to.`)));
         });
 
-        const bondMembers = new Set(ctx.interfaces
-            .filter((iface) => iface.type === 'bond')
-            .flatMap((bond) => getBondMembers(bond)));
+        const bondMembers = new Set([
+            ...ctx.interfaces.filter((iface) => iface.type === 'bond').flatMap((bond) => getBondMembers(bond)),
+            ...getOvsBonds(ctx.interfaces).flatMap((bond) => bond.members.map((member) => member.name))
+        ]);
 
         return ctx.interfaces
             .filter((iface) => iface.state === 'down' && reasons.has(iface.name) && !bondMembers.has(iface.name))

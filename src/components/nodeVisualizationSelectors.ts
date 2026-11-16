@@ -2,6 +2,7 @@ import { bridgeMappingNodeId, lldpNodeId } from '../topology/ids';
 import { sha256Hex } from '../topology/sha256';
 import { subnetCidrs } from '../topology/subnets';
 import {
+    BridgePortEntry,
     ClusterUserDefinedNetwork,
     Interface,
     Ipv4AddressEntry,
@@ -1568,6 +1569,7 @@ export const findEvpnNetworkForDevice = (
 /**
  * A gloss for the kernel bonding modes whose names do not say what they do. The mode
  * is always shown as the kernel spells it; this only adds what an operator would call it.
+ * OVS bond modes are glossed apart, in OVS_BOND_MODE_GLOSS (ovn-recon-1tw.3).
  */
 const BOND_MODE_GLOSS: Record<string, string> = {
     'balance-rr': 'round-robin',
@@ -1662,5 +1664,127 @@ export const describeBond = (iface: Interface | undefined): string[] => {
     if (upDelay) lines.push(`Up delay: ${upDelay} ms`);
     if (downDelay) lines.push(`Down delay: ${downDelay} ms`);
 
+    return lines;
+};
+
+/** One member of an OVS bond, and whether NodeNetworkState reports an interface by that name. */
+export interface OvsBondMember {
+    name: string;
+    /**
+     * False when the bond names a member NNS does not list: the NIC was removed or
+     * renamed, or the capture was trimmed. Kept rather than dropped, so a bond that
+     * has lost a member still says so.
+     */
+    present: boolean;
+}
+
+/**
+ * A bond inside an OVS bridge (ovn-recon-1tw.1), read out of the bridge's own
+ * `bridge.port` list: nmstate reports no interface for it. `name` is unique only
+ * within `bridge`, and may equal a kernel bond's name elsewhere on the node.
+ */
+export interface OvsBond {
+    /** The ovs-bridge whose port list carries the bond. */
+    bridge: string;
+    /** The bond's OVS port name. */
+    name: string;
+    /** nmstate's OVS bond mode: `active-backup`, `balance-slb` or `balance-tcp`. */
+    mode?: string;
+    /** In the order the bridge lists them, absent ones included and marked. */
+    members: OvsBondMember[];
+    /** `bond-updelay`, in ms, when reported. */
+    updelay?: number;
+    /** `bond-downdelay`, in ms, when reported. */
+    downdelay?: number;
+    /** The bridge.port entry as reported, for the Config tab and later readers. */
+    raw: BridgePortEntry;
+}
+
+const ovsBondDelay = (value: unknown): number | undefined =>
+    (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+
+/**
+ * Every OVS bond on the node, from each ovs-bridge's port entries that carry
+ * `link-aggregation`. Kernel bonds (`type: bond` interfaces) are not OVS bonds and are
+ * not returned; read those with getBondMembers. A bridge that lists its ports under
+ * `ports`, as some captures do, is read the same way, and a port given as a bare
+ * string has no link-aggregation to carry.
+ */
+export const getOvsBonds = (interfaces: Interface[]): OvsBond[] => {
+    const names = new Set(interfaces.map((iface) => iface.name));
+    const bonds: OvsBond[] = [];
+    interfaces
+        .filter((iface) => iface.type === 'ovs-bridge')
+        .forEach((iface) => {
+            const ports: unknown = iface.bridge?.port ?? iface.bridge?.ports;
+            if (!Array.isArray(ports)) return;
+            (ports as Array<BridgePortEntry | string>).forEach((entry) => {
+                if (!entry || typeof entry !== 'object') return;
+                const aggregation = entry['link-aggregation'];
+                if (!aggregation || typeof aggregation !== 'object' || !entry.name) return;
+                const memberNames: unknown = aggregation.port;
+                const members = (Array.isArray(memberNames) ? memberNames : [])
+                    .map((member: unknown) => {
+                        if (typeof member === 'string') return member;
+                        const name = (member as { name?: unknown } | null)?.name;
+                        return typeof name === 'string' ? name : '';
+                    })
+                    .filter(Boolean)
+                    .map((name) => ({ name, present: names.has(name) }));
+                bonds.push({
+                    bridge: iface.name,
+                    name: entry.name,
+                    mode: typeof aggregation.mode === 'string' ? aggregation.mode : undefined,
+                    members,
+                    updelay: ovsBondDelay(aggregation['bond-updelay']),
+                    downdelay: ovsBondDelay(aggregation['bond-downdelay']),
+                    raw: entry
+                });
+            });
+        });
+    return bonds;
+};
+
+/**
+ * A gloss for each OVS bond mode (ovn-recon-1tw.3), kept apart from the kernel's
+ * BOND_MODE_GLOSS because the two share a name with different consequences: an
+ * OVS bond is never a kernel bond, and its modes say most about what the switch
+ * side must (or must not) be. From ovs-vswitchd.conf.db(5), "Bonding Configuration":
+ * balance-slb hashes on source MAC and VLAN and rebalances on a timer without any
+ * negotiation, so the switch must see independent ports, not a port-channel or
+ * static LAG that would hash replies across members on its own terms; balance-tcp
+ * hashes on L2 to L4 headers and requires LACP, so both ends need it.
+ */
+const OVS_BOND_MODE_GLOSS: Record<string, string> = {
+    'active-backup': 'one member carries all traffic, another takes over when it fails; no LACP or switch-side LAG',
+    'balance-slb': 'source MAC and VLAN hashing, rebalanced periodically; no LACP, and the switch ports must not '
+        + 'be a port-channel or static LAG',
+    'balance-tcp': 'L2 to L4 hashing; needs LACP on both the bond and the switch ports'
+};
+
+/**
+ * An OVS bond's members as one line (ovn-recon-1tw.3), in the bridge's order. A
+ * member NodeNetworkState does not list is kept and marked, so a bond that lost a
+ * NIC still says which.
+ */
+export const formatOvsBondMembers = (bond: OvsBond): string =>
+    bond.members.map((member) => (member.present ? member.name : `${member.name} (not in NNS)`)).join(', ');
+
+/**
+ * What an OVS bond is, as drawer lines (ovn-recon-1tw.3): its mode with a gloss,
+ * its members, and its up and down delays when reported. The one source for every
+ * drawer that describes an OVS bond, the bond's own (ovn-recon-1tw.2) included.
+ * NNS carries no runtime bond state (the active member, per-member enable), so
+ * none is claimed; `ovs-appctl bond/show` holds that.
+ */
+export const describeOvsBond = (bond: OvsBond): string[] => {
+    const lines: string[] = [];
+    if (bond.mode) {
+        const gloss = OVS_BOND_MODE_GLOSS[bond.mode];
+        lines.push(`Mode: ${bond.mode}${gloss ? ` (${gloss})` : ''}`);
+    }
+    lines.push(bond.members.length > 0 ? `Members: ${formatOvsBondMembers(bond)}` : 'Members: none reported');
+    if (bond.updelay) lines.push(`Up delay: ${bond.updelay} ms`);
+    if (bond.downdelay) lines.push(`Down delay: ${bond.downdelay} ms`);
     return lines;
 };

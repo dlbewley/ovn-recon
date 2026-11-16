@@ -87,9 +87,18 @@ describe('graph legends', () => {
             expect(badge?.getAttribute('aria-label')).toBe('1 warning, 1 info finding');
         });
 
+        it('lists the OVS bond in the bridges\' purple, apart from the kernel bond (ovn-recon-1tw.2)', () => {
+            const row = container.querySelector('[data-legend-entry="node:ovs-bond"]')!;
+            expect(row.textContent).toBe('OVS bondA port of an OVS bridge that aggregates NICs. No kernel device.');
+            const accent = (type: string) => container
+                .querySelector(`[data-legend-entry="node:${type}"] [data-swatch-accent]`)?.getAttribute('data-swatch-accent');
+            expect(accent('ovs-bond')).toBe(accent('bridge'));
+            expect(accent('ovs-bond')).not.toBe(accent('bond'));
+        });
+
         it('covers every edge kind the model draws from the captured nodes', () => {
             const drawn = new Set<string>();
-            ['primary-cudn-vrf', 'bonded-lldp', 'evpn-vxlan', 'sriov', 'kernel-routes'].forEach((name) => {
+            ['primary-cudn-vrf', 'bonded-lldp', 'evpn-vxlan', 'sriov', 'kernel-routes', 'ovs-bond-slb'].forEach((name) => {
                 const cudnFile = path.join(process.cwd(), 'test', 'fixtures', 'cudn', `${name}.json`);
                 const ctx = buildGraphContext({
                     nns: fixture<NodeNetworkState>('nns', `${name}.json`),

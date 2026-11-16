@@ -1,9 +1,46 @@
 import { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 
-/** A port on a bridge interface. OVS records an access VLAN tag here. */
-export interface BridgePort {
+/**
+ * An OVS bond as nmstate reports it: not an interface of its own but the
+ * `link-aggregation` of one entry in an ovs-bridge's `bridge.port` list
+ * (ovn-recon-1tw.1). In OVS it is a Port row with several Interface rows and has no
+ * kernel netdev, so its members' only trace elsewhere in NNS is `controller: <bridge>`.
+ * nmstate reports `port` as `{ name }` objects; bare strings are tolerated as the
+ * kernel bond's form is.
+ */
+export interface OvsLinkAggregation {
+    mode?: string;
+    port?: Array<{ name: string } | string>;
+    'bond-updelay'?: number;
+    'bond-downdelay'?: number;
+    'ovs-db'?: Record<string, unknown>;
+}
+
+/**
+ * A port on a bridge interface. OVS records an access VLAN tag here, and an OVS bond
+ * its link-aggregation.
+ */
+export interface BridgePortEntry {
     name: string;
     vlan?: { mode?: string; tag?: number };
+    'link-aggregation'?: OvsLinkAggregation;
+}
+
+/** The older name for a bridge port entry. */
+export type BridgePort = BridgePortEntry;
+
+/**
+ * `bridge.options` as nmstate reports them. OVS bridges carry `stp` as `{ enabled }`
+ * in current nmstate and as a bare boolean in older captures; `rstp` is a boolean.
+ * Linux bridges report many more keys, kept open by the index signature.
+ */
+export interface BridgeOptions {
+    stp?: boolean | { enabled?: boolean; [key: string]: unknown };
+    rstp?: boolean;
+    'mcast-snooping-enable'?: boolean;
+    'fail-mode'?: string;
+    datapath?: string;
+    [key: string]: unknown;
 }
 
 /**
@@ -55,7 +92,7 @@ export interface Interface {
     /** OVS patch port: nmstate reports the reciprocal peer port. */
     patch?: { peer?: string };
     /** Present on bridge interfaces. Not to be confused with OvnBridgeMapping.bridge, which is a name. */
-    bridge?: { port?: BridgePort[]; ports?: BridgePort[] };
+    bridge?: { options?: BridgeOptions; port?: BridgePortEntry[]; ports?: BridgePortEntry[] };
     localnet?: string;
     mtu?: number;
     mac_address?: string;

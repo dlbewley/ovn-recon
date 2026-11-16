@@ -1,5 +1,6 @@
 import {
-    extractLldpNeighbors, getCudnAssociatedNamespaces, getKnownVtepNames, parseNodeVteps, LldpNeighborNode
+    extractLldpNeighbors, getCudnAssociatedNamespaces, getKnownVtepNames, getOvsBonds, parseNodeVteps,
+    LldpNeighborNode, OvsBond
 } from '../components/nodeVisualizationSelectors';
 import { AttachmentNode, IntegrationBridgeNode } from './types';
 import {
@@ -76,6 +77,13 @@ export interface GraphContext {
      * br-int interface -- the bridge exists only as its ports' controller value.
      */
     integrationBridge?: IntegrationBridgeNode;
+    /**
+     * Bonds that live inside an OVS bridge (ovn-recon-1tw.1), read once from each
+     * ovs-bridge's bridge.port link-aggregation. nmstate reports no interface for
+     * them, so the edges, drawers and findings all read this list instead of
+     * walking bridge.port themselves.
+     */
+    ovsBonds: OvsBond[];
     /**
      * Synthetic nodes for the namespaces attached to each network. Derived rather than
      * reported: CUDN namespaces are scraped from a status condition message, and each
@@ -174,6 +182,7 @@ export const buildGraphContext = ({
         ),
         lldpNeighbors: extractLldpNeighbors(interfaces),
         integrationBridge: buildIntegrationBridge(interfaces),
+        ovsBonds: getOvsBonds(interfaces),
         attachmentNodes: buildAttachmentNodes(cudns, udns)
     };
 };
