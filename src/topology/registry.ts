@@ -616,8 +616,25 @@ const configuredByFacts = (claims: NncpClaim[], ctx: GraphContext): Fact[] => {
                 : [])
         ],
         provenance: 'observed',
-        hint: 'This node\'s enactment for the policy lists it in the applied desiredState.'
+        hint: configuredByHint(claims)
     }];
+};
+
+/**
+ * Where the enactment names the interface: as an interface of its own, or only as
+ * a member of an OVS bond in a bridge's port list (ovn-recon-1tw.8), which a
+ * reader would otherwise look for in vain among the policy's interfaces.
+ */
+const configuredByHint = (claims: NncpClaim[]): string => {
+    const viaBond = claims.filter((claim) => claim.viaOvsBond);
+    const direct = 'This node\'s enactment for the policy lists it in the applied desiredState.';
+    if (viaBond.length === 0) return direct;
+    const where = viaBond
+        .map(({ policyName, viaOvsBond }) => `${policyName} names it as a member of OVS bond ${viaOvsBond?.bond} `
+            + `in ${viaOvsBond?.bridge}'s bridge.port`)
+        .join('; ');
+    return `${where}, in this node's applied desiredState: the policy enslaves it without listing it as an `
+        + `interface of its own.${viaBond.length < claims.length ? ` ${direct}` : ''}`;
 };
 
 /**

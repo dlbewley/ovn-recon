@@ -289,6 +289,12 @@ export interface NncpClaim {
     policyName: string;
     /** The enactment's worst active condition: Failing beats Progressing beats Available. */
     status: 'Available' | 'Failing' | 'Progressing' | 'Unknown';
+    /**
+     * Set when the policy names the interface only as a member of an OVS bond
+     * (ovn-recon-1tw.8): in a bridge's bridge.port link-aggregation, never as an
+     * interface of its own. Absent when the policy lists the interface itself.
+     */
+    viaOvsBond?: { bridge: string; bond: string };
 }
 
 const enactmentPolicyName = (enactment: NodeNetworkConfigurationEnactment): string =>
@@ -317,14 +323,23 @@ const toClaim = (enactment: NodeNetworkConfigurationEnactment): NncpClaim => ({
  * policy configured. More than one claim is a configuration overlap worth
  * flagging; zero claims (with enactments present) means the installer or
  * OVN-Kubernetes created it.
+ *
+ * A policy can also configure a NIC without listing it: by naming it as a member
+ * of an OVS bond in a bridge's bridge.port (ovn-recon-1tw.8). The NIC is then
+ * enslaved by that policy all the same, so the claim counts, marked viaOvsBond.
+ * The desired state declares the bond in the shape NNS reports it in, so
+ * getOvsBonds reads it there too.
  */
 export const getPoliciesClaimingInterface = (
     interfaceName: string,
     enactments: NodeNetworkConfigurationEnactment[]
-): NncpClaim[] => enactments
-    .filter((enactment) => (enactment.status?.desiredState?.interfaces || [])
-        .some((iface) => iface.name === interfaceName))
-    .map(toClaim);
+): NncpClaim[] => enactments.flatMap((enactment): NncpClaim[] => {
+    const desired = enactment.status?.desiredState?.interfaces || [];
+    if (desired.some((iface) => iface.name === interfaceName)) return [toClaim(enactment)];
+    const bond = getOvsBonds(desired as Interface[])
+        .find((candidate) => candidate.members.some((member) => member.name === interfaceName));
+    return bond ? [{ ...toClaim(enactment), viaOvsBond: { bridge: bond.bridge, bond: bond.name } }] : [];
+});
 
 export const getPoliciesClaimingBridgeMapping = (
     localnet: string,

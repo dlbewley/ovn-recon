@@ -12,9 +12,9 @@ import { buildNodeViewModel } from '../topology/viewModel';
 import { buildTopologyEdges, TopologyEdge } from './nodeVisualizationModel';
 import { readSelectParam, withSelectParam } from './useSelectParam';
 import {
-    describeBond, describeOvsBond, formatOvsBondMembers, getBondMembers, getOvsBonds, OvsBond
+    describeBond, describeOvsBond, formatOvsBondMembers, getBondMembers, getOvsBonds, getPoliciesClaimingInterface, OvsBond
 } from './nodeVisualizationSelectors';
-import { Interface, NodeNetworkState } from '../types';
+import { Interface, NodeNetworkConfigurationEnactment, NodeNetworkState } from '../types';
 
 /**
  * Bonds that live inside an OVS bridge (ovn-recon-1tw.1).
@@ -450,5 +450,38 @@ describe('describing an OVS bond', () => {
     it('says what it can of a bond with no mode, an unknown mode or no members', () => {
         expect(describeOvsBond(bond(undefined, []))).toEqual(['Members: none reported']);
         expect(describeOvsBond(bond('some-future-mode', both))[0]).toBe('Mode: some-future-mode');
+    });
+});
+
+describe('policies claiming an OVS bond member (ovn-recon-1tw.8)', () => {
+    const enactment = (policy: string, desired: unknown[]): NodeNetworkConfigurationEnactment => ({
+        apiVersion: 'nmstate.io/v1beta1',
+        kind: 'NodeNetworkConfigurationEnactment',
+        metadata: { name: `worker-1.${policy}`, labels: { 'nmstate.io/policy': policy } },
+        status: {
+            desiredState: { interfaces: desired as { name: string }[] },
+            conditions: [{ type: 'Available', status: 'True' }]
+        }
+    });
+    const bridgeWithBond = ovsBridge('br-vmdata', [
+        { name: 'bond1', 'link-aggregation': { mode: 'balance-slb', port: [{ name: 'ens161' }, 'ens256'] } }
+    ]);
+
+    it('claims a NIC the policy names only in a bond, marked viaOvsBond', () => {
+        expect(getPoliciesClaimingInterface('ens256', [enactment('br-vmdata', [bridgeWithBond])])).toEqual([
+            { policyName: 'br-vmdata', status: 'Available', viaOvsBond: { bridge: 'br-vmdata', bond: 'bond1' } }
+        ]);
+    });
+
+    it('prefers the direct claim when the policy also lists the NIC itself', () => {
+        const claims = getPoliciesClaimingInterface('ens161',
+            [enactment('br-vmdata', [bridgeWithBond, nic('ens161', 'br-vmdata')])]);
+        expect(claims).toEqual([{ policyName: 'br-vmdata', status: 'Available' }]);
+    });
+
+    it('claims nothing for a NIC in no bond and no interface list, nor for the bond\'s own port name', () => {
+        const enactments = [enactment('br-vmdata', [bridgeWithBond])];
+        expect(getPoliciesClaimingInterface('ens192', enactments)).toEqual([]);
+        expect(getPoliciesClaimingInterface('bond1', enactments)).toEqual([]);
     });
 });
