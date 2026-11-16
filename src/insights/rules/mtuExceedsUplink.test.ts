@@ -60,4 +60,41 @@ describe('mtu-exceeds-uplink', () => {
         // control-1 maps physnet only: machinenet fires, the physnet-vmdata networks do not.
         expect(findings.map((f) => f.subject.kind === 'graph-node' && f.subject.graphNodeId)).toEqual(['cudn:machinenet']);
     });
+
+    it('names the OVS bond an uplink is a member of (ovn-recon-1tw.4)', () => {
+        // vlan-1924 rides physnet-vmdata -> br-vmdata, whose uplinks are bond1's members ens161 and ens256.
+        const ovsBonded = loadFixture<NodeNetworkState>('nns', 'ovs-bond-slb.json');
+        const jumbo = clone(cudns);
+        const vlan1924 = jumbo.find((c) => c.metadata?.name === 'vlan-1924')!;
+        vlan1924.spec!.network!.localnet = { ...vlan1924.spec!.network!.localnet!, mtu: 9000 } as never;
+
+        const findings = mtuExceedsUplink.evaluate(physicalContext({ nns: ovsBonded, cudns: jumbo }));
+
+        expect(findings.map((f) => f.summary)).toEqual([
+            'ClusterUserDefinedNetwork vlan-1924 has MTU 9000, larger than the 1500 of uplink ens161 on worker-1.'
+        ]);
+        expect(findings[0].evidence.map((e) => [e.fact, e.path])).toEqual([
+            ['vlan-1924 declares MTU 9000.', 'spec.network.localnet.mtu'],
+            ['Physical network physnet-vmdata is mapped to bridge br-vmdata.',
+                'status.currentState.ovn.bridge-mappings[localnet=physnet-vmdata]'],
+            ['ens161 (ethernet) is a member of OVS bond bond1, an uplink of br-vmdata, with MTU 1500.',
+                'status.currentState.interfaces[name=ens161].mtu'],
+            ['ens256 (ethernet) is a member of OVS bond bond1, an uplink of br-vmdata, with MTU 1500.',
+                'status.currentState.interfaces[name=ens256].mtu']
+        ]);
+    });
+
+    it('does not name a bond for an uplink that is not in an OVS bond', () => {
+        // machinenet rides physnet -> br-ex -> bond0.1926 on the same capture: a VLAN over a kernel bond.
+        const ovsBonded = loadFixture<NodeNetworkState>('nns', 'ovs-bond-slb.json');
+        const jumbo = clone(cudns);
+        const machinenet = jumbo.find((c) => c.metadata?.name === 'machinenet')!;
+        machinenet.spec!.network!.localnet = { ...machinenet.spec!.network!.localnet!, mtu: 9000 } as never;
+
+        const findings = mtuExceedsUplink.evaluate(physicalContext({ nns: ovsBonded, cudns: jumbo }));
+
+        expect(findings.map((f) => f.evidence[2].fact)).toEqual([
+            'bond0.1926 (vlan) is an uplink of br-ex with MTU 1500.'
+        ]);
+    });
 });

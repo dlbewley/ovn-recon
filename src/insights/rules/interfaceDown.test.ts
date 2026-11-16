@@ -63,6 +63,21 @@ describe('interface-down', () => {
         expect(interfaceDown.evaluate(physicalContext({ nns }))).toEqual([]);
     });
 
+    it('leaves a down OVS bond member to bond-degraded, though it is an uplink of a mapped bridge (ovn-recon-1tw.4)', () => {
+        // ens256 reports only controller: br-vmdata; bond1 in br-vmdata's port list is what makes it a member.
+        const ovsBonded = loadFixture<NodeNetworkState>('nns', 'ovs-bond-slb.json');
+        expect(interfaceDown.evaluate(physicalContext({ nns: ovsBonded }))).toEqual([]);
+        expect(interfaceDown.evaluate(physicalContext({ nns: setState(ovsBonded, 'ens256', 'down') }))).toEqual([]);
+    });
+
+    it('still fires on a down uplink beside an OVS bond that is not one of its members', () => {
+        // bond0.1926 is br-ex's uplink on the same capture; the kernel bond beneath it is not an OVS bond.
+        const nns = setState(loadFixture<NodeNetworkState>('nns', 'ovs-bond-slb.json'), 'bond0.1926', 'down');
+        expect(interfaceDown.evaluate(physicalContext({ nns })).map((f) => f.summary)).toEqual([
+            'Interface bond0.1926 on worker-1 is down.'
+        ]);
+    });
+
     it('fires on a bridge a bridge-type NAD attaches to', () => {
         const nns = setState(loadFixture<NodeNetworkState>('nns', 'sriov.json'), 'br-mirror', 'down');
         const nad: NetworkAttachmentDefinition = {

@@ -1,3 +1,4 @@
+import { getOvsBonds } from '../../components/nodeVisualizationSelectors';
 import type { Interface } from '../../types';
 import { getActiveBridgeMappings, getBridgeUplinks, getLocalnetNetworks } from '../network';
 import { interfacePath, nnsFact, nodeNameOf } from '../node';
@@ -14,6 +15,10 @@ import type { PhysicalRule } from '../types';
  * rule is quiet: no default is assumed. Compared against the smallest MTU among the
  * bridge's uplinks. A node with no mapping for the physical network is not this
  * rule's business.
+ *
+ * A member of an OVS bond is an uplink like any other port of the bridge (it reports
+ * `controller: <bridge>`), but nothing on it says bond; its evidence names the bond, so
+ * a reader is not left looking for two independent uplinks (ovn-recon-1tw.4).
  */
 export const mtuExceedsUplink: PhysicalRule = {
     id: 'mtu-exceeds-uplink',
@@ -25,6 +30,14 @@ export const mtuExceedsUplink: PhysicalRule = {
         if (!ctx || ctx.interfaces.length === 0) return [];
         const node = nodeNameOf(ctx);
         const mappings = getActiveBridgeMappings(ctx.nns);
+        const ovsBonds = getOvsBonds(ctx.interfaces);
+        const uplinkFact = (bridge: string, uplink: Interface & { mtu: number }): string => {
+            const bond = ovsBonds.find((b) => b.bridge === bridge && b.members.some((m) => m.name === uplink.name));
+            return bond
+                ? `${uplink.name} (${uplink.type}) is a member of OVS bond ${bond.name}, an uplink of ${bridge}, `
+                    + `with MTU ${uplink.mtu}.`
+                : `${uplink.name} (${uplink.type}) is an uplink of ${bridge} with MTU ${uplink.mtu}.`;
+        };
 
         return getLocalnetNetworks(ctx.cudns, ctx.nads).flatMap((network) => {
             const mtu = network.mtu;
@@ -47,8 +60,7 @@ export const mtuExceedsUplink: PhysicalRule = {
                     { fact: `${network.ref.name} declares MTU ${mtu.value}.`, sources: [mtu.source], path: mtu.path },
                     nnsFact(ctx, `Physical network ${mapping.localnet} is mapped to bridge ${mapping.bridge}.`,
                         `status.currentState.ovn.bridge-mappings[localnet=${mapping.localnet}]`),
-                    ...uplinks.map((uplink) => nnsFact(ctx,
-                        `${uplink.name} (${uplink.type}) is an uplink of ${mapping.bridge} with MTU ${uplink.mtu}.`,
+                    ...uplinks.map((uplink) => nnsFact(ctx, uplinkFact(mapping.bridge, uplink),
                         interfacePath(uplink.name, 'mtu')))
                 ],
                 remedy: {
