@@ -741,4 +741,73 @@ describe('facts builders', () => {
             expect(hint).not.toContain('shared address');
         });
     });
+
+    /**
+     * A policy that enslaves a NIC only by naming it as an OVS bond member
+     * (ovn-recon-1tw.8). Seen live: ens161's drawer said 'No policy' although the
+     * br-vmdata policy put it in bond1, because the lookup read only the policy's
+     * top-level interfaces. The enactment below is that policy's desired state.
+     */
+    describe('Configured By for a NIC a policy names only as an OVS bond member (ovn-recon-1tw.8)', () => {
+        const captured = fixture<NodeNetworkState>('nns', 'ovs-bond-slb.json');
+        const brVmdataPolicy = {
+            apiVersion: 'nmstate.io/v1beta1',
+            kind: 'NodeNetworkConfigurationEnactment',
+            metadata: {
+                name: 'worker-1.br-vmdata',
+                labels: { 'nmstate.io/node': 'worker-1', 'nmstate.io/policy': 'br-vmdata' }
+            },
+            status: {
+                desiredState: {
+                    interfaces: [
+                        {
+                            name: 'br-vmdata',
+                            type: 'ovs-bridge',
+                            state: 'up',
+                            bridge: {
+                                port: [
+                                    { name: 'ovs-br1' },
+                                    {
+                                        name: 'bond1',
+                                        'link-aggregation': {
+                                            mode: 'balance-slb',
+                                            port: [{ name: 'ens161' }, { name: 'ens256' }]
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        { name: 'ovs-br1', type: 'ovs-interface', state: 'up' }
+                    ]
+                },
+                conditions: [{ type: 'Available', status: 'True' }]
+            }
+        } as unknown as NodeNetworkConfigurationEnactment;
+        const configuredBy = (name: string, enactments: NodeNetworkConfigurationEnactment[]) => {
+            const localCtx = buildGraphContext({ nns: captured, enactments });
+            const iface = localCtx.interfaces.find((i) => i.name === name && i.type !== 'ovs-bridge')!;
+            const kind = iface.type === 'ethernet' ? 'physical' : 'bridge-port';
+            const node = buildNodeViewModel(iface, descriptorFor(kind as never)!, localCtx);
+            return byLabel(nodeKindRegistry.interface.facts!(node, localCtx), 'Configured By');
+        };
+
+        it('credits the policy for ens161, observed, saying it is named as a member of bond1', () => {
+            const fact = configuredBy('ens161', [brVmdataPolicy]);
+            expect(fact.provenance).toBe('observed');
+            expect((fact.value as { text: string }[]).map((item) => item.text)).toEqual(['br-vmdata']);
+            expect(fact.hint).toContain('br-vmdata names it as a member of OVS bond bond1 in br-vmdata\'s bridge.port');
+        });
+
+        it('keeps the plain hint for an interface the policy lists itself', () => {
+            const fact = configuredBy('ovs-br1', [brVmdataPolicy]);
+            expect((fact.value as { text: string }[]).map((item) => item.text)).toEqual(['br-vmdata']);
+            expect(fact.hint).toBe('This node\'s enactment for the policy lists it in the applied desiredState.');
+        });
+
+        it('still says No policy for a NIC no policy names, bonded or not', () => {
+            const fact = configuredBy('ens192', [brVmdataPolicy]);
+            expect(fact.provenance).toBe('inferred');
+            expect(fact.value).toBe('No policy — created by the installer or OVN-Kubernetes');
+        });
+    });
 });
