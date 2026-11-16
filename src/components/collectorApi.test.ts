@@ -1,5 +1,6 @@
 import { LookupResponse } from '../types';
 import {
+    CollectorEndpointMissingError,
     CollectorRequestError,
     CollectorUnreachableError,
     describeCollectorFailure,
@@ -373,6 +374,66 @@ describe('fetchOvsBondState', () => {
             '/api/plugins/ovn-recon/backend/api/v1/ovs/bonds/worker-1',
             '/api/proxy/plugin/ovn-recon/backend/api/v1/ovs/bonds/worker-1',
             '/api/proxy/plugin/ovn-recon/api/v1/ovs/bonds/worker-1',
+            // Some routes answered 404, so it probes whether a collector answers at all
+            // (ovn-recon-2am); none does, so it is reported as not answering.
+            `${API}/lookup/`,
+            '/api/plugins/ovn-recon/backend/api/v1/lookup/',
+            '/api/proxy/plugin/ovn-recon/backend/api/v1/lookup/',
+            '/api/proxy/plugin/ovn-recon/api/v1/lookup/',
         ]);
+    });
+
+    /*
+     * A collector that answers but has no bond route (ovn-recon-2am): older than the
+     * plugin, or a pinned collector tag. Go's mux answers it '404 page not found',
+     * the same as a proxy route that goes nowhere, so the body cannot tell them apart;
+     * a route every collector serves (/lookup/, 400 with its usage line) can.
+     */
+    describe('a collector without the bond route (ovn-recon-2am)', () => {
+        const text = (body: string) => async () => body;
+        const LOOKUP_USAGE = 'expected /api/v1/lookup/<ip|mac|cidr|name>/<value>';
+
+        it('says the collector is older than the plugin, not that it is not answering', async () => {
+            fetchMock.mockReset();
+            fetchMock.mockImplementation(async (url: string) => (url === `${API}/lookup/`
+                ? { ok: false, status: 400, text: text(LOOKUP_USAGE) }
+                : { ok: false, status: 404, text: text('404 page not found') }));
+            const failure = await fetchOvsBondState('worker-1').catch((error: unknown) => error);
+            expect(failure).toBeInstanceOf(CollectorEndpointMissingError);
+            expect(describeCollectorFailure(failure).summary)
+                .toBe('Collector does not report OVS bond state: it is older than this plugin');
+            // The probe found the working route; the next request starts there.
+            fetchMock.mockClear();
+            await fetchCollectorSnapshot('worker-1').catch(() => undefined);
+            expect(requestedUrls()[0]).toBe(`${API}/snapshots/worker-1`);
+        });
+
+        it('passes on the collector\'s own 404 for an unknown node, and stops there', async () => {
+            fetchMock.mockReset();
+            fetchMock.mockImplementation(async (url: string) => (url.startsWith(API)
+                ? { ok: false, status: 404,
+                    text: text('node "nope" not found; expected /api/v1/ovs/bonds/<node>\n') }
+                : { ok: false, status: 404, text: text('404 page not found') }));
+            const failure = await fetchOvsBondState('nope').catch((error: unknown) => error);
+            expect(failure).toBeInstanceOf(CollectorRequestError);
+            expect(describeCollectorFailure(failure).summary)
+                .toBe('Collector answered HTTP 404: node "nope" not found; expected /api/v1/ovs/bonds/<node>');
+            expect(requestedUrls()).toEqual([`${API}/ovs/bonds/nope`]);
+        });
+
+        it('still says not answering when nothing answers the probe either', async () => {
+            fetchMock.mockReset();
+            fetchMock.mockImplementation(async () => ({ ok: false, status: 404, text: text('404 page not found') }));
+            const failure = await fetchOvsBondState('worker-1').catch((error: unknown) => error);
+            expect(failure).toBeInstanceOf(CollectorUnreachableError);
+            expect(describeCollectorFailure(failure).summary).toBe('Collector is not answering (HTTP 404)');
+        });
+
+        it('does not probe when no route answered 404 (a collector down behind a 502)', async () => {
+            fetchMock.mockReset();
+            fetchMock.mockImplementation(async () => ({ ok: false, status: 502, text: text('Bad Gateway') }));
+            await fetchOvsBondState('worker-1').catch(() => undefined);
+            expect(requestedUrls().some((url) => url.endsWith('/lookup/'))).toBe(false);
+        });
     });
 });
