@@ -2,6 +2,7 @@ import { bridgeMappingNodeId, lldpNodeId } from '../topology/ids';
 import { sha256Hex } from '../topology/sha256';
 import { subnetCidrs } from '../topology/subnets';
 import {
+    BridgePortEntry,
     ClusterUserDefinedNetwork,
     Interface,
     Ipv4AddressEntry,
@@ -1663,4 +1664,82 @@ export const describeBond = (iface: Interface | undefined): string[] => {
     if (downDelay) lines.push(`Down delay: ${downDelay} ms`);
 
     return lines;
+};
+
+/** One member of an OVS bond, and whether NodeNetworkState reports an interface by that name. */
+export interface OvsBondMember {
+    name: string;
+    /**
+     * False when the bond names a member NNS does not list: the NIC was removed or
+     * renamed, or the capture was trimmed. Kept rather than dropped, so a bond that
+     * has lost a member still says so.
+     */
+    present: boolean;
+}
+
+/**
+ * A bond inside an OVS bridge (ovn-recon-1tw.1), read out of the bridge's own
+ * `bridge.port` list: nmstate reports no interface for it. `name` is unique only
+ * within `bridge`, and may equal a kernel bond's name elsewhere on the node.
+ */
+export interface OvsBond {
+    /** The ovs-bridge whose port list carries the bond. */
+    bridge: string;
+    /** The bond's OVS port name. */
+    name: string;
+    /** nmstate's OVS bond mode: `active-backup`, `balance-slb` or `balance-tcp`. */
+    mode?: string;
+    /** In the order the bridge lists them, absent ones included and marked. */
+    members: OvsBondMember[];
+    /** `bond-updelay`, in ms, when reported. */
+    updelay?: number;
+    /** `bond-downdelay`, in ms, when reported. */
+    downdelay?: number;
+    /** The bridge.port entry as reported, for the Config tab and later readers. */
+    raw: BridgePortEntry;
+}
+
+const ovsBondDelay = (value: unknown): number | undefined =>
+    (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+
+/**
+ * Every OVS bond on the node, from each ovs-bridge's port entries that carry
+ * `link-aggregation`. Kernel bonds (`type: bond` interfaces) are not OVS bonds and are
+ * not returned; read those with getBondMembers. A bridge that lists its ports under
+ * `ports`, as some captures do, is read the same way, and a port given as a bare
+ * string has no link-aggregation to carry.
+ */
+export const getOvsBonds = (interfaces: Interface[]): OvsBond[] => {
+    const names = new Set(interfaces.map((iface) => iface.name));
+    const bonds: OvsBond[] = [];
+    interfaces
+        .filter((iface) => iface.type === 'ovs-bridge')
+        .forEach((iface) => {
+            const ports: unknown = iface.bridge?.port ?? iface.bridge?.ports;
+            if (!Array.isArray(ports)) return;
+            (ports as Array<BridgePortEntry | string>).forEach((entry) => {
+                if (!entry || typeof entry !== 'object') return;
+                const aggregation = entry['link-aggregation'];
+                if (!aggregation || typeof aggregation !== 'object' || !entry.name) return;
+                const memberNames: unknown = aggregation.port;
+                const members = (Array.isArray(memberNames) ? memberNames : [])
+                    .map((member: unknown) => {
+                        if (typeof member === 'string') return member;
+                        const name = (member as { name?: unknown } | null)?.name;
+                        return typeof name === 'string' ? name : '';
+                    })
+                    .filter(Boolean)
+                    .map((name) => ({ name, present: names.has(name) }));
+                bonds.push({
+                    bridge: iface.name,
+                    name: entry.name,
+                    mode: typeof aggregation.mode === 'string' ? aggregation.mode : undefined,
+                    members,
+                    updelay: ovsBondDelay(aggregation['bond-updelay']),
+                    downdelay: ovsBondDelay(aggregation['bond-downdelay']),
+                    raw: entry
+                });
+            });
+        });
+    return bonds;
 };
