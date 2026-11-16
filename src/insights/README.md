@@ -135,7 +135,7 @@ Rules must:
 | `mtu-exceeds-uplink` | node-network | A Localnet network's declared MTU exceeds the smallest MTU of its bridge's uplinks on that node |
 | `nad-config-unparsed` | network | A NAD's `spec.config` is not a JSON object, so the view fell back to pattern matching |
 | `vrf-port-unmatched` | node | A VRF declares a port no interface carries |
-| `ovs-bridge-unbonded-uplinks` | node | An OVS bridge (not br-int) has two or more uplinks, an OVS bond counting as one, with STP stated off and RSTP not on (`ovn-recon-1tw.5`); an uplink that is down still counts, a bridge reporting no STP setting is quiet, Linux bridges are out of scope |
+| `ovs-bridge-unbonded-uplinks` | node | An OVS bridge (not br-int) has two or more uplinks, an OVS bond counting as one, with STP stated off and RSTP not on (`ovn-recon-1tw.5`); uplinks are counted by the link they leave on, so VLANs of one NIC or bond are one uplink (`ovn-recon-vb1`); an uplink that is down still counts, a bridge reporting no STP setting is quiet, Linux bridges are out of scope |
 
 Logical side (`ovn-recon-7i6.3`), evaluated over one zone's collector snapshot:
 
