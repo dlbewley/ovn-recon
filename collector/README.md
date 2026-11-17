@@ -23,6 +23,12 @@ This scaffold includes:
   response (`ClusterLogicalTopology`)
 - `GET /api/v1/sections/<section>[,<section>]/snapshots[/:nodeName]`: the
   same two endpoints with optional sections added (see below)
+- `GET /api/v1/status`: the aggregate's envelope without its databases: per
+  zone its node, `generatedAt`, source health, OVN version and warnings, the
+  aggregate's own warnings, and while the start-up cache sweep runs its
+  progress (`warmUp: {nodes, done}`). Zones resolve exactly as for the
+  aggregate, so the two agree. The plugin's collector status line polls this
+  ([schema](api/collector-status.schema.json), ovn-recon-1zx)
 - `GET /api/v1/lookup/<ip|mac|cidr|name>/<value>`: where an address or a name
   is, across every stored zone snapshot (see [Lookup](#lookup))
 - `GET /api/v1/ovs/bonds/:nodeName`: runtime state of the bonds inside one

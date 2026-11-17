@@ -745,6 +745,40 @@ export interface ClusterLogicalTopology {
     warnings: LogicalTopologyWarning[];
 }
 
+/** One zone in GET /api/v1/status: its snapshot's metadata and warnings. */
+export interface CollectorZoneStatus {
+    nodeName: string;
+    generatedAt: string;
+    sourceHealth: string;
+    /** NB_Global options:northd_internal_version, when known. */
+    ovnVersion?: string;
+    warnings: LogicalTopologyWarning[];
+}
+
+/**
+ * Payload from GET /api/v1/status (ovn-recon-1zx): the aggregate's envelope without
+ * its databases. Mirrors collector/internal/snapshot/status_types.go and
+ * collector/api/collector-status.schema.json.
+ */
+export interface CollectorStatusResponse {
+    metadata: {
+        schemaVersion: string;
+        generatedAt: string;
+        sourceHealth: string;
+    };
+    /** One entry per zone the aggregate would carry. */
+    zones: CollectorZoneStatus[];
+    /** The aggregate's own warnings (ZONE_COLLECTION_FAILED), not the zones'. */
+    warnings: LogicalTopologyWarning[];
+    /** Present only while the collector's start-up cache sweep runs. */
+    warmUp?: {
+        /** Zones the sweep set out to collect; 0 until it has listed the nodes. */
+        nodes: number;
+        /** Of those, how many have finished. */
+        done: number;
+    };
+}
+
 // Lookup contract: the response of GET /api/v1/lookup/{kind}/{value}, which
 // answers "where is this address or name?" across every stored zone snapshot
 // (ovn-recon-tpp.1). Mirrors collector/internal/snapshot/lookup_types.go and

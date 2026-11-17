@@ -1,4 +1,4 @@
-import { LookupResponse } from '../types';
+import { ClusterLogicalTopology, CollectorStatusResponse, LookupResponse } from '../types';
 import {
     CollectorEndpointMissingError,
     CollectorRequestError,
@@ -7,10 +7,13 @@ import {
     fetchClusterTopology,
     fetchCollectorLookup,
     fetchCollectorSnapshot,
+    fetchCollectorStatus,
     fetchOvsBondState,
     rememberedClusterTopology,
     rememberedCollectorSnapshot,
+    rememberedCollectorStatus,
     sectionsPath,
+    statusFromAggregate,
 } from './collectorApi';
 
 const API = '/api/plugins/ovn-recon/api/v1';
@@ -435,5 +438,73 @@ describe('fetchOvsBondState', () => {
             await fetchOvsBondState('worker-1').catch(() => undefined);
             expect(requestedUrls().some((url) => url.endsWith('/lookup/'))).toBe(false);
         });
+    });
+});
+
+describe('fetchCollectorStatus (ovn-recon-1zx)', () => {
+    const status: CollectorStatusResponse = {
+        metadata: { schemaVersion: '1', generatedAt: '2026-11-17T09:00:00Z', sourceHealth: 'healthy' },
+        zones: [{ nodeName: 'worker-1', generatedAt: '2026-11-17T08:59:30Z', sourceHealth: 'healthy', warnings: [] }],
+        warnings: [],
+    };
+    const aggregate = {
+        metadata: { schemaVersion: '2', generatedAt: '2026-11-17T09:00:00Z', sourceHealth: 'degraded' },
+        snapshots: [{
+            metadata: { schemaVersion: '2', generatedAt: '2026-11-17T08:58:00Z', sourceHealth: 'degraded', nodeName: 'worker-1' },
+            database: { nbGlobal: { uuid: 'u', nbCfg: 1, sbCfg: 1, hvCfg: 1, options: { northd_internal_version: '24.09.2-71.el9fdp' } } },
+            nodes: [], edges: [], groups: [],
+            warnings: [{ code: 'LIVE_PROBE_FAILED', message: 'probe' }],
+        }],
+        warnings: [{ code: 'ZONE_COLLECTION_FAILED', message: 'worker-2' }],
+    };
+    const ok = (payload: unknown) => ({ ok: true, status: 200, json: async () => payload });
+    const missing = { ok: false, status: 404, text: async () => '404 page not found' };
+
+    it('asks /status, and only /status, from a collector that serves it', async () => {
+        fetchMock.mockResolvedValue(ok(status));
+        await expect(fetchCollectorStatus()).resolves.toEqual(status);
+        expect(requestedUrls()).toEqual([`${API}/status`]);
+        expect(rememberedCollectorStatus()).toEqual(status);
+    });
+
+    it('falls back to the aggregate, reduced to a status, when the collector is older than /status', async () => {
+        fetchMock.mockImplementation(async (url: string) => (url.endsWith('/status') ? missing : ok(aggregate)));
+
+        const fallback = await fetchCollectorStatus();
+        expect(fallback).toEqual({
+            metadata: aggregate.metadata,
+            zones: [{
+                nodeName: 'worker-1',
+                generatedAt: '2026-11-17T08:58:00Z',
+                sourceHealth: 'degraded',
+                ovnVersion: '24.09.2-71.el9fdp',
+                warnings: [{ code: 'LIVE_PROBE_FAILED', message: 'probe' }],
+            }],
+            warnings: aggregate.warnings,
+        });
+        expect(requestedUrls().filter((url) => url.endsWith('/status'))).toHaveLength(4);
+        expect(requestedUrls()[requestedUrls().length - 1]).toBe(`${API}/snapshots`);
+
+        // The tab remembers: the next poll goes straight to the aggregate.
+        fetchMock.mockClear();
+        await fetchCollectorStatus();
+        expect(requestedUrls()).toEqual([`${API}/snapshots`]);
+    });
+
+    it('does not fall back for a collector that is down behind a 502', async () => {
+        fetchMock.mockImplementation(async (url: string) => (url.startsWith(API) ? { ok: false, status: 502 } : missing));
+        await expect(fetchCollectorStatus()).rejects.toBeInstanceOf(CollectorUnreachableError);
+        expect(requestedUrls().every((url) => url.endsWith('/status'))).toBe(true);
+    });
+
+    it('paints from an aggregate the cluster ladder fetched when it is newer than the last status', async () => {
+        fetchMock.mockResolvedValue(ok(status));
+        await fetchCollectorStatus();
+        expect(rememberedCollectorStatus()).toEqual(status);
+
+        const newer = { ...aggregate, metadata: { ...aggregate.metadata, generatedAt: '2026-11-17T09:05:00Z' } };
+        fetchMock.mockResolvedValue(ok(newer));
+        await fetchClusterTopology();
+        expect(rememberedCollectorStatus()).toEqual(statusFromAggregate(newer as unknown as ClusterLogicalTopology));
     });
 });

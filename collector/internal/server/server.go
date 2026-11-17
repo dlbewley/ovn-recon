@@ -18,6 +18,10 @@ import (
 const snapshotsPrefix = "/api/v1/snapshots/"
 const snapshotsAggregatePath = "/api/v1/snapshots"
 
+// statusPath serves the aggregate's envelope without its databases
+// (ovn-recon-1zx): what a status line needs, for a few hundred bytes.
+const statusPath = "/api/v1/status"
+
 // sectionsPrefix roots the path spelling of the include parameter:
 // /api/v1/sections/<section>[,<section>]/snapshots[/<node>].
 const sectionsPrefix = "/api/v1/sections/"
@@ -81,6 +85,10 @@ type Server struct {
 	// can tell a probe that failed during start-up (an upgrade rolling the
 	// collector and ovnkube-node together) from a lasting failure.
 	warming atomic.Bool
+	// warmNodes and warmDone count the sweep's progress for GET /api/v1/status:
+	// zones it set out to collect, and how many of those have finished.
+	warmNodes atomic.Int64
+	warmDone  atomic.Int64
 
 	// OVS bond runtime state (ovn-recon-1tw.7): read live per request,
 	// with a few seconds' memo and the fixtures as the fallback.
@@ -129,6 +137,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/readyz", s.handleReady)
 	mux.Handle(snapshotsAggregatePath, withGzip(http.HandlerFunc(s.handleSnapshotsAggregate)))
+	mux.Handle(statusPath, withGzip(http.HandlerFunc(s.handleStatus)))
 	mux.Handle(snapshotsPrefix, withGzip(http.HandlerFunc(s.handleSnapshotByNode)))
 	mux.Handle(sectionsPrefix, withGzip(http.HandlerFunc(s.handleSectionsPath)))
 	mux.Handle(lookupPrefix, withGzip(http.HandlerFunc(s.handleLookup)))
@@ -353,6 +362,8 @@ func (s *Server) WarmCache(ctx context.Context) {
 		return
 	}
 
+	s.warmNodes.Store(0)
+	s.warmDone.Store(0)
 	s.warming.Store(true)
 	defer s.warming.Store(false)
 
@@ -362,17 +373,22 @@ func (s *Server) WarmCache(ctx context.Context) {
 		return
 	}
 
-	warmed := 0
-	semaphore := make(chan struct{}, aggregateConcurrency)
-	var wg sync.WaitGroup
+	toWarm := make([]string, 0, len(nodes))
 	for _, nodeName := range nodes {
 		if cached, ok := s.cache.Get(nodeName); ok && snapshot.IsFresh(cached, s.cacheTTL, s.now()) {
 			continue
 		}
-		warmed++
+		toWarm = append(toWarm, nodeName)
+	}
+	s.warmNodes.Store(int64(len(toWarm)))
+
+	semaphore := make(chan struct{}, aggregateConcurrency)
+	var wg sync.WaitGroup
+	for _, nodeName := range toWarm {
 		wg.Add(1)
 		go func(nodeName string) {
 			defer wg.Done()
+			defer s.warmDone.Add(1)
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 			payload, err := s.liveCollector.Collect(ctx, nodeName)
@@ -386,7 +402,67 @@ func (s *Server) WarmCache(ctx context.Context) {
 		}(nodeName)
 	}
 	wg.Wait()
-	s.logger.Info("cache warm-up complete", "nodes", len(nodes), "collected", warmed)
+	s.logger.Info("cache warm-up complete", "nodes", len(nodes), "collected", len(toWarm))
+}
+
+// collectedZones is one aggregate collection: every listed node's zone, the
+// aggregate's own warnings (one per zone that failed), and the health of the
+// whole. The aggregate and the status are both built from it, so they agree.
+type collectedZones struct {
+	zones        []snapshot.LogicalTopologySnapshot
+	warnings     []snapshot.Warning
+	sourceHealth string
+}
+
+func (s *Server) collectZones(ctx context.Context) (collectedZones, error) {
+	nodes, err := s.nodeLister.ListNodes(ctx)
+	if err != nil {
+		return collectedZones{}, err
+	}
+
+	type zoneResult struct {
+		payload snapshot.LogicalTopologySnapshot
+		err     error
+	}
+
+	results := make([]zoneResult, len(nodes))
+	semaphore := make(chan struct{}, aggregateConcurrency)
+	var wg sync.WaitGroup
+	for index, nodeName := range nodes {
+		wg.Add(1)
+		go func(index int, nodeName string) {
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+			payload, zoneErr := s.collectZoneMarked(ctx, nodeName)
+			if payload.Metadata.NodeName == "" {
+				payload.Metadata.NodeName = nodeName
+			}
+			results[index] = zoneResult{payload: payload, err: zoneErr}
+		}(index, nodeName)
+	}
+	wg.Wait()
+
+	collected := collectedZones{
+		zones:        []snapshot.LogicalTopologySnapshot{},
+		warnings:     []snapshot.Warning{},
+		sourceHealth: snapshot.SourceHealthy,
+	}
+	for index, result := range results {
+		if result.err != nil {
+			collected.warnings = append(collected.warnings, snapshot.Warning{
+				Code:    "ZONE_COLLECTION_FAILED",
+				Message: fmt.Sprintf("zone collection failed for node %s: %v", nodes[index], result.err),
+			})
+			collected.sourceHealth = snapshot.SourceDegraded
+			continue
+		}
+		if result.payload.Metadata.SourceHealth != "" && result.payload.Metadata.SourceHealth != snapshot.SourceHealthy {
+			collected.sourceHealth = snapshot.SourceDegraded
+		}
+		collected.zones = append(collected.zones, result.payload)
+	}
+	return collected, nil
 }
 
 func (s *Server) handleSnapshotsAggregate(w http.ResponseWriter, r *http.Request) {
@@ -403,60 +479,24 @@ func (s *Server) handleSnapshotsAggregate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	nodes, err := s.nodeLister.ListNodes(r.Context())
+	collected, err := s.collectZones(r.Context())
 	if err != nil {
 		s.logger.Error("failed to list nodes for aggregate snapshot", "error", err)
 		http.Error(w, fmt.Sprintf("failed to list nodes: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	type zoneResult struct {
-		index   int
-		payload snapshot.LogicalTopologySnapshot
-		err     error
-	}
-
-	results := make([]zoneResult, len(nodes))
-	semaphore := make(chan struct{}, aggregateConcurrency)
-	var wg sync.WaitGroup
-	for index, nodeName := range nodes {
-		wg.Add(1)
-		go func(index int, nodeName string) {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-			payload, zoneErr := s.collectZoneMarked(r.Context(), nodeName)
-			if payload.Metadata.NodeName == "" {
-				payload.Metadata.NodeName = nodeName
-			}
-			results[index] = zoneResult{index: index, payload: payload, err: zoneErr}
-		}(index, nodeName)
-	}
-	wg.Wait()
-
 	aggregate := snapshot.ClusterLogicalTopology{
 		Metadata: snapshot.ClusterMetadata{
 			SchemaVersion: snapshot.SchemaVersionV2,
 			GeneratedAt:   time.Now().UTC(),
-			SourceHealth:  snapshot.SourceHealthy,
+			SourceHealth:  collected.sourceHealth,
 		},
-		Snapshots: []snapshot.LogicalTopologySnapshot{},
-		Warnings:  []snapshot.Warning{},
+		Snapshots: make([]snapshot.LogicalTopologySnapshot, 0, len(collected.zones)),
+		Warnings:  collected.warnings,
 	}
-
-	for index, result := range results {
-		if result.err != nil {
-			aggregate.Warnings = append(aggregate.Warnings, snapshot.Warning{
-				Code:    "ZONE_COLLECTION_FAILED",
-				Message: fmt.Sprintf("zone collection failed for node %s: %v", nodes[index], result.err),
-			})
-			aggregate.Metadata.SourceHealth = snapshot.SourceDegraded
-			continue
-		}
-		if result.payload.Metadata.SourceHealth != "" && result.payload.Metadata.SourceHealth != snapshot.SourceHealthy {
-			aggregate.Metadata.SourceHealth = snapshot.SourceDegraded
-		}
-		aggregate.Snapshots = append(aggregate.Snapshots, snapshot.Project(result.payload, sections))
+	for _, zone := range collected.zones {
+		aggregate.Snapshots = append(aggregate.Snapshots, snapshot.Project(zone, sections))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -464,6 +504,53 @@ func (s *Server) handleSnapshotsAggregate(w http.ResponseWriter, r *http.Request
 	w.Header().Set(headerSnapshotSourceHealth, aggregate.Metadata.SourceHealth)
 	if err := json.NewEncoder(w).Encode(aggregate); err != nil {
 		s.logger.Error("failed to encode aggregate payload", "error", err)
+		http.Error(w, fmt.Sprintf("failed to encode payload: %v", err), http.StatusInternalServerError)
+	}
+}
+
+// handleStatus serves GET /api/v1/status (ovn-recon-1zx): the aggregate
+// without its databases. Zones resolve exactly as for the aggregate (fresh
+// cache, else stale cache revalidated in the background, else a live probe),
+// so a status line polled in an open tab keeps the cache warm as the
+// aggregate poll it replaces did, and reports the same numbers.
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.nodeLister == nil {
+		http.Error(w, "status endpoint is not enabled", http.StatusNotFound)
+		return
+	}
+
+	collected, err := s.collectZones(r.Context())
+	if err != nil {
+		s.logger.Error("failed to list nodes for collector status", "error", err)
+		http.Error(w, fmt.Sprintf("failed to list nodes: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	status := snapshot.CollectorStatus{
+		Metadata: snapshot.ClusterMetadata{
+			SchemaVersion: snapshot.StatusSchemaVersion,
+			GeneratedAt:   time.Now().UTC(),
+			SourceHealth:  collected.sourceHealth,
+		},
+		Zones:    make([]snapshot.ZoneStatus, 0, len(collected.zones)),
+		Warnings: collected.warnings,
+	}
+	for _, zone := range collected.zones {
+		status.Zones = append(status.Zones, snapshot.ZoneStatusOf(zone))
+	}
+	if s.warming.Load() {
+		status.WarmUp = &snapshot.WarmUp{Nodes: int(s.warmNodes.Load()), Done: int(s.warmDone.Load())}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set(headerSnapshotSourceHealth, status.Metadata.SourceHealth)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		s.logger.Error("failed to encode collector status", "error", err)
 		http.Error(w, fmt.Sprintf("failed to encode payload: %v", err), http.StatusInternalServerError)
 	}
 }

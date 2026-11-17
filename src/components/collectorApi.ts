@@ -1,5 +1,6 @@
 import {
     ClusterLogicalTopology,
+    CollectorStatusResponse,
     LogicalTopologySnapshot,
     LookupKind,
     LookupResponse,
@@ -213,7 +214,7 @@ const fetchFirst = async <T>(
  * The aggregate takes 10 to 18 seconds on a cold collector, and the shell remounts
  * after a trip to another console page; a view paints what it was last shown at once
  * and refreshes over it. Only payloads without optional sections are kept, so what is
- * held is one aggregate and one snapshot per node viewed. A request for a path already
+ * held is one aggregate, one snapshot per node viewed and the collector's status. A request for a path already
  * in flight shares it, so the title row's collector line and the cluster ladder opened
  * together ask the collector once.
  */
@@ -243,6 +244,7 @@ export const forgetCollectorResponses = (): void => {
     remembered.clear();
     inFlight.clear();
     lastWorkingPrefix = null;
+    statusMissing = false;
 };
 
 const AGGREGATE_PATH = '/snapshots';
@@ -296,6 +298,62 @@ export const fetchClusterTopology = (options: SnapshotFetchOptions = {}): Promis
 /** The last aggregate (ladder payload) this browser tab received, or null. */
 export const rememberedClusterTopology = (): ClusterLogicalTopology | null =>
     (remembered.get(AGGREGATE_PATH) as ClusterLogicalTopology | undefined) ?? null;
+
+const STATUS_PATH = '/status';
+
+/**
+ * Set once a collector answered the aggregate where `/status` 404'd: it is older than
+ * this plugin, so later polls in this tab go straight to the aggregate.
+ */
+let statusMissing = false;
+
+/** The status an aggregate implies, for a collector older than `/status`. */
+export const statusFromAggregate = (aggregate: ClusterLogicalTopology): CollectorStatusResponse => ({
+    metadata: aggregate.metadata,
+    zones: (aggregate.snapshots ?? []).map((snapshot) => ({
+        nodeName: snapshot.metadata?.nodeName ?? '',
+        generatedAt: snapshot.metadata?.generatedAt ?? '',
+        sourceHealth: snapshot.metadata?.sourceHealth ?? '',
+        ovnVersion: snapshot.database?.nbGlobal?.options?.northd_internal_version || undefined,
+        warnings: snapshot.warnings ?? [],
+    })),
+    warnings: aggregate.warnings ?? [],
+});
+
+/**
+ * The collector's status line (ovn-recon-1zx): `GET /status`, the aggregate's envelope
+ * without its databases, a few hundred bytes where the aggregate is every node's whole
+ * database. A collector older than the route 404s it on the likeliest route; the
+ * aggregate then stands in, reduced to the same shape, and this tab keeps asking the
+ * aggregate. Any other failure (the collector restarting, no route at all) rejects as
+ * the aggregate would.
+ */
+export const fetchCollectorStatus = async (): Promise<CollectorStatusResponse> => {
+    if (!statusMissing) {
+        try {
+            return await fetchShared<CollectorStatusResponse>(STATUS_PATH, true);
+        } catch (error) {
+            if (!(error instanceof CollectorUnreachableError) || error.status !== 404) throw error;
+        }
+    }
+    const aggregate = await fetchClusterTopology();
+    statusMissing = true;
+    return statusFromAggregate(aggregate);
+};
+
+/**
+ * The last collector status this browser tab knows: its own, else the one the last
+ * aggregate implies (the cluster ladder was open), whichever is newer; or null.
+ */
+export const rememberedCollectorStatus = (): CollectorStatusResponse | null => {
+    const own = remembered.get(STATUS_PATH) as CollectorStatusResponse | undefined;
+    const aggregate = rememberedClusterTopology();
+    const implied = aggregate ? statusFromAggregate(aggregate) : undefined;
+    if (own && implied) {
+        return Date.parse(implied.metadata.generatedAt) > Date.parse(own.metadata.generatedAt) ? implied : own;
+    }
+    return own ?? implied ?? null;
+};
 
 const generatedAtMs = (snapshot: LogicalTopologySnapshot): number => {
     const parsed = Date.parse(snapshot.metadata?.generatedAt ?? '');
