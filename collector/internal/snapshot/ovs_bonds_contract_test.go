@@ -121,7 +121,7 @@ func TestOVSBondsResponsesConformToSchema(t *testing.T) {
 	conformsToOVSBondsSchema(t, schema, "full response", full)
 
 	bare := OVSBondsResponse{
-		Metadata: Metadata{SchemaVersion: OVSBondsSchemaVersion, GeneratedAt: time.Now().UTC(), SourceHealth: OVSBondsSourceHealthy, NodeName: "worker-2"},
+		Metadata: Metadata{SchemaVersion: OVSBondsSchemaVersion, GeneratedAt: time.Now().UTC(), SourceHealth: SourceHealthy, NodeName: "worker-2"},
 		Warnings: []Warning{},
 		Bonds:    []OVSBond{{Name: "bond0", Members: []OVSBondMember{}}},
 	}
@@ -183,12 +183,12 @@ func TestOVSBondFixturesGetByNode(t *testing.T) {
 }
 
 // contractExample is the response in the coordinating contract for
-// ovn-recon-1tw.7, verbatim.
+// ovn-recon-1tw.7, with sourceHealth "healthy" since ovn-recon-8cv.
 const contractExample = `{
   "metadata": {
     "schemaVersion": "v1alpha1",
     "generatedAt": "2026-11-16T20:15:00Z",
-    "sourceHealth": "ok",
+    "sourceHealth": "healthy",
     "nodeName": "worker-1"
   },
   "warnings": [],

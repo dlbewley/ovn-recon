@@ -68,9 +68,9 @@ func CollectSnapshotWithOptions(ctx context.Context, runner Runner, nodeName str
 	// replaced (ovn-recon-kck.7).
 	nodes, edges := buildGraph(database.LogicalRouters, database.LogicalRouterPorts, database.LogicalSwitches, database.LogicalSwitchPorts)
 
-	sourceHealth := "healthy"
+	sourceHealth := snapshot.SourceHealthy
 	if len(warnings) > 0 {
-		sourceHealth = "degraded"
+		sourceHealth = snapshot.SourceDegraded
 	}
 
 	return snapshot.LogicalTopologySnapshot{

@@ -6,6 +6,15 @@ import "time"
 // v1 ("v1alpha1") snapshots carried only the deprecated graph fields.
 const SchemaVersionV2 = "2"
 
+// SourceHealthy and SourceDegraded are the values of metadata.sourceHealth on
+// every collector response (zone snapshots, the cluster aggregate, OVS bonds):
+// healthy when read live, degraded when a probe failed or warned and a cache
+// entry or fixture stands in (ovn-recon-8cv).
+const (
+	SourceHealthy  = "healthy"
+	SourceDegraded = "degraded"
+)
+
 // Metadata captures collection metadata returned with each snapshot.
 type Metadata struct {
 	SchemaVersion string    `json:"schemaVersion"`

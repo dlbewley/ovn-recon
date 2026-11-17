@@ -138,7 +138,7 @@ func (s *Server) resolveOVSBonds(ctx context.Context, nodeName string) (snapshot
 		Code:    "LIVE_PROBE_FAILED",
 		Message: fmt.Sprintf("Live probe collection failed for node %s: %v", nodeName, probeErr),
 	})
-	payload.Metadata.SourceHealth = "degraded"
+	payload.Metadata.SourceHealth = snapshot.SourceDegraded
 	return payload, nil
 }
 
@@ -155,7 +155,7 @@ func (s *Server) ovsBondFixture(nodeName string) (snapshot.OVSBondsResponse, err
 		payload.Metadata.SchemaVersion = snapshot.OVSBondsSchemaVersion
 	}
 	if payload.Metadata.SourceHealth == "" {
-		payload.Metadata.SourceHealth = snapshot.OVSBondsSourceHealthy
+		payload.Metadata.SourceHealth = snapshot.SourceHealthy
 	}
 	return payload, nil
 }
@@ -180,7 +180,7 @@ func (s *Server) emptyOVSBonds(nodeName string) snapshot.OVSBondsResponse {
 		Metadata: snapshot.Metadata{
 			SchemaVersion: snapshot.OVSBondsSchemaVersion,
 			GeneratedAt:   s.now().UTC(),
-			SourceHealth:  snapshot.OVSBondsSourceHealthy,
+			SourceHealth:  snapshot.SourceHealthy,
 			NodeName:      nodeName,
 		},
 		Warnings: []snapshot.Warning{},

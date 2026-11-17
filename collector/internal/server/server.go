@@ -286,8 +286,8 @@ func (s *Server) collectZone(ctx context.Context, nodeName string) (snapshot.Log
 				cached = appendFallbackWarning(cached, nodeName, probeErr)
 				cached = appendWarning(cached, "SNAPSHOT_STALE", fmt.Sprintf(
 					"Serving cached snapshot generated at %s; refresh failed", cached.Metadata.GeneratedAt.UTC().Format(time.RFC3339)))
-				if cached.Metadata.SourceHealth == "" || cached.Metadata.SourceHealth == "healthy" {
-					cached.Metadata.SourceHealth = "degraded"
+				if cached.Metadata.SourceHealth == "" || cached.Metadata.SourceHealth == snapshot.SourceHealthy {
+					cached.Metadata.SourceHealth = snapshot.SourceDegraded
 				}
 				return cached, nil
 			}
@@ -299,8 +299,8 @@ func (s *Server) collectZone(ctx context.Context, nodeName string) (snapshot.Log
 			return snapshot.LogicalTopologySnapshot{}, err
 		}
 		payload = appendFallbackWarning(payload, nodeName, probeErr)
-		if payload.Metadata.SourceHealth == "" || payload.Metadata.SourceHealth == "healthy" {
-			payload.Metadata.SourceHealth = "degraded"
+		if payload.Metadata.SourceHealth == "" || payload.Metadata.SourceHealth == snapshot.SourceHealthy {
+			payload.Metadata.SourceHealth = snapshot.SourceDegraded
 		}
 		return payload, nil
 	}
@@ -438,7 +438,7 @@ func (s *Server) handleSnapshotsAggregate(w http.ResponseWriter, r *http.Request
 		Metadata: snapshot.ClusterMetadata{
 			SchemaVersion: snapshot.SchemaVersionV2,
 			GeneratedAt:   time.Now().UTC(),
-			SourceHealth:  "healthy",
+			SourceHealth:  snapshot.SourceHealthy,
 		},
 		Snapshots: []snapshot.LogicalTopologySnapshot{},
 		Warnings:  []snapshot.Warning{},
@@ -450,11 +450,11 @@ func (s *Server) handleSnapshotsAggregate(w http.ResponseWriter, r *http.Request
 				Code:    "ZONE_COLLECTION_FAILED",
 				Message: fmt.Sprintf("zone collection failed for node %s: %v", nodes[index], result.err),
 			})
-			aggregate.Metadata.SourceHealth = "degraded"
+			aggregate.Metadata.SourceHealth = snapshot.SourceDegraded
 			continue
 		}
-		if result.payload.Metadata.SourceHealth != "" && result.payload.Metadata.SourceHealth != "healthy" {
-			aggregate.Metadata.SourceHealth = "degraded"
+		if result.payload.Metadata.SourceHealth != "" && result.payload.Metadata.SourceHealth != snapshot.SourceHealthy {
+			aggregate.Metadata.SourceHealth = snapshot.SourceDegraded
 		}
 		aggregate.Snapshots = append(aggregate.Snapshots, snapshot.Project(result.payload, sections))
 	}

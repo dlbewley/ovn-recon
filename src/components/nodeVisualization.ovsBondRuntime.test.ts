@@ -22,7 +22,7 @@ const CONTRACT_EXAMPLE: OvsBondsResponse = {
     metadata: {
         schemaVersion: 'v1alpha1',
         generatedAt: '2026-11-16T20:15:00Z',
-        sourceHealth: 'ok',
+        sourceHealth: 'healthy',
         nodeName: 'worker-1'
     },
     warnings: [],
@@ -75,7 +75,7 @@ describe('ovsBondRuntimeState', () => {
         if ('error' in state) return;
         expect(Array.from(state.byBond.keys())).toEqual(['bond1']);
         expect(state).toMatchObject({
-            nodeName: 'worker-1', generatedAt: '2026-11-16T20:15:00Z', sourceHealth: 'ok', warnings: []
+            nodeName: 'worker-1', generatedAt: '2026-11-16T20:15:00Z', sourceHealth: 'healthy', warnings: []
         });
     });
 });
@@ -140,6 +140,17 @@ describe('the ovs-bond Runtime State row', () => {
             + 'live state.');
     });
 
+    it('reads "ok", a live answer from a collector before ovn-recon-8cv, as live', () => {
+        const old = loaded({ ...CONTRACT_EXAMPLE, metadata: { ...CONTRACT_EXAMPLE.metadata, sourceHealth: 'ok' } });
+        expect(runtimeRow(old)).toEqual(runtimeRow(loaded(CONTRACT_EXAMPLE)));
+        expect(texts(runtimeRow(old))[0]).not.toMatch(/Not live/);
+    });
+
+    it('marks "degraded" as not live even without the warning', () => {
+        const row = runtimeRow(loaded({ ...DEGRADED, warnings: [] }));
+        expect(texts(row)[0]).toMatch(/^⚠ Not live/);
+    });
+
     it('keeps the pointer when a degraded answer has no bonds at all', () => {
         const row = runtimeRow(loaded({ ...DEGRADED, bonds: [] }));
         expect(texts(row)).toEqual([
@@ -190,6 +201,15 @@ describe('the ovs-bond card\'s state line with runtime state', () => {
             { name: 'ens256', enabled: false, active: false, mayEnable: false }
         ]));
         expect(stateOf(ctx)).toBe('balance-slb · 1/2 enabled');
+    });
+
+    it('counts them from a collector before ovn-recon-8cv too ("ok")', () => {
+        const old = withMembers([
+            { name: 'ens161', enabled: true, active: true, mayEnable: true },
+            { name: 'ens256', enabled: false, active: false, mayEnable: false }
+        ]);
+        expect(stateOf(loaded({ ...old, metadata: { ...old.metadata, sourceHealth: 'ok' } })))
+            .toBe('balance-slb · 1/2 enabled');
     });
 
     it('ignores a degraded answer: the card cannot say it is not live', () => {
