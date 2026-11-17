@@ -1,5 +1,5 @@
 import { LadderEdge } from './logicalLadderModel';
-import { LadderBand, LadderLayout } from './logicalLadderLayout';
+import { CONSTRUCT_HEIGHT, CONSTRUCT_WIDTH, LadderBand, LadderLayout } from './logicalLadderLayout';
 
 /**
  * Text fitting for the ladder view: how a construct name shortens to fit its
@@ -113,6 +113,14 @@ export const EDGE_LABEL_CHAR_WIDTH = 5;
 const BAND_INSET = 8;
 /** A one-line label's baseline sits this far above the edge midpoint. */
 const BASELINE_LIFT = 4;
+/** Clear space kept between two labels of one band, and between a label and a card. */
+const LABEL_GAP = 6;
+/**
+ * Where along its edge a label may sit when its midpoint is taken, as a share of
+ * the edge from source to target: the midpoint first, then alternately nearer each
+ * end. Fanning edges spread apart toward their replicated end.
+ */
+const ANCHOR_STEPS = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82];
 
 export interface EdgeLabelBox {
     edgeId: string;
@@ -146,6 +154,53 @@ const bandAt = (bands: LadderBand[], x: number): LadderBand | undefined => {
     return nearest;
 };
 
+interface Rect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+const overlaps = (a: Rect, b: Rect, gap = 0): boolean =>
+    a.x < b.x + b.width + gap && b.x < a.x + a.width + gap
+    && a.y < b.y + b.height + gap && b.y < a.y + a.height + gap;
+
+/** One label's fixed facts: what it says, where its edge runs, and its band. */
+interface LabelPlan {
+    edge: LadderEdge;
+    segments: string[];
+    band: LadderBand;
+    source: { x: number; y: number };
+    target: { x: number; y: number };
+    /** The narrowest the label can wrap without shortening a piece. */
+    minWidth: number;
+    innerLeft: number;
+    innerWidth: number;
+}
+
+/** The label wrapped to maxWidth and anchored `along` its edge (0.5 is the midpoint). */
+const boxAt = (plan: LabelPlan, along: number, maxWidth: number): EdgeLabelBox => {
+    const { band, source, target, innerLeft, innerWidth } = plan;
+    const anchorX = source.x + (target.x - source.x) * along;
+    const anchorY = source.y + (target.y - source.y) * along;
+    const lines = wrapSegments(plan.segments, Math.floor(Math.min(maxWidth, innerWidth) / EDGE_LABEL_CHAR_WIDTH));
+    const width = Math.max(...lines.map((line) => line.length)) * EDGE_LABEL_CHAR_WIDTH;
+    const x = Math.min(Math.max(anchorX - width / 2, innerLeft), innerLeft + innerWidth - width);
+
+    // Center the block where a one-line label has always sat.
+    const firstBaseline = anchorY - BASELINE_LIFT - ((lines.length - 1) * EDGE_LABEL_LINE_HEIGHT) / 2;
+    return {
+        edgeId: plan.edge.id,
+        network: band.network,
+        lines,
+        x,
+        y: firstBaseline - EDGE_LABEL_FONT_SIZE,
+        width,
+        height: lines.length * EDGE_LABEL_LINE_HEIGHT,
+        firstBaseline,
+    };
+};
+
 /**
  * Place every edge label inside its own network band.
  *
@@ -155,9 +210,17 @@ const bandAt = (bands: LadderBand[], x: number): LadderBand | undefined => {
  * inner width, and a box that would still cross the border slides sideways
  * until it is inside. Edges with no label, or with an endpoint the layout
  * did not place (an aggregated member), get no box.
+ *
+ * Labels of one band can still meet (ovn-recon-nt4.10): node-replicated
+ * constructs fanning into one construct (the cluster view, an expanded role
+ * group) put their edge midpoints half a card pitch apart on one row. A label
+ * that meets another wraps to the room between their anchors, never narrower
+ * than its longest piece; one that still meets a label placed before it, or a
+ * card, slides along its own edge, where fanning edges spread apart, and wraps
+ * narrower there if it must. A label that meets nothing is left as it was.
  */
 export const layoutEdgeLabels = (edges: LadderEdge[], layout: LadderLayout): Map<string, EdgeLabelBox> => {
-    const boxes = new Map<string, EdgeLabelBox>();
+    const plans: LabelPlan[] = [];
     for (const edge of edges) {
         const source = layout.positions[edge.source];
         const target = layout.positions[edge.target];
@@ -165,29 +228,68 @@ export const layoutEdgeLabels = (edges: LadderEdge[], layout: LadderLayout): Map
         const segments = edgeLabelSegments(edge);
         if (segments.length === 0) continue;
 
-        const midX = (source.x + target.x) / 2;
-        const midY = (source.y + target.y) / 2;
-        const band = bandAt(layout.bands, midX);
+        const band = bandAt(layout.bands, (source.x + target.x) / 2);
         if (!band) continue;
 
-        const left = band.x + BAND_INSET;
         const innerWidth = band.width - BAND_INSET * 2;
-        const lines = wrapSegments(segments, Math.floor(innerWidth / EDGE_LABEL_CHAR_WIDTH));
-        const width = Math.max(...lines.map((line) => line.length)) * EDGE_LABEL_CHAR_WIDTH;
-        const x = Math.min(Math.max(midX - width / 2, left), left + innerWidth - width);
-
-        // Center the block where a one-line label has always sat.
-        const firstBaseline = midY - BASELINE_LIFT - ((lines.length - 1) * EDGE_LABEL_LINE_HEIGHT) / 2;
-        boxes.set(edge.id, {
-            edgeId: edge.id,
-            network: band.network,
-            lines,
-            x,
-            y: firstBaseline - EDGE_LABEL_FONT_SIZE,
-            width,
-            height: lines.length * EDGE_LABEL_LINE_HEIGHT,
-            firstBaseline,
+        const longest = Math.max(...segments.map((segment) => segment.length)) * EDGE_LABEL_CHAR_WIDTH;
+        plans.push({
+            edge, segments, band, source, target,
+            minWidth: Math.min(longest, innerWidth),
+            innerLeft: band.x + BAND_INSET,
+            innerWidth,
         });
     }
+
+    // As every label has always been placed: at its midpoint, as wide as its band allows.
+    const initial = plans.map((plan) => boxAt(plan, 0.5, plan.innerWidth));
+
+    // A label meeting another of its band wraps to the room between their anchors.
+    const anchorX = (plan: LabelPlan) => (plan.source.x + plan.target.x) / 2;
+    const widths = plans.map((plan, i) => {
+        let room = plan.innerWidth;
+        plans.forEach((other, j) => {
+            if (i === j || other.band !== plan.band || !overlaps(initial[i], initial[j])) return;
+            room = Math.min(room, Math.abs(anchorX(plan) - anchorX(other)) - LABEL_GAP);
+        });
+        return Math.max(room, plan.minWidth);
+    });
+
+    const cards: Rect[] = [
+        ...Object.values(layout.positions),
+        ...layout.aggregates,
+    ].map(({ x, y }) => ({
+        x: x - CONSTRUCT_WIDTH / 2, y: y - CONSTRUCT_HEIGHT / 2, width: CONSTRUCT_WIDTH, height: CONSTRUCT_HEIGHT,
+    }));
+
+    // Then, in edge order, each keeps its place unless it meets a label placed
+    // before it or a card, in which case it takes the first clear spot along its edge.
+    const boxes = new Map<string, EdgeLabelBox>();
+    const placedByBand = new Map<LadderBand, EdgeLabelBox[]>();
+    plans.forEach((plan, i) => {
+        const placed = placedByBand.get(plan.band) ?? [];
+        // Moving takes a clear gap; staying only needs not to overlap, so a label
+        // that sits close to another but clear of it stays where it always was.
+        const clear = (box: EdgeLabelBox, gap: number) =>
+            placed.every((other) => !overlaps(box, other, gap))
+            && cards.every((card) => !overlaps(box, card));
+
+        let chosen = boxAt(plan, 0.5, widths[i]);
+        if (!clear(chosen, 0)) {
+            const tryWidths = [widths[i], plan.minWidth].filter((width, index, all) => all.indexOf(width) === index);
+            search: for (const width of tryWidths) {
+                for (const along of ANCHOR_STEPS) {
+                    const candidate = boxAt(plan, along, width);
+                    if (clear(candidate, LABEL_GAP)) {
+                        chosen = candidate;
+                        break search;
+                    }
+                }
+            }
+        }
+        placed.push(chosen);
+        placedByBand.set(plan.band, placed);
+        boxes.set(plan.edge.id, chosen);
+    });
     return boxes;
 };
