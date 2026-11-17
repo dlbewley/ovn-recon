@@ -257,6 +257,39 @@ describe('layoutEdgeLabels', () => {
         expect(box.x + box.width).toBeLessThanOrEqual(band.x + band.width);
     });
 
+    it('separates the labels of a fan of edges into one construct (ovn-recon-nt4.10)', () => {
+        // Three node gateway routers peering with one transit router: the cluster
+        // view's fan. Midpoints sit half a card pitch apart on one row.
+        const nodes = ['cnv-1', 'cnv-2', 'ctrl-1'];
+        const fan = [
+            makeConstruct('tr', 'transit-router', 'cluster-routing', 'blue_net'),
+            ...nodes.map((node) => makeConstruct(`gr-${node}`, 'gateway-router', 'gateway', 'blue_net', node)),
+        ];
+        const fanEdges = nodes.map((node, index) => edge({
+            id: `peer:${node}`,
+            source: `gr-${node}`,
+            target: 'tr',
+            kind: 'router-peer',
+            role: 'interconnect',
+            networks: [`100.65.0.${index + 5}/16`, `100.88.0.${index * 2 + 11}/31`],
+            peerNetworks: [`100.88.0.${index * 2 + 10}/31`],
+        }));
+        const fanLayout = layoutLadder(modelOf(fan, fanEdges));
+        const fanBoxes = [...layoutEdgeLabels(fanEdges, fanLayout).values()];
+
+        expect(fanBoxes).toHaveLength(3);
+        fanBoxes.forEach((a, i) => fanBoxes.slice(i + 1).forEach((b) => {
+            const apartX = a.x + a.width <= b.x || b.x + b.width <= a.x;
+            const apartY = a.y + a.height <= b.y || b.y + b.height <= a.y;
+            expect(apartX || apartY).toBe(true);
+        }));
+        // Nothing is shortened away.
+        fanBoxes.forEach((box) => {
+            const fanEdge = fanEdges.find((candidate) => candidate.id === box.edgeId)!;
+            expect(box.lines.join(' ')).toBe(edgeLabel(fanEdge));
+        });
+    });
+
     it('gives no box to an unlabelled edge or one with an unplaced endpoint', () => {
         const unlabelled = edge({ id: 'unlabelled', source: 'blue_net-gr', target: 'blue_net-tr' });
         const dangling = edge({ id: 'dangling', source: 'blue_net-gr', target: 'missing', role: 'join' });

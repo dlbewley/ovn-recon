@@ -2,12 +2,14 @@ import { LogicalDatabase, LogicalTopologySnapshot } from '../types';
 import { ConstructRole, LogicalTier } from './logicalClassification';
 import { buildLadderModel, emptyLadderAggregates, LadderConstruct, LadderModel } from './logicalLadderModel';
 import {
+    CONSTRUCT_HEIGHT,
+    CONSTRUCT_WIDTH,
     layoutLadder,
     networkColorIndex,
     NETWORK_PALETTE_SIZE,
     TIER_ORDER,
 } from './logicalLadderLayout';
-import { EDGE_LABEL_CHAR_WIDTH, edgeLabel, layoutEdgeLabels } from './logicalLadderLabels';
+import { EDGE_LABEL_CHAR_WIDTH, edgeLabel, edgeLabelSegments, layoutEdgeLabels, wrapSegments } from './logicalLadderLabels';
 import { mergeZones } from './logicalClusterModel';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
@@ -255,6 +257,57 @@ describe('edge labels stay inside their network band', () => {
                     expect(apartX || apartY).toBe(true);
                 }
             }
+        }
+    });
+
+    it.each(models)('%s: labels in one band never overlap (ovn-recon-nt4.10)', (_name, model) => {
+        for (const layout of layoutsOf(model)) {
+            const boxes = [...layoutEdgeLabels(model.edges, layout).values()];
+            const overlapping: string[] = [];
+            boxes.forEach((a, i) => boxes.slice(i + 1).forEach((b) => {
+                if (a.network !== b.network) return;
+                const apartX = a.x + a.width <= b.x || b.x + b.width <= a.x;
+                const apartY = a.y + a.height <= b.y || b.y + b.height <= a.y;
+                if (!(apartX || apartY)) overlapping.push(`${a.edgeId} / ${b.edgeId}`);
+            }));
+            expect(overlapping).toEqual([]);
+        }
+    });
+
+    it.each(models.filter(([name]) => name !== 'merged cluster'))(
+        '%s: per-node labels stay at their edge midpoint, wrapped to the band (unchanged by ovn-recon-nt4.10)',
+        (_name, model) => {
+            for (const layout of layoutsOf(model)) {
+                const boxes = layoutEdgeLabels(model.edges, layout);
+                const bandByNetwork = new Map(layout.bands.map((band) => [band.network, band]));
+                boxes.forEach((box) => {
+                    const edge = model.edges.find((candidate) => candidate.id === box.edgeId)!;
+                    const midY = (layout.positions[edge.source].y + layout.positions[edge.target].y) / 2;
+                    const band = bandByNetwork.get(box.network)!;
+                    expect(box.firstBaseline + 4 + ((box.lines.length - 1) * 11) / 2).toBeCloseTo(midY);
+                    expect(box.lines).toEqual(
+                        wrapSegments(edgeLabelSegments(edge), Math.floor((band.width - 16) / EDGE_LABEL_CHAR_WIDTH)),
+                    );
+                });
+            }
+        },
+    );
+
+    it.each(models)('%s: no label is drawn under a construct card', (_name, model) => {
+        for (const layout of layoutsOf(model)) {
+            const boxes = [...layoutEdgeLabels(model.edges, layout).values()];
+            const cards = Object.values(layout.positions);
+            const hidden: string[] = [];
+            for (const box of boxes) {
+                for (const card of cards) {
+                    const apartX = box.x + box.width <= card.x - CONSTRUCT_WIDTH / 2
+                        || card.x + CONSTRUCT_WIDTH / 2 <= box.x;
+                    const apartY = box.y + box.height <= card.y - CONSTRUCT_HEIGHT / 2
+                        || card.y + CONSTRUCT_HEIGHT / 2 <= box.y;
+                    if (!(apartX || apartY)) hidden.push(box.edgeId);
+                }
+            }
+            expect(hidden).toEqual([]);
         }
     });
 
