@@ -197,11 +197,12 @@ describe('NodeVisualization node placement', () => {
             const rows = new Set(laneHeadings.map((h) => h.getAttribute('y')));
             expect(rows.size).toBe(1);
 
-            // Its nodes sink to their bridges, below the heading row.
+            // Its nodes sit below the heading row, wherever their bridges put them. (Whether
+            // they sink here depends on the lane order, which ovn-recon-nt4.16 changed.)
             const headingY = Number(physical!.getAttribute('y'));
             const x = Number(physical!.getAttribute('x'));
             const physnetTops = nodeOrigins(container).filter((o) => o.x === x).map((o) => o.y);
-            expect(Math.min(...physnetTops)).toBeGreaterThan(headingY + 15);
+            expect(Math.min(...physnetTops)).toBeGreaterThan(headingY);
 
             // The VRFs sub-header still sits above the first VRF.
             const vrfs = Array.from(container.querySelectorAll('[data-testid="group-heading"]'))
