@@ -45,6 +45,120 @@ describe('countCrossings', () => {
     });
 });
 
+describe('lane-skipping edges (ovn-recon-nt4.16)', () => {
+    /**
+     * The reported node: ens192 + ens224 -> bond0 -> bond0.1926 -> br-ex, and
+     * ens161 + ens256 straight to br-vmdata. Alphabetical order interleaves the two
+     * pairs, so ens161's edge to br-vmdata arcs over the bond and crosses its edges.
+     */
+    const lanes: LayoutLane[] = [
+        { id: 'eth', nodeIds: ['ens161', 'ens192', 'ens224', 'ens256'] },
+        { id: 'bond', nodeIds: ['bond0'] },
+        { id: 'vlan', nodeIds: ['bond0.1926'] },
+        { id: 'bridge', nodeIds: ['br-ex', 'br-vmdata'] }
+    ];
+    const edges: Connection[] = [
+        { source: 'ens192', target: 'bond0' },
+        { source: 'ens224', target: 'bond0' },
+        { source: 'bond0', target: 'bond0.1926' },
+        { source: 'bond0.1926', target: 'br-ex' },
+        { source: 'ens161', target: 'br-vmdata' },
+        { source: 'ens256', target: 'br-vmdata' }
+    ];
+    const alphabetical = {
+        ens161: 0, ens192: 1, ens224: 2, ens256: 3, bond0: 0, 'bond0.1926': 0, 'br-ex': 0, 'br-vmdata': 1
+    };
+
+    it('counts a crossing between an edge that skips lanes and the adjacent-lane edges it passes', () => {
+        const lanes2: LayoutLane[] = [
+            { id: 'eth', nodeIds: ['a', 'b'] },
+            { id: 'bond', nodeIds: ['bond'] },
+            { id: 'bridge', nodeIds: ['x', 'y'] }
+        ];
+        const edges2: Connection[] = [
+            { source: 'a', target: 'y' },       // skips the bond lane
+            { source: 'b', target: 'bond' },
+            { source: 'bond', target: 'x' }
+        ];
+        expect(countCrossings(lanes2, edges2, { a: 0, b: 1, bond: 0, x: 0, y: 1 })).toBe(1);
+        expect(countCrossings(lanes2, edges2, { a: 1, b: 0, bond: 0, x: 0, y: 1 })).toBe(0);
+    });
+
+    it('scores the alphabetical order of the reported node as crossed', () => {
+        expect(countCrossings(lanes, edges, alphabetical)).toBeGreaterThan(0);
+    });
+
+    it('orders the bond members together, with zero crossings', () => {
+        const ranks = computeNodeOrder({ lanes, edges });
+        const eth = ['ens161', 'ens192', 'ens224', 'ens256'].sort((a, b) => ranks[a] - ranks[b]);
+        expect(eth).toEqual(['ens192', 'ens224', 'ens161', 'ens256']);
+        expect(countCrossings(lanes, edges, ranks)).toBe(0);
+    });
+
+    it('keeps virtual nodes out of the result, with contiguous ranks per lane', () => {
+        const ranks = computeNodeOrder({ lanes, edges });
+        expect(Object.keys(ranks).sort()).toEqual(lanes.flatMap((lane) => lane.nodeIds).sort());
+        expect(new Set(['ens161', 'ens192', 'ens224', 'ens256'].map((id) => ranks[id]))).toEqual(new Set([0, 1, 2, 3]));
+    });
+
+    it('keeps interfaces that wire alike in natural name order', () => {
+        const natural: LayoutLane[] = [
+            { id: 'eth', nodeIds: ['eth10', 'eth2', 'eth1'] },
+            { id: 'bond', nodeIds: ['bond0'] }
+        ];
+        const toBond: Connection[] = ['eth1', 'eth2', 'eth10'].map((source) => ({ source, target: 'bond0' }));
+        const ranks = computeNodeOrder({ lanes: natural, edges: toBond });
+        expect(['eth10', 'eth2', 'eth1'].sort((a, b) => ranks[a] - ranks[b])).toEqual(['eth1', 'eth2', 'eth10']);
+    });
+
+    it('puts a NIC that fans out to several VFs below the bond members it would cross', () => {
+        // The sriov fixture: one NIC with three VFs, two bonded NICs with a VF each.
+        // By rank both orders are crossing-free; drawn, the three-VF fan from a NIC
+        // above the bond members runs down past them and crosses their bond edges.
+        const lanes: LayoutLane[] = [
+            { id: 'eth', nodeIds: ['enp65s0f0', 'enp65s0f1', 'enp194s0f0np0', 'enp194s0f1np1'] },
+            { id: 'vf', nodeIds: ['v4', 'v5', 'v6', 'v2a', 'v2b'] },
+            { id: 'bond', nodeIds: ['bond0'] },
+            { id: 'vlan', nodeIds: ['bond0.50'] },
+            { id: 'bridge', nodeIds: ['br-ex', 'br-mirror', 'br-vmdata'] }
+        ];
+        const edges: Connection[] = [
+            ['enp65s0f0', 'br-mirror'], ['enp65s0f1', 'v4'], ['enp65s0f1', 'v5'], ['enp65s0f1', 'v6'],
+            ['enp194s0f0np0', 'v2a'], ['enp194s0f1np1', 'v2b'],
+            ['enp194s0f0np0', 'bond0'], ['enp194s0f1np1', 'bond0'],
+            ['bond0', 'bond0.50'], ['bond0.50', 'br-ex'], ['bond0', 'br-vmdata']
+        ].map(([source, target]) => ({ source, target }));
+
+        const fanAbove = {
+            enp65s0f0: 0, enp65s0f1: 1, enp194s0f0np0: 2, enp194s0f1np1: 3,
+            v4: 0, v5: 1, v6: 2, v2a: 3, v2b: 4, bond0: 0, 'bond0.50': 0, 'br-mirror': 0, 'br-ex': 1, 'br-vmdata': 2
+        };
+        expect(countCrossings(lanes, edges, fanAbove)).toBeGreaterThan(0);
+
+        const ranks = computeNodeOrder({ lanes, edges });
+        const eth = lanes[0].nodeIds.slice().sort((a, b) => ranks[a] - ranks[b]);
+        expect(eth).toEqual(['enp65s0f0', 'enp194s0f0np0', 'enp194s0f1np1', 'enp65s0f1']);
+        expect(countCrossings(lanes, edges, ranks)).toBe(0);
+    });
+
+    it('keeps group ranks when a long edge passes through a grouped lane', () => {
+        // A long edge through the l3 lane must not split physical networks from VRFs.
+        const grouped: LayoutLane[] = [
+            { id: 'bridge', nodeIds: ['br-ex', 'br-vm'] },
+            { id: 'l3', nodeIds: ['physnet', 'vrf-a'] },
+            { id: 'networks', nodeIds: ['cudn-a', 'cudn-b'] }
+        ];
+        const groupedEdges: Connection[] = [
+            { source: 'br-ex', target: 'physnet' },
+            { source: 'br-vm', target: 'cudn-a' },
+            { source: 'vrf-a', target: 'cudn-b' },
+            { source: 'physnet', target: 'cudn-b' }
+        ];
+        const ranks = computeNodeOrder({ lanes: grouped, edges: groupedEdges, groupRankById: { 'vrf-a': 1 } });
+        expect(ranks.physnet).toBeLessThan(ranks['vrf-a']);
+    });
+});
+
 describe('computeNodeOrder', () => {
     it('assigns a contiguous rank per lane starting at 0', () => {
         const ranks = computeNodeOrder({ lanes: simpleLanes, edges: simpleEdges });
@@ -144,12 +258,12 @@ describe('sortByRank', () => {
         expect(sorted.map((item) => item.id)).toEqual(['top', 'middle', 'unranked']);
     });
 
-    it('sorts by lexical id when rank is tied', () => {
-        const items = [{ id: 'node-b' }, { id: 'node-a' }];
+    it('sorts by natural id order when rank is tied', () => {
+        const items = [{ id: 'node-b' }, { id: 'node-a' }, { id: 'eth10' }, { id: 'eth2' }];
 
-        const sorted = sortByRank(items, (item) => item.id, { 'node-a': 3, 'node-b': 3 });
+        const sorted = sortByRank(items, (item) => item.id, { 'node-a': 3, 'node-b': 3, eth10: 1, eth2: 1 });
 
-        expect(sorted.map((item) => item.id)).toEqual(['node-a', 'node-b']);
+        expect(sorted.map((item) => item.id)).toEqual(['eth2', 'eth10', 'node-a', 'node-b']);
     });
 });
 

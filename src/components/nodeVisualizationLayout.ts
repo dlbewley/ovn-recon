@@ -25,6 +25,18 @@ type Connection = Pick<TopologyEdge, 'source' | 'target'>;
 /** Sweeps of the barycenter heuristic. Converges well before this on real topologies. */
 const DEFAULT_ITERATIONS = 8;
 
+/**
+ * Passes of the move-and-resort refinement after the sweeps; most graphs stop
+ * improving after one.
+ */
+const REFINE_PASSES = 3;
+
+/**
+ * Candidate orders the refinement may score in all, so a node with dozens of
+ * physical networks costs bounded time. Each costs a re-sort and a crossing count.
+ */
+const REFINE_BUDGET = 400;
+
 /** Rank given to nodes with no lane assignment, sorting them after ranked nodes. */
 const UNRANKED = Number.MAX_SAFE_INTEGER;
 
@@ -132,6 +144,208 @@ const barycenterOf = (
     return count === 0 ? null : total / count;
 };
 
+/**
+ * Name order with numbers compared as numbers, so eth2 sorts before eth10. The final
+ * tie-break everywhere in this module: nodes that wire alike keep this order.
+ */
+export const naturalCompare = (a: string, b: string): number =>
+    a.localeCompare(b, undefined, { numeric: true });
+
+/**
+ * Lane-skipping edges as chains of adjacent-lane segments (ovn-recon-nt4.16).
+ *
+ * Crossings and barycenters are only defined between adjacent lanes. An edge from
+ * the eth lane straight to a bridge used to be compared with nothing, so a NIC's arc
+ * over a bond and its VLAN never counted as a crossing and the lane kept alphabetical
+ * order over it. The standard layered-graph treatment: one virtual node per lane the
+ * edge passes through. Virtual nodes take part in ordering and counting only; they
+ * are never drawn and never appear in computeNodeOrder's result.
+ */
+interface AugmentedGraph {
+    /** Real node ids per lane, deduplicated, in the caller's lane order. */
+    realLanes: string[][];
+    /** Virtual node ids per lane. */
+    virtualLanes: string[][];
+    virtualIds: Set<string>;
+    laneIndexById: Map<string, number>;
+    /** Every segment joins adjacent lanes, oriented low lane to high lane. */
+    segments: { lo: string; hi: string }[];
+    /** A virtual node's neighbour in the lane before it. */
+    predecessorOf: Map<string, string>;
+    /** The real edge a virtual node stands in for. */
+    virtualEnds: Map<string, { lo: string; hi: string; loLane: number; hiLane: number }>;
+    /** Every real neighbour of a real node, whatever lane it is in: what the renderer anchors to. */
+    realNeighbors: Map<string, string[]>;
+}
+
+const VIRTUAL_PREFIX = '\u0000virtual:';
+
+const augment = (lanes: LayoutLane[], edges: Connection[]): AugmentedGraph => {
+    const laneIndexById = buildLaneIndex(lanes);
+    const realLanes = lanes.map((lane, laneIndex) =>
+        Array.from(new Set(lane.nodeIds)).filter((id) => laneIndexById.get(id) === laneIndex));
+    const virtualLanes: string[][] = lanes.map(() => []);
+    const virtualIds = new Set<string>();
+    const predecessorOf = new Map<string, string>();
+    const virtualEnds = new Map<string, { lo: string; hi: string; loLane: number; hiLane: number }>();
+    const realNeighbors = new Map<string, string[]>();
+    const segmentKeys = new Set<string>();
+    const segments: { lo: string; hi: string }[] = [];
+
+    const addSegment = (lo: string, hi: string) => {
+        const key = `${lo}\u0000${hi}`;
+        if (segmentKeys.has(key)) return;
+        segmentKeys.add(key);
+        segments.push({ lo, hi });
+    };
+
+    edges.forEach(({ source, target }) => {
+        const sourceLane = laneIndexById.get(source);
+        const targetLane = laneIndexById.get(target);
+        if (sourceLane === undefined || targetLane === undefined) return;
+        if (source !== target) {
+            realNeighbors.set(source, [...(realNeighbors.get(source) ?? []), target]);
+            realNeighbors.set(target, [...(realNeighbors.get(target) ?? []), source]);
+        }
+        if (sourceLane === targetLane) return;
+        const [lo, hi] = sourceLane < targetLane ? [source, target] : [target, source];
+        const [loLane, hiLane] = sourceLane < targetLane ? [sourceLane, targetLane] : [targetLane, sourceLane];
+
+        let previous = lo;
+        for (let lane = loLane + 1; lane < hiLane; lane += 1) {
+            // Keyed by the edge's ends, so a repeated edge reuses its chain.
+            const virtualId = `${VIRTUAL_PREFIX}${lo}\u0000${hi}@${lane}`;
+            if (!virtualIds.has(virtualId)) {
+                virtualIds.add(virtualId);
+                virtualLanes[lane].push(virtualId);
+                laneIndexById.set(virtualId, lane);
+                predecessorOf.set(virtualId, previous);
+                virtualEnds.set(virtualId, { lo, hi, loLane, hiLane });
+            }
+            addSegment(previous, virtualId);
+            previous = virtualId;
+        }
+        addSegment(previous, hi);
+    });
+
+    return { realLanes, virtualLanes, virtualIds, laneIndexById, segments, predecessorOf, virtualEnds, realNeighbors };
+};
+
+/**
+ * Interleave a lane's virtual nodes among its real nodes by key, keeping the real
+ * nodes' order as given: before each real node, every virtual node keyed below it.
+ * Ties go to the real node, and a real node with no key takes its predecessor's.
+ */
+const interleave = (
+    real: { id: string; key: number | null }[],
+    virtual: { id: string; key: number }[]
+): string[] => {
+    const pending = virtual.slice().sort((a, b) => (a.key - b.key) || naturalCompare(a.id, b.id));
+    const merged: string[] = [];
+    let carried = Number.NEGATIVE_INFINITY;
+    real.forEach(({ id, key }) => {
+        const effective = key ?? carried;
+        carried = effective;
+        while (pending.length > 0 && pending[0].key < effective) {
+            merged.push(pending.shift()!.id);
+        }
+        merged.push(id);
+    });
+    pending.forEach(({ id }) => merged.push(id));
+    return merged;
+};
+
+/**
+ * Place every virtual node, lane by lane from the left, level with its predecessor,
+ * leaving the real nodes in the order given. The view of a long edge countCrossings
+ * takes when the caller ranked only real nodes, and the sweep's starting point.
+ */
+const placeVirtualNodes = (graph: AugmentedGraph, realOrder: string[][]): LaneOrder => {
+    const neighbors = buildNeighbors(
+        graph.segments.map(({ lo, hi }) => ({ source: lo, target: hi })),
+        graph.laneIndexById
+    );
+    const order: LaneOrder = [];
+    realOrder.forEach((realIds, laneIndex) => {
+        const rankById = rankLookup(order);
+        const real = realIds.map((id) => ({
+            id,
+            key: barycenterOf(id, laneIndex, 'forward', neighbors, graph.laneIndexById, rankById)
+        }));
+        const virtual = graph.virtualLanes[laneIndex].map((id) => ({
+            id,
+            key: rankById.get(graph.predecessorOf.get(id)!) ?? 0
+        }));
+        order.push(interleave(real, virtual));
+    });
+    return order;
+};
+
+/**
+ * Where each node will be drawn, in rows, mimicking placeLanes (src/topology/lanes.ts):
+ * lanes fill left to right; a real node sinks to the mean height of its real
+ * neighbours already placed and never rises above the lane's stack cursor. A virtual
+ * node sits where the straight line of its edge crosses its lane.
+ *
+ * Ranks alone miss what this sees (ovn-recon-nt4.16): a NIC fanning out to three VFs
+ * takes one row in its lane but three in the next, pushing every later VF down, so
+ * two orders with the same rank crossings can draw very differently. Row heights
+ * are uniform here; the real ones vary a little, so this stays an estimate.
+ */
+const estimateRows = (graph: AugmentedGraph, order: LaneOrder): Map<string, number> => {
+    const rowById = new Map<string, number>();
+    order.forEach((nodeIds) => {
+        let cursor = 0;
+        nodeIds.forEach((id) => {
+            if (graph.virtualIds.has(id)) return;
+            const anchors = (graph.realNeighbors.get(id) ?? [])
+                .map((neighborId) => rowById.get(neighborId))
+                .filter((row): row is number => row !== undefined);
+            const row = anchors.length === 0
+                ? cursor
+                : Math.max(cursor, anchors.reduce((sum, value) => sum + value, 0) / anchors.length);
+            rowById.set(id, row);
+            cursor = row + 1;
+        });
+    });
+    graph.virtualEnds.forEach(({ lo, hi, loLane, hiLane }, id) => {
+        const from = rowById.get(lo) ?? 0;
+        const to = rowById.get(hi) ?? 0;
+        const along = (graph.laneIndexById.get(id)! - loLane) / (hiLane - loLane);
+        rowById.set(id, from + (to - from) * along);
+    });
+    return rowById;
+};
+
+/**
+ * Crossings between adjacent-lane segments, compared at their estimated drawn
+ * heights; equal heights fall back to the order in the lane.
+ */
+const countSegmentCrossings = (graph: AugmentedGraph, order: LaneOrder): number => {
+    const rankById = rankLookup(order);
+    const rowById = estimateRows(graph, order);
+    const compare = (a: string, b: string): number =>
+        ((rowById.get(a) ?? 0) - (rowById.get(b) ?? 0)) || ((rankById.get(a) ?? 0) - (rankById.get(b) ?? 0));
+
+    const buckets = new Map<number, { lo: string; hi: string }[]>();
+    graph.segments.forEach((segment) => {
+        const lane = graph.laneIndexById.get(segment.lo)!;
+        const bucket = buckets.get(lane) ?? [];
+        bucket.push(segment);
+        buckets.set(lane, bucket);
+    });
+
+    let crossings = 0;
+    buckets.forEach((bucket) => {
+        for (let i = 0; i < bucket.length; i += 1) {
+            for (let j = i + 1; j < bucket.length; j += 1) {
+                if (compare(bucket[i].lo, bucket[j].lo) * compare(bucket[i].hi, bucket[j].hi) < 0) crossings += 1;
+            }
+        }
+    });
+    return crossings;
+};
+
 const orderLane = (
     nodeIds: string[],
     laneIndex: number,
@@ -139,7 +353,8 @@ const orderLane = (
     neighbors: Map<string, string[]>,
     laneIndexById: Map<string, number>,
     rankById: Map<string, number>,
-    groupRankById: Record<string, number>
+    groupRankById: Record<string, number>,
+    virtualIds: Set<string>
 ): string[] => {
     const keyed = nodeIds.map((nodeId, currentRank) => ({
         nodeId,
@@ -149,21 +364,32 @@ const orderLane = (
         barycenter: barycenterOf(nodeId, laneIndex, direction, neighbors, laneIndexById, rankById) ?? currentRank
     }));
 
-    return keyed
-        .slice()
+    // Real nodes honour group ranks; virtual nodes belong to no group and slot in
+    // between them by barycenter alone.
+    const real = keyed
+        .filter((entry) => !virtualIds.has(entry.nodeId))
         .sort((a, b) => {
             if (a.groupRank !== b.groupRank) return a.groupRank - b.groupRank;
             if (a.barycenter !== b.barycenter) return a.barycenter - b.barycenter;
-            // Stable and deterministic: previous rank, then id.
+            // Stable and deterministic: previous rank, then natural name order.
             if (a.currentRank !== b.currentRank) return a.currentRank - b.currentRank;
-            return a.nodeId.localeCompare(b.nodeId);
-        })
-        .map((entry) => entry.nodeId);
+            return naturalCompare(a.nodeId, b.nodeId);
+        });
+    const virtual = keyed.filter((entry) => virtualIds.has(entry.nodeId));
+
+    return interleave(
+        real.map((entry) => ({ id: entry.nodeId, key: entry.barycenter })),
+        virtual.map((entry) => ({ id: entry.nodeId, key: entry.barycenter }))
+    );
 };
 
 /**
- * Edge crossings under a given ordering. Two edges spanning the same pair of lanes
- * cross when their endpoints are in opposite vertical order at each end.
+ * Edge crossings under a given ordering of the real nodes.
+ *
+ * Each lane-skipping edge counts as a chain through the lanes it passes (see
+ * `augment`), so an eth -> bridge edge crosses the eth -> bond and bond -> vlan edges
+ * it passes over. Two segments between the same adjacent lanes cross when their ends
+ * are in opposite vertical order at the heights they will be drawn (`estimateRows`).
  *
  * Exported so tests can assert that a change actually improves the layout rather
  * than merely changing it.
@@ -173,47 +399,21 @@ export const countCrossings = (
     edges: Connection[],
     rankById: Record<string, number>
 ): number => {
-    const laneIndexById = buildLaneIndex(lanes);
-
-    // Normalise each edge to (lower lane endpoint, higher lane endpoint) and bucket
-    // by the lane pair it spans; only edges in the same bucket can cross.
-    const buckets = new Map<string, { lo: string; hi: string }[]>();
-    edges.forEach(({ source, target }) => {
-        const sourceLane = laneIndexById.get(source);
-        const targetLane = laneIndexById.get(target);
-        if (sourceLane === undefined || targetLane === undefined) return;
-        if (sourceLane === targetLane) return;
-        const [lo, hi] = sourceLane < targetLane ? [source, target] : [target, source];
-        const [loLane, hiLane] = sourceLane < targetLane ? [sourceLane, targetLane] : [targetLane, sourceLane];
-        const key = `${loLane}:${hiLane}`;
-        const bucket = buckets.get(key);
-        if (bucket) {
-            bucket.push({ lo, hi });
-        } else {
-            buckets.set(key, [{ lo, hi }]);
-        }
-    });
-
-    let crossings = 0;
-    buckets.forEach((bucket) => {
-        for (let i = 0; i < bucket.length; i += 1) {
-            for (let j = i + 1; j < bucket.length; j += 1) {
-                const loDelta = (rankById[bucket[i].lo] ?? 0) - (rankById[bucket[j].lo] ?? 0);
-                const hiDelta = (rankById[bucket[i].hi] ?? 0) - (rankById[bucket[j].hi] ?? 0);
-                if (loDelta * hiDelta < 0) crossings += 1;
-            }
-        }
-    });
-
-    return crossings;
+    const graph = augment(lanes, edges);
+    const realOrder = graph.realLanes.map((ids) =>
+        ids.slice().sort((a, b) => ((rankById[a] ?? 0) - (rankById[b] ?? 0)) || naturalCompare(a, b)));
+    return countSegmentCrossings(graph, placeVirtualNodes(graph, realOrder));
 };
 
-const toRankRecord = (order: LaneOrder): Record<string, number> => {
+/** Ranks of the real nodes only, renumbered from 0 per lane. */
+const toRankRecord = (order: LaneOrder, virtualIds: Set<string>): Record<string, number> => {
     const rankById: Record<string, number> = {};
     order.forEach((nodeIds) => {
-        nodeIds.forEach((nodeId, rank) => {
-            rankById[nodeId] = rank;
-        });
+        nodeIds
+            .filter((nodeId) => !virtualIds.has(nodeId))
+            .forEach((nodeId, rank) => {
+                rankById[nodeId] = rank;
+            });
     });
     return rankById;
 };
@@ -228,20 +428,24 @@ export const computeNodeOrder = ({
     groupRankById = {},
     iterations = DEFAULT_ITERATIONS
 }: ComputeNodeOrderParams): Record<string, number> => {
-    const laneIndexById = buildLaneIndex(lanes);
-    const neighbors = buildNeighbors(edges, laneIndexById);
-
-    // Seed deterministically: group rank first, then id. Without a stable seed the
-    // result would depend on the order resources happened to arrive from the API.
-    let order: LaneOrder = lanes.map((lane) =>
-        Array.from(new Set(lane.nodeIds)).sort((a, b) => {
-            const groupDelta = (groupRankById[a] ?? 0) - (groupRankById[b] ?? 0);
-            return groupDelta !== 0 ? groupDelta : a.localeCompare(b);
-        })
+    const graph = augment(lanes, edges);
+    const neighbors = buildNeighbors(
+        graph.segments.map(({ lo, hi }) => ({ source: lo, target: hi })),
+        graph.laneIndexById
     );
 
+    // Seed deterministically: group rank first, then natural name order. Without a
+    // stable seed the result would depend on the order resources happened to arrive
+    // from the API. Virtual nodes start level with their predecessors.
+    let order: LaneOrder = placeVirtualNodes(graph, graph.realLanes.map((ids) =>
+        ids.slice().sort((a, b) => {
+            const groupDelta = (groupRankById[a] ?? 0) - (groupRankById[b] ?? 0);
+            return groupDelta !== 0 ? groupDelta : naturalCompare(a, b);
+        })
+    ));
+
     let best = order;
-    let bestCrossings = countCrossings(lanes, edges, toRankRecord(order));
+    let bestCrossings = countSegmentCrossings(graph, order);
 
     for (let pass = 0; pass < iterations && bestCrossings > 0; pass += 1) {
         const direction: 'forward' | 'backward' = pass % 2 === 0 ? 'forward' : 'backward';
@@ -258,26 +462,80 @@ export const computeNodeOrder = ({
                 laneIndex,
                 direction,
                 neighbors,
-                laneIndexById,
+                graph.laneIndexById,
                 rankById,
-                groupRankById
+                groupRankById,
+                graph.virtualIds
             );
         });
 
         order = next;
-        const crossings = countCrossings(lanes, edges, toRankRecord(order));
+        const crossings = countSegmentCrossings(graph, order);
         if (crossings < bestCrossings) {
             bestCrossings = crossings;
             best = order;
         }
     }
 
-    return toRankRecord(best);
+    // Barycenters cannot see a fan-out: a NIC with three VFs averages level with its
+    // first VF, though it pushes every VF after them down. Try moving each real node
+    // to every other slot of its group, re-sort the lanes around the move, and keep
+    // any order that draws fewer crossings. A move, not a swap: a fanning NIC often
+    // has to pass several others before the count drops.
+    const resortAround = (candidate: LaneOrder, laneIndex: number): LaneOrder => {
+        const next = candidate.map((nodeIds) => nodeIds.slice());
+        const resort = (index: number, direction: 'forward' | 'backward') => {
+            next[index] = orderLane(next[index], index, direction, neighbors, graph.laneIndexById,
+                rankLookup(next), groupRankById, graph.virtualIds);
+        };
+        for (let index = laneIndex + 1; index < next.length; index += 1) resort(index, 'forward');
+        for (let index = laneIndex - 1; index >= 0; index -= 1) resort(index, 'backward');
+        return next;
+    };
+
+    /** The lane with real node `from` moved to the slot real node `to` holds. */
+    const moved = (laneIds: string[], from: string, to: string): string[] => {
+        const without = laneIds.filter((id) => id !== from);
+        const at = without.indexOf(to);
+        const after = laneIds.indexOf(from) < laneIds.indexOf(to);
+        without.splice(after ? at + 1 : at, 0, from);
+        return without;
+    };
+
+    let budget = REFINE_BUDGET;
+    let improved = true;
+    for (let pass = 0; pass < REFINE_PASSES && improved && bestCrossings > 0 && budget > 0; pass += 1) {
+        improved = false;
+        for (let laneIndex = 0; laneIndex < best.length && bestCrossings > 0 && budget > 0; laneIndex += 1) {
+            const realIds = () => best[laneIndex].filter((id) => !graph.virtualIds.has(id));
+            for (const from of realIds()) {
+                if (bestCrossings === 0 || budget <= 0) break;
+                const group = groupRankById[from] ?? 0;
+                for (const to of realIds()) {
+                    if (to === from || (groupRankById[to] ?? 0) !== group) continue;
+                    if (budget <= 0) break;
+                    budget -= 1;
+                    const shifted = best.map((nodeIds) => nodeIds.slice());
+                    shifted[laneIndex] = moved(shifted[laneIndex], from, to);
+                    const candidate = resortAround(shifted, laneIndex);
+                    const crossings = countSegmentCrossings(graph, candidate);
+                    if (crossings < bestCrossings) {
+                        best = candidate;
+                        bestCrossings = crossings;
+                        improved = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return toRankRecord(best, graph.virtualIds);
 };
 
 /**
  * Sort items into their computed within-lane order. Items with no rank sort last,
- * then alphabetically, so an unranked node never silently jumps to the top.
+ * then in natural name order, so an unranked node never silently jumps to the top.
  */
 export const sortByRank = <T,>(items: T[], getId: (item: T) => string, rankById: Record<string, number>): T[] =>
     items.slice().sort((a, b) => {
@@ -286,7 +544,7 @@ export const sortByRank = <T,>(items: T[], getId: (item: T) => string, rankById:
         // `??`, not `||`: rank 0 is the top of the lane.
         const rankDelta = (rankById[aId] ?? UNRANKED) - (rankById[bId] ?? UNRANKED);
         if (rankDelta !== 0) return rankDelta;
-        return aId.localeCompare(bId);
+        return naturalCompare(aId, bId);
     });
 
 /** A node's box, as an obstacle for edge routing. */

@@ -2,6 +2,7 @@ import { GraphContext } from './context';
 import { FOOT_GRID_ROLES, roleOf } from './classify';
 import { AnyNodeTypeDescriptor, descriptorsInLane } from './descriptors';
 import { resolveNodeId } from './ids';
+import { naturalCompare } from '../components/nodeVisualizationLayout';
 
 /**
  * The lanes of the physical topology graph, as one ordered table.
@@ -220,7 +221,7 @@ export const layoutLanes = (
                 const qid = descriptor.id(q, ctx);
                 const rankDelta = (rankById[pid] ?? Number.MAX_SAFE_INTEGER)
                     - (rankById[qid] ?? Number.MAX_SAFE_INTEGER);
-                return rankDelta !== 0 ? rankDelta : pid.localeCompare(qid);
+                return rankDelta !== 0 ? rankDelta : naturalCompare(pid, qid);
             });
 
             const nodes: PlacedNode[] = ordered.map((item) => {
