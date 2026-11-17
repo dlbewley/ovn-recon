@@ -30,8 +30,12 @@
           "format": "date-time"
         },
         "sourceHealth": {
-          "description": "`ok` when read live; `degraded` when the live probe failed and the node's fixture, or an empty list, is served instead (with a `LIVE_PROBE_FAILED` warning).",
-          "type": "string"
+          "description": "`healthy` when read live; `degraded` when the live probe failed and the node's fixture, or an empty list, is served instead (with a `LIVE_PROBE_FAILED` warning). The same values as a logical topology snapshot; collectors before ovn-recon-8cv said `ok` for a live answer.",
+          "type": "string",
+          "enum": [
+            "healthy",
+            "degraded"
+          ]
         },
         "nodeName": {
           "type": "string"

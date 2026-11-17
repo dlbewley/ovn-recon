@@ -921,7 +921,7 @@ export interface OvsBondRuntime {
 }
 
 export interface OvsBondsResponse {
-    /** The logical snapshot's metadata shape; `sourceHealth: "degraded"` on LIVE_PROBE_FAILED. */
+    /** The logical snapshot's metadata shape: `sourceHealth` "healthy" when live ("ok" before ovn-recon-8cv), "degraded" on LIVE_PROBE_FAILED. */
     metadata: LogicalTopologyMetadata;
     warnings: LogicalTopologyWarning[];
     /** Empty for a node without OVS bonds, or a failed probe with no fixture. */

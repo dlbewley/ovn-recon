@@ -30,7 +30,7 @@ const fixture = (name: string): NodeNetworkState =>
     JSON.parse(fs.readFileSync(path.join(process.cwd(), 'test', 'fixtures', 'nns', name), 'utf-8'));
 
 const CONTRACT_EXAMPLE: OvsBondsResponse = {
-    metadata: { schemaVersion: 'v1alpha1', generatedAt: '2026-11-16T20:15:00Z', sourceHealth: 'ok', nodeName: 'worker-1' },
+    metadata: { schemaVersion: 'v1alpha1', generatedAt: '2026-11-16T20:15:00Z', sourceHealth: 'healthy', nodeName: 'worker-1' },
     warnings: [],
     bonds: [{
         name: 'bond1',

@@ -11,12 +11,18 @@ export const isLoadedOvsBondRuntime = (state: OvsBondRuntimeState | undefined): 
     Boolean(state) && !('error' in (state as OvsBondRuntimeState));
 
 /**
+ * sourceHealth of a live answer: "healthy", as a zone snapshot says it (ovn-recon-8cv),
+ * or "ok" from a collector before that. Drop "ok" once no supported collector sends it.
+ */
+const LIVE_SOURCE_HEALTH: ReadonlySet<string> = new Set(['', 'healthy', 'ok']);
+
+/**
  * The answer is not OVS's live state (ovn-recon-1tw.7): the collector's probe failed
  * and it served the fixture it ships for the node, or an empty list, marked as the
  * snapshot endpoint marks it (sourceHealth "degraded", warning LIVE_PROBE_FAILED).
  */
 export const isDegradedOvsBondRuntime = (state: LoadedOvsBondRuntime): boolean =>
-    (state.sourceHealth !== '' && state.sourceHealth !== 'ok')
+    !LIVE_SOURCE_HEALTH.has(state.sourceHealth)
     || state.warnings.some((warning) => warning.code === LIVE_PROBE_FAILED);
 
 /**

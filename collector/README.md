@@ -247,7 +247,7 @@ curl -s --compressed http://localhost:8090/api/v1/ovs/bonds/cnv-1
 
 ```json
 {
-  "metadata": { "schemaVersion": "v1alpha1", "generatedAt": "2026-11-16T20:15:00Z", "sourceHealth": "ok", "nodeName": "cnv-1" },
+  "metadata": { "schemaVersion": "v1alpha1", "generatedAt": "2026-11-16T20:15:00Z", "sourceHealth": "healthy", "nodeName": "cnv-1" },
   "warnings": [],
   "bonds": [
     {
@@ -284,7 +284,8 @@ printed no line for it (`nextRebalanceMs` exists only for a balancing mode).
 `activeBackupPrimary` is absent for `<none>`, `activeMember` when no member
 is active. `members` keep OVS's order; `active` marks the member whose block
 says `active member`. A node without OVS bonds answers `bonds: []` with
-`sourceHealth: "ok"`.
+`sourceHealth: "healthy"`, the value a live zone snapshot carries
+(collectors before `ovn-recon-8cv` said `"ok"`).
 
 **Fallback.** When the exec fails the response is the node's fixture,
 `${OVS_BONDS_DIR}/<node>.json`, or an empty `bonds` list when there is none

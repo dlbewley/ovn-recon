@@ -84,10 +84,10 @@ func TestOVSBondsLiveAnswer(t *testing.T) {
 	if got := rr.Header().Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("Cache-Control %q", got)
 	}
-	if got := rr.Header().Get(headerSnapshotSourceHealth); got != "ok" {
+	if got := rr.Header().Get(headerSnapshotSourceHealth); got != "healthy" {
 		t.Fatalf("source health header %q", got)
 	}
-	want := snapshot.Metadata{SchemaVersion: "v1alpha1", GeneratedAt: now, SourceHealth: "ok", NodeName: "worker-1"}
+	want := snapshot.Metadata{SchemaVersion: "v1alpha1", GeneratedAt: now, SourceHealth: "healthy", NodeName: "worker-1"}
 	if payload.Metadata != want {
 		t.Fatalf("metadata %+v, want %+v", payload.Metadata, want)
 	}
@@ -111,7 +111,7 @@ func TestOVSBondsLiveAnswer(t *testing.T) {
 func TestOVSBondsNodeWithoutBondsIsAnEmptyList(t *testing.T) {
 	s := newBondsServer(&fakeBondCollector{bonds: nil}, []string{"worker-2"})
 	rr, payload := getBonds(t, s, "/api/v1/ovs/bonds/worker-2")
-	if rr.Code != http.StatusOK || payload.Metadata.SourceHealth != "ok" {
+	if rr.Code != http.StatusOK || payload.Metadata.SourceHealth != "healthy" {
 		t.Fatalf("expected 200 ok, got %d %+v", rr.Code, payload.Metadata)
 	}
 	if !strings.Contains(rr.Body.String(), `"bonds":[]`) {
@@ -185,14 +185,14 @@ func TestOVSBondsFixtureModeWithoutACluster(t *testing.T) {
 	s := newBondsServer(nil, []string{"cnv-1", "cnv-2"})
 
 	rr, payload := getBonds(t, s, "/api/v1/ovs/bonds/cnv-1")
-	if rr.Code != http.StatusOK || payload.Metadata.SourceHealth != "ok" || len(payload.Bonds) != 1 || len(payload.Warnings) != 0 {
+	if rr.Code != http.StatusOK || payload.Metadata.SourceHealth != "healthy" || len(payload.Bonds) != 1 || len(payload.Warnings) != 0 {
 		t.Fatalf("fixture mode should serve the fixture as it is, got %d %+v", rr.Code, payload)
 	}
 
 	// A node the lister knows that has no fixture: an empty, healthy list.
 	s = newBondsServer(nil, []string{"cnv-1", "worker-7"})
 	rr, payload = getBonds(t, s, "/api/v1/ovs/bonds/worker-7")
-	if rr.Code != http.StatusOK || payload.Metadata.SourceHealth != "ok" || len(payload.Bonds) != 0 || payload.Metadata.NodeName != "worker-7" {
+	if rr.Code != http.StatusOK || payload.Metadata.SourceHealth != "healthy" || len(payload.Bonds) != 0 || payload.Metadata.NodeName != "worker-7" {
 		t.Fatalf("a known node without a fixture should be an empty list, got %d %+v", rr.Code, payload)
 	}
 }

@@ -2,7 +2,7 @@
   "metadata": {
     "schemaVersion": "v1alpha1",
     "generatedAt": "2026-11-16T20:15:00Z",
-    "sourceHealth": "ok",
+    "sourceHealth": "healthy",
     "nodeName": "cnv-1"
   },
   "warnings": [],

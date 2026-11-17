@@ -21,10 +21,9 @@ import (
 // OVSBondsSchemaVersion is metadata.schemaVersion of an OVS bonds response.
 const OVSBondsSchemaVersion = "v1alpha1"
 
-// OVSBondsSourceHealthy is metadata.sourceHealth of a response read live.
-// A response served from a fixture after a failed probe says "degraded",
-// as a zone snapshot does.
-const OVSBondsSourceHealthy = "ok"
+// A response read live says SourceHealthy; one served from a fixture after a
+// failed probe says SourceDegraded, as a zone snapshot does. Collectors before
+// ovn-recon-8cv said "ok" for a live answer; the plugin still reads that.
 
 // OVSBondsResponse is one node's OVS bonds, as ovs-appctl bond/show prints
 // them. Bonds is empty, never absent, on a node without OVS bonds.
