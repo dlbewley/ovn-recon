@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dlbewley/ovn-recon/collector/api/collector-status.schema.json",
+  "title": "CollectorStatus",
+  "description": "Payload from GET /api/v1/status: the cluster aggregate's envelope without its databases. Zones are collected exactly as for GET /api/v1/snapshots, so the two agree on zones, health and warnings.",
+  "type": "object",
+  "required": [
+    "metadata",
+    "zones",
+    "warnings"
+  ],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "generatedAt",
+        "sourceHealth"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sourceHealth": {
+          "type": "string",
+          "description": "healthy, or degraded when any zone failed or was not read live."
+        }
+      },
+      "additionalProperties": false
+    },
+    "zones": {
+      "type": "array",
+      "description": "One entry per zone the aggregate would carry, in the same order.",
+      "items": {
+        "type": "object",
+        "required": [
+          "nodeName",
+          "generatedAt",
+          "sourceHealth",
+          "warnings"
+        ],
+        "properties": {
+          "nodeName": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When this zone's snapshot was collected."
+          },
+          "sourceHealth": {
+            "type": "string"
+          },
+          "ovnVersion": {
+            "type": "string",
+            "description": "NB_Global options:northd_internal_version, when the snapshot carries it."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "code",
+                "message"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "description": "The aggregate's own warnings (ZONE_COLLECTION_FAILED), not the zones'.",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "warmUp": {
+      "type": "object",
+      "description": "Present only while the collector's start-up cache sweep runs.",
+      "required": [
+        "nodes",
+        "done"
+      ],
+      "properties": {
+        "nodes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Zones the sweep set out to collect; 0 until it has listed the nodes."
+        },
+        "done": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Of those, how many have finished, whether or not the collection worked."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

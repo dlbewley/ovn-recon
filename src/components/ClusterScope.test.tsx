@@ -11,7 +11,8 @@ import { PHYSICAL_RULES } from '../insights/registry';
 import type { PhysicalRule } from '../insights/types';
 import { FindingsEvaluatorContext } from '../insights/ui/useFindings';
 import { BASE_PATH, clusterFindingsPath, networksPath, overviewPath } from '../routes';
-import { ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState } from '../types';
+import { ClusterLogicalTopology, ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState } from '../types';
+import { statusFromAggregate } from './collectorApi';
 import OvnReconApp from './OvnReconApp';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
@@ -177,7 +178,11 @@ describe('the Cluster scope, drawn by the shell', () => {
 
         it('states a fresh collector in one line, with the rest behind Collector details', async () => {
             mockGate.enabled = true;
-            global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => freshTopology() }) as unknown as typeof fetch;
+            // The line polls the collector's status (ovn-recon-1zx), not the aggregate.
+            global.fetch = jest.fn().mockResolvedValue({
+                ok: true,
+                json: async () => statusFromAggregate(freshTopology() as unknown as ClusterLogicalTopology),
+            }) as unknown as typeof fetch;
             await render(overviewPath());
 
             expect(status().textContent).toContain('Fresh');
@@ -236,10 +241,10 @@ describe('the Cluster scope, drawn by the shell', () => {
             const attempts = Array.from(details.querySelectorAll('[data-testid="collector-failure-details"] li'))
                 .map((item) => item.textContent);
             expect(attempts).toEqual([
-                '/api/plugins/ovn-recon/api/v1/snapshots -> HTTP 502',
-                '/api/plugins/ovn-recon/backend/api/v1/snapshots -> HTTP 404',
-                '/api/proxy/plugin/ovn-recon/backend/api/v1/snapshots -> HTTP 404',
-                '/api/proxy/plugin/ovn-recon/api/v1/snapshots -> HTTP 404',
+                '/api/plugins/ovn-recon/api/v1/status -> HTTP 502',
+                '/api/plugins/ovn-recon/backend/api/v1/status -> HTTP 404',
+                '/api/proxy/plugin/ovn-recon/backend/api/v1/status -> HTTP 404',
+                '/api/proxy/plugin/ovn-recon/api/v1/status -> HTTP 404',
             ]);
         });
 

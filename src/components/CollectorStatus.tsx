@@ -12,20 +12,20 @@ import {
     Spinner,
 } from '@patternfly/react-core';
 
-import { ClusterLogicalTopology } from '../types';
+import { CollectorStatusResponse } from '../types';
 import { COLLECTOR_WARMING } from '../insights/rules/collectorDegraded';
 import { ConsoleLink } from '../linkOut/LinkOut';
 import { LinkTarget } from '../linkOut/registry';
 import {
     CollectorFailure,
     describeCollectorFailure,
-    fetchClusterTopology,
-    rememberedClusterTopology,
+    fetchCollectorStatus,
+    rememberedCollectorStatus,
 } from './collectorApi';
 import { CollectorFailureDetails } from './collectorViewStates';
 import { snapshotAges } from './overviewModel';
 import { freshnessFromAge } from './snapshotFreshness';
-import SnapshotStatusLine, { formatAge, ovnReleaseOf, summarizeOvnZones } from './SnapshotStatusLine';
+import SnapshotStatusLine, { formatAge, ovnReleaseOf } from './SnapshotStatusLine';
 import { CollectorDeploymentRef, useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 
 /**
@@ -36,13 +36,17 @@ import { CollectorDeploymentRef, useOvnCollectorFeatureGate } from './useOvnColl
  * Its states (ovn-recon-nt4.4): not enabled; waiting for the first answer; not
  * answering, with the HTTP status of the likeliest route, links to the collector's
  * Deployment, pods and events, and the routes tried behind "Details"; warming its
- * cache after start-up (any zone snapshot marked COLLECTOR_WARMING); and the freshness
- * line. The collector reports no warm-up progress, so the line cannot say "k of N
- * nodes"; that waits for a status endpoint (ovn-recon-1zx).
+ * cache after start-up (any zone snapshot marked COLLECTOR_WARMING, or the status's
+ * warmUp, which says "k of N nodes"); and the freshness line.
+ *
+ * It reads the collector's status (ovn-recon-1zx), the aggregate's envelope without
+ * its databases, so a page left open no longer downloads every node's database a
+ * minute; a collector older than that route answers with the aggregate instead.
  */
 
-// Same cadence as the cluster view: the aggregate probes every zone, so it
-// is not something to hammer from a page people leave open.
+// Same cadence as the cluster view: the status resolves every zone as the
+// aggregate does (a cold cache means live probes), so it is not something to
+// hammer from a page people leave open.
 const COLLECTOR_REFRESH_MS = 60000;
 
 const MAX_WARNINGS_SHOWN = 5;
@@ -57,8 +61,8 @@ export interface CollectorState {
     enabled: boolean;
     /** Whether `enabled` is known yet. */
     gateLoaded: boolean;
-    /** The last aggregate the collector answered with. */
-    topology: ClusterLogicalTopology | null;
+    /** The last status the collector answered with. */
+    status: CollectorStatusResponse | null;
     /** Why the last request failed; empty after one that worked. */
     error: string;
     /** The same failure, for the status line and its details; absent after one that worked. */
@@ -76,10 +80,18 @@ export interface CollectorStatusProps {
     action?: React.ReactNode;
 }
 
-/** Whether any zone in the aggregate was served while the collector's start-up sweep ran. */
-export const collectorIsWarming = (topology: ClusterLogicalTopology | null | undefined): boolean =>
-    (topology?.snapshots ?? []).some((snapshot) =>
-        (snapshot.warnings ?? []).some((warning) => warning.code === COLLECTOR_WARMING));
+/** Whether the collector's start-up sweep runs: it says so, or a zone was served meanwhile. */
+export const collectorIsWarming = (status: CollectorStatusResponse | null | undefined): boolean =>
+    Boolean(status?.warmUp)
+    || (status?.zones ?? []).some((zone) =>
+        (zone.warnings ?? []).some((warning) => warning.code === COLLECTOR_WARMING));
+
+/** "3 of 7 nodes" while the sweep reports its progress, else ''. */
+export const warmUpProgress = (status: CollectorStatusResponse | null | undefined): string => {
+    const warmUp = status?.warmUp;
+    if (!warmUp || warmUp.nodes <= 0) return '';
+    return `${Math.min(warmUp.done, warmUp.nodes)} of ${plural(warmUp.nodes, 'node')}`;
+};
 
 const Detail: React.FC<{ term: string; children: React.ReactNode }> = ({ term, children }) => (
     <DescriptionListGroup>
@@ -120,11 +132,11 @@ const failureOf = (collector: CollectorState): CollectorFailure | null => {
 
 /**
  * Freshness, how many node databases the cluster view is assembled from, and anything
- * degraded, with the rest behind "Collector details". Only what the aggregate response
+ * degraded, with the rest behind "Collector details". Only what the status response
  * and the feature gate already say is shown here.
  */
 const CollectorStatus: React.FC<CollectorStatusProps> = ({ collector, label, action }) => {
-    const { enabled, gateLoaded, topology, loading, deployment } = collector;
+    const { enabled, gateLoaded, status, loading, deployment } = collector;
 
     // Keep the age text moving between refetches.
     const [ageTick, setAgeTick] = React.useState(0);
@@ -133,22 +145,25 @@ const CollectorStatus: React.FC<CollectorStatusProps> = ({ collector, label, act
         return () => window.clearInterval(timer);
     }, []);
     const ages = React.useMemo(
-        () => snapshotAges((topology?.snapshots ?? []).map((snapshot) => snapshot.metadata?.generatedAt)),
+        () => snapshotAges((status?.zones ?? []).map((zone) => zone.generatedAt)),
         // ageTick is a deliberate extra dependency: it forces the ages to recompute.
-        [topology, ageTick],
+        [status, ageTick],
     );
-    const ovn = React.useMemo(
-        () => summarizeOvnZones((topology?.snapshots ?? []).map((snapshot) => snapshot.database?.nbGlobal)),
-        [topology],
+    const releases = React.useMemo(
+        () => [...new Set((status?.zones ?? [])
+            .map((zone) => zone.ovnVersion)
+            .filter((version): version is string => Boolean(version))
+            .map(ovnReleaseOf))],
+        [status],
     );
 
     const active = gateLoaded && enabled;
     const failure = active ? failureOf(collector) : null;
-    const unreachable = Boolean(failure) && !topology;
-    const waiting = active && !failure && !topology;
-    const warming = active && collectorIsWarming(topology);
-    const warnings = topology?.warnings ?? [];
-    const releases = [...new Set((ovn?.versions ?? []).map(ovnReleaseOf))];
+    const unreachable = Boolean(failure) && !status;
+    const waiting = active && !failure && !status;
+    const warming = active && collectorIsWarming(status);
+    const progress = warmUpProgress(status);
+    const warnings = status?.warnings ?? [];
 
     let details: React.ReactNode;
     if (!active) {
@@ -167,7 +182,7 @@ const CollectorStatus: React.FC<CollectorStatusProps> = ({ collector, label, act
                 <p style={subtle}>Retried every {COLLECTOR_REFRESH_MS / 1000} seconds.</p>
             </>
         );
-    } else if (!topology) {
+    } else if (!status) {
         details = (
             <p>
                 Waiting for the collector&apos;s first answer. It reads every node&apos;s OVN databases, which
@@ -177,10 +192,13 @@ const CollectorStatus: React.FC<CollectorStatusProps> = ({ collector, label, act
     } else {
         details = (
             <DescriptionList isCompact isHorizontal horizontalTermWidthModifier={{ default: '16ch' }}>
-                <Detail term="Source health">{topology.metadata.sourceHealth || 'unknown'}</Detail>
-                <Detail term="Node databases">{topology.snapshots.length}</Detail>
+                <Detail term="Source health">{status.metadata.sourceHealth || 'unknown'}</Detail>
+                <Detail term="Node databases">{status.zones.length}</Detail>
                 {warming && (
-                    <Detail term="Cache">Warming after start-up; node snapshots may be collected live</Detail>
+                    <Detail term="Cache">
+                        Warming after start-up{progress ? ` (${progress} collected)` : ''}; node snapshots may
+                        be collected live
+                    </Detail>
                 )}
                 {ages.oldestMs != null && <Detail term="Oldest snapshot">{formatAge(ages.oldestMs)}</Detail>}
                 {ages.newestMs != null && <Detail term="Newest snapshot">{formatAge(ages.newestMs)}</Detail>}
@@ -230,14 +248,14 @@ const CollectorStatus: React.FC<CollectorStatusProps> = ({ collector, label, act
                     </Flex>
                 </FlexItem>
             )}
-            {active && topology && (
+            {active && status && (
                 <FlexItem>
                     <SnapshotStatusLine
                         freshness={freshnessFromAge(ages.oldestMs)}
                         ageMs={ages.oldestMs}
                         ageQualifier="oldest node "
-                        zoneCount={topology.snapshots.length}
-                        sourceHealth={topology.metadata.sourceHealth}
+                        zoneCount={status.zones.length}
+                        sourceHealth={status.metadata.sourceHealth}
                         isLoading={false}
                     />
                 </FlexItem>
@@ -249,7 +267,7 @@ const CollectorStatus: React.FC<CollectorStatusProps> = ({ collector, label, act
                         color="blue"
                         title="The collector restarted and is collecting every node's snapshot into its cache"
                     >
-                        Warming cache
+                        {progress ? `Warming cache: ${progress}` : 'Warming cache'}
                     </Label>
                 </FlexItem>
             )}
@@ -279,14 +297,19 @@ const CollectorStatus: React.FC<CollectorStatusProps> = ({ collector, label, act
 };
 
 /**
- * The collector's aggregate, polled while the gate is on. A disabled collector is
- * never asked. The last aggregate this browser tab received paints first
- * (ovn-recon-nt4.4), so a remount after a trip to another console page does not
- * start from "Waiting for the collector".
+ * The collector's status (ovn-recon-1zx), polled while the gate is on. A disabled
+ * collector is never asked. The last status this browser tab knows paints first
+ * (ovn-recon-nt4.4), including the one implied by an aggregate the cluster ladder
+ * fetched, so a remount after a trip to another console page does not start from
+ * "Waiting for the collector".
+ *
+ * It no longer fetches the aggregate, so it no longer fills the aggregate the cluster
+ * ladder paints from on first open; the ladder fetches its own, from a collector cache
+ * this poll keeps warm.
  */
 export const useCollectorState = (): CollectorState => {
     const { enabled, loaded: gateLoaded, collectorDeployment } = useOvnCollectorFeatureGate();
-    const [topology, setTopology] = React.useState<ClusterLogicalTopology | null>(rememberedClusterTopology);
+    const [status, setStatus] = React.useState<CollectorStatusResponse | null>(rememberedCollectorStatus);
     const [failure, setFailure] = React.useState<CollectorFailure | null>(null);
     const [loading, setLoading] = React.useState<boolean>(false);
     React.useEffect(() => {
@@ -295,9 +318,9 @@ export const useCollectorState = (): CollectorState => {
         const load = async () => {
             setLoading(true);
             try {
-                const payload = await fetchClusterTopology();
+                const payload = await fetchCollectorStatus();
                 if (!cancelled) {
-                    setTopology(payload);
+                    setStatus(payload);
                     setFailure(null);
                 }
             } catch (caught) {
@@ -315,8 +338,8 @@ export const useCollectorState = (): CollectorState => {
     }, [enabled]);
     const error = failure?.message ?? '';
     return React.useMemo(
-        () => ({ enabled, gateLoaded, topology, error, failure, deployment: collectorDeployment, loading }),
-        [enabled, gateLoaded, topology, error, failure, collectorDeployment, loading],
+        () => ({ enabled, gateLoaded, status, error, failure, deployment: collectorDeployment, loading }),
+        [enabled, gateLoaded, status, error, failure, collectorDeployment, loading],
     );
 };
 

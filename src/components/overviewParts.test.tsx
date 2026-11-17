@@ -3,9 +3,9 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 
 import type { SeverityCounts } from '../insights/selectors';
-import { ClusterLogicalTopology, LogicalTopologySnapshot } from '../types';
-import type { CollectorFailure } from './collectorApi';
-import CollectorStatus, { CollectorState, collectorIsWarming, useCollectorState } from './CollectorStatus';
+import { ClusterLogicalTopology, CollectorStatusResponse, LogicalTopologySnapshot } from '../types';
+import { CollectorFailure, statusFromAggregate } from './collectorApi';
+import CollectorStatus, { CollectorState, collectorIsWarming, useCollectorState, warmUpProgress } from './CollectorStatus';
 import NetworksTable from './NetworksTable';
 import NodesTable, { NodesTableProps } from './NodesTable';
 import { NodeSummary, OverviewNetworkRow } from './overviewModel';
@@ -63,8 +63,12 @@ const topology = (warnings: ClusterLogicalTopology['warnings'] = []): ClusterLog
     };
 };
 
+/** The status a collector answers GET /status with (ovn-recon-1zx), from the fixture. */
+const collectorStatus = (warnings: ClusterLogicalTopology['warnings'] = []): CollectorStatusResponse =>
+    statusFromAggregate(topology(warnings));
+
 const collectorState = (overrides: Partial<CollectorState> = {}): CollectorState => ({
-    enabled: true, gateLoaded: true, topology: topology(), error: '', loading: false, ...overrides,
+    enabled: true, gateLoaded: true, status: collectorStatus(), error: '', loading: false, ...overrides,
 });
 
 describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
@@ -268,22 +272,22 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
         });
 
         it('says when the gate is unknown, the collector is off, or it does not answer', async () => {
-            await render(<CollectorStatus collector={collectorState({ gateLoaded: false, enabled: false, topology: null })} />);
+            await render(<CollectorStatus collector={collectorState({ gateLoaded: false, enabled: false, status: null })} />);
             expect(container.textContent).toBe('Loading...');
             expect(buttonTexts()).toEqual([]);
 
-            await render(<CollectorStatus collector={collectorState({ enabled: false, topology: null })} />);
+            await render(<CollectorStatus collector={collectorState({ enabled: false, status: null })} />);
             expect(container.textContent).toContain('Collector not enabled');
             expect(await openDetails()).toContain('spec.collector.enabled');
         });
 
         it('names an unreachable collector and counts its warnings', async () => {
-            await render(<CollectorStatus collector={collectorState({ topology: null, error: 'HTTP 503' })} />);
+            await render(<CollectorStatus collector={collectorState({ status: null, error: 'HTTP 503' })} />);
             expect(container.textContent).toContain('Collector is not answering');
 
             await render(
                 <CollectorStatus
-                    collector={collectorState({ topology: topology([{ code: 'A', message: 'one' }, { code: 'B', message: 'two' }]) })}
+                    collector={collectorState({ status: collectorStatus([{ code: 'A', message: 'one' }, { code: 'B', message: 'two' }]) })}
                 />,
             );
             expect(container.textContent).toContain('2 collector warnings');
@@ -301,7 +305,7 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
             const detailsElement = () => document.querySelector('[data-testid="overview-collector-details"]')!;
 
             it('waits for the first answer, with a spinner while it is asked', async () => {
-                await render(<CollectorStatus collector={collectorState({ topology: null, loading: true })} />);
+                await render(<CollectorStatus collector={collectorState({ status: null, loading: true })} />);
                 expect(container.textContent).toContain('Waiting for the collector');
                 expect(container.textContent).not.toContain('Freshness unknown');
                 expect(container.querySelector('[role="progressbar"]')).not.toBeNull();
@@ -310,7 +314,7 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
 
             it('says it is not answering in one line, with links and the routes behind Details', async () => {
                 await render(
-                    <CollectorStatus collector={collectorState({ topology: null, error: unreachable.message, failure: unreachable, deployment })} />,
+                    <CollectorStatus collector={collectorState({ status: null, error: unreachable.message, failure: unreachable, deployment })} />,
                 );
                 expect(container.textContent).toContain('Collector is not answering (HTTP 502)');
                 expect(container.textContent).not.toContain('/api/');
@@ -332,7 +336,7 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
             });
 
             it('leaves the links out until it knows where the collector runs', async () => {
-                await render(<CollectorStatus collector={collectorState({ topology: null, failure: unreachable, error: 'x' })} />);
+                await render(<CollectorStatus collector={collectorState({ status: null, failure: unreachable, error: 'x' })} />);
                 await openDetails();
                 expect(detailsElement().querySelector('[data-testid="collector-links"]')).toBeNull();
                 expect(detailsElement().querySelector('[data-testid="collector-failure-details"]')).not.toBeNull();
@@ -348,21 +352,40 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
             });
 
             it('says the cache is warming while any zone carries COLLECTOR_WARMING', async () => {
-                const warm = topology();
-                warm.snapshots = warm.snapshots.map((snapshot, index) => (index === 0
-                    ? { ...snapshot, warnings: [...snapshot.warnings, { code: 'COLLECTOR_WARMING', message: 'warming' }] }
-                    : snapshot));
+                const warm = collectorStatus();
+                warm.zones = warm.zones.map((zone, index) => (index === 0
+                    ? { ...zone, warnings: [...zone.warnings, { code: 'COLLECTOR_WARMING', message: 'warming' }] }
+                    : zone));
                 expect(collectorIsWarming(warm)).toBe(true);
-                expect(collectorIsWarming(topology())).toBe(false);
+                expect(collectorIsWarming(collectorStatus())).toBe(false);
                 expect(collectorIsWarming(null)).toBe(false);
 
-                await render(<CollectorStatus collector={collectorState({ topology: warm })} />);
+                await render(<CollectorStatus collector={collectorState({ status: warm })} />);
                 expect(container.textContent).toContain('Warming cache');
                 expect(container.textContent).toContain('Assembled from 2 nodes');
                 expect(await openDetails()).toContain('Warming after start-up');
 
                 await render(<CollectorStatus collector={collectorState()} />);
                 expect(container.textContent).not.toContain('Warming cache');
+            });
+
+            it('counts the warm-up\'s nodes when the collector reports them (ovn-recon-1zx)', async () => {
+                const warming = { ...collectorStatus(), warmUp: { nodes: 3, done: 1 } };
+                expect(collectorIsWarming(warming)).toBe(true);
+                expect(warmUpProgress(warming)).toBe('1 of 3 nodes');
+                // Before the sweep has listed the nodes it reports none.
+                expect(warmUpProgress({ ...warming, warmUp: { nodes: 0, done: 0 } })).toBe('');
+
+                await render(<CollectorStatus collector={collectorState({ status: warming })} />);
+                expect(container.textContent).toContain('Warming cache: 1 of 3 nodes');
+                expect(await openDetails()).toContain('Warming after start-up (1 of 3 nodes collected)');
+            });
+
+            it('reads the OVN version from the status', async () => {
+                await render(<CollectorStatus collector={collectorState()} />);
+                const version = collectorStatus().zones[0].ovnVersion;
+                expect(version).toBeTruthy();
+                expect(await openDetails()).toContain(version!.split('-')[0]);
             });
         });
     });
@@ -380,8 +403,8 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
             });
         };
 
-        it('asks the collector for its aggregate while the gate is on', async () => {
-            const payload = topology();
+        it('asks the collector for its status, not the aggregate, while the gate is on (ovn-recon-1zx)', async () => {
+            const payload = collectorStatus();
             global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => payload }) as unknown as typeof fetch;
             const states: CollectorState[] = [];
 
@@ -390,7 +413,9 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
 
             const last = states[states.length - 1];
             expect(last).toMatchObject({ enabled: true, gateLoaded: true, error: '', loading: false });
-            expect(last.topology).toBe(payload);
+            expect(last.status).toBe(payload);
+            const urls = (global.fetch as jest.Mock).mock.calls.map(([url]) => url as string);
+            expect(urls).toEqual(['/api/plugins/ovn-recon/api/v1/status']);
         });
 
         it('never asks a disabled collector', async () => {
@@ -402,7 +427,7 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
             await settle();
 
             expect(global.fetch).not.toHaveBeenCalled();
-            expect(states[states.length - 1]).toMatchObject({ enabled: false, gateLoaded: true, topology: null });
+            expect(states[states.length - 1]).toMatchObject({ enabled: false, gateLoaded: true, status: null });
         });
 
         it('records a failure with the status of the likeliest route', async () => {
@@ -416,14 +441,14 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
             await settle();
 
             const last = states[states.length - 1];
-            expect(last.topology).toBeNull();
+            expect(last.status).toBeNull();
             expect(last.failure?.summary).toBe('Collector is not answering (HTTP 502)');
             expect(last.failure?.attempts).toHaveLength(4);
             expect(last.error).toContain('Collector request failed');
         });
 
-        it('paints the aggregate this tab last received before asking again (ovn-recon-nt4.4)', async () => {
-            const payload = topology();
+        it('paints the status this tab last received before asking again (ovn-recon-nt4.4)', async () => {
+            const payload = collectorStatus();
             global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => payload }) as unknown as typeof fetch;
             await render(<Probe onState={() => undefined} />);
             await settle();
@@ -434,8 +459,8 @@ describe('the overview\'s parts on their own (ovn-recon-gbr.3)', () => {
             const states: CollectorState[] = [];
             await render(<Probe onState={(state) => states.push(state)} />);
 
-            expect(states[0].topology).toBe(payload);
-            expect(states[states.length - 1]).toMatchObject({ topology: payload, loading: true });
+            expect(states[0].status).toBe(payload);
+            expect(states[states.length - 1]).toMatchObject({ status: payload, loading: true });
         });
     });
 });
