@@ -40,6 +40,7 @@ import {
     PlacementUplink,
     placementSummary,
 } from './networkPageModel';
+import { clusterDefaultNetworkText, nodeNetworkStateUnavailableText } from './clusterDefaultNetwork';
 import { networksPath, nodePhysicalPath } from '../routes';
 import { networkDisplayName, networkNotFoundText, networkScopeState } from './networkScopeModel';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
@@ -312,10 +313,7 @@ const PlacementCard: React.FC<{
     let body: React.ReactNode;
     if (!nns.available) {
         body = (
-            <p data-testid="placement-unavailable">
-                This cluster does not serve NodeNetworkState (it comes with the Kubernetes NMState
-                Operator), so where this network is wired cannot be shown.
-            </p>
+            <p data-testid="placement-unavailable">{nodeNetworkStateUnavailableText(record)}</p>
         );
     } else if (!nns.loaded) {
         body = <p>Loading NodeNetworkStates...</p>;
@@ -370,6 +368,12 @@ const NetworkOwner: React.FC<{ record: NetworkRecord }> = ({ record }) => (recor
     </p>
 ) : null);
 
+/** What the cluster default network is, whether or not NodeNetworkState is served. */
+const ClusterDefaultDescription: React.FC<{ inputs: NetworkInputs }> = ({ inputs }) => {
+    const text = React.useMemo(() => clusterDefaultNetworkText(inputs), [inputs]);
+    return <p className="pf-v6-u-mb-md" data-testid="cluster-default-description">{text}</p>;
+};
+
 export interface NetworkBodyProps {
     record: NetworkRecord;
     inputs: NetworkInputs;
@@ -418,6 +422,7 @@ export const NetworkBody: React.FC<NetworkBodyProps> = ({ record, inputs, nns, s
                 <Card data-testid="network-summary">
                     <CardTitle>Summary</CardTitle>
                     <CardBody>
+                        {record.clusterDefault && <ClusterDefaultDescription inputs={inputs} />}
                         <FactList facts={facts} termWidth={SUMMARY_TERM_WIDTH} />
                         <div className="pf-v6-u-mt-md"><StatusConditions record={record} /></div>
                     </CardBody>
