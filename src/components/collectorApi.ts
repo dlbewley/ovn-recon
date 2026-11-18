@@ -4,6 +4,7 @@ import {
     LogicalTopologySnapshot,
     LookupKind,
     LookupResponse,
+    NetworkAttachmentsResponse,
     OvsBondsResponse,
     SnapshotSection,
 } from '../types';
@@ -245,6 +246,7 @@ export const forgetCollectorResponses = (): void => {
     inFlight.clear();
     lastWorkingPrefix = null;
     statusMissing = false;
+    attachmentsMissing = null;
 };
 
 const AGGREGATE_PATH = '/snapshots';
@@ -354,6 +356,34 @@ export const rememberedCollectorStatus = (): CollectorStatusResponse | null => {
     }
     return own ?? implied ?? null;
 };
+
+const ATTACHMENTS_PATH = '/attachments';
+
+/** Set once `/attachments` 404'd: the collector is older than it, so this tab stops asking. */
+let attachmentsMissing: CollectorEndpointMissingError | null = null;
+
+/**
+ * How many pods each user-defined OVN network has on each node: `GET /attachments`
+ * (ovn-recon-nfs.4), counted by the collector from the snapshots it holds, so the network
+ * page needs no pod watch. A collector older than the route rejects with
+ * CollectorEndpointMissingError, at once on later calls in this tab.
+ */
+export const fetchNetworkAttachments = async (): Promise<NetworkAttachmentsResponse> => {
+    if (attachmentsMissing) throw attachmentsMissing;
+    try {
+        return await fetchShared<NetworkAttachmentsResponse>(ATTACHMENTS_PATH, true);
+    } catch (error) {
+        if (error instanceof CollectorUnreachableError && error.status === 404) {
+            attachmentsMissing = new CollectorEndpointMissingError('network attachments', error.attempts);
+            throw attachmentsMissing;
+        }
+        throw error;
+    }
+};
+
+/** The last attachment counts this browser tab received, or null. */
+export const rememberedNetworkAttachments = (): NetworkAttachmentsResponse | null =>
+    (remembered.get(ATTACHMENTS_PATH) as NetworkAttachmentsResponse | undefined) ?? null;
 
 const generatedAtMs = (snapshot: LogicalTopologySnapshot): number => {
     const parsed = Date.parse(snapshot.metadata?.generatedAt ?? '');

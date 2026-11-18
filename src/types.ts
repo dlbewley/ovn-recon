@@ -779,6 +779,34 @@ export interface CollectorStatusResponse {
     };
 }
 
+/**
+ * The response of GET /api/v1/attachments (ovn-recon-nfs.4): pods attached to each
+ * user-defined OVN network, per node. Mirrors
+ * collector/internal/snapshot/attachments_types.go and
+ * collector/api/network-attachments.schema.json.
+ */
+export interface NetworkAttachmentsResponse {
+    metadata: {
+        schemaVersion: string;
+        generatedAt: string;
+        sourceHealth: string;
+    };
+    /** The nodes whose live data was counted. Any other node is unknown, not zero. */
+    zones: string[];
+    networks: {
+        /** `namespace/name` of the NetworkAttachmentDefinition. */
+        nad: string;
+        nodes: {
+            nodeName: string;
+            /** Attached pods, without those in `virtLaunchers`. */
+            pods: number;
+            /** Attached pods named as KubeVirt names its launcher pods. */
+            virtLaunchers: number;
+        }[];
+    }[];
+    warnings: LogicalTopologyWarning[];
+}
+
 // Lookup contract: the response of GET /api/v1/lookup/{kind}/{value}, which
 // answers "where is this address or name?" across every stored zone snapshot
 // (ovn-recon-tpp.1). Mirrors collector/internal/snapshot/lookup_types.go and

@@ -29,6 +29,12 @@ This scaffold includes:
   progress (`warmUp: {nodes, done}`). Zones resolve exactly as for the
   aggregate, so the two agree. The plugin's collector status line polls this
   ([schema](api/collector-status.schema.json), ovn-recon-1zx)
+- `GET /api/v1/attachments`: how many pods each user-defined OVN network has
+  on each node, by NAD, counted from the `Logical_Switch_Port` rows of the
+  zones that hold live data (`zones` names them; a node missing there is
+  unknown, not zero). Counts only, no pod names. The network page reads this
+  instead of watching pods
+  ([schema](api/network-attachments.schema.json), ovn-recon-nfs.4)
 - `GET /api/v1/lookup/<ip|mac|cidr|name>/<value>`: where an address or a name
   is, across every stored zone snapshot (see [Lookup](#lookup))
 - `GET /api/v1/ovs/bonds/:nodeName`: runtime state of the bonds inside one

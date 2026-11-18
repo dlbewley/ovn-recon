@@ -8,10 +8,12 @@ import {
     fetchCollectorLookup,
     fetchCollectorSnapshot,
     fetchCollectorStatus,
+    fetchNetworkAttachments,
     fetchOvsBondState,
     rememberedClusterTopology,
     rememberedCollectorSnapshot,
     rememberedCollectorStatus,
+    rememberedNetworkAttachments,
     sectionsPath,
     statusFromAggregate,
 } from './collectorApi';
@@ -438,6 +440,38 @@ describe('fetchOvsBondState', () => {
             await fetchOvsBondState('worker-1').catch(() => undefined);
             expect(requestedUrls().some((url) => url.endsWith('/lookup/'))).toBe(false);
         });
+    });
+});
+
+describe('fetchNetworkAttachments (ovn-recon-nfs.4)', () => {
+    const attachments = {
+        metadata: { schemaVersion: '1', generatedAt: '2026-11-18T09:00:00Z', sourceHealth: 'healthy' },
+        zones: ['worker-1'],
+        networks: [{ nad: 'blue/net', nodes: [{ nodeName: 'worker-1', pods: 2, virtLaunchers: 1 }] }],
+        warnings: [],
+    };
+
+    it('asks /attachments and remembers the answer for the tab', async () => {
+        fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => attachments });
+        expect(rememberedNetworkAttachments()).toBeNull();
+        await expect(fetchNetworkAttachments()).resolves.toEqual(attachments);
+        expect(requestedUrls()).toEqual([`${API}/attachments`]);
+        expect(rememberedNetworkAttachments()).toEqual(attachments);
+    });
+
+    it('stops asking a collector older than the route', async () => {
+        fetchMock.mockResolvedValue({ ok: false, status: 404, text: async () => '404 page not found' });
+        await expect(fetchNetworkAttachments()).rejects.toBeInstanceOf(CollectorEndpointMissingError);
+        const asked = fetchMock.mock.calls.length;
+        await expect(fetchNetworkAttachments()).rejects.toBeInstanceOf(CollectorEndpointMissingError);
+        expect(fetchMock.mock.calls).toHaveLength(asked);
+    });
+
+    it('keeps asking through a collector restart', async () => {
+        fetchMock.mockResolvedValue({ ok: false, status: 502, text: async () => 'bad gateway' });
+        await expect(fetchNetworkAttachments()).rejects.toBeInstanceOf(CollectorUnreachableError);
+        fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => attachments });
+        await expect(fetchNetworkAttachments()).resolves.toEqual(attachments);
     });
 });
 

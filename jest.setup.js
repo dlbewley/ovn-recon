@@ -40,6 +40,13 @@ jest.mock('./src/components/useTreePreferences', () => ({
     useTreePreferences: () => jest.requireActual('./src/components/treePreferencesModel').useMemoryTreePreferences(),
 }));
 
+// The placement table's pod and VM counts come from the collector or from SDK calls that
+// most suites' mocks do not list. Suites get "still loading"; one that tests the counts
+// takes the real hook back with jest.requireActual over its own SDK mock.
+jest.mock('./src/components/useNetworkWorkloads', () => ({
+    useNetworkWorkloads: () => ({ workloads: { state: 'loading' } }),
+}));
+
 // Which tree groups are open is kept in sessionStorage per browser tab; start every
 // test from an empty store so one test's open groups never reach the next.
 beforeEach(() => {
