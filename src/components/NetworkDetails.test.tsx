@@ -5,6 +5,7 @@ import { act } from 'react';
 import { clone, loadFixture, loadItems } from '../insights/testing';
 import type { ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState, UserDefinedNetwork } from '../types';
 import { NETOBSERV_FULL, withNetobserv } from '../linkOut/testCapabilities';
+import { CLUSTER_DEFAULT_NETWORK_TEXT } from './clusterDefaultNetwork';
 import type { NetworkAddress } from './networkPageModel';
 import { NetworkExplorerBody } from './NetworkDetails';
 import { NetworkScopeHeader } from './NetworkScope';
@@ -42,6 +43,9 @@ const KINDS = ['NodeNetworkState', 'ClusterUserDefinedNetwork', 'UserDefinedNetw
 const coverageCudns = loadItems<ClusterUserDefinedNetwork>('cudn', 'cluster-localnet-coverage.json');
 const coverageNads = loadItems<NetworkAttachmentDefinition>('nad', 'cluster-localnet-coverage.json');
 const coverageNns = loadItems<NodeNetworkState>('nns', 'cluster-localnet-coverage.json');
+
+const NMSTATE_SENTENCE = 'This cluster does not serve NodeNetworkState (it comes with the Kubernetes NMState Operator), '
+    + 'so where this network is wired cannot be shown.';
 
 /**
  * One network as the explorer draws it: the shell's network header (name, console
@@ -223,6 +227,41 @@ describe('NetworkDetails', () => {
             expect(text('network-summary')).toContain('Cluster default network');
             expect(text('network-summary')).not.toContain('Unknown');
             expect(text('placement-summary')).toContain('checks nothing node-local for the cluster default network;');
+            // Described with NodeNetworkState served too, and nothing is said to be missing.
+            expect(text('cluster-default-description')).toBe(CLUSTER_DEFAULT_NETWORK_TEXT);
+            expect(container.querySelector('[data-testid="placement-unavailable"]')).toBeNull();
+        });
+
+        describe('without NodeNetworkState', () => {
+            const address: NetworkAddress = { kind: 'nad', namespace: 'openshift-ovn-kubernetes', name: 'default' };
+
+            beforeEach(() => {
+                mockModels.NodeNetworkState = undefined;
+            });
+
+            it('describes the network and says only what is lost', async () => {
+                await render(address);
+                expect(text('cluster-default-description')).toBe(CLUSTER_DEFAULT_NETWORK_TEXT);
+                expect(text('placement-unavailable')).toBe(
+                    'This cluster does not serve NodeNetworkState (it comes with the Kubernetes NMState Operator), '
+                    + 'so the per-node physical detail (br-ex, uplinks) cannot be drawn.',
+                );
+                expect(container.textContent).not.toContain('cannot be shown');
+            });
+
+            it('names the namespaces with a primary UDN', async () => {
+                mockWatches.UserDefinedNetwork = [
+                    {
+                        metadata: { name: 'tenant', namespace: 'blue' },
+                        spec: { topology: 'Layer2', layer2: { role: 'Primary', subnets: ['10.20.0.0/24'] } },
+                    },
+                ];
+                await render(address);
+                expect(text('cluster-default-description')).toBe(
+                    `${CLUSTER_DEFAULT_NETWORK_TEXT} Namespace with a primary UDN: blue.`,
+                );
+                expect(container.textContent).not.toContain('cannot be shown');
+            });
         });
     });
 
@@ -286,10 +325,24 @@ describe('NetworkDetails', () => {
         mockModels.NodeNetworkState = undefined;
         await render({ kind: 'cudn', name: 'vlan-1924' });
         expect(text('network-summary')).toContain('physnet-vmdata');
-        expect(text('placement-unavailable')).toContain('does not serve NodeNetworkState');
+        expect(text('placement-unavailable')).toBe(NMSTATE_SENTENCE);
+        expect(container.querySelector('[data-testid="cluster-default-description"]')).toBeNull();
         expect(container.querySelector('[data-testid="placement-summary"]')).toBeNull();
         // Without NodeNetworkState the mapped-nowhere rule has nothing to read.
         expect(container.querySelector('[data-testid="network-findings"]')).toBeNull();
+    });
+
+    it('keeps the NodeNetworkState sentence for a UDN and a NAD', async () => {
+        mockModels.NodeNetworkState = undefined;
+        mockWatches.UserDefinedNetwork = [{
+            metadata: { name: 'tenant-blue', namespace: 'blue' },
+            spec: { topology: 'Layer2', layer2: { role: 'Secondary', subnets: ['10.20.0.0/24'] } },
+        }];
+        mockWatches.NetworkAttachmentDefinition = [...coverageNads, ...loadItems<NetworkAttachmentDefinition>('nad', 'sriov.json')];
+        await render({ kind: 'udn', namespace: 'blue', name: 'tenant-blue' });
+        expect(text('placement-unavailable')).toBe(NMSTATE_SENTENCE);
+        await render({ kind: 'nad', namespace: 'default', name: 'vm-igb' });
+        expect(text('placement-unavailable')).toBe(NMSTATE_SENTENCE);
     });
 
     it('leaves out the logical links when the collector is off', async () => {

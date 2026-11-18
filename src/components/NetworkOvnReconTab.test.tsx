@@ -5,6 +5,7 @@ import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 
 import { loadItems } from '../insights/testing';
 import type { ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState, UserDefinedNetwork } from '../types';
+import { CLUSTER_DEFAULT_NETWORK_TEXT } from './clusterDefaultNetwork';
 import {
     ClusterUserDefinedNetworkTab,
     NetworkAttachmentDefinitionTab,
@@ -121,7 +122,26 @@ describe('Network OVN Recon tabs (ovn-recon-zdt.1)', () => {
         const cudn = coverageCudns.find((item) => item.metadata?.name === 'vlan-1924');
         await render(ClusterUserDefinedNetworkTab, cudn, '/k8s/cluster/k8s.ovn.org~v1~ClusterUserDefinedNetwork/vlan-1924/ovn-recon');
         expect(text('network-summary')).toContain('physnet-vmdata');
-        expect(text('placement-unavailable')).toContain('does not serve NodeNetworkState');
+        expect(text('placement-unavailable')).toContain('so where this network is wired cannot be shown.');
+        expect(container.querySelector('[data-testid="cluster-default-description"]')).toBeNull();
+    });
+
+    it('describes the cluster default network when NodeNetworkState is not served', async () => {
+        mockModels.NodeNetworkState = undefined;
+        const nad: NetworkAttachmentDefinition = {
+            kind: 'NetworkAttachmentDefinition',
+            metadata: { name: 'default', namespace: 'openshift-ovn-kubernetes' },
+            spec: { config: '{"cniVersion":"0.4.0","name":"ovn-kubernetes","type":"ovn-k8s-cni-overlay"}' },
+        };
+        mockWatches.NetworkAttachmentDefinition = [...coverageNads, nad];
+        mockWatches.UserDefinedNetwork = [{
+            metadata: { name: 'tenant', namespace: 'blue' },
+            spec: { topology: 'Layer2', layer2: { role: 'Primary', subnets: ['10.20.0.0/24'] } },
+        }];
+        await render(NetworkAttachmentDefinitionTab, nad, '/k8s/ns/openshift-ovn-kubernetes/k8s.cni.cncf.io~v1~NetworkAttachmentDefinition/default/ovn-recon');
+        expect(text('cluster-default-description')).toBe(`${CLUSTER_DEFAULT_NETWORK_TEXT} Namespace with a primary UDN: blue.`);
+        expect(text('placement-unavailable')).toContain('the per-node physical detail (br-ex, uplinks) cannot be drawn.');
+        expect(container.textContent).not.toContain('cannot be shown');
     });
 
     it('shows an empty state for a network OVN Recon cannot see', async () => {
