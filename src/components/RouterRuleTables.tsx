@@ -14,10 +14,11 @@ import {
     natTypeCounts,
     NexthopTarget,
     nexthopResolverFor,
-    podAddressIndex,
     PodAddressOwner,
     routePolicy,
 } from './routerRules';
+import { AddressOwner, addressBookForDatabase, resolveAddress } from './addressBook';
+import AddressOwners from './AddressOwners';
 import { PodLink } from '../linkOut/LinkOut';
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
@@ -39,18 +40,25 @@ const PodRef: React.FC<{ owner: PodAddressOwner }> = ({ owner }) => (
     <PodLink namespace={owner.namespace} pod={owner.pod} />
 );
 
+/** A pod owner through PodRef, so a NAT row names every pod the same way. */
+const renderNatOwner = (owner: AddressOwner): React.ReactNode | undefined => {
+    if (owner.kind !== 'pod' || owner.ref.type !== 'resource' || !owner.ref.resource.namespace) return undefined;
+    const { namespace, name } = owner.ref.resource;
+    return <PodRef owner={{ namespace, pod: name, port: owner.provenance[0].record }} />;
+};
+
 /** True when every row of the group carries the same source port range (or none does). */
 const uniformPortRange = (group: NatGroupView): boolean =>
     group.portRanges.length === 0 || (group.portRanges.length === 1 && group.portRanges[0].count === group.rules.length);
 
 /**
- * A NAT group's logical IPs, each with the pod that owns it when known, and
+ * A NAT group's logical IPs, each with whoever owns it when known, and
  * its source port range when the group's rows differ in that.
  */
 const NatGroupAddresses: React.FC<{
     group: NatGroupView;
-    ownerOf: (address: string) => PodAddressOwner | undefined;
-}> = ({ group, ownerOf }) => {
+    ownersOf: (address: string) => readonly AddressOwner[];
+}> = ({ group, ownersOf }) => {
     const showRanges = !uniformPortRange(group);
     const rangeByIp = new Map(group.rules.map((rule) => [rule.logicalIp, rule.externalPortRange]));
     return (
@@ -64,13 +72,17 @@ const NatGroupAddresses: React.FC<{
             data-testid="nat-group-addresses"
         >
             {group.logicalIps.map((ip) => {
-                const owner = ownerOf(ip);
+                const owners = ownersOf(ip);
                 const range = rangeByIp.get(ip);
                 return (
                     <React.Fragment key={ip}>
                         <code>{ip}</code>
                         {showRanges && <span>{range ? <code>{range}</code> : DASH}</span>}
-                        <span>{owner ? <PodRef owner={owner} /> : DASH}</span>
+                        <span>
+                            {owners.length > 0
+                                ? <AddressOwners address={ip} owners={owners} renderOwner={renderNatOwner} />
+                                : DASH}
+                        </span>
                     </React.Fragment>
                 );
             })}
@@ -110,6 +122,13 @@ export interface RuleTablePageOptions {
 export interface NatRuleTableProps extends RuleTablePageOptions {
     nats: NATRow[];
     database?: LogicalDatabase | null;
+    /** The node `database` came from, for links to what owns an address. */
+    databaseNode?: string;
+    /**
+     * The router's network: a logical IP belongs to it, so an owner on another
+     * network that happens to use the same address is not this rule's.
+     */
+    network?: string;
     /** Resolve NAT.gateway_port (a Logical_Router_Port uuid) to its name. */
     gatewayPortName?: (uuid: string) => string | undefined;
     /** Fold per-address SNAT rows into groups (default); false lists one row per rule. */
@@ -153,6 +172,8 @@ export const staticRouteMatches = (route: StaticRouteRow, query: string | undefi
 export const NatRuleTable: React.FC<NatRuleTableProps> = ({
     nats: allNats,
     database,
+    databaseNode,
+    network,
     gatewayPortName,
     grouped = true,
     query,
@@ -172,7 +193,10 @@ export const NatRuleTable: React.FC<NatRuleTableProps> = ({
                 : nats.map((rule) => ({ kind: 'rule', key: rule.uuid, rule })),
         [nats, database, grouped],
     );
-    const ownerOf = React.useMemo(() => podAddressIndex(database), [database]);
+    const ownersOf = React.useMemo(() => {
+        const book = addressBookForDatabase(database, databaseNode);
+        return (address: string): readonly AddressOwner[] => (book ? resolveAddress(book, address, { network }) : []);
+    }, [database, databaseNode, network]);
     const counts = natTypeCounts(nats);
 
     const portName = (uuid?: string) => (uuid ? gatewayPortName?.(uuid) ?? uuid : undefined);
@@ -213,12 +237,13 @@ export const NatRuleTable: React.FC<NatRuleTableProps> = ({
                     );
                 }
                 const { logicalIp, logicalPort } = view.rule;
-                const owner = logicalIp && !logicalPort ? ownerOf(logicalIp) : undefined;
                 return (
                     <>
                         <code>{logicalIp ?? '—'}</code>
                         {logicalPort && <div style={SUBTLE}>port <code>{logicalPort}</code></div>}
-                        {owner && <div><PodRef owner={owner} /></div>}
+                        {logicalIp && !logicalPort && (
+                            <AddressOwners address={logicalIp} owners={ownersOf(logicalIp)} renderOwner={renderNatOwner} />
+                        )}
                     </>
                 );
             },
@@ -281,7 +306,7 @@ export const NatRuleTable: React.FC<NatRuleTableProps> = ({
                 </span>
             }
             expandedContent={(view) =>
-                view.kind === 'group' ? <NatGroupAddresses group={view} ownerOf={ownerOf} /> : undefined
+                view.kind === 'group' ? <NatGroupAddresses group={view} ownersOf={ownersOf} /> : undefined
             }
             openAll={openAll}
             pageSize={pageSize}

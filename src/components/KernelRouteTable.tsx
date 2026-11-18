@@ -8,6 +8,8 @@ import {
     Label,
 } from '@patternfly/react-core';
 
+import type { AddressOwner } from './addressBook';
+import AddressOwners from './AddressOwners';
 import { InfoPopover } from './drawerKit';
 import { comparePrefixes } from './ipPrefix';
 import {
@@ -42,11 +44,15 @@ const InterfaceName: React.FC<{ name?: string; select?: InterfaceSelector }> = (
     );
 };
 
+/** Who holds a gateway address, as far as the view drawing the table can tell. */
+export type GatewayOwners = (gateway: string) => readonly AddressOwner[];
+
 /** "on-link" where the router tables say it too (RouterRuleTables.tsx). */
-const Gateway: React.FC<{ hop: KernelNextHop }> = ({ hop }) => (
+const Gateway: React.FC<{ hop: KernelNextHop; ownersOf?: GatewayOwners }> = ({ hop, ownersOf }) => (
     <>
         {hop.gateway ? <code>{hop.gateway}</code> : <span style={SUBTLE}>on-link</span>}
         {hop.weight !== undefined && <span style={SUBTLE}> weight {hop.weight}</span>}
+        {hop.gateway && ownersOf && <AddressOwners address={hop.gateway} owners={ownersOf(hop.gateway)} />}
     </>
 );
 
@@ -95,6 +101,8 @@ export interface KernelRouteTableProps {
     /** Show only routes with a next hop through this device. */
     viaInterface?: string;
     selectInterface?: InterfaceSelector;
+    /** Names the owner under each gateway address; without it the addresses stand alone. */
+    gatewayOwners?: GatewayOwners;
     ariaLabel?: string;
     /**
      * For a narrow drawer (ovn-recon-dp7.9 item 2): only Destination, Gateway
@@ -162,6 +170,7 @@ export const KernelRouteTable: React.FC<KernelRouteTableProps> = ({
     routes,
     viaInterface,
     selectInterface,
+    gatewayOwners,
     ariaLabel = 'Kernel routes',
     narrow = false,
 }) => {
@@ -187,7 +196,7 @@ export const KernelRouteTable: React.FC<KernelRouteTableProps> = ({
         {
             key: 'gateway',
             title: 'Gateway',
-            cell: (row) => perHop(row, (hop) => <Gateway hop={hop} />),
+            cell: (row) => perHop(row, (hop) => <Gateway hop={hop} ownersOf={gatewayOwners} />),
             compare: (a, b) => comparePrefixes(a.nextHops[0]?.gateway ?? '', b.nextHops[0]?.gateway ?? ''),
             headerModifier: narrowHeader,
         },

@@ -4,7 +4,7 @@ import { Button } from '@patternfly/react-core';
 import {
     CopyValue, FactRow, FactRows, InferredLabel, InfoPopover, isCopyableAddress, ValueList, WideFactRow
 } from '../components/drawerKit';
-import { InterfaceSelector, KernelRouteTable } from '../components/KernelRouteTable';
+import { GatewayOwners, InterfaceSelector, KernelRouteTable } from '../components/KernelRouteTable';
 import { ConsoleLink } from '../linkOut/LinkOut';
 import { LinkTarget, resourceTarget } from '../linkOut/registry';
 import { Fact, FactItem, FactTable, NodeViewModel, Provenance } from './types';
@@ -89,6 +89,8 @@ export interface FactRenderHooks {
      * node cannot be selected here (not drawn, or the one already open).
      */
     selectNode?: (id: string) => (() => void) | undefined;
+    /** Who holds a kernel route's gateway address. */
+    gatewayOwners?: GatewayOwners;
 }
 
 const renderTable = (fact: Fact, table: FactTable, hooks: FactRenderHooks) => {
@@ -102,6 +104,7 @@ const renderTable = (fact: Fact, table: FactTable, hooks: FactRenderHooks) => {
                     routes={table.routes}
                     viaInterface={table.viaInterface}
                     selectInterface={hooks.selectInterface}
+                    gatewayOwners={hooks.gatewayOwners}
                     ariaLabel={fact.label}
                     narrow
                 />

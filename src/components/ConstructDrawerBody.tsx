@@ -391,6 +391,7 @@ export const OverviewBody: React.FC<DrawerBodyProps> = ({
     fallbackNode,
     totalNodes,
     database,
+    databaseNode,
     nodeForChassis,
     services,
     policy,
@@ -499,6 +500,8 @@ export const OverviewBody: React.FC<DrawerBodyProps> = ({
                     <NatRuleTable
                         nats={construct.natRules}
                         database={database}
+                        databaseNode={databaseNode}
+                        network={construct.network}
                         gatewayPortName={gatewayPortName}
                         openAll={routesHref ? { href: routesHref, count: construct.natRules.length } : undefined}
                     />
