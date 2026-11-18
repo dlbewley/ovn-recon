@@ -23,11 +23,13 @@ import { getNamespaceQueryPath, getProjectPath } from '../topology/links';
 import { getUdnTopologyAndRole } from '../topology/registry';
 import { formatSubnets } from '../topology/subnets';
 import type { Fact, FactItem, Provenance, ResourceRef } from '../topology/types';
+import type { NetworkAttachmentIndex } from '../topology/workloadAttachments';
 import type {
     ClusterUserDefinedNetwork,
     Interface,
     Layer3Subnet,
     NetworkAttachmentDefinition,
+    NetworkAttachmentsResponse,
     NodeNetworkState,
     RouteAdvertisements,
     UserDefinedNetwork
@@ -585,7 +587,46 @@ export interface PlacementRow {
     /** The node's physical view, with the relevant graph node selected. */
     physicalPath: string;
     logicalPath: string;
+    /** Pods and VMs attached to the network here; set when the caller read them. */
+    workloads?: PlacementWorkloads;
 }
+
+/** What is attached to a network on one node. */
+export interface NodeWorkloadCount {
+    pods: number;
+    vms: number;
+}
+
+/** What is known of the workloads attached to a network. */
+export type NetworkWorkloads =
+    | { state: 'loading' }
+    /** Could not be read, for example without permission to list pods. Never a zero. */
+    | { state: 'unknown'; reason: string }
+    /** Counting would list every pod in the cluster, so it waits to be asked. */
+    | { state: 'on-request' }
+    | {
+        state: 'known';
+        /** Counted by the collector from OVN's switch ports, or from pods read here. */
+        source: 'collector' | 'pods';
+        /** By node; a node with nothing attached has no entry. */
+        counts: ReadonlyMap<string, NodeWorkloadCount>;
+        /** The nodes the counts cover, when not all: any other node is unknown. */
+        coveredNodes?: ReadonlySet<string>;
+        /** Whether the cluster serves VirtualMachineInstances. */
+        kubevirt: boolean;
+        /** Why VMs could not be counted, when KubeVirt is there but unreadable. */
+        vmsUnknown?: string;
+        /** When pods were listed, for a count made once on request. */
+        countedAt?: string;
+    };
+
+/** One node's share of NetworkWorkloads. */
+export type PlacementWorkloads =
+    | { state: 'loading' }
+    | { state: 'unknown' }
+    | { state: 'on-request' }
+    /** `vms` is absent on a cluster without KubeVirt. */
+    | { state: 'known'; pods: number; vms?: number | 'unknown' };
 
 export interface Placement {
     mode: PlacementMode;
@@ -717,13 +758,113 @@ const bridgeRow = (record: NetworkRecord, nns: NodeNetworkState, node: string): 
 };
 
 /**
+ * The names a pod's attachment to this network goes by: `namespace/nad` for each NAD of
+ * the network. A CUDN has one per selected namespace, read from its generated NADs and
+ * from its NetworkCreated condition, which still names them when NADs cannot be listed.
+ * Empty for a CUDN with neither, and for the cluster default network, whose attachments
+ * are not counted. Names, never subnets: networks may overlap.
+ */
+export const networkAttachmentNames = (record: NetworkRecord, inputs: NetworkInputs): string[] => {
+    if (record.clusterDefault) return [];
+    const declared = record.kind === 'cudn'
+        ? getCudnAssociatedNamespaces(record.resource as ClusterUserDefinedNetwork).map((ns) => `${ns}/${record.name}`)
+        : [`${record.namespace}/${record.name}`];
+    const generated = generatedNads(record, inputs).map((nad) => `${namespaceOf(nad)}/${nad.metadata?.name}`);
+    return Array.from(new Set([...declared, ...generated])).sort();
+};
+
+/** Whether OVN holds this network's attachments: anything but a NAD of another CNI. */
+export const isOvnNetwork = (record: NetworkRecord): boolean =>
+    record.kind !== 'nad' || record.cniType === OVN_CNI_TYPE;
+
+/** Per-node counts from pods that were read, each workload once across the network's NADs. */
+export const workloadCountsFromIndex = (
+    index: NetworkAttachmentIndex,
+    networks: readonly string[],
+): Map<string, NodeWorkloadCount> => {
+    const seen = new Map<string, { pod: Set<string>; vm: Set<string> }>();
+    networks.forEach((network) => {
+        index.get(network)?.forEach((attachments, node) => {
+            const onNode = seen.get(node) ?? { pod: new Set<string>(), vm: new Set<string>() };
+            seen.set(node, onNode);
+            attachments.forEach(({ workload }) => {
+                onNode[workload.kind].add(`${workload.namespace}/${workload.name}`);
+            });
+        });
+    });
+    return new Map(Array.from(seen, ([node, { pod, vm }]) => [node, { pods: pod.size, vms: vm.size }]));
+};
+
+/**
+ * Per-node counts from the collector, and the nodes it could speak for. A launcher pod is
+ * a VM where KubeVirt is served, and an ordinary pod anywhere else.
+ */
+export const workloadCountsFromCollector = (
+    response: NetworkAttachmentsResponse,
+    networks: readonly string[],
+    kubevirt: boolean,
+): { counts: Map<string, NodeWorkloadCount>; coveredNodes: Set<string> } => {
+    const wanted = new Set(networks);
+    const counts = new Map<string, NodeWorkloadCount>();
+    response.networks.filter(({ nad }) => wanted.has(nad)).forEach(({ nodes }) => {
+        nodes.forEach(({ nodeName, pods, virtLaunchers }) => {
+            const count = counts.get(nodeName) ?? { pods: 0, vms: 0 };
+            counts.set(nodeName, {
+                pods: count.pods + pods + (kubevirt ? 0 : virtLaunchers),
+                vms: count.vms + (kubevirt ? virtLaunchers : 0),
+            });
+        });
+    });
+    return { counts, coveredNodes: new Set(response.zones) };
+};
+
+const workloadsOnNode = (node: string, workloads: NetworkWorkloads): PlacementWorkloads => {
+    if (workloads.state !== 'known') return { state: workloads.state };
+    if (workloads.coveredNodes && !workloads.coveredNodes.has(node)) return { state: 'unknown' };
+    const count = workloads.counts.get(node);
+    const pods = count?.pods ?? 0;
+    if (!workloads.kubevirt) return { state: 'known', pods };
+    return { state: 'known', pods, vms: workloads.vmsUnknown ? 'unknown' : count?.vms ?? 0 };
+};
+
+const countText = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+/** A row's Attached cell: "2 pods, 1 VM", "2 pods" without KubeVirt, "unknown", or "-" until asked. */
+export const placementWorkloadsText = (workloads: PlacementWorkloads): string | undefined => {
+    if (workloads.state === 'loading') return undefined;
+    if (workloads.state === 'unknown') return 'unknown';
+    if (workloads.state === 'on-request') return '-';
+    const pods = countText(workloads.pods, 'pod');
+    if (workloads.vms === undefined) return pods;
+    return `${pods}, ${workloads.vms === 'unknown' ? 'VMs unknown' : countText(workloads.vms, 'VM')}`;
+};
+
+/** The line under the placement table about where its Attached counts came from. */
+export const placementWorkloadsNote = (workloads: NetworkWorkloads, nodes: readonly string[]): string | undefined => {
+    if (workloads.state === 'unknown') return workloads.reason;
+    if (workloads.state !== 'known') return undefined;
+    const parts: string[] = [];
+    if (workloads.source === 'collector') {
+        parts.push('Counted from OVN snapshots, which can lag by a few minutes.');
+        const { coveredNodes } = workloads;
+        const missing = coveredNodes ? nodes.filter((node) => !coveredNodes.has(node)).length : 0;
+        if (missing > 0) parts.push(`${countText(missing, 'node')} without live OVN data.`);
+    }
+    if (workloads.countedAt) parts.push(`Counted once at ${new Date(workloads.countedAt).toLocaleTimeString()}.`);
+    if (workloads.vmsUnknown) parts.push(workloads.vmsUnknown);
+    return parts.length > 0 ? parts.join(' ') : undefined;
+};
+
+/**
  * One row per node with a NodeNetworkState: is the network wired there, and on what.
- * Rows are sorted by node name; `wired` counts the wired rows.
+ * Rows are sorted by node name; `wired` counts the wired rows. Given `workloads`, each
+ * row also says what is attached to the network on that node.
  */
 export const buildPlacement = (
     record: NetworkRecord,
     nodeNetworkStates: NodeNetworkState[],
-    inputs: NetworkInputs
+    inputs: NetworkInputs,
+    workloads?: NetworkWorkloads
 ): Placement => {
     const rows = nodeNetworkStates
         .map((nns): PlacementRow => {
@@ -738,7 +879,11 @@ export const buildPlacement = (
                             uplinks: [],
                             physicalPath: physicalViewPath(node, record.graphNodeId)
                         };
-            return { ...row, logicalPath: logicalViewPath(node) };
+            return {
+                ...row,
+                logicalPath: logicalViewPath(node),
+                ...(workloads ? { workloads: workloadsOnNode(node, workloads) } : {})
+            };
         })
         .sort((a, b) => a.node.localeCompare(b.node));
     return {

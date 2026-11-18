@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Link } from 'react-router';
 import {
     Alert,
+    Button,
     Card,
     CardBody,
     CardTitle,
@@ -35,14 +36,18 @@ import {
     networkPath,
     NetworkRecord,
     networkSummaryFacts,
+    NetworkWorkloads,
     Placement,
     PlacementRow,
     PlacementUplink,
     placementSummary,
+    placementWorkloadsNote,
+    placementWorkloadsText,
 } from './networkPageModel';
 import { clusterDefaultNetworkText, nodeNetworkStateUnavailableText } from './clusterDefaultNetwork';
 import { networksPath, nodePhysicalPath } from '../routes';
 import { networkDisplayName, networkNotFoundText, networkScopeState } from './networkScopeModel';
+import { useNetworkWorkloads } from './useNetworkWorkloads';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 
 /**
@@ -226,6 +231,45 @@ const ViewLinks: React.FC<{ row: PlacementRow; showLogical: boolean }> = ({ row,
     </>
 );
 
+/** The pods and VMs attached on this node; "unknown" when they could not be read. */
+const AttachedCell: React.FC<{ row: PlacementRow }> = ({ row }) => {
+    const text = row.workloads && placementWorkloadsText(row.workloads);
+    return (
+        <span
+            data-testid={`placement-attached-${row.node}`}
+            style={row.workloads?.state === 'known' ? undefined : subtle}
+        >
+            {text ?? 'Loading...'}
+        </span>
+    );
+};
+
+/** Where the Attached counts came from, and the way to ask for a count of every pod. */
+const AttachedNote: React.FC<{
+    workloads: NetworkWorkloads;
+    nodes: string[];
+    requestCount?: () => void;
+}> = ({ workloads, nodes, requestCount }) => {
+    const note = placementWorkloadsNote(workloads, nodes);
+    const onRequest = workloads.state === 'on-request';
+    if (!note && !onRequest) return null;
+    return (
+        <p className="pf-v6-u-mt-sm" style={subtle} data-testid="placement-attached-note">
+            {onRequest
+                ? 'Attached workloads: any namespace can use this network, so counting them lists every pod in the cluster.'
+                : `Attached workloads: ${note}`}
+            {requestCount && (
+                <>
+                    {' '}
+                    <Button variant="link" isInline onClick={requestCount} data-testid="placement-count-pods">
+                        {onRequest ? 'Count pods' : 'Count again'}
+                    </Button>
+                </>
+            )}
+        </p>
+    );
+};
+
 interface Column {
     title: string;
     render: (row: PlacementRow) => React.ReactNode;
@@ -233,7 +277,12 @@ interface Column {
     nowrap?: boolean;
 }
 
-const placementColumns = (placement: Placement, vlan: string | undefined, showLogical: boolean): Column[] => {
+const placementColumns = (
+    placement: Placement,
+    vlan: string | undefined,
+    showLogical: boolean,
+    showAttached: boolean,
+): Column[] => {
     // The node itself: in the explorer this selects the node in the tree.
     const node: Column = {
         title: 'Node',
@@ -248,11 +297,15 @@ const placementColumns = (placement: Placement, vlan: string | undefined, showLo
         render: (row) => (row.bridge ? row.bridge.name : <span style={subtle}>-</span>),
     };
     const uplinks: Column = { title: 'Uplinks', render: (row) => <Uplinks uplinks={row.uplinks} /> };
+    const attached: Column[] = showAttached
+        ? [{ title: 'Attached', nowrap: true, render: (row) => <AttachedCell row={row} /> }]
+        : [];
     switch (placement.mode) {
         case 'localnet':
             return [
                 node, status, bridge, uplinks,
                 { title: 'VLAN', nowrap: true, render: () => vlan ?? <span style={subtle}>none</span> },
+                ...attached,
                 views,
             ];
         case 'primary':
@@ -284,12 +337,13 @@ const placementColumns = (placement: Placement, vlan: string | undefined, showLo
                         )
                         : <span style={subtle}>-</span>),
                 },
+                ...attached,
                 views,
             ];
         case 'bridge':
-            return [node, status, bridge, uplinks, views];
+            return [node, status, bridge, uplinks, ...attached, views];
         default:
-            return [node, views];
+            return [node, ...attached, views];
     }
 };
 
@@ -306,9 +360,14 @@ const PlacementCard: React.FC<{
     vlan: string | undefined;
     showLogical: boolean;
 }> = ({ record, inputs, nns, vlan, showLogical }) => {
+    // Counted only while the table is on screen. The cluster default network is left out:
+    // nearly every pod is on it, so a count would say little and cost the most.
+    const tableShown = nns.available && nns.loaded && !nns.error && nns.data.length > 0;
+    const showAttached = !record.clusterDefault;
+    const { workloads, requestCount } = useNetworkWorkloads(record, inputs, tableShown && showAttached);
     const placement = React.useMemo(
-        () => buildPlacement(record, nns.data, inputs),
-        [record, nns.data, inputs],
+        () => buildPlacement(record, nns.data, inputs, showAttached ? workloads : undefined),
+        [record, nns.data, inputs, showAttached, workloads],
     );
     let body: React.ReactNode;
     if (!nns.available) {
@@ -322,7 +381,7 @@ const PlacementCard: React.FC<{
     } else if (placement.rows.length === 0) {
         body = <p data-testid="placement-unavailable">No node reports a NodeNetworkState.</p>;
     } else {
-        const columns = placementColumns(placement, vlan, showLogical);
+        const columns = placementColumns(placement, vlan, showLogical, showAttached);
         const summary = placementSummary(placement);
         body = (
             <>
@@ -345,6 +404,13 @@ const PlacementCard: React.FC<{
                         ))}
                     </Tbody>
                 </Table>
+                {showAttached && (
+                    <AttachedNote
+                        workloads={workloads}
+                        nodes={placement.rows.map((row) => row.node)}
+                        requestCount={requestCount}
+                    />
+                )}
             </>
         );
     }

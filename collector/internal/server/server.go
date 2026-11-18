@@ -22,6 +22,10 @@ const snapshotsAggregatePath = "/api/v1/snapshots"
 // (ovn-recon-1zx): what a status line needs, for a few hundred bytes.
 const statusPath = "/api/v1/status"
 
+// attachmentsPath serves per-node counts of the pods on each user-defined OVN
+// network (ovn-recon-nfs.4), so the network page needs no pod watch for them.
+const attachmentsPath = "/api/v1/attachments"
+
 // sectionsPrefix roots the path spelling of the include parameter:
 // /api/v1/sections/<section>[,<section>]/snapshots[/<node>].
 const sectionsPrefix = "/api/v1/sections/"
@@ -138,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/readyz", s.handleReady)
 	mux.Handle(snapshotsAggregatePath, withGzip(http.HandlerFunc(s.handleSnapshotsAggregate)))
 	mux.Handle(statusPath, withGzip(http.HandlerFunc(s.handleStatus)))
+	mux.Handle(attachmentsPath, withGzip(http.HandlerFunc(s.handleAttachments)))
 	mux.Handle(snapshotsPrefix, withGzip(http.HandlerFunc(s.handleSnapshotByNode)))
 	mux.Handle(sectionsPrefix, withGzip(http.HandlerFunc(s.handleSectionsPath)))
 	mux.Handle(lookupPrefix, withGzip(http.HandlerFunc(s.handleLookup)))
@@ -551,6 +556,47 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(headerSnapshotSourceHealth, status.Metadata.SourceHealth)
 	if err := json.NewEncoder(w).Encode(status); err != nil {
 		s.logger.Error("failed to encode collector status", "error", err)
+		http.Error(w, fmt.Sprintf("failed to encode payload: %v", err), http.StatusInternalServerError)
+	}
+}
+
+// handleAttachments serves GET /api/v1/attachments (ovn-recon-nfs.4): how many
+// pods each user-defined OVN network has on each node. Zones resolve exactly as
+// for the aggregate, so this reads the same cached snapshots.
+func (s *Server) handleAttachments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.nodeLister == nil {
+		http.Error(w, "attachments endpoint is not enabled", http.StatusNotFound)
+		return
+	}
+
+	collected, err := s.collectZones(r.Context())
+	if err != nil {
+		s.logger.Error("failed to list nodes for network attachments", "error", err)
+		http.Error(w, fmt.Sprintf("failed to list nodes: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	zones, networks := snapshot.CountAttachments(collected.zones)
+	attachments := snapshot.NetworkAttachments{
+		Metadata: snapshot.ClusterMetadata{
+			SchemaVersion: snapshot.AttachmentsSchemaVersion,
+			GeneratedAt:   time.Now().UTC(),
+			SourceHealth:  collected.sourceHealth,
+		},
+		Zones:    zones,
+		Networks: networks,
+		Warnings: collected.warnings,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set(headerSnapshotSourceHealth, attachments.Metadata.SourceHealth)
+	if err := json.NewEncoder(w).Encode(attachments); err != nil {
+		s.logger.Error("failed to encode network attachments", "error", err)
 		http.Error(w, fmt.Sprintf("failed to encode payload: %v", err), http.StatusInternalServerError)
 	}
 }

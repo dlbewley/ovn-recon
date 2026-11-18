@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dlbewley/ovn-recon/collector/api/network-attachments.schema.json",
+  "title": "NetworkAttachments",
+  "description": "Payload from GET /api/v1/attachments: how many pods are attached to each user-defined OVN network on each node, counted from Logical_Switch_Port rows. Counts only, with no pod names.",
+  "type": "object",
+  "required": [
+    "metadata",
+    "zones",
+    "networks",
+    "warnings"
+  ],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "generatedAt",
+        "sourceHealth"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sourceHealth": {
+          "type": "string",
+          "description": "healthy, or degraded when any zone failed or was not read live."
+        }
+      },
+      "additionalProperties": false
+    },
+    "zones": {
+      "type": "array",
+      "description": "The nodes whose live data was counted, sorted. A node missing here is unknown, not zero.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "networks": {
+      "type": "array",
+      "description": "One entry per NetworkAttachmentDefinition with an attached pod, sorted by NAD.",
+      "items": {
+        "type": "object",
+        "required": [
+          "nad",
+          "nodes"
+        ],
+        "properties": {
+          "nad": {
+            "type": "string",
+            "description": "namespace/name, from the port's k8s.ovn.org/nad external ID."
+          },
+          "nodes": {
+            "type": "array",
+            "description": "One entry per node with an attachment, sorted by node.",
+            "items": {
+              "type": "object",
+              "required": [
+                "nodeName",
+                "pods",
+                "virtLaunchers"
+              ],
+              "properties": {
+                "nodeName": {
+                  "type": "string"
+                },
+                "pods": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Attached pods, excluding those counted in virtLaunchers."
+                },
+                "virtLaunchers": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Attached pods named as KubeVirt names its launcher pods."
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "description": "The aggregate's own warnings (ZONE_COLLECTION_FAILED).",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
