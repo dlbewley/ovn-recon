@@ -841,7 +841,7 @@ interface NodeAddress {
     address: string;
 }
 
-const nodeAddressesOf = (node: K8sResourceCommon): NodeAddress[] => {
+export const nodeAddressesOf = (node: K8sResourceCommon): NodeAddress[] => {
     const addresses = (node as { status?: { addresses?: unknown } }).status?.addresses;
     if (!Array.isArray(addresses)) return [];
     return addresses.filter(
@@ -856,7 +856,7 @@ interface InterfaceAddress {
     parsed: ParsedPrefix;
 }
 
-const interfaceAddresses = (iface: Interface): InterfaceAddress[] => {
+export const interfaceAddresses = (iface: Interface): InterfaceAddress[] => {
     const entries = [
         ...(Array.isArray(iface.ipv4?.address) ? iface.ipv4.address : []),
         ...(Array.isArray(iface.ipv6?.address) ? iface.ipv6.address : []),

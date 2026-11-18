@@ -161,13 +161,16 @@ export interface PodAddressOwner {
     port: string;
 }
 
-/** The addresses a switch port claims: the IP part of `"mac ip [ip...]"`. */
-const switchPortAddresses = (row: LogicalSwitchPortRow): string[] => {
-    const entries = [...(row.addresses ?? []), ...(row.dynamicAddresses ? [row.dynamicAddresses] : [])];
-    return entries.flatMap((entry) => entry.split(/\s+/).slice(1)).filter((token) => parsePrefix(token) !== null);
-};
+/** The IP part of one `"mac ip [ip...]"` address entry of a switch port. */
+export const portEntryAddresses = (entry: string): string[] =>
+    entry.split(/\s+/).slice(1).filter((token) => parsePrefix(token) !== null);
 
-const hostKey = (address: string): string | undefined => {
+/** The addresses a switch port claims. */
+const switchPortAddresses = (row: LogicalSwitchPortRow): string[] =>
+    [...(row.addresses ?? []), ...(row.dynamicAddresses ? [row.dynamicAddresses] : [])].flatMap(portEntryAddresses);
+
+/** One key for an address however it is spelled, with or without its mask. */
+export const hostKey = (address: string): string | undefined => {
     const parsed = parsePrefix(address);
     return parsed ? `${parsed.family}:${parsed.address.toString(16)}` : undefined;
 };

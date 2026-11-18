@@ -55,6 +55,9 @@ import { describeCounts, FindingsBadge, findingsBadgeWidth } from '../insights/u
 import { useHideInfoFindings, useNodeFindings, visibleFindings } from '../insights/ui/useFindings';
 import { nodePhysicalPath } from '../routes';
 import { useOvsBondState } from './useOvsBondState';
+import { AddressBook, buildAddressBook, resolveAddress } from './addressBook';
+import { rememberedCollectorSnapshot } from './collectorApi';
+import type { GatewayOwners } from './KernelRouteTable';
 
 /** The card the graph sits in on the routed page, or nothing for a host that frames it. */
 const ViewFrame: React.FC<{ plain: boolean; children: React.ReactNode }> = ({ plain, children }) => (plain ? (
@@ -197,6 +200,23 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
         (id: string): Finding[] => (findings.length === 0 ? [] : findingsForGraphNode(findings, nodeName, id)),
         [findings, nodeName]
     );
+    // Who holds a kernel route's gateway (ovn-recon-dp7.4), from what this page already
+    // has: every node's interfaces and, if this tab has opened the node's logical view,
+    // its zone snapshot. No request is made for it. A degraded snapshot is the
+    // collector's sample data, which says nothing about this cluster. The book is built
+    // when a drawer first asks.
+    const zoneSnapshot = collectorEnabled && nodeName ? rememberedCollectorSnapshot(nodeName) : null;
+    const zoneDatabase = zoneSnapshot?.metadata?.sourceHealth === 'degraded' ? undefined : zoneSnapshot?.database;
+    const gatewayOwners = React.useMemo<GatewayOwners>(() => {
+        let book: AddressBook | undefined;
+        return (gateway) => {
+            book ??= buildAddressBook({
+                zones: zoneDatabase ? [{ node: nodeName, database: zoneDatabase }] : [],
+                nodeNetworkStates: allNodeNetworkStates?.length ? allNodeNetworkStates : nns ? [nns] : [],
+            });
+            return resolveAddress(book, gateway, { preferNode: nodeName });
+        };
+    }, [zoneDatabase, nodeName, allNodeNetworkStates, nns]);
     const hasLldpData = hasLldpNeighbors(interfaces);
 
     // State for toggle
@@ -788,7 +808,8 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
             return placed ? placed.descriptor.present(placed.item, ctx).label : id;
         },
         onSelectNode: selectNode,
-        findingsFor
+        findingsFor,
+        gatewayOwners
     });
 
     const handleNodeClick = (event: React.SyntheticEvent, id: string) => {

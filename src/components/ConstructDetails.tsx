@@ -116,10 +116,11 @@ const NO_SECTIONS: readonly SnapshotSection[] = [];
 const RoutesBody: React.FC<{
     construct: LadderConstruct;
     database: DrawerBodyProps['database'];
+    databaseNode: string;
     nodeHref: (node: string) => string;
     query: string;
     onQueryChange: (value: string) => void;
-}> = ({ construct, database, nodeHref, query, onQueryChange }) => {
+}> = ({ construct, database, databaseNode, nodeHref, query, onQueryChange }) => {
     const [grouped, setGrouped] = React.useState(true);
     const routerPortName = React.useMemo(
         () => new Map((database?.logicalRouterPorts ?? []).map((port) => [port.uuid, port.name])),
@@ -166,6 +167,8 @@ const RoutesBody: React.FC<{
                     <NatRuleTable
                         nats={construct.natRules}
                         database={database}
+                        databaseNode={databaseNode}
+                        network={construct.network}
                         gatewayPortName={gatewayPortName}
                         grouped={grouped}
                         query={query}
@@ -569,6 +572,7 @@ export const ConstructBody: React.FC<ConstructBodyProps> = ({
                         <RoutesBody
                             construct={construct}
                             database={snapshot.database}
+                            databaseNode={node}
                             nodeHref={nodeHref}
                             query={query}
                             onQueryChange={(value) => replaceSearch({ q: value })}

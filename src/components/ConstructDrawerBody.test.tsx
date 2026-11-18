@@ -212,6 +212,77 @@ describe('ConstructDrawerBody', () => {
         expect(fipRow.querySelector('button')).toBeNull();
     });
 
+    describe('NAT logical IP owners', () => {
+        const natRow = (ip: string) =>
+            [...container.querySelectorAll('table[aria-label="NAT rules"] tbody > tr[data-testid^="rule-row-"]')]
+                .find((row) => row.textContent?.includes(ip))!;
+
+        /** The zone's database with one more pod port claiming `10.131.1.193`. */
+        const withClaim = (switchName: string, name: string) => {
+            const uuid = `claim-${name}`;
+            return {
+                ...database,
+                logicalSwitches: database.logicalSwitches.map((row) =>
+                    row.name === switchName ? { ...row, ports: [...row.ports, uuid] } : row),
+                logicalSwitchPorts: [
+                    ...database.logicalSwitchPorts,
+                    { uuid, name, addresses: ['0a:58:0a:83:01:ff 10.131.1.193'] },
+                ],
+            };
+        };
+
+        const renderGatewayRouter = (zone: LogicalDatabase) => {
+            const construct = byName('GR_cnv-1')!;
+            const rule = { uuid: 'one', type: 'snat' as const, externalIp: '192.168.4.72', logicalIp: '10.131.1.193' };
+            act(() => {
+                root.render(
+                    <ConstructDrawerBody
+                        construct={{ ...construct, natRules: [rule] }}
+                        model={model}
+                        database={zone}
+                        databaseNode="cnv-1"
+                    />,
+                );
+            });
+        };
+
+        it('names the router port behind a gateway router\'s own SNAT, and links to it', () => {
+            act(() => {
+                root.render(
+                    <ConstructDrawerBody construct={byName('GR_cnv-1')!} model={model} database={database} databaseNode="cnv-1" />,
+                );
+            });
+            const owner = natRow('100.64.0.5').querySelector('[data-testid="address-owner"]')!;
+            expect(owner.textContent).toBe('Router port rtoj-GR_cnv-1');
+            expect(owner.querySelector('a')?.getAttribute('href')).toBe('/ovn-recon/ovn/cnv-1?select=router:GR_cnv-1');
+            // Under the address, which stays as it was.
+            expect(natRow('100.64.0.5').querySelector('td[data-label="Logical IP"] code')?.textContent).toBe('100.64.0.5');
+        });
+
+        it('tags the owner on a user-defined network\'s router with that network', () => {
+            renderWithDatabase('GR_cluster_udn_example.p.cudn_cnv-1');
+            expect(natRow('100.65.0.5').querySelector('[data-testid="address-owner"]')?.textContent).toBe(
+                'Router port rtotr-GR_cluster_udn_example.p.cudn_cnv-1 (example-p-cudn)',
+            );
+        });
+
+        it('keeps the pod when another network reuses its address', () => {
+            renderGatewayRouter(withClaim('demo.mirror_example.l3.udn_cnv-1', 'demo-mirror_reused-address'));
+            expect(natRow('10.131.1.193').querySelector('a')?.textContent).toBe('hive/hiveadmission-6b44465788-fnxq7');
+        });
+
+        it('offers both pods, naming neither, when two on the router\'s network claim the address', async () => {
+            renderGatewayRouter(withClaim('cnv-1', 'hive_second-claimant'));
+            const row = natRow('10.131.1.193');
+            expect(row.querySelector('a')).toBeNull();
+            const button = row.querySelector<HTMLButtonElement>('[data-testid="address-owners"] button')!;
+            expect(button.textContent).toBe('2 possible owners');
+            const text = await openInfoPopover(button);
+            expect(text).toContain('hive/hiveadmission-6b44465788-fnxq7');
+            expect(text).toContain('hive/second-claimant');
+        });
+    });
+
     it('shows gateway port hosting resolved to a node name, falling back to the chassis id', () => {
         const construct = byName('ovn_cluster_router');
         const chassisId = '91bc7389-d1b9-4fef-9f4c-52e3eedab004';

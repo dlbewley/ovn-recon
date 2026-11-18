@@ -3,7 +3,7 @@ import { Button } from '@patternfly/react-core';
 import { CodeEditor, Language } from '@patternfly/react-code-editor';
 import * as yaml from 'js-yaml';
 
-import type { InterfaceSelector } from '../components/KernelRouteTable';
+import type { GatewayOwners, InterfaceSelector } from '../components/KernelRouteTable';
 import { TopologyEdge } from '../components/nodeVisualizationModel';
 import { useIsDarkTheme } from '../components/useIsDarkTheme';
 import type { Finding } from '../insights/types';
@@ -54,6 +54,8 @@ export interface DrawerTabHooks {
      * draws exactly what it did before.
      */
     findingsFor?: (id: string) => Finding[];
+    /** Who holds a kernel route's gateway address; absent, the addresses stand alone. */
+    gatewayOwners?: GatewayOwners;
 }
 
 /**
@@ -218,6 +220,7 @@ export const buildDrawerTabs = (
                             facts={facts ?? baseFacts(node)}
                             selectInterface={interfaceSelector(ctx, hooks, node.id)}
                             selectNode={nodeSelector(hooks, node.id)}
+                            gatewayOwners={hooks.gatewayOwners}
                         />
                         <IdentifiersSection identifiers={physicalIdentifiers(node)} />
                     </div>
