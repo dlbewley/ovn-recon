@@ -73,7 +73,8 @@ import {
 } from './serviceIndex';
 import { useIsDarkTheme } from './useIsDarkTheme';
 import { useOptionalSections } from './useOptionalSections';
-import { ConsoleLink, LinkOutProvider } from '../linkOut/LinkOut';
+import { isLauncherPodName, LauncherVm } from '../linkOut/launcherVm';
+import { ConsoleLink, LinkOutProvider, PodLink, useLauncherVmLookup } from '../linkOut/LinkOut';
 import { resourceTarget } from '../linkOut/registry';
 import DrawerTabStrip from './DrawerTabStrip';
 import { NatRuleTable, StaticRouteTable } from './RouterRuleTables';
@@ -294,16 +295,7 @@ const WorkloadPortList: React.FC<{ construct: LadderConstruct }> = ({ construct 
             {shown.map((port) => (
                 <div key={port.name}>
                     {port.namespace && port.pod ? (
-                        <ConsoleLink
-                            target={resourceTarget({
-                                apiVersion: 'v1',
-                                kind: 'Pod',
-                                namespace: port.namespace,
-                                name: port.pod,
-                            })}
-                        >
-                            {port.namespace}/{port.pod}
-                        </ConsoleLink>
+                        <PodLink namespace={port.namespace} pod={port.pod} />
                     ) : (
                         <code>{port.name}</code>
                     )}
@@ -928,12 +920,9 @@ const CodeLines: React.FC<{ items?: string[] }> = ({ items }) =>
 
 const PortName: React.FC<{ port: LadderPort }> = ({ port }) =>
     port.namespace && port.pod ? (
-        <ConsoleLink
-            target={resourceTarget({ apiVersion: 'v1', kind: 'Pod', namespace: port.namespace, name: port.pod })}
-            title={port.name}
-        >
+        <PodLink namespace={port.namespace} pod={port.pod} title={port.name}>
             {port.namespace}/<wbr />{port.pod}
-        </ConsoleLink>
+        </PodLink>
     ) : (
         <code>{port.name}</code>
     );
@@ -1042,9 +1031,12 @@ export const rowAddresses = (addresses?: string[]): string[] =>
         return MAC_ADDRESS.test(first) && rest.length > 0 ? rest : [entry];
     });
 
-const portMatches = (port: LadderPort, query: string): boolean => {
+const vmText = (vm: LauncherVm): string => `${vm.namespace}/${vm.name}`;
+
+const portMatches = (port: LadderPort, query: string, vm?: LauncherVm): boolean => {
     if (port.name.toLowerCase().includes(query)) return true;
     if (port.namespace && port.pod && `${port.namespace}/${port.pod}`.toLowerCase().includes(query)) return true;
+    if (vm && `vm ${vmText(vm)}`.toLowerCase().includes(query)) return true;
     return (port.row.addresses ?? []).some((address) => address.toLowerCase().includes(query));
 };
 
@@ -1092,6 +1084,10 @@ export const PortsBody: React.FC<DrawerBodyProps> = ({
     );
     const focusKey = focusPort ? construct.ports.find((port) => port.name === focusPort)?.uuid : undefined;
 
+    // A row reads as its VM once that is known, so the filter and the sort follow.
+    const vmOf = useLauncherVmLookup(construct.ports.some((port) => isLauncherPodName(port.pod)));
+    const vmOfPort = (port: LadderPort) => vmOf(port.namespace, port.pod);
+
     // Four columns fit the default drawer; port security and the requested
     // chassis are in the expanded row's summary (ovn-recon-dp7.5).
     const columns: RuleColumn<LadderPort>[] = [
@@ -1099,7 +1095,11 @@ export const PortsBody: React.FC<DrawerBodyProps> = ({
             key: 'name',
             title: 'Name',
             cell: (port) => <PortName port={port} />,
-            sortValue: (port) => (port.namespace && port.pod ? `${port.namespace}/${port.pod}` : port.name),
+            sortValue: (port) => {
+                const vm = vmOfPort(port);
+                if (vm) return vmText(vm);
+                return port.namespace && port.pod ? `${port.namespace}/${port.pod}` : port.name;
+            },
             headerModifier: 'wrap',
             modifier: 'breakWord',
         },
@@ -1184,7 +1184,7 @@ export const PortsBody: React.FC<DrawerBodyProps> = ({
             filter={{
                 ariaLabel: 'Filter ports',
                 placeholder: (total) => `Filter ${total} ports`,
-                matches: portMatches,
+                matches: (port, text) => portMatches(port, text, vmOfPort(port)),
                 value: query,
                 onChange: onQueryChange,
             }}

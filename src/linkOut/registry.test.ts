@@ -2,10 +2,12 @@ import fs from 'fs';
 import path from 'path';
 
 import {
-    CONSOLE_OWNER, CRD_FLAGS, kindReference, LinkTarget, NETOBSERV_PLUGIN, NETOBSERV_UDN_MAPPING, NETWORKING_PLUGIN,
-    NMSTATE_PLUGIN, NO_CAPABILITIES, resolveLinkOut, resolveLinkOuts
+    CONSOLE_OWNER, CRD_FLAGS, kindReference, KUBEVIRT_PLUGIN, LinkTarget, NETOBSERV_PLUGIN, NETOBSERV_UDN_MAPPING,
+    NETWORKING_PLUGIN, NMSTATE_PLUGIN, NO_CAPABILITIES, resolveLinkOut, resolveLinkOuts
 } from './registry';
-import { allCrds, BARE, capabilities, NETOBSERV_FULL, OCP_4_22, OCP_5_1, withNetobserv } from './testCapabilities';
+import {
+    allCrds, BARE, capabilities, KUBEVIRT, NETOBSERV_FULL, NO_KUBEVIRT, OCP_4_22, OCP_5_1, withNetobserv
+} from './testCapabilities';
 
 const NETWORK_POLICY = { apiVersion: 'networking.k8s.io/v1', kind: 'NetworkPolicy' };
 const MULTI_NETWORK_POLICY = { apiVersion: 'k8s.cni.cncf.io/v1beta1', kind: 'MultiNetworkPolicy' };
@@ -239,6 +241,35 @@ describe('link-out registry (ovn-recon-zdt.4)', () => {
             .map(({ properties: { flag, model } }) => `${flag}=${model.group}~${model.version}~${model.kind}`)
             .sort();
         expect(declared).toEqual(CRD_FLAGS.map(({ flag, kind }) => `${flag}=${kindReference(kind)}`).sort());
+    });
+});
+
+describe('VirtualMachine links (ovn-recon-zdt.5)', () => {
+    const vm: LinkTarget = { type: 'virtual-machine', namespace: 'shop', name: 'db-1', launcherPod: 'virt-launcher-db-1-x7k2p' };
+    const VM_PATH = '/k8s/ns/shop/kubevirt.io~v1~VirtualMachine/db-1';
+
+    it('opens the VM page, on the KubeVirt plugin where it is loaded', () => {
+        expect(pathAndOwner(vm, KUBEVIRT)).toEqual([VM_PATH, KUBEVIRT_PLUGIN]);
+        expect(pathAndOwner(vm, capabilities({}))).toEqual([VM_PATH, CONSOLE_OWNER]);
+    });
+
+    it('keeps the launcher pod as a secondary link', () => {
+        expect(resolveLinkOuts(vm, KUBEVIRT).secondary).toEqual([expect.objectContaining({
+            id: 'launcher-pod',
+            path: '/k8s/ns/shop/core~v1~Pod/virt-launcher-db-1-x7k2p',
+            owner: CONSOLE_OWNER,
+            label: 'Pod virt-launcher-db-1-x7k2p',
+        })]);
+        const withoutPod: LinkTarget = { type: 'virtual-machine', namespace: 'shop', name: 'db-1' };
+        expect(resolveLinkOuts(withoutPod, KUBEVIRT).secondary).toEqual([]);
+    });
+
+    it.each([
+        ['the CRD is absent', NO_KUBEVIRT],
+        ['the cluster has no CRDs', BARE],
+        ['the CRD is not known yet', NO_CAPABILITIES],
+    ])('offers nothing when %s', (_title, caps) => {
+        expect(resolveLinkOuts(vm, caps)).toEqual({ secondary: [] });
     });
 });
 

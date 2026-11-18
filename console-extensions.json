@@ -253,5 +253,27 @@
                 "kind": "NodeNetworkState"
             }
         }
+    },
+    {
+        "type": "console.flag/model",
+        "properties": {
+            "flag": "OVN_RECON_CRD_VM",
+            "model": {
+                "group": "kubevirt.io",
+                "version": "v1",
+                "kind": "VirtualMachine"
+            }
+        }
+    },
+    {
+        "type": "console.flag/model",
+        "properties": {
+            "flag": "OVN_RECON_CRD_VMI",
+            "model": {
+                "group": "kubevirt.io",
+                "version": "v1",
+                "kind": "VirtualMachineInstance"
+            }
+        }
     }
 ]

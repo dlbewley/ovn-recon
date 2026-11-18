@@ -55,11 +55,17 @@ import type { ResourceRef } from '../topology/types';
  * - In the `filters` parameter `key=value` is an exact match from 1.10; on 1.9 it
  *   is a partial match. No `match` parameter is sent: its values changed between
  *   releases and the default suits both filters.
+ *
+ * A VirtualMachine (ovn-recon-zdt.5) opens at the generic details address, which
+ * kubevirt-plugin registers as its own page route, so the page exists with or
+ * without that plugin. The target stays apart from `resource` because a resource
+ * always resolves, and this link must not appear without the kubevirt.io CRDs.
  */
 
 export const NETWORKING_PLUGIN = 'networking-console-plugin';
 export const NMSTATE_PLUGIN = 'nmstate-console-plugin';
 export const NETOBSERV_PLUGIN = 'netobserv-plugin';
+export const KUBEVIRT_PLUGIN = 'kubevirt-plugin';
 /** Network Observability's traffic page, and the navigation item that proves it is there. */
 export const NETOBSERV_TRAFFIC_PATH = '/netflow-traffic';
 /** The console flag netobserv sets once it knows whether flow logs are stored in Loki. */
@@ -107,6 +113,8 @@ export type LinkTarget =
     | { type: 'node-interface'; node: string; name: string; interfaceType: string }
     /** A Localnet physical network, by its physicalNetworkName. */
     | { type: 'physical-network'; name: string }
+    /** A KubeVirt VirtualMachine, with the virt-launcher pod it was reached through. */
+    | { type: 'virtual-machine'; namespace: string; name: string; launcherPod?: string }
     /** A console path built elsewhere (a label query); passed through unchanged. */
     | { type: 'path'; path: string };
 
@@ -181,6 +189,8 @@ const NNCP: KindRef = { apiVersion: 'nmstate.io/v1', kind: 'NodeNetworkConfigura
 const NNS: KindRef = { apiVersion: 'nmstate.io/v1beta1', kind: 'NodeNetworkState' };
 const NODE: KindRef = { apiVersion: 'v1', kind: 'Node' };
 const SERVICE: KindRef = { apiVersion: 'v1', kind: 'Service' };
+export const VIRTUAL_MACHINE: KindRef = { apiVersion: 'kubevirt.io/v1', kind: 'VirtualMachine' };
+export const VIRTUAL_MACHINE_INSTANCE: KindRef = { apiVersion: 'kubevirt.io/v1', kind: 'VirtualMachineInstance' };
 
 /**
  * The CRDs whose presence the plugin asks the console about, one
@@ -195,6 +205,8 @@ export const CRD_FLAGS: ReadonlyArray<{ flag: string; kind: KindRef }> = [
     { flag: 'OVN_RECON_CRD_MULTI_NETWORK_POLICY', kind: MULTI_NETWORK_POLICY },
     { flag: 'OVN_RECON_CRD_NNCP', kind: NNCP },
     { flag: 'OVN_RECON_CRD_NNS', kind: NNS },
+    { flag: 'OVN_RECON_CRD_VM', kind: VIRTUAL_MACHINE },
+    { flag: 'OVN_RECON_CRD_VMI', kind: VIRTUAL_MACHINE_INSTANCE },
 ];
 
 const CRD_BACKED = new Set(CRD_FLAGS.map(({ kind }) => kindReference(kind)));
@@ -214,6 +226,7 @@ const PAGE_OWNER: Readonly<Record<string, string>> = {
     [kindReference(NETWORK_POLICY)]: NETWORKING_PLUGIN,
     [kindReference(MULTI_NETWORK_POLICY)]: NETWORKING_PLUGIN,
     [kindReference(NNCP)]: NMSTATE_PLUGIN,
+    [kindReference(VIRTUAL_MACHINE)]: KUBEVIRT_PLUGIN,
 };
 
 /** The kinds the networking plugin adds a `~new/form` route for. */
@@ -327,6 +340,33 @@ const physicalNetworksProvider: LinkOutProvider = (target, capabilities) => {
     };
 };
 
+/**
+ * A VirtualMachine's page, only where the kubevirt.io CRD is known to be installed,
+ * with the launcher pod it was reached through as a secondary link.
+ */
+const kubevirtProvider: LinkOutProvider = (target, capabilities) => {
+    if (target.type !== 'virtual-machine' || !target.namespace || !target.name) return {};
+    if (!kindIsServed(VIRTUAL_MACHINE, capabilities)) return {};
+    const { namespace, name, launcherPod } = target;
+    return {
+        primary: {
+            id: 'kubevirt-vm',
+            path: getResourcePath({ ...VIRTUAL_MACHINE, namespace, name }),
+            owner: pageOwner(VIRTUAL_MACHINE, capabilities),
+            label: VIRTUAL_MACHINE.kind,
+        },
+        secondary: launcherPod
+            ? [{
+                id: 'launcher-pod',
+                path: getResourcePath({ apiVersion: 'v1', kind: 'Pod', namespace, name: launcherPod }),
+                owner: CONSOLE_OWNER,
+                label: `Pod ${launcherPod}`,
+                hint: 'The virt-launcher pod running this VirtualMachine',
+            }]
+            : [],
+    };
+};
+
 const isKind = (ref: ResourceRef, kind: KindRef): boolean =>
     ref.apiVersion === kind.apiVersion && ref.kind === kind.kind;
 
@@ -378,7 +418,13 @@ const netobservProvider: LinkOutProvider = (target, capabilities) => {
 };
 
 /** In order: the first provider to name a primary page wins it. */
-const PROVIDERS: LinkOutProvider[] = [physicalNetworksProvider, nmstateProvider, consoleProvider, netobservProvider];
+const PROVIDERS: LinkOutProvider[] = [
+    physicalNetworksProvider,
+    nmstateProvider,
+    kubevirtProvider,
+    consoleProvider,
+    netobservProvider,
+];
 
 /** Every page worth offering for a target on this console. */
 export const resolveLinkOuts = (

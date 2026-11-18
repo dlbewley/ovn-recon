@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { Link } from 'react-router';
 import {
     Button,
     CodeBlock,
@@ -41,7 +40,7 @@ import {
     switchPortGroups,
 } from './policyRows';
 import RuleTable, { RuleColumn } from './RuleTable';
-import { getResourcePath } from '../topology/links';
+import { PodLink } from '../linkOut/LinkOut';
 
 const PAGE_ROWS = 50;
 const PAGE_ROW_CHOICES = [20, 50, 100];
@@ -129,11 +128,7 @@ const PortRef: React.FC<{ uuid: string; portByUuid: Map<string, LadderPort>; dat
 }) => {
     const port = portByUuid.get(uuid);
     if (port?.namespace && port.pod) {
-        return (
-            <Link to={getResourcePath({ apiVersion: 'v1', kind: 'Pod', namespace: port.namespace, name: port.pod })}>
-                {port.namespace}/{port.pod}
-            </Link>
-        );
+        return <PodLink namespace={port.namespace} pod={port.pod} />;
     }
     const name = port?.name ?? database.logicalSwitchPorts.find((row) => row.uuid === uuid)?.name ?? uuid;
     return <code>{name}</code>;
