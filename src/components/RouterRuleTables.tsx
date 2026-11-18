@@ -18,8 +18,7 @@ import {
     PodAddressOwner,
     routePolicy,
 } from './routerRules';
-import { ConsoleLink } from '../linkOut/LinkOut';
-import { resourceTarget } from '../linkOut/registry';
+import { PodLink } from '../linkOut/LinkOut';
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
 const DASH = <span style={SUBTLE}>—</span>;
@@ -37,9 +36,7 @@ const TYPE_COLORS: Record<NATType, 'blue' | 'purple' | 'orange'> = {
 };
 
 const PodRef: React.FC<{ owner: PodAddressOwner }> = ({ owner }) => (
-    <ConsoleLink target={resourceTarget({ apiVersion: 'v1', kind: 'Pod', namespace: owner.namespace, name: owner.pod })}>
-        {owner.namespace}/{owner.pod}
-    </ConsoleLink>
+    <PodLink namespace={owner.namespace} pod={owner.pod} />
 );
 
 /** True when every row of the group carries the same source port range (or none does). */

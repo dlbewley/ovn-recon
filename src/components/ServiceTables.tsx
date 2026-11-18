@@ -41,7 +41,7 @@ import {
     vipClassContext,
 } from './serviceIndex';
 import { useKubeService, useServiceEndpointSlices, useServiceNetworks } from './useServiceReads';
-import { ConsoleLink, SecondaryLinks } from '../linkOut/LinkOut';
+import { ConsoleLink, PodLink, SecondaryLinks } from '../linkOut/LinkOut';
 import { resourceTarget } from '../linkOut/registry';
 import { InfoPopover } from './drawerKit';
 
@@ -205,9 +205,7 @@ const BackendsCell: React.FC<{ group: ServiceGroupView }> = ({ group }) => {
 };
 
 const PodRef: React.FC<{ namespace: string; pod: string }> = ({ namespace, pod }) => (
-    <ConsoleLink target={resourceTarget({ apiVersion: 'v1', kind: 'Pod', namespace, name: pod })} style={WRAP_ANYWHERE}>
-        {namespace}/{pod}
-    </ConsoleLink>
+    <PodLink namespace={namespace} pod={pod} style={WRAP_ANYWHERE} />
 );
 
 // ------------------------------------------------ backend resolution

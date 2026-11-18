@@ -26,6 +26,12 @@ jest.mock('./src/linkOut/useConsoleCapabilities', () => ({
     useConsoleCapabilities: () => jest.requireActual('./src/linkOut/registry').NO_CAPABILITIES,
 }));
 
+// The VirtualMachineInstance watch behind launcher pod links (ovn-recon-zdt.5) is an
+// SDK hook too: suites get no VMs, and one that wants them mocks this module.
+jest.mock('./src/linkOut/useLauncherVmIndex', () => ({
+    useLauncherVmIndex: () => jest.requireActual('./src/linkOut/launcherVm').NO_LAUNCHER_VMS,
+}));
+
 // The explorer tree's width and collapsed state live in the console's user settings
 // (useUserSettings), which the SDK cannot provide under jest. Suites get the same
 // contract held in component state: loaded at once, the defaults, kept for the mount.

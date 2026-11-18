@@ -1,6 +1,7 @@
 import {
-    ConsoleCapabilities, CRD_FLAGS, kindReference, NetObservCapabilities, NETOBSERV_PLUGIN, NETOBSERV_TRAFFIC_PATH,
-    NETOBSERV_UDN_MAPPING, NETWORKING_PLUGIN, NMSTATE_PLUGIN
+    ConsoleCapabilities, CRD_FLAGS, kindReference, KUBEVIRT_PLUGIN, NetObservCapabilities, NETOBSERV_PLUGIN,
+    NETOBSERV_TRAFFIC_PATH, NETOBSERV_UDN_MAPPING, NETWORKING_PLUGIN, NMSTATE_PLUGIN, VIRTUAL_MACHINE,
+    VIRTUAL_MACHINE_INSTANCE
 } from './registry';
 
 /**
@@ -34,6 +35,16 @@ export const OCP_5_1 = capabilities({
 
 /** Neither plugin, and none of the CRDs. */
 export const BARE = capabilities({}, allCrds(false));
+
+/** OpenShift Virtualization installed: its plugin and the kubevirt.io kinds. */
+export const KUBEVIRT = capabilities({ [NETWORKING_PLUGIN]: [], [KUBEVIRT_PLUGIN]: [] });
+
+/** A cluster without it: every other CRD present, the kubevirt.io kinds absent. */
+export const NO_KUBEVIRT = capabilities({ [NETWORKING_PLUGIN]: [] }, {
+    ...allCrds(true),
+    [kindReference(VIRTUAL_MACHINE)]: false,
+    [kindReference(VIRTUAL_MACHINE_INSTANCE)]: false,
+});
 
 /** Network Observability loaded beside the 4.22 plugins, answering what `netobserv` says. */
 export const withNetobserv = (netobserv: NetObservCapabilities | undefined): ConsoleCapabilities => ({
