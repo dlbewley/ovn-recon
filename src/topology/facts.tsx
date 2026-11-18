@@ -93,7 +93,7 @@ export interface FactRenderHooks {
     gatewayOwners?: GatewayOwners;
 }
 
-const renderTable =(fact: Fact, table: FactTable, hooks: FactRenderHooks) => {
+const renderTable = (fact: Fact, table: FactTable, hooks: FactRenderHooks) => {
     switch (table.table) {
         case 'kernel-routes':
             // The physical drawer is narrow (ovn-recon-dp7.9 item 2): the
