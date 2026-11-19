@@ -587,8 +587,10 @@ describe('searchWatchedResources', () => {
     });
 
     it('treats a host route to the searched address as an exact match, and selects the VRF of a VRF table', () => {
-        const { results } = searchWatchedResources(query('169.254.0.16'), { nodeNetworkStates: [vrfNode] });
-        expect(results).toHaveLength(1);
+        const { results: all } = searchWatchedResources(query('169.254.0.16'), { nodeNetworkStates: [vrfNode] });
+        // The address is also a masquerade address, said in a result of its own.
+        expect(all.map((result) => result.kind)).toEqual(['masquerade', 'route']);
+        const results = all.filter((result) => result.kind === 'route');
         expect(results[0]).toMatchObject({
             kind: 'route',
             title: '169.254.0.16/32',
@@ -1121,5 +1123,75 @@ describe('marks in the explorer tree (ovn-recon-gbr.8)', () => {
     it('marks nothing with no search', () => {
         const marks = searchMarksOf(null);
         expect([marks.nodes.size, marks.networks.size]).toEqual([0, 0]);
+    });
+});
+
+describe('masquerade addresses (ovn-recon-2n6.1)', () => {
+    const nad = (namespace: string, name: string, networkName: string, networkId: string) => ({
+        metadata: { namespace, name, annotations: { 'k8s.ovn.org/network-id': networkId } },
+        spec: { config: JSON.stringify({ name: networkName, role: 'primary', topology: 'layer2' }) },
+    }) as never;
+    const networks = {
+        cudns: [{ metadata: { name: 'blue' } } as never],
+        udns: [{ metadata: { namespace: 'tenant-c', name: 'red' } } as never],
+        nads: [nad('tenant-a', 'blue', 'cluster_udn_blue', '3'), nad('tenant-c', 'red', 'tenant-c_red', '4')],
+    };
+    const masqueradeGroup = (input: string, sources: Parameters<typeof buildClusterSearchResults>[2]) =>
+        buildClusterSearchResults(query(input), { state: 'disabled' }, sources).groups.find((group) => group.kind === 'masquerade');
+
+    it('lists the network a gateway router masquerade address belongs to, and links its page', () => {
+        const results = buildClusterSearchResults(query('169.254.0.15'), { state: 'disabled' }, { nodeNetworkStates: [], networks });
+        const [group] = results.groups;
+        expect(group.kind).toBe('masquerade');
+        expect(group.label).toBe('Masquerade addresses');
+        expect(group.results).toHaveLength(1);
+        const [result] = group.results;
+        expect(result.title).toBe('Gateway router masquerade of CUDN blue');
+        expect(result.subtitle).toBe('Masquerade subnet 169.254.0.0/17, offset 15 · network ID 3');
+        expect(result.network).toBe('cluster_udn_blue');
+        expect(result.match).toEqual({ type: 'exact', field: 'address', value: '169.254.0.15' });
+        expect(result.links).toEqual([{ view: 'network', label: 'Network', href: '/ovn-recon/networks/cudn/blue' }]);
+        // The tree marks the network.
+        expect(searchMarksOf(results).networks.get('cudn//blue')).toBe(1);
+    });
+
+    it('names a UDN\'s management port address in IPv6', () => {
+        const [result] = masqueradeGroup('fd69::12', { nodeNetworkStates: [], networks })!.results;
+        expect(result.title).toBe('Management port masquerade of UDN tenant-c/red');
+        expect(result.links[0].href).toBe('/ovn-recon/networks/udn/tenant-c/red');
+    });
+
+    it('names a global role, which belongs to no one network', () => {
+        const [result] = masqueradeGroup('169.254.0.4', { nodeNetworkStates: [], networks })!.results;
+        expect(result.title).toBe('Dummy next hop');
+        expect(result.network).toBeUndefined();
+        expect(result.links).toEqual([]);
+    });
+
+    it('says when no network, or more than one, claims the ID', () => {
+        expect(masqueradeGroup('169.254.0.21', { nodeNetworkStates: [], networks })!.results[0].subtitle)
+            .toBe('Masquerade subnet 169.254.0.0/17, offset 21 · network ID 6 · no network carries network ID 6');
+        const clash = { ...networks, nads: [...networks.nads, nad('tenant-c', 'red', 'tenant-c_red', '3')] };
+        const [result] = masqueradeGroup('169.254.0.15', { nodeNetworkStates: [], networks: clash })!.results;
+        expect(result.title).toBe('Gateway router masquerade of network ID 3');
+        expect(result.subtitle).toContain('network ID 3 is claimed by CUDN blue and UDN tenant-c/red');
+        // Without the networks, only the ID is known.
+        expect(masqueradeGroup('169.254.0.15', { nodeNetworkStates: [] })!.results[0].title)
+            .toBe('Gateway router masquerade of network ID 3');
+    });
+
+    it('follows the Node\'s masquerade subnet', () => {
+        const nodes = [{
+            metadata: { name: 'worker', annotations: { 'k8s.ovn.org/node-masquerade-subnet': '{"ipv4":"100.254.0.0/16"}' } },
+        }] as K8sResourceCommon[];
+        expect(masqueradeGroup('100.254.0.15', { nodeNetworkStates: [], nodes, networks })!.results[0].title)
+            .toBe('Gateway router masquerade of CUDN blue');
+        expect(masqueradeGroup('169.254.0.15', { nodeNetworkStates: [], nodes, networks })).toBeUndefined();
+    });
+
+    it('stays out of other searches', () => {
+        expect(masqueradeGroup('192.0.2.10', { nodeNetworkStates: [], networks })).toBeUndefined();
+        expect(masqueradeGroup('169.254.0.0/24', { nodeNetworkStates: [], networks })).toBeUndefined();
+        expect(masqueradeGroup('blue', { nodeNetworkStates: [], networks })).toBeUndefined();
     });
 });

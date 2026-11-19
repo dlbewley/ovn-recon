@@ -221,9 +221,14 @@ const OvnReconApp: React.FC = () => {
             if (onSearchTab) navigate(overviewPath());
         },
     }), [urlSearch, openSearch, onSearchTab, navigate]);
+    const searchNetworks = React.useMemo(
+        () => ({ cudns: data.cudns, udns: data.udns, nads: data.nads }),
+        [data.cudns, data.udns, data.nads],
+    );
     const search = useClusterSearch({
         nodeNetworkStates: data.nodeNetworkStates ?? undefined,
         nodes: data.nodes,
+        networks: searchNetworks,
         stateLoaded: data.nodeNetworkStatesSettled,
         stateError: data.nodeNetworkStatesError,
         collectorEnabled: data.collector.enabled,

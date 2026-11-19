@@ -2,13 +2,35 @@ import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 
 import type { LinkTarget } from '../linkOut/registry';
 import { resourceTarget } from '../linkOut/registry';
-import { clusterLogicalPath, constructDetailPath, nodeLogicalPath, nodePhysicalPath } from '../routes';
+import { clusterLogicalPath, constructDetailPath, networkPath, nodeLogicalPath, nodePhysicalPath } from '../routes';
 import { resolveInterfaceLinkRef } from '../topology/ids';
 import type { ResourceRef } from '../topology/types';
 import type { LogicalDatabase, LogicalSwitchPortRow, NodeNetworkState } from '../types';
 import { interfaceAddresses, nodeAddressesOf, normalizeMac } from './clusterSearchModel';
 import { parsePrefix } from './ipPrefix';
-import { ClassifiedConstruct, classifyRouter, classifySwitch, classifySwitchPort, DEFAULT_NETWORK } from './logicalClassification';
+import {
+    ClassifiedConstruct,
+    classifyRouter,
+    classifySwitch,
+    classifySwitchPort,
+    DEFAULT_NETWORK,
+    networkResourceRef,
+} from './logicalClassification';
+import {
+    classifyMasqueradeAddress,
+    globalMasqueradeAddresses,
+    isUdnMasqueradeRole,
+    MASQUERADE_ROLE_LABELS,
+    MasqueradeClassification,
+    MasqueradeNetworkInputs,
+    MasqueradeRole,
+    masqueradeIpsForNetworkId,
+    MasqueradeSubnet,
+    masqueradeSubnets,
+    primaryNetworkIds,
+    resolveMasqueradeNetwork,
+} from './masqueradeIps';
+import type { EvpnNetworkRef } from './nodeVisualizationSelectors';
 import { hostKey, portEntryAddresses } from './routerRules';
 import { inferVipClass, NETWORK_EXTERNAL_ID, parseVip, scopeOf, serviceIndexFor, serviceLabel, vipClassContext } from './serviceIndex';
 
@@ -23,6 +45,15 @@ import { inferVipClass, NETWORK_EXTERNAL_ID, parseVip, scopeOf, serviceIndexFor,
  *                      and, with the services section, load balancer VIPs
  *   NodeNetworkState   interface addresses and MACs
  *   Node               status.addresses
+ *   masquerade subnet  what an address in the node masquerade subnet is for
+ *                      (masqueradeIps.ts): the global roles at offsets 1 to 5,
+ *                      and each primary network's gateway router and
+ *                      management port pair, named through the NADs'
+ *                      network-id when the caller holds the networks.
+ *                      Observation outranks the formula: a router port, a
+ *                      gateway router's physical_ips, a NAT external IP or an
+ *                      interface holding the address is recorded beside it,
+ *                      and a network seen there wins over none
  *
  * The plugin keeps no list of Services or EgressIPs (see useServiceReads), so
  * those contribute through the load balancer VIPs alone.
@@ -37,7 +68,15 @@ import { inferVipClass, NETWORK_EXTERNAL_ID, parseVip, scopeOf, serviceIndexFor,
  * make every NodePort Service an owner of that address.
  */
 
-export type AddressOwnerKind = 'pod' | 'router-port' | 'switch-port' | 'service' | 'nat' | 'node' | 'interface';
+export type AddressOwnerKind =
+    | 'masquerade'
+    | 'pod'
+    | 'router-port'
+    | 'switch-port'
+    | 'service'
+    | 'nat'
+    | 'node'
+    | 'interface';
 
 /** What an owner is, precisely enough to link to it or to look it up again. */
 export type AddressOwnerRef =
@@ -46,7 +85,12 @@ export type AddressOwnerRef =
     /** A logical switch or router, and the port on it when a port holds the address. */
     | { type: 'construct'; construct: 'switch' | 'router'; name: string; port?: string; zone?: string }
     /** One interface of one node, with its graph node id when it has one. */
-    | { type: 'interface'; node: string; name: string; graphId?: string };
+    | { type: 'interface'; node: string; name: string; graphId?: string }
+    /**
+     * A masquerade address: its role and, for a network's pair, the network ID
+     * and the network when one is named.
+     */
+    | { type: 'masquerade'; role: MasqueradeRole; networkId?: number; network?: EvpnNetworkRef };
 
 export type AddressSource =
     | 'Logical_Switch_Port'
@@ -54,7 +98,11 @@ export type AddressSource =
     | 'NAT'
     | 'Load_Balancer'
     | 'NodeNetworkState'
-    | 'Node';
+    | 'Node'
+    /** A gateway router's external_ids (physical_ips). */
+    | 'Logical_Router'
+    /** The masquerade offsets, applied to the subnet: derived, not read. */
+    | 'Masquerade formula';
 
 /** Where one claim on an address was read. */
 export interface AddressProvenance {
@@ -79,6 +127,26 @@ export interface AddressOwner {
     network?: string;
     /** Every claim behind this owner, at least one. */
     provenance: AddressProvenance[];
+    /** For a `masquerade` owner: what the address is for, and on what evidence. */
+    masquerade?: MasqueradeOwnerDetail;
+}
+
+/**
+ * Whether a masquerade owner was `observed` (OVN or a host holds the address),
+ * `derived` (the formula puts a role there: always for the global roles, and
+ * for a primary network the caller's NADs name), or `both`.
+ */
+export type MasqueradeBasis = 'observed' | 'derived' | 'both';
+
+export interface MasqueradeOwnerDetail {
+    role: MasqueradeRole;
+    /** For a network's pair. */
+    networkId?: number;
+    /** The masquerade subnet holding the address, as CIDR text. */
+    subnet: string;
+    basis: MasqueradeBasis;
+    /** Networks claiming the network ID, when more than one does: the owner names none of them. */
+    ambiguous?: string[];
 }
 
 export interface AddressBook {
@@ -93,24 +161,33 @@ export interface AddressBookSources {
     zones?: ReadonlyArray<{ node?: string; database: LogicalDatabase }>;
     nodeNetworkStates?: readonly NodeNetworkState[];
     nodes?: readonly K8sResourceCommon[];
+    /**
+     * The CUDNs, UDNs and NADs, to name the network of a masquerade pair by its
+     * network ID. Without them a pair is named only where OVN shows its network.
+     */
+    networks?: MasqueradeNetworkInputs;
 }
 
 /** What the caller knows about where the address was read. */
 export interface AddressScope {
     /**
      * Only owners on this network: for an address read off a row of that
-     * network, such as a NAT rule on its router.
+     * network, such as a NAT rule on its router. A masquerade owner naming no
+     * network (a global role) stays: it serves every network.
      */
     network?: string;
     /**
      * Owners on this node, when there are any, instead of the rest: for an
      * address read on the node, where its own interfaces and zone come first.
-     * With none there, every candidate stands.
+     * With none there, every candidate stands. A masquerade owner stays
+     * either way: the subnet and its offsets are the same on every node.
      */
     preferNode?: string;
 }
 
-const KIND_ORDER: readonly AddressOwnerKind[] = ['pod', 'router-port', 'switch-port', 'service', 'nat', 'node', 'interface'];
+// A masquerade owner comes first: inside the masquerade subnet, what the address
+// is for is the answer, and a port or interface holding it is where.
+const KIND_ORDER: readonly AddressOwnerKind[] = ['masquerade', 'pod', 'router-port', 'switch-port', 'service', 'nat', 'node', 'interface'];
 
 const refKey = (ref: AddressOwnerRef): string => {
     switch (ref.type) {
@@ -121,6 +198,8 @@ const refKey = (ref: AddressOwnerRef): string => {
             return `${ref.construct}/${ref.name}/${ref.port ?? ''}`;
         case 'interface':
             return `${ref.node}/${ref.name}`;
+        case 'masquerade':
+            return `${ref.role}/${ref.networkId ?? ''}`;
     }
 };
 
@@ -152,6 +231,12 @@ const claim = (
 interface Collector {
     claimIp: (address: string, owner: Omit<AddressOwner, 'provenance'>, provenance: Omit<AddressProvenance, 'value'>) => void;
     claimMac: (mac: string | undefined, owner: Omit<AddressOwner, 'provenance'>, provenance: Omit<AddressProvenance, 'value'>) => void;
+    /**
+     * An address seen held, offered to the masquerade source; kept only when it
+     * is in the masquerade subnet. `network` is the network the holder belongs
+     * to, when the holder says.
+     */
+    observe: (address: string, network: string | undefined, provenance: Omit<AddressProvenance, 'value'>) => void;
 }
 
 /** The owner a switch port's addresses belong to; undefined for a port that holds none of its own. */
@@ -224,13 +309,16 @@ const addZone = (collector: Collector, database: LogicalDatabase, zone: string |
         };
         collector.claimMac(row.mac, owner, { source: 'Logical_Router_Port', record: row.name, field: 'mac', zone });
         for (const network of row.networks ?? []) {
-            collector.claimIp(network, owner, { source: 'Logical_Router_Port', record: row.name, field: 'networks', zone });
+            const provenance = { source: 'Logical_Router_Port' as const, record: row.name, field: 'networks', zone };
+            collector.claimIp(network, owner, provenance);
+            collector.observe(network, router.network, provenance);
         }
     }
 
     for (const row of database.nats) {
         const router = routerOfNat.get(row.uuid);
         if (!router || !row.externalIp) continue;
+        collector.observe(row.externalIp, router.network, { source: 'NAT', record: router.name, field: 'external_ip', zone });
         collector.claimIp(
             row.externalIp,
             {
@@ -243,6 +331,23 @@ const addZone = (collector: Collector, database: LogicalDatabase, zone: string |
             // One record per router: a gateway router has a rule per pod on one external IP.
             { source: 'NAT', record: router.name, field: 'external_ip', zone },
         );
+    }
+
+    // A gateway router lists its masquerade address beside the node's in physical_ips.
+    for (const row of database.logicalRouters) {
+        const router = classifyRouter(row);
+        for (const field of ['physical_ip', 'physical_ips']) {
+            for (const address of (row.externalIds?.[field] ?? '').split(',')) {
+                if (address.trim()) {
+                    collector.observe(address.trim(), router.network, {
+                        source: 'Logical_Router',
+                        record: row.name,
+                        field: `external_ids:${field}`,
+                        zone,
+                    });
+                }
+            }
+        }
     }
 
     const services = serviceIndexFor(database);
@@ -290,7 +395,10 @@ const addNodeNetworkState = (collector: Collector, state: NodeNetworkState): voi
             node,
         };
         const provenance = (field: string) => ({ source: 'NodeNetworkState' as const, record: node, field: `${iface.name} ${field}` });
-        for (const { text } of interfaceAddresses(iface)) collector.claimIp(text, owner, provenance('address'));
+        for (const { text } of interfaceAddresses(iface)) {
+            collector.claimIp(text, owner, provenance('address'));
+            collector.observe(text, undefined, provenance('address'));
+        }
         collector.claimMac(iface['mac-address'] ?? iface.mac_address, owner, provenance('mac-address'));
         collector.claimMac(iface['permanent-mac-address'], owner, provenance('permanent-mac-address'));
     }
@@ -313,6 +421,117 @@ const addNode = (collector: Collector, node: K8sResourceCommon): void => {
     }
 };
 
+// ------------------------------------------------------------------ masquerade
+
+interface MasqueradeClaim {
+    /** The network the claim names, when it names one. */
+    network?: string;
+    /** For a derived claim on an ID two networks claim. */
+    ambiguous?: string[];
+    provenance: AddressProvenance;
+    derived: boolean;
+}
+
+interface MasqueradeEntry {
+    classification: MasqueradeClassification;
+    /** Every observation and derivation of the address, each once. */
+    claims: MasqueradeClaim[];
+}
+
+/** What a masquerade owner is called: its role, and for a pair whose network it is. */
+const masqueradeLabel = (role: MasqueradeRole, networkId: number | undefined, network: string | undefined): string => {
+    const what = MASQUERADE_ROLE_LABELS[role];
+    if (!isUdnMasqueradeRole(role)) return what;
+    const ref = network ? networkResourceRef(network) : undefined;
+    if (ref) {
+        return ref.kind === 'ClusterUserDefinedNetwork'
+            ? `${what} of CUDN ${ref.name}`
+            : `${what} of UDN ${ref.namespace}/${ref.name}`;
+    }
+    return `${what} of network ID ${networkId}`;
+};
+
+const evpnRefOf = (network: string | undefined): EvpnNetworkRef | undefined => {
+    const ref = network ? networkResourceRef(network) : undefined;
+    if (!ref) return undefined;
+    return ref.kind === 'ClusterUserDefinedNetwork'
+        ? { kind: 'cudn', name: ref.name }
+        : { kind: 'udn', namespace: ref.namespace ?? 'default', name: ref.name };
+};
+
+/**
+ * The masquerade source: every observation in the subnet, and every address the
+ * formula places, merged into owners. A global role is one owner whatever holds
+ * it. A pair's address is one owner per network named for it, observed or
+ * derived; claims that name no network join each of them, and stand alone when
+ * nothing names one.
+ */
+const masqueradeOwners = (
+    entries: ReadonlyMap<string, MasqueradeEntry>,
+    claimOwner: (key: string, owner: Omit<AddressOwner, 'provenance'>, provenance: AddressProvenance[]) => void,
+): void => {
+    for (const [key, { classification, claims }] of entries) {
+        const { role, networkId, subnet } = classification;
+        const pair = isUdnMasqueradeRole(role);
+        const named = pair ? [...new Set(claims.map((claim) => claim.network).filter((n): n is string => !!n))] : [];
+        const groups: Array<{ network?: string; claims: MasqueradeClaim[] }> = named.length === 0
+            ? [{ claims }]
+            : named.map((network) => ({
+                network,
+                claims: claims.filter((claim) => claim.network === network || !claim.network),
+            }));
+        for (const group of groups) {
+            const observed = group.claims.some((claim) => !claim.derived);
+            const derived = group.claims.some((claim) => claim.derived);
+            const ambiguous = group.network ? undefined : group.claims.find((claim) => claim.ambiguous)?.ambiguous;
+            const network = evpnRefOf(group.network);
+            claimOwner(
+                key,
+                {
+                    kind: 'masquerade',
+                    ref: {
+                        type: 'masquerade',
+                        role,
+                        ...(networkId !== undefined ? { networkId } : {}),
+                        ...(network ? { network } : {}),
+                    },
+                    label: masqueradeLabel(role, networkId, group.network),
+                    ...(group.network ? { network: group.network } : {}),
+                    masquerade: {
+                        role,
+                        ...(networkId !== undefined ? { networkId } : {}),
+                        subnet,
+                        basis: observed && derived ? 'both' : observed ? 'observed' : 'derived',
+                        ...(ambiguous ? { ambiguous } : {}),
+                    },
+                },
+                group.claims.map((claim) => claim.provenance),
+            );
+        }
+    }
+};
+
+/** The formula's addresses: the global roles, and each primary network's pair. */
+const deriveMasquerade = (
+    subnets: readonly MasqueradeSubnet[],
+    networks: MasqueradeNetworkInputs | undefined,
+    add: (address: string, claim: Omit<MasqueradeClaim, 'provenance'>, provenance: Omit<AddressProvenance, 'value'>) => void,
+): void => {
+    for (const { address, subnet } of globalMasqueradeAddresses(subnets)) {
+        add(address, { derived: true }, { source: 'Masquerade formula', record: subnet, field: 'global role' });
+    }
+    if (!networks?.nads) return;
+    for (const id of primaryNetworkIds(networks.nads)) {
+        const resolved = resolveMasqueradeNetwork(id, networks);
+        const record = `network ID ${id}${resolved.nad ? ` (NAD ${resolved.nad.namespace}/${resolved.nad.name})` : ''}`;
+        for (const pair of masqueradeIpsForNetworkId(id, subnets)) {
+            const claim = { derived: true, network: resolved.ovnNetwork, ambiguous: resolved.ambiguous };
+            add(pair.gatewayRouter, claim, { source: 'Masquerade formula', record, field: `gateway router in ${pair.subnet}` });
+            add(pair.managementPort, claim, { source: 'Masquerade formula', record, field: `management port in ${pair.subnet}` });
+        }
+    }
+};
+
 /** An address every host has, which therefore says nothing about any one of them. */
 const isLoopback = (address: string): boolean => {
     const parsed = parsePrefix(address);
@@ -329,9 +548,31 @@ const finish = (index: OwnerIndex): Map<string, AddressOwner[]> =>
     new Map([...index].map(([key, owners]) => [key, [...owners.values()].sort(compareOwners)]));
 
 /** Index the sources. Linear in what they hold: build once per data change. */
-export const buildAddressBook = ({ zones = [], nodeNetworkStates = [], nodes = [] }: AddressBookSources): AddressBook => {
+export const buildAddressBook = ({
+    zones = [],
+    nodeNetworkStates = [],
+    nodes = [],
+    networks,
+}: AddressBookSources): AddressBook => {
     const byIp: OwnerIndex = new Map();
     const byMac: OwnerIndex = new Map();
+    const subnets = masqueradeSubnets({ nodes, databases: zones.map((zone) => zone.database) });
+    const masquerade = new Map<string, MasqueradeEntry>();
+    const addMasquerade = (
+        address: string,
+        claim: Omit<MasqueradeClaim, 'provenance'>,
+        provenance: Omit<AddressProvenance, 'value'>,
+    ): void => {
+        const classification = classifyMasqueradeAddress(address, subnets);
+        const key = classification && hostKey(address);
+        if (!classification || !key) return;
+        const entry = masquerade.get(key) ?? { classification, claims: [] };
+        masquerade.set(key, entry);
+        const full = { ...provenance, value: address };
+        if (!entry.claims.some((known) => provenanceKey(known.provenance) === provenanceKey(full))) {
+            entry.claims.push({ ...claim, provenance: full });
+        }
+    };
     const collector: Collector = {
         claimIp: (address, owner, provenance) => {
             const key = hostKey(address);
@@ -341,10 +582,18 @@ export const buildAddressBook = ({ zones = [], nodeNetworkStates = [], nodes = [
             const key = normalizeMac(mac);
             if (key && key !== '00:00:00:00:00:00') claim(byMac, key, owner, { ...provenance, value: mac as string });
         },
+        observe: (address, network, provenance) => addMasquerade(address, { network, derived: false }, provenance),
     };
     for (const { node, database } of zones) addZone(collector, database, node);
     for (const state of nodeNetworkStates) addNodeNetworkState(collector, state);
     for (const node of nodes) addNode(collector, node);
+    // The formula speaks only for a book that holds something: an empty one stays empty.
+    if (zones.length > 0 || nodeNetworkStates.length > 0 || nodes.length > 0 || networks?.nads?.length) {
+        deriveMasquerade(subnets, networks, addMasquerade);
+    }
+    masqueradeOwners(masquerade, (key, owner, provenance) => {
+        for (const entry of provenance) claim(byIp, key, owner, entry);
+    });
     return { byIp: finish(byIp), byMac: finish(byMac) };
 };
 
@@ -392,19 +641,29 @@ export const resolveAddress = (
         if (address.includes('/') && !pointToPoint && parsed.address === parsed.network) return NO_OWNERS;
         owners = book.byIp.get(hostKey(address) as string) ?? NO_OWNERS;
     }
-    if (network !== undefined) owners = owners.filter((owner) => owner.network === network);
+    if (network !== undefined) {
+        owners = owners.filter((owner) => owner.network === network || (owner.kind === 'masquerade' && !owner.network));
+    }
     if (preferNode !== undefined) {
+        // A masquerade owner is on every node, so it stays either way and never
+        // decides on its own that the address is held here.
         const here = owners.filter(
-            (owner) => owner.node === preferNode || owner.provenance.some((entry) => entry.zone === preferNode),
+            (owner) => owner.kind !== 'masquerade'
+                && (owner.node === preferNode || owner.provenance.some((entry) => entry.zone === preferNode)),
         );
-        if (here.length > 0) return here;
+        if (here.length > 0) return owners.filter((owner) => owner.kind === 'masquerade' || here.includes(owner));
     }
     return owners;
 };
 
-/** Where an owner opens: its console page, or its place in OVN Recon. */
-export const addressOwnerTarget = (owner: AddressOwner): LinkTarget => {
+/**
+ * Where an owner opens: its console page, or its place in OVN Recon. A
+ * masquerade owner opens its network's page, and has nowhere to open when it
+ * names no network.
+ */
+export const addressOwnerTarget = (owner: AddressOwner): LinkTarget | undefined => {
     const { ref } = owner;
+    if (ref.type === 'masquerade') return ref.network ? { type: 'path', path: networkPath(ref.network) } : undefined;
     if (ref.type === 'resource') return resourceTarget(ref.resource);
     if (ref.type === 'interface') return { type: 'path', path: nodePhysicalPath(ref.node, ref.graphId) };
     const construct = { kind: ref.construct, name: ref.name };

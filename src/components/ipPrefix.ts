@@ -96,6 +96,10 @@ const formatIpv6 = (value: bigint): string => {
     return `${hex.slice(0, bestStart).join(':')}::${hex.slice(bestStart + bestLength).join(':')}`;
 };
 
+/** One address, written as OVN writes it (RFC 5952 for IPv6). */
+export const formatAddress = (family: 4 | 6, value: bigint): string =>
+    (family === 4 ? formatIpv4(value) : formatIpv6(value));
+
 /** The prefix's network in CIDR form: `10.131.0.1/23` → `10.131.0.0/23`. */
 export const networkCidr = (prefix: ParsedPrefix): string =>
     `${prefix.family === 4 ? formatIpv4(prefix.network) : formatIpv6(prefix.network)}/${prefix.length}`;
