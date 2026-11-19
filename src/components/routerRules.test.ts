@@ -4,10 +4,21 @@ import {
     candidateSubnets,
     groupNatRules,
     groupStaticRoutes,
+    isMasqueradeSubnetRoute,
+    masqueradeRoleOf,
+    natLogicalIntent,
     natTypeCounts,
     nexthopResolverFor,
     podAddressIndex,
+    routerMasqueradeContext,
 } from './routerRules';
+import {
+    UDN_GATEWAY_ROUTER,
+    UDN_MASQUERADE_IP,
+    UDN_NETWORK,
+    UDN_NODE_IP,
+    udnGatewayRouterDatabase,
+} from './masqueradeGatewayRouterFixture';
 
 import cnv1 from '../../collector/fixtures/snapshots/cnv-1.json';
 
@@ -217,5 +228,69 @@ describe('nexthopResolverFor', () => {
     it('resolves nothing without a database or a next hop', () => {
         expect(nexthopResolverFor(null, 'x')({ uuid: 'r', ipPrefix: '0.0.0.0/0', nexthop: '1.1.1.1' })).toBeUndefined();
         expect(nexthopResolverFor(database, 'GR_cnv-1')({ uuid: 'r', ipPrefix: '0.0.0.0/0' })).toBeUndefined();
+    });
+});
+
+describe('routerMasqueradeContext (ovn-recon-2n6.2)', () => {
+    const udn = udnGatewayRouterDatabase();
+    const udnNat = (uuid: string) => udn.nats.find((nat) => nat.uuid === uuid)!;
+    const udnRoute = (uuid: string) => udn.staticRoutes.find((route) => route.uuid === uuid)!;
+
+    it("reads a primary UDN gateway router's masquerade egress from its NAT, rtoe- port and physical_ip", () => {
+        const context = routerMasqueradeContext(udn, UDN_GATEWAY_ROUTER)!;
+        expect(context.network).toBe(UDN_NETWORK);
+        expect(context.egress).toEqual({
+            network: UDN_NETWORK,
+            masqueradeIp: UDN_MASQUERADE_IP,
+            networkId: 2,
+            nodeIp: UDN_NODE_IP,
+        });
+    });
+
+    it('falls back to physical_ip for the node address when the rtoe- port holds only the masquerade /32', () => {
+        const database = udnGatewayRouterDatabase();
+        database.logicalRouterPorts[1].networks = [`${UDN_MASQUERADE_IP}/32`];
+        database.logicalRouters[0].externalIds = { ...database.logicalRouters[0].externalIds, physical_ip: '192.0.2.99' };
+        expect(routerMasqueradeContext(database, UDN_GATEWAY_ROUTER)!.egress!.nodeIp).toBe('192.0.2.99');
+    });
+
+    it('names the intent of the pod subnet row and the join address row', () => {
+        const context = routerMasqueradeContext(udn, UDN_GATEWAY_ROUTER);
+        expect(natLogicalIntent(udnNat('nat-pods'), context)).toBe('pod-subnet');
+        expect(natLogicalIntent(udnNat('nat-join'), context)).toBe('join-address');
+        expect(natLogicalIntent({ uuid: 'x', type: 'snat', logicalIp: '198.51.100.0/24' }, context)).toBeUndefined();
+    });
+
+    it('labels the masquerade subnet route and resolves the dummy next hop', () => {
+        const context = routerMasqueradeContext(udn, UDN_GATEWAY_ROUTER);
+        expect(isMasqueradeSubnetRoute(udnRoute('route-masq'), context)).toBe(true);
+        expect(isMasqueradeSubnetRoute(udnRoute('route-default'), context)).toBe(false);
+        expect(masqueradeRoleOf(udnRoute('route-masq').nexthop, context)?.role).toBe('dummy-next-hop');
+        expect(masqueradeRoleOf(udnRoute('route-default').nexthop, context)).toBeUndefined();
+    });
+
+    it("reads the same egress off the fixture zone's Layer2 CUDN gateway router, whose rtoe- port holds a /17", () => {
+        const egress = routerMasqueradeContext(database, 'GR_cluster_udn_example.p.cudn_cnv-1')!.egress;
+        expect(egress).toEqual({
+            network: 'cluster_udn_example-p-cudn',
+            masqueradeIp: '169.254.0.15',
+            networkId: 3,
+            nodeIp: '192.168.4.72',
+        });
+        const context = routerMasqueradeContext(database, 'GR_cluster_udn_example.p.cudn_cnv-1');
+        const intents = natsOf('GR_cluster_udn_example.p.cudn_cnv-1').map((nat) => [nat.logicalIp, natLogicalIntent(nat, context)]);
+        expect(intents).toEqual(expect.arrayContaining([['10.1.2.0/24', 'pod-subnet'], ['100.65.0.5', 'join-address']]));
+    });
+
+    it("gives the default network's gateway router and ovn_cluster_router no egress", () => {
+        const gr = routerMasqueradeContext(database, 'GR_cnv-1')!;
+        expect(gr.egress).toBeUndefined();
+        // Its masquerade route and dummy next hop still resolve.
+        const masqueradeRoute = routesOf('GR_cnv-1').find((route) => route.ipPrefix === '169.254.0.0/17')!;
+        expect(isMasqueradeSubnetRoute(masqueradeRoute, gr)).toBe(true);
+        expect(masqueradeRoleOf(masqueradeRoute.nexthop, gr)?.role).toBe('dummy-next-hop');
+        expect(routerMasqueradeContext(database, 'ovn_cluster_router')!.egress).toBeUndefined();
+        expect(routerMasqueradeContext(database, 'no-such-router')).toBeUndefined();
+        expect(routerMasqueradeContext(null, 'GR_cnv-1')).toBeUndefined();
     });
 });

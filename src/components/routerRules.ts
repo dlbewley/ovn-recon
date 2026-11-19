@@ -4,8 +4,24 @@
  * what the zone's database says owns them. Pure functions over snapshot rows.
  */
 import { LogicalDatabase, LogicalRouterPortRow, LogicalSwitchPortRow, NATRow, NATType, StaticRouteRow } from '../types';
-import { classifySwitchPort } from './logicalClassification';
-import { comparePrefixes, isDefaultPrefix, isHostAddress, networkCidr, ParsedPrefix, parsePrefix, prefixContains } from './ipPrefix';
+import { classifyRouter, classifySwitch, classifySwitchPort, DEFAULT_NETWORK } from './logicalClassification';
+import {
+    comparePrefixes,
+    formatAddress,
+    isDefaultPrefix,
+    isHostAddress,
+    networkCidr,
+    ParsedPrefix,
+    parsePrefix,
+    prefixContains,
+} from './ipPrefix';
+import {
+    classifyMasqueradeAddress,
+    MasqueradeClassification,
+    MasqueradeSubnet,
+    masqueradeSubnets,
+    NODE_MASQUERADE_SUBNET_ANNOTATION,
+} from './masqueradeIps';
 
 // ---------------------------------------------------------------- NAT
 
@@ -331,4 +347,180 @@ export const nexthopResolverFor = (
         }
         return onLink.length > 0 ? { kind: 'on-link', via: onLink[0].name } : undefined;
     };
+};
+
+// ---------------------------------------------------------- masquerade
+
+/**
+ * What a router's NAT rows and static routes mean in the light of the node
+ * masquerade subnet (ovn-recon-2n6.2). A primary user-defined network's
+ * gateway router SNATs its pod subnet, and its own join address, to the
+ * network's masquerade IP; br-ex then rewrites that to the node address in an
+ * OVS flow that is not in the northbound database.
+ *
+ * What OVN holds is the evidence (the NAT row's external IP, the rtoe- port's
+ * networks, `physical_ip`); the masquerade offsets only name what it is.
+ */
+export interface RouterMasqueradeContext {
+    /** The router's `k8s.ovn.org/network`. */
+    network: string;
+    /** The effective masquerade subnets, as the zone shows them. */
+    subnets: MasqueradeSubnet[];
+    /** The router's own join addresses: rtoj-/rtotr- port addresses and lb_force_snat_ip. */
+    joinAddresses: ParsedPrefix[];
+    /** The network's pod subnets: its logical switches' other_config subnet and ipv6_prefix. */
+    podSubnets: ParsedPrefix[];
+    /** Present on a gateway router of a user-defined network that SNATs to its masquerade IP. */
+    egress?: MasqueradeEgress;
+}
+
+export interface MasqueradeEgress {
+    /** The router's network. */
+    network: string;
+    /** The NAT external IP: the network's gateway router masquerade address. */
+    masqueradeIp: string;
+    networkId?: number;
+    /** The node address br-ex rewrites the masquerade IP to, when the router shows it. */
+    nodeIp?: string;
+}
+
+/** Why a NAT row's logical IP is there. */
+export type NatLogicalIntent = 'pod-subnet' | 'join-address';
+
+export const NAT_LOGICAL_INTENT_LABELS: Readonly<Record<NatLogicalIntent, string>> = {
+    'pod-subnet': 'pod subnet',
+    'join-address': "this router's join address",
+};
+
+const JOIN_PORT_PREFIXES = ['rtoj-', 'rtotr-'];
+const EXTERNAL_PORT_PREFIX = 'rtoe-';
+
+const sameAddress = (a: ParsedPrefix, b: ParsedPrefix): boolean => a.family === b.family && a.address === b.address;
+
+const parsedAll = (texts: Array<string | undefined>): ParsedPrefix[] =>
+    texts
+        .map((text) => (text ? parsePrefix(text.trim()) : null))
+        .filter((parsed): parsed is ParsedPrefix => parsed !== null);
+
+const routerPortsOf = (database: LogicalDatabase, routerUuids: string[]): LogicalRouterPortRow[] => {
+    const byUuid = new Map(database.logicalRouterPorts.map((port) => [port.uuid, port]));
+    return routerUuids.map((uuid) => byUuid.get(uuid)).filter((port): port is LogicalRouterPortRow => port != null);
+};
+
+/**
+ * The masquerade context of the named router; undefined when the database
+ * does not hold it. Only a gateway router of a user-defined network whose NAT
+ * external IP is a gateway router masquerade address gets an `egress`.
+ */
+export const routerMasqueradeContext = (
+    database: LogicalDatabase | null | undefined,
+    routerName: string | undefined,
+): RouterMasqueradeContext | undefined => {
+    const row = routerName ? database?.logicalRouters.find((router) => router.name === routerName) : undefined;
+    if (!database || !row) return undefined;
+    const router = classifyRouter(row);
+    const subnets = masqueradeSubnets({ databases: [database] });
+    const ports = routerPortsOf(database, row.ports);
+    const forceSnat = row.options?.['lb_force_snat_ip'];
+    const joinAddresses = [
+        ...parsedAll(
+            ports
+                .filter((port) => JOIN_PORT_PREFIXES.some((prefix) => port.name.startsWith(prefix)))
+                .flatMap((port) => port.networks ?? []),
+        ),
+        // 'router_ip' asks OVN for the port's own address; anything else lists addresses.
+        ...parsedAll(forceSnat && forceSnat !== 'router_ip' ? forceSnat.split(/[\s,]+/) : []),
+    ];
+    const podSubnets = parsedAll(
+        database.logicalSwitches
+            .filter((sw) => classifySwitch(sw).network === router.network)
+            .flatMap((sw) => [sw.otherConfig?.['subnet'], sw.otherConfig?.['ipv6_prefix']])
+            .flatMap((text) => (text ? text.split(/\s+/) : [])),
+    );
+
+    let egress: MasqueradeEgress | undefined;
+    if (router.role === 'gateway-router' && router.network !== DEFAULT_NETWORK) {
+        const natByUuid = new Map(database.nats.map((nat) => [nat.uuid, nat]));
+        for (const uuid of row.nat ?? []) {
+            const external = natByUuid.get(uuid)?.externalIp;
+            const classification = external ? classifyMasqueradeAddress(external, subnets) : undefined;
+            if (classification?.role !== 'udn-gateway-router') continue;
+            egress = {
+                network: router.network,
+                masqueradeIp: external as string,
+                networkId: classification.networkId,
+                nodeIp: nodeAddressOf(row.externalIds, ports, subnets, classification.family),
+            };
+            break;
+        }
+    }
+    return { network: router.network, subnets, joinAddresses, podSubnets, ...(egress ? { egress } : {}) };
+};
+
+/**
+ * The node address a gateway router sits on: the rtoe- port's network outside
+ * the masquerade subnet, else external_ids physical_ip(s), of one family.
+ */
+const nodeAddressOf = (
+    externalIds: Record<string, string> | undefined,
+    ports: LogicalRouterPortRow[],
+    subnets: MasqueradeSubnet[],
+    family: 4 | 6,
+): string | undefined => {
+    const candidates = [
+        ...parsedAll(ports.filter((port) => port.name.startsWith(EXTERNAL_PORT_PREFIX)).flatMap((port) => port.networks ?? [])),
+        ...parsedAll([externalIds?.['physical_ip'], ...(externalIds?.['physical_ips'] ?? '').split(',')]),
+    ];
+    const node = candidates.find(
+        (parsed) =>
+            parsed.family === family &&
+            !classifyMasqueradeAddress(formatAddress(parsed.family, parsed.address), subnets) &&
+            !subnets.some((subnet) => prefixContains(subnet.prefix, parsed)),
+    );
+    return node ? formatAddress(node.family, node.address) : undefined;
+};
+
+/** Why a NAT row's logical IP is there, when the router's context says. */
+export const natLogicalIntent = (
+    nat: NATRow,
+    context: RouterMasqueradeContext | undefined,
+): NatLogicalIntent | undefined => {
+    const logical = nat.logicalIp ? parsePrefix(nat.logicalIp) : null;
+    if (!context || !logical) return undefined;
+    const host = logical.length === (logical.family === 4 ? 32 : 128);
+    if (host && context.joinAddresses.some((join) => sameAddress(join, logical))) return 'join-address';
+    if (
+        !host &&
+        context.podSubnets.some(
+            (subnet) => subnet.family === logical.family && (prefixContains(logical, subnet) || prefixContains(subnet, logical)),
+        )
+    ) {
+        return 'pod-subnet';
+    }
+    return undefined;
+};
+
+/** What an address inside the masquerade subnet is for, as the router's zone shows the subnet. */
+export const masqueradeRoleOf = (
+    address: string | undefined,
+    context: RouterMasqueradeContext | undefined,
+): MasqueradeClassification | undefined =>
+    (address && context ? classifyMasqueradeAddress(address, context.subnets) : undefined);
+
+/**
+ * Whether a static route goes to the masquerade subnet: marked so in its
+ * external_ids, or naming exactly one of the effective subnets.
+ */
+export const isMasqueradeSubnetRoute = (route: StaticRouteRow, context: RouterMasqueradeContext | undefined): boolean => {
+    if (route.externalIds?.[NODE_MASQUERADE_SUBNET_ANNOTATION] !== undefined) return true;
+    const prefix = parsePrefix(route.ipPrefix);
+    return (
+        prefix != null &&
+        (context?.subnets ?? []).some(
+            (subnet) =>
+                subnet.family === prefix.family &&
+                subnet.prefix.network === prefix.network &&
+                subnet.prefix.length === prefix.length,
+        )
+    );
 };

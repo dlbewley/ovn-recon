@@ -259,11 +259,19 @@ describe('ConstructDrawerBody', () => {
             expect(natRow('100.64.0.5').querySelector('td[data-label="Logical IP"] code')?.textContent).toBe('100.64.0.5');
         });
 
-        it('tags the owner on a user-defined network\'s router with that network', () => {
+        it('names the masquerade IP and each row\'s intent on a primary CUDN gateway router, without the egress line', () => {
             renderWithDatabase('GR_cluster_udn_example.p.cudn_cnv-1');
-            expect(natRow('100.65.0.5').querySelector('[data-testid="address-owner"]')?.textContent).toBe(
-                'Router port rtotr-GR_cluster_udn_example.p.cudn_cnv-1 (example-p-cudn)',
+            // The join row says what it is rather than which port holds the address (ovn-recon-2n6.2).
+            expect(natRow('100.65.0.5').querySelector('[data-testid="nat-logical-intent"]')?.textContent).toBe(
+                "this router's join address",
             );
+            expect(natRow('10.1.2.0/24').querySelector('[data-testid="nat-logical-intent"]')?.textContent).toBe(
+                'pod subnet of example-p-cudn',
+            );
+            expect(natRow('100.65.0.5').querySelector('[data-testid="nat-masquerade-owner"]')?.textContent).toBe(
+                'masquerade IP of example-p-cudn (network ID 3)',
+            );
+            expect(container.querySelector('[data-testid="nat-masquerade-egress"]')).toBeNull();
         });
 
         it('keeps the pod when another network reuses its address', () => {

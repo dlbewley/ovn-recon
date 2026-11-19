@@ -502,6 +502,7 @@ export const OverviewBody: React.FC<DrawerBodyProps> = ({
                         database={database}
                         databaseNode={databaseNode}
                         network={construct.network}
+                        routerName={construct.name}
                         gatewayPortName={gatewayPortName}
                         openAll={routesHref ? { href: routesHref, count: construct.natRules.length } : undefined}
                     />

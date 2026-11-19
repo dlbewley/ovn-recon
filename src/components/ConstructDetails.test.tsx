@@ -329,6 +329,20 @@ describe('ConstructBody', () => {
             expect(current().search).toBe('?tab=routes&q=100.64.0.5');
         });
 
+        it("explains a primary CUDN gateway router's masquerade SNAT above its NAT table (ovn-recon-2n6.2)", async () => {
+            await renderAt('/ovn-recon/ovn/cnv-1/router/GR_cluster_udn_example.p.cudn_cnv-1?tab=routes');
+            expect(container.querySelector('[data-testid="nat-masquerade-egress"]')?.textContent).toContain(
+                'leaves OVN as 169.254.0.15; br-ex then rewrites it to the node address 192.168.4.72.',
+            );
+            expect(container.querySelector('[data-testid="masquerade-subnet-route"]')).not.toBeNull();
+
+            const input = container.querySelector<HTMLInputElement>('input[aria-label="Filter routes and NAT"]')!;
+            await setValue(input, 'masquerade');
+            expect(
+                container.querySelectorAll('table[aria-label="NAT rules"] tr[data-testid^="rule-row-"]'),
+            ).toHaveLength(2);
+        });
+
         it('navigates a relationship to the peer detail page in the same zone', async () => {
             await renderAt('/ovn-recon/ovn/cnv-1/switch/join?tab=relationships');
             const peer = [...container.querySelectorAll('button')].find((button) =>
