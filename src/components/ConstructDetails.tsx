@@ -169,6 +169,8 @@ const RoutesBody: React.FC<{
                         database={database}
                         databaseNode={databaseNode}
                         network={construct.network}
+                        routerName={construct.name}
+                        explainEgress
                         gatewayPortName={gatewayPortName}
                         grouped={grouped}
                         query={query}
