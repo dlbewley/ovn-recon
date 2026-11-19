@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Builder runs on the build host arch (fast); binary targets the image arch (buildx sets TARGET*).
-FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -15,7 +15,7 @@ COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags='-s -w' -o /usr/local/bin/ovn-collector ./cmd/ovn-collector
 
-FROM --platform=$TARGETPLATFORM alpine:3.20
+FROM --platform=$TARGETPLATFORM alpine:3.24
 
 WORKDIR /app
 
