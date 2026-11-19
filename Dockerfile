@@ -12,7 +12,10 @@ COPY . .
 
 RUN npm run build
 
-FROM --platform=$TARGETPLATFORM nginx:1.21-alpine
+# Pin an exact nginx release and bump it deliberately: a minor tag such as 1.21-alpine stops
+# receiving updates once nginx moves to the next branch, and this image sat on 1.21.6 (Alpine 3.15)
+# for years. 1.31.9 fixes the nginx2root CVEs (CVE-2026-123007, -123633, -123634, -121810, -113425).
+FROM --platform=$TARGETPLATFORM nginx:1.31.9-alpine
 
 # Support running as arbitrary user which belogs to the root group
 RUN chmod g+rwx /var/cache/nginx /var/run /var/log/nginx && \
