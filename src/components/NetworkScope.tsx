@@ -99,9 +99,9 @@ const Loading: React.FC = () => (
     <PageSection><Spinner size="lg" aria-label="Loading" /></PageSection>
 );
 
-/** The network page's body under the header. */
-export const NetworkScopeBody: React.FC<{ view: NetworkView }> = ({ view }) => (
+/** The network page's body under the header; the shell's Nodes name the masquerade subnets. */
+export const NetworkScopeBody: React.FC<{ view: NetworkView; data?: Pick<ExplorerData, 'nodes'> }> = ({ view, data }) => (
     <React.Suspense fallback={<Loading />}>
-        <NetworkExplorerBody address={view.params.network} />
+        <NetworkExplorerBody address={view.params.network} nodes={data?.nodes} />
     </React.Suspense>
 );
