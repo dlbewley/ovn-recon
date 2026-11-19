@@ -1,5 +1,6 @@
 import { LoadBalancerGroupRow, LoadBalancerRow, LogicalDatabase } from '../types';
 import { comparePrefixes, ParsedPrefix, parsePrefix, prefixContains } from './ipPrefix';
+import { DEFAULT_MASQUERADE_SUBNETS, masqueradeRouteSubnets } from './masqueradeIps';
 
 /**
  * The service plane as a pure model over one node's database (ovn-recon-e2b.6):
@@ -360,10 +361,6 @@ export interface VipClassification {
     reason: string;
 }
 
-/** ovn-kubernetes' default node masquerade subnets. */
-export const DEFAULT_MASQUERADE_SUBNETS: readonly string[] = ['169.254.0.0/17', 'fd69::/112'];
-const MASQUERADE_ROUTE_KEY = 'k8s.ovn.org/node-masquerade-subnet';
-
 /** What the zone's database says about addresses, for inferring VIP classes. */
 export interface VipClassContext {
     /** The node's own addresses (keys), where node ports listen. */
@@ -394,9 +391,7 @@ export const vipClassContext = (
 ): VipClassContext => {
     const masqueradeSubnets = [
         ...DEFAULT_MASQUERADE_SUBNETS,
-        ...(database?.staticRoutes ?? [])
-            .filter((route) => route.externalIds?.[MASQUERADE_ROUTE_KEY] !== undefined)
-            .map((route) => route.ipPrefix),
+        ...masqueradeRouteSubnets(database),
     ]
         .map(parsePrefix)
         .filter(nonNull);

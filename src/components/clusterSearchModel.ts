@@ -17,8 +17,24 @@ import { getResourcePath } from '../topology/links';
 import { networkCidr, ParsedPrefix, parsePrefix, prefixContains } from './ipPrefix';
 import { buildKernelRouteTables, kernelTableLabel, KernelRouteRow, KernelRouteTableGroup } from './kernelRoutes';
 import { networkResourceRef } from './logicalClassification';
+import {
+    classifyMasqueradeAddress,
+    isUdnMasqueradeRole,
+    MASQUERADE_ROLE_LABELS,
+    MasqueradeNetwork,
+    MasqueradeNetworkInputs,
+    masqueradeSubnets,
+    resolveMasqueradeNetwork,
+} from './masqueradeIps';
 import { getOvsBonds, getRunningRoutes } from './nodeVisualizationSelectors';
-import { clusterLogicalPath, nodeLogicalPath, nodePhysicalPath, overviewSearchPath, SEARCH_PARAM } from '../routes';
+import {
+    clusterLogicalPath,
+    networkPath,
+    nodeLogicalPath,
+    nodePhysicalPath,
+    overviewSearchPath,
+    SEARCH_PARAM,
+} from '../routes';
 import { encodeSelectValue } from './useSelectParam';
 
 /**
@@ -167,7 +183,7 @@ export { overviewSearchPath };
 /* Links                                                               */
 /* ------------------------------------------------------------------ */
 
-export type SearchLinkView = 'logical' | 'cluster' | 'physical' | 'owner';
+export type SearchLinkView = 'logical' | 'cluster' | 'physical' | 'owner' | 'network';
 
 export interface SearchLink {
     view: SearchLinkView;
@@ -205,6 +221,7 @@ const clusterLink = (construct: SearchConstruct): SearchLink =>
 export type SearchSource = 'collector' | 'cluster';
 
 export type SearchResultKind =
+    | 'masquerade'
     | 'pod-port'
     | 'switch-port'
     | 'router-port'
@@ -216,6 +233,7 @@ export type SearchResultKind =
 
 /** Group order on the page, and each group's heading. */
 export const RESULT_KINDS: readonly { kind: SearchResultKind; label: string }[] = [
+    { kind: 'masquerade', label: 'Masquerade addresses' },
     { kind: 'pod-port', label: 'Pod and VM ports' },
     { kind: 'switch-port', label: 'Other switch ports' },
     { kind: 'router-port', label: 'Router ports' },
@@ -832,9 +850,61 @@ export const foldAcrossNodes = (results: SearchResult[]): SearchResult[] => {
 
 export interface WatchedSources {
     nodeNetworkStates: NodeNetworkState[];
-    /** Node resources, read for status.addresses only. */
+    /** Node resources, read for status.addresses and the masquerade subnet annotation. */
     nodes?: K8sResourceCommon[];
+    /** CUDNs, UDNs and NADs, to name the network a masquerade address belongs to. */
+    networks?: MasqueradeNetworkInputs;
 }
+
+/** Who a masquerade network ID belongs to, in words, when no single network does. */
+const unnamedNetworkText = (resolved: MasqueradeNetwork | undefined, networksHeld: boolean): string | undefined => {
+    if (!resolved || resolved.network) return undefined;
+    if (resolved.ambiguous) return `network ID ${resolved.networkId} is claimed by ${resolved.ambiguous.join(' and ')}`;
+    if (networksHeld) return `no network carries network ID ${resolved.networkId}`;
+    return undefined;
+};
+
+/**
+ * What an address in the node masquerade subnet is for (ovn-recon-2n6.1): one
+ * result naming its role and, for a network's gateway router or management
+ * port address, the network, read through the NADs' network-id. The offsets
+ * are upstream's, so this labels the address; what holds it comes from the
+ * other results.
+ */
+const masqueradeResult = (query: SearchQuery, sources: WatchedSources): SearchResult | undefined => {
+    const classification = classifyMasqueradeAddress(query.value, masqueradeSubnets({ nodes: sources.nodes ?? [] }));
+    if (!classification) return undefined;
+    const { role, networkId, subnet, offset } = classification;
+    const resolved = networkId !== undefined && isUdnMasqueradeRole(role)
+        ? resolveMasqueradeNetwork(networkId, sources.networks ?? {})
+        : undefined;
+    const ref = resolved?.ovnNetwork ? networkResourceRef(resolved.ovnNetwork) : undefined;
+    const roleText = MASQUERADE_ROLE_LABELS[role];
+    let title = roleText;
+    if (ref) {
+        title = `${roleText} of ${ref.kind === 'ClusterUserDefinedNetwork' ? `CUDN ${ref.name}` : `UDN ${ref.namespace}/${ref.name}`}`;
+    } else if (networkId !== undefined) {
+        title = `${roleText} of network ID ${networkId}`;
+    }
+    const result: SearchResult = {
+        key: ['cluster|masquerade', role, networkId ?? '', subnet, query.value].join('|'),
+        kind: 'masquerade',
+        source: 'cluster',
+        title,
+        subtitle: [
+            `Masquerade subnet ${subnet}, offset ${offset}`,
+            networkId !== undefined ? `network ID ${networkId}` : '',
+            unnamedNetworkText(resolved, Boolean(sources.networks?.nads)) ?? '',
+        ].filter(Boolean).join(' · '),
+        match: { type: 'exact', field: 'address', value: query.value },
+        places: [],
+        links: resolved?.network
+            ? [{ view: 'network', label: 'Network', href: networkPath(resolved.network) }]
+            : [],
+    };
+    if (resolved?.ovnNetwork) result.network = resolved.ovnNetwork;
+    return result;
+};
 
 interface NodeAddress {
     type: string;
@@ -1003,6 +1073,8 @@ export const searchWatchedResources = (query: SearchQuery, sources: WatchedSourc
         if (node.metadata?.name) nodesByName.set(node.metadata.name, node);
     }
     const nodesWithAddressHit = new Set<string>();
+    const masquerade = query.kind === 'ip' ? masqueradeResult(query, sources) : undefined;
+    if (masquerade) results.push(masquerade);
 
     for (const nns of sources.nodeNetworkStates) {
         const node = nns.metadata?.name;

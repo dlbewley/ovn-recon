@@ -38,6 +38,7 @@ import {
     withSearchParam,
     ZoneCount,
 } from './clusterSearchModel';
+import type { MasqueradeNetworkInputs } from './masqueradeIps';
 import { networkResourceRef } from './logicalClassification';
 import { networkDisplayName, networkKindBadge } from './LogicalLadderView';
 import { parseSnapshotAgeMs } from './snapshotFreshness';
@@ -67,6 +68,8 @@ export interface ClusterSearchProps {
     nodeNetworkStates?: NodeNetworkState[];
     /** The Node list, read for node addresses and for which nodes exist. */
     nodes?: K8sResourceCommon[];
+    /** CUDNs, UDNs and NADs, to name the network a masquerade address belongs to. */
+    networks?: MasqueradeNetworkInputs;
     /** The NodeNetworkState watch has settled: loaded, or failed. */
     stateLoaded: boolean;
     /** Why NodeNetworkState could not be read, when it could not. */
@@ -542,6 +545,7 @@ export interface ClusterSearchState {
 export const useClusterSearch = ({
     nodeNetworkStates,
     nodes,
+    networks,
     stateLoaded,
     stateError,
     collectorEnabled,
@@ -615,8 +619,8 @@ export const useClusterSearch = ({
     // A watch that has not loaded hands over nothing; the constants keep the
     // memo below from recomputing on every render until it does.
     const sources = React.useMemo(
-        () => ({ nodeNetworkStates: nodeNetworkStates ?? NO_STATES, nodes: nodes ?? NO_NODES }),
-        [nodeNetworkStates, nodes],
+        () => ({ nodeNetworkStates: nodeNetworkStates ?? NO_STATES, nodes: nodes ?? NO_NODES, networks }),
+        [nodeNetworkStates, nodes, networks],
     );
     const results = React.useMemo(
         () => (answer ? buildClusterSearchResults(answer.query, answer.outcome, sources) : null),

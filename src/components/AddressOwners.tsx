@@ -5,10 +5,12 @@ import { ConsoleLink } from '../linkOut/LinkOut';
 import { AddressOwner, AddressOwnerKind, addressOwnerTarget } from './addressBook';
 import { DEFAULT_NETWORK } from './logicalClassification';
 import { networkDisplayName } from './LogicalLadderView';
+import { isUdnMasqueradeRole, MASQUERADE_ROLE_LABELS } from './masqueradeIps';
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
 
 const KIND_LABELS: Record<AddressOwnerKind, string> = {
+    masquerade: 'Masquerade',
     pod: 'Pod',
     'router-port': 'Router port',
     'switch-port': 'Switch port',
@@ -26,13 +28,48 @@ export interface AddressOwnersProps {
     renderOwner?: (owner: AddressOwner) => React.ReactNode | undefined;
 }
 
+const BASIS_TEXT = {
+    observed: 'observed in OVN or on a host',
+    derived: 'derived from the masquerade offsets',
+    both: 'observed, and as the masquerade offsets place it',
+} as const;
+
+/** How a masquerade owner was established, in words. */
+const masqueradeBasisText = (owner: AddressOwner): string | undefined =>
+    owner.masquerade && `Masquerade subnet ${owner.masquerade.subnet} · ${BASIS_TEXT[owner.masquerade.basis]}`;
+
+/**
+ * A masquerade address: its role, and for a network's pair the network,
+ * linked to its page, or its ID when no single network claims it.
+ */
+const MasqueradeOwnerText: React.FC<{ owner: AddressOwner }> = ({ owner }) => {
+    const detail = owner.masquerade;
+    if (!detail) return <>{owner.label}</>;
+    const role = MASQUERADE_ROLE_LABELS[detail.role];
+    if (!isUdnMasqueradeRole(detail.role)) return <>{role}</>;
+    if (owner.network) {
+        return (
+            <>
+                {role} of{' '}
+                <ConsoleLink target={addressOwnerTarget(owner)}>{networkDisplayName(owner.network)}</ConsoleLink>
+            </>
+        );
+    }
+    return (
+        <>
+            {role} of network ID {detail.networkId}
+            {detail.ambiguous && <> (claimed by {detail.ambiguous.join(' and ')})</>}
+        </>
+    );
+};
+
 const OwnerLink: React.FC<{ owner: AddressOwner; renderOwner: AddressOwnersProps['renderOwner'] }> = ({ owner, renderOwner }) =>
     <>
-        {renderOwner?.(owner) ?? (
+        {renderOwner?.(owner) ?? (owner.kind === 'masquerade' ? <MasqueradeOwnerText owner={owner} /> : (
             <>
                 {KIND_LABELS[owner.kind]} <ConsoleLink target={addressOwnerTarget(owner)}>{owner.label}</ConsoleLink>
             </>
-        )}
+        ))}
     </>;
 
 /**
@@ -48,7 +85,8 @@ export const AddressOwners: React.FC<AddressOwnersProps> = ({ address, owners, r
         return (
             <span style={{ ...SUBTLE, display: 'block' }} data-testid="address-owner">
                 <OwnerLink owner={owner} renderOwner={renderOwner} />
-                {owner.network && owner.network !== DEFAULT_NETWORK && <> ({networkDisplayName(owner.network)})</>}
+                {owner.kind !== 'masquerade' && owner.network && owner.network !== DEFAULT_NETWORK
+                    && <> ({networkDisplayName(owner.network)})</>}
             </span>
         );
     }
@@ -64,7 +102,9 @@ export const AddressOwners: React.FC<AddressOwnersProps> = ({ address, owners, r
                                 <OwnerLink owner={owner} renderOwner={renderOwner} />
                                 <div style={SUBTLE}>
                                     {[
-                                        owner.network ? networkDisplayName(owner.network) : 'Host network',
+                                        owner.kind === 'masquerade'
+                                            ? masqueradeBasisText(owner)
+                                            : owner.network ? networkDisplayName(owner.network) : 'Host network',
                                         ...new Set(owner.provenance.map((entry) => `${entry.source} ${entry.record}`)),
                                     ].join(' · ')}
                                 </div>
