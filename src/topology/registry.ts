@@ -42,8 +42,11 @@ import {
     OvsBond,
     parseNadConfig,
     parsePatchPortName,
+    EvpnNetworkRef,
+    PrimaryNetworkMatch,
     resolvePatchPortCudn,
-    UnresolvedVrfNetworkId
+    UnresolvedVrfNetworkId,
+    VrfMasqueradeRoute
 } from '../components/nodeVisualizationSelectors';
 import {
     ClusterUserDefinedNetwork,
@@ -55,6 +58,11 @@ import {
     RouteAdvertisements,
     UserDefinedNetwork
 } from '../types';
+import {
+    describeMasqueradeAddress,
+    MASQUERADE_SUBNET_HELP,
+    vrfManagementPortRoutes,
+} from '../components/masqueradeHost';
 import { GraphContext } from './context';
 import { formatSubnets } from './subnets';
 import { baseFacts } from './facts';
@@ -517,7 +525,12 @@ const bridgePortFacts = (raw: Interface, ctx: GraphContext): Fact[] => {
         const iface = ctx.interfaces.find((candidate) => candidate.name === name && candidate !== raw)
             ?? ctx.interfaces.find((candidate) => candidate.name === name);
         const addresses = iface ? getIpv4Addresses(iface) : [];
-        return { text: name, detail: addresses.length > 0 ? addresses.join(', ') : '(no address)' };
+        // br-ex's host masquerade address says what it is for (ovn-recon-2n6.4).
+        const labelled = addresses.map((address) => {
+            const role = describeMasqueradeAddress(address, ctx.masqueradeSubnets);
+            return role ? `${address} (${role})` : address;
+        });
+        return { text: name, detail: labelled.length > 0 ? labelled.join(', ') : '(no address)' };
     };
     const mappings = ctx.bridgeMappings.filter((mapping) => mapping.bridge === raw.name);
     const hasPorts = groups.uplinks.length + groups.bonds.length + groups.internal.length + groups.patches.length
@@ -862,6 +875,66 @@ const evpnNetworkFacts = (raw: Interface | undefined, ctx: GraphContext): Fact[]
  * The ID in an mp<ID>-udn-vrf name, when it resolved to no Primary network
  * (ovn-recon-s3t.60). A leftover VRF otherwise reads the same as one nobody understood.
  */
+/** A network as the masquerade lines name it. */
+const networkLabel = (network: EvpnNetworkRef): string =>
+    (network.kind === 'cudn' ? `CUDN ${network.name}` : `UDN ${network.namespace}/${network.name}`);
+
+/** A management-port masquerade route as text: `169.254.0.16/32 dev ovn-k8s-mp3`. */
+const masqueradeRouteText = (route: VrfMasqueradeRoute): string =>
+    `${route.destination}${route.interface ? ` dev ${route.interface}` : ''}`;
+
+/**
+ * The VRF's management-port masquerade route beside the network it serves
+ * (ovn-recon-2n6.4): one line when it agrees with the signals that chose the
+ * network, and a warning per route that names another network or ID.
+ */
+const vrfMasqueradeRouteItems = (primary: PrimaryNetworkMatch): FactItem[] => [
+    ...(primary.masqueradeRoute
+        ? [{
+            text: `Agrees with route ${masqueradeRouteText(primary.masqueradeRoute)}: this network's `
+                + `management-port masquerade address (network ID ${primary.masqueradeRoute.networkId})`
+        }]
+        : []),
+    ...(primary.masqueradeConflicts ?? []).map((conflict): FactItem => ({
+        text: `⚠ route ${masqueradeRouteText(conflict)} is the management-port masquerade address of network ID `
+            + `${conflict.networkId}`
+            + (conflict.network
+                ? ` (${networkLabel(conflict.network)})`
+                : conflict.ambiguous ? ` (claimed by ${conflict.ambiguous.join(' and ')})` : '')
+            + ', not of this network'
+    })),
+];
+
+/** The hint's sentence on the masquerade route, when one corroborates the match. */
+const masqueradeClause = (primary: PrimaryNetworkMatch): string => (primary.masqueradeRoute
+    ? ` Its table routes ${masqueradeRouteText(primary.masqueradeRoute)}, the management-port masquerade address `
+        + `of network ID ${primary.masqueradeRoute.networkId}, which is this network's: corroboration only, since `
+        + 'the masquerade offsets are an OVN-Kubernetes implementation detail.'
+    : '');
+
+/**
+ * An interface's IPv4 addresses. One inside the masquerade subnet says what it
+ * is for (ovn-recon-2n6.4): br-ex carries the host masquerade address.
+ */
+const ipv4Facts = (raw: Interface | undefined, ctx: GraphContext): Fact[] => {
+    const ipv4 = raw ? getIpv4Addresses(raw) : [];
+    if (ipv4.length === 0) return [];
+    const roles = ipv4.map((address) => describeMasqueradeAddress(address, ctx.masqueradeSubnets));
+    if (roles.every((role) => !role)) {
+        return [{ label: 'IPv4', value: ipv4.join(', '), provenance: 'observed' }];
+    }
+    return [{
+        label: 'IPv4',
+        value: ipv4.map((address, index): FactItem => ({
+            text: address,
+            ...(roles[index] ? { detail: roles[index] } : {}),
+        })),
+        provenance: 'observed',
+        hint: `${MASQUERADE_SUBNET_HELP} An address in it is labelled by its offset from the subnet's base, `
+            + 'as OVN-Kubernetes assigns them; the offsets are an implementation detail, not a documented contract.'
+    }];
+};
+
 const unresolvedVrfNetworkIdFacts = (unresolved: UnresolvedVrfNetworkId | undefined): Fact[] => {
     if (!unresolved) return [];
     const { networkId, reason, network, nad, ambiguous } = unresolved;
@@ -1137,10 +1210,7 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     provenance: 'observed'
                 });
             }
-            const ipv4 = getIpv4Addresses(raw);
-            if (ipv4.length > 0) {
-                facts.push({ label: 'IPv4', value: ipv4.join(', '), provenance: 'observed' });
-            }
+            facts.push(...ipv4Facts(raw, ctx));
             if (nic) {
                 facts.push(...lldpFacts(nic), ...hardwareIdentityFacts(nic));
             }
@@ -1483,7 +1553,9 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
             // table, so it runs here, for the drawer, never during graph render.
             const vrfRoutes = getVrfRoutesForInterface(raw, ctx.nns);
 
-            const primary = findPrimaryNetworkForVrf(raw, ctx.cudns, ctx.udns, ctx.interfaces, ctx.nads);
+            const masqueradeRoutes = vrfManagementPortRoutes(vrfRoutes, ctx.masqueradeSubnets);
+            const primary = findPrimaryNetworkForVrf(
+                raw, ctx.cudns, ctx.udns, ctx.interfaces, ctx.nads, { masqueradeRoutes });
             const created = 'This VRF was created by OVN-Kubernetes as a side effect of defining that Primary network. ';
             const corroborated = primary?.corroboration
                 ? ` Port ${primary.corroboration.port} address ${primary.corroboration.address} lies inside its subnet ${primary.corroboration.subnet}.`
@@ -1514,21 +1586,21 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                                     apiVersion: 'k8s.ovn.org/v1', kind: 'UserDefinedNetwork',
                                     name: primary.name, namespace: primary.namespace
                                 }
-                        }],
+                        }, ...vrfMasqueradeRouteItems(primary)],
                         // Strongest evidence first (ovn-recon-s3t.57): the network's own
                         // status is declared; an ID or a name on the VRF is convention.
                         provenance: primary.signals.includes('status') ? 'declared' : 'inferred',
                         hint: primary.signals.includes('status')
-                            ? `${created}The network's status.vrfName names this VRF.${corroborated}`
+                            ? `${created}The network's status.vrfName names this VRF.${corroborated}${masqueradeClause(primary)}`
                             : primary.signals.includes('network-id')
                                 ? `${created}Matched by network ID: a network whose name does not fit in a 15-character `
                                     + `interface name gets a VRF named mp<network ID>-udn-vrf, and NetworkAttachmentDefinition `
                                     + `${primary.nad?.namespace}/${primary.nad?.name} carries ${NETWORK_ID_ANNOTATION}: `
-                                    + `${primary.networkId}.${corroborated}`
+                                    + `${primary.networkId}.${corroborated}${masqueradeClause(primary)}`
                                 : `${created}`
                                     + `Matched by ${primary.signals.join(' and ')}: a Primary Layer2 or Layer3 network gets a `
                                     + 'per-node VRF named after it (truncated to 15 characters), holding routes in the '
-                                    + 'network\'s subnet. Localnet networks cannot be Primary.'
+                                    + `network's subnet. Localnet networks cannot be Primary.${masqueradeClause(primary)}`
                     } as Fact]
                     : []),
                 ...unresolvedVrfNetworkIdFacts(unresolved),
@@ -1542,7 +1614,8 @@ export const nodeKindRegistry: Record<NodeKind, NodeKindDefinition> = {
                     label: 'Routes',
                     value: { table: 'kernel-routes', routes: vrfRoutes },
                     provenance: 'observed',
-                    hint: 'NNS routes in this VRF\'s route table, or leaving via one of its ports.',
+                    hint: 'NNS routes in this VRF\'s route table, or leaving via one of its ports. '
+                        + MASQUERADE_SUBNET_HELP,
                     emptyText: 'No associated routes found in NNS.'
                 },
                 {

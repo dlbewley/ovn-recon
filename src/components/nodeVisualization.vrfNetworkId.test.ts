@@ -235,6 +235,10 @@ describe('the VRF drawer says how it found the network', () => {
         expect(fact.value).toEqual([{
             text: `${CUDN} (ClusterUserDefinedNetwork)`,
             ref: { apiVersion: 'k8s.ovn.org/v1', kind: 'ClusterUserDefinedNetwork', name: CUDN }
+        }, {
+            // The VRF's table routes network ID 9's management-port masquerade address (ovn-recon-2n6.4).
+            text: 'Agrees with route 169.254.0.28/32 dev ovn-k8s-mp9: this network\'s management-port masquerade '
+                + 'address (network ID 9)'
         }]);
         expect(fact.hint).toContain('Matched by network ID');
         expect(fact.hint).toContain(`NetworkAttachmentDefinition demo-evpn/${CUDN} carries k8s.ovn.org/network-id: 9.`);

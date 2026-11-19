@@ -44,8 +44,18 @@ const InterfaceName: React.FC<{ name?: string; select?: InterfaceSelector }> = (
     );
 };
 
-/** Who holds a gateway address, as far as the view drawing the table can tell. */
-export type GatewayOwners = (gateway: string) => readonly AddressOwner[];
+/**
+ * Who holds an address, as far as the view drawing the table can tell: read for
+ * a gateway, a destination that is one host, and a preferred source. Inside the
+ * masquerade subnet that names the address's role (ovn-recon-2n6.4).
+ */
+export type GatewayOwners = (address: string) => readonly AddressOwner[];
+
+/** A /32 or /128: a route to one host, whose owner is worth naming. */
+const isHostRoute = (row: KernelRouteRow): boolean => {
+    const length = Number(row.destination.split('/')[1]);
+    return length === (row.family === 6 ? 128 : 32);
+};
 
 /** "on-link" where the router tables say it too (RouterRuleTables.tsx). */
 const Gateway: React.FC<{ hop: KernelNextHop; ownersOf?: GatewayOwners }> = ({ hop, ownersOf }) => (
@@ -62,7 +72,7 @@ const Prefix: React.FC<{ value: string }> = ({ value }) => {
     return slash < 0 ? <code>{value}</code> : <code>{value.slice(0, slash)}<wbr />{value.slice(slash)}</code>;
 };
 
-const Destination: React.FC<{ row: KernelRouteRow }> = ({ row }) => (
+const Destination: React.FC<{ row: KernelRouteRow; ownersOf?: GatewayOwners }> = ({ row, ownersOf }) => (
     <>
         <Prefix value={row.destination} />
         {row.isDefault && (
@@ -87,6 +97,21 @@ const Destination: React.FC<{ row: KernelRouteRow }> = ({ row }) => (
                 </div>
             </>
         )}
+        {ownersOf && isHostRoute(row) && (
+            <AddressOwners address={row.destination} owners={ownersOf(row.destination)} />
+        )}
+    </>
+);
+
+/** A route's preferred source addresses, each with its owner when there is one. */
+const Sources: React.FC<{ row: KernelRouteRow; ownersOf?: GatewayOwners }> = ({ row, ownersOf }) => (
+    <>
+        {row.sources.map((source) => (
+            <div key={source}>
+                <code>{source}</code>
+                {ownersOf && <AddressOwners address={source} owners={ownersOf(source)} />}
+            </div>
+        ))}
     </>
 );
 
@@ -114,7 +139,7 @@ export interface KernelRouteTableProps {
 
 /** A route's Metric, Source and MTU as one line each, for a narrow table's
  * expanded row; undefined when the row has none of them. */
-const RouteDetail: React.FC<{ row: KernelRouteRow }> = ({ row }) => (
+const RouteDetail: React.FC<{ row: KernelRouteRow; ownersOf?: GatewayOwners }> = ({ row, ownersOf }) => (
     <DescriptionList isHorizontal isCompact horizontalTermWidthModifier={{ default: '6rem' }} data-testid="kernel-route-detail">
         {row.metric !== undefined && (
             <DescriptionListGroup>
@@ -126,7 +151,7 @@ const RouteDetail: React.FC<{ row: KernelRouteRow }> = ({ row }) => (
             <DescriptionListGroup>
                 <DescriptionListTerm>Source</DescriptionListTerm>
                 <DescriptionListDescription>
-                    {row.sources.map((source) => <div key={source}><code>{source}</code></div>)}
+                    <Sources row={row} ownersOf={ownersOf} />
                 </DescriptionListDescription>
             </DescriptionListGroup>
         )}
@@ -189,7 +214,7 @@ export const KernelRouteTable: React.FC<KernelRouteTableProps> = ({
         {
             key: 'destination',
             title: 'Destination',
-            cell: (row) => <Destination row={row} />,
+            cell: (row) => <Destination row={row} ownersOf={gatewayOwners} />,
             compare: (a, b) => comparePrefixes(a.destination, b.destination),
             headerModifier: narrowHeader,
         },
@@ -223,9 +248,7 @@ export const KernelRouteTable: React.FC<KernelRouteTableProps> = ({
             key: 'source',
             title: 'Source',
             cell: (row) =>
-                row.sources.length === 0
-                    ? DASH
-                    : row.sources.map((source) => <div key={source}><code>{source}</code></div>),
+                row.sources.length === 0 ? DASH : <Sources row={row} ownersOf={gatewayOwners} />,
             compare: (a, b) => comparePrefixes(a.sources[0] ?? '', b.sources[0] ?? ''),
         });
     }
@@ -250,7 +273,7 @@ export const KernelRouteTable: React.FC<KernelRouteTableProps> = ({
                         rowKey={(row) => row.key}
                         tableStyle={narrow ? NARROW_TABLE_STYLE : undefined}
                         expandedContent={
-                            narrow ? (row) => (hasRouteDetail(row) ? <RouteDetail row={row} /> : undefined) : undefined
+                            narrow ? (row) => (hasRouteDetail(row) ? <RouteDetail row={row} ownersOf={gatewayOwners} /> : undefined) : undefined
                         }
                         summary={
                             <span data-testid="kernel-route-summary">

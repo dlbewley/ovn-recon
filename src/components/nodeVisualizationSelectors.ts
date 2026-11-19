@@ -88,8 +88,10 @@ export interface PrimaryNetworkMatch {
      * network-id  -- the VRF is named mp<ID>-udn-vrf and a NAD of the network carries that ID.
      * name        -- the VRF carries the network's name.
      * subnet      -- a VRF port address lies inside the network's subnet. Corroboration only.
+     * masquerade-route -- the VRF's table routes the network's management-port
+     *                masquerade address (ovn-recon-2n6.4). Corroboration only.
      */
-    signals: ('status' | 'network-id' | 'subnet' | 'name')[];
+    signals: ('status' | 'network-id' | 'subnet' | 'name' | 'masquerade-route')[];
     /**
      * The port address found inside one of the network's subnets, when one was.
      * Named so the edge rationale can cite the actual evidence (ovn-recon-s3t.30).
@@ -99,6 +101,41 @@ export interface PrimaryNetworkMatch {
     networkId?: string;
     /** The NetworkAttachmentDefinition carrying that ID. */
     nad?: { namespace: string; name: string };
+    /** The route behind the `masquerade-route` signal, when it matched. */
+    masqueradeRoute?: VrfMasqueradeRoute;
+    /**
+     * Management-port masquerade routes in the VRF's table that name another
+     * network, or a network ID this one does not carry: a disagreement with the
+     * signals that chose the network.
+     */
+    masqueradeConflicts?: VrfMasqueradeConflict[];
+}
+
+/**
+ * A route in a VRF's table to a network's management-port masquerade address,
+ * `169.254.0.16/32 dev ovn-k8s-mp3`, with the network ID its offset names
+ * (vrfManagementPortRoutes in masqueradeHost.ts).
+ */
+export interface VrfMasqueradeRoute {
+    destination: string;
+    networkId: number;
+    interface?: string;
+}
+
+export interface VrfMasqueradeConflict extends VrfMasqueradeRoute {
+    /** The network the ID belongs to, when exactly one claims it. */
+    network?: EvpnNetworkRef;
+    /** The networks claiming the ID, when more than one does. */
+    ambiguous?: string[];
+}
+
+export interface PrimaryNetworkMatchOptions {
+    /**
+     * The VRF's management-port masquerade routes. The caller reads them out of
+     * the VRF's routing table, which costs a walk of the node's routes, so only
+     * the drawer passes them; without them the signal is not looked for.
+     */
+    masqueradeRoutes?: readonly VrfMasqueradeRoute[];
 }
 
 /**
@@ -140,7 +177,8 @@ export const findPrimaryNetworkForVrf = (
     cudns: ClusterUserDefinedNetwork[],
     udns: UserDefinedNetwork[],
     interfaces: Interface[],
-    nads: NetworkAttachmentDefinition[] = []
+    nads: NetworkAttachmentDefinition[] = [],
+    { masqueradeRoutes = [] }: PrimaryNetworkMatchOptions = {}
 ): PrimaryNetworkMatch | undefined => {
     const portAddresses = getVrfConnectionInfo(vrf, interfaces)
         .brIntPorts.flatMap((port) => getIpv4Addresses(port).map((address) => ({ port: port.name, address })));
@@ -195,14 +233,24 @@ export const findPrimaryNetworkForVrf = (
         })
     ];
 
+    // The network each masquerade route's ID belongs to, resolved once.
+    const routeNetworks = masqueradeRoutes.map((route) => ({
+        route,
+        ...findNetworkByNetworkId(String(route.networkId), cudns, udns, nads),
+    }));
+    const sameNetwork = (network: EvpnNetworkRef | undefined, candidate: Candidate): boolean =>
+        Boolean(network) && network?.kind === candidate.kind && network.name === candidate.name
+        && (network.kind === 'cudn' || network.namespace === candidate.namespace);
+
     const matches = candidates
-        .map((candidate): PrimaryNetworkMatch => {
+        .map((candidate): { candidate: Candidate; match: PrimaryNetworkMatch } => {
             const corroboration = candidate.subnets
                 .flatMap((subnet) => portAddresses
                     .filter(({ address }) => ipv4InCidr(address, subnet))
                     .map((hit) => ({ ...hit, subnet })))[0];
             const byNetworkId = idMatches(candidate);
-            return {
+            const byMasquerade = routeNetworks.find(({ network }) => sameNetwork(network, candidate))?.route;
+            return { candidate, match: {
                 kind: candidate.kind,
                 name: candidate.name,
                 namespace: candidate.namespace,
@@ -210,9 +258,11 @@ export const findPrimaryNetworkForVrf = (
                     ...(candidate.vrfName && candidate.vrfName === vrf.name ? ['status' as const] : []),
                     ...(byNetworkId ? ['network-id' as const] : []),
                     ...(corroboration ? ['subnet' as const] : []),
-                    ...(nameMatches(candidate.name) ? ['name' as const] : [])
+                    ...(nameMatches(candidate.name) ? ['name' as const] : []),
+                    ...(byMasquerade ? ['masquerade-route' as const] : [])
                 ],
                 ...(corroboration ? { corroboration } : {}),
+                ...(byMasquerade ? { masqueradeRoute: byMasquerade } : {}),
                 ...(byNetworkId
                     ? {
                         networkId,
@@ -221,15 +271,38 @@ export const findPrimaryNetworkForVrf = (
                             : undefined
                     }
                     : {})
-            };
+            } };
         })
-        // Something must identify the network; a subnet hit alone is not an association.
-        .filter((match) => match.signals.some((signal) => signal !== 'subnet'));
+        // Something must identify the network; a subnet hit or a masquerade route,
+        // alone or together, is not an association.
+        .filter(({ match }) => match.signals.some((signal) => signal !== 'subnet' && signal !== 'masquerade-route'));
 
-    return matches.find((match) => match.signals.includes('status'))
-        ?? matches.find((match) => match.signals.includes('network-id'))
-        ?? matches.find((match) => match.signals.includes('subnet'))
-        ?? matches[0];
+    const withSignal = (signal: PrimaryNetworkMatch['signals'][number]) =>
+        matches.find(({ match }) => match.signals.includes(signal));
+    const chosen = withSignal('status') ?? withSignal('network-id') ?? withSignal('masquerade-route')
+        ?? withSignal('subnet') ?? matches[0];
+    if (!chosen) return undefined;
+    const { candidate: bestCandidate, match: best } = chosen;
+
+    // A management-port route naming another network, or an ID this network's
+    // NADs do not carry, disagrees with the signals that chose it. An ID nothing
+    // resolves is a disagreement only when the network's own ID is known.
+    const ownIds = new Set(nads
+        .filter((nad) => sameNetwork(networkForNad(nad, cudns, udns), bestCandidate))
+        .map((nad) => nad.metadata?.annotations?.[NETWORK_ID_ANNOTATION])
+        .filter((id): id is string => Boolean(id)));
+    const conflicts = routeNetworks
+        .filter(({ route, network, ambiguous }) => {
+            if (sameNetwork(network, bestCandidate)) return false;
+            if (network || ambiguous) return true;
+            return ownIds.size > 0 && !ownIds.has(String(route.networkId));
+        })
+        .map(({ route, network, ambiguous }): VrfMasqueradeConflict => ({
+            ...route,
+            ...(network ? { network } : {}),
+            ...(ambiguous ? { ambiguous } : {}),
+        }));
+    return conflicts.length > 0 ? { ...best, masqueradeConflicts: conflicts } : best;
 };
 
 /** Why a VRF named for a network ID was matched to no Primary network. */

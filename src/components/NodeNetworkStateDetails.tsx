@@ -9,6 +9,9 @@ import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
 import { NodeNetworkState, ClusterUserDefinedNetwork, UserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkConfigurationEnactment, RouteAdvertisements, SriovNetworkNodeState, Vtep } from '../types';
 import { getRunningRoutes, NODE_VTEPS_ANNOTATION } from './nodeVisualizationSelectors';
 import { MAIN_TABLE_ID } from './kernelRoutes';
+import { MASQUERADE_SUBNET_HELP } from './masqueradeHost';
+import { NODE_MASQUERADE_SUBNET_ANNOTATION } from './masqueradeIps';
+import { useNodeAddressOwners } from './useNodeAddressOwners';
 import KernelRouteTable, { InterfaceSelector } from './KernelRouteTable';
 import { logicalViewPath, physicalViewPath } from './networkPageModel';
 import { nodeLogicalPath, nodePhysicalPath, overviewPath } from '../routes';
@@ -59,6 +62,7 @@ export interface NodePhysicalData {
     enactments: NodeNetworkConfigurationEnactment[];
     vteps: Vtep[] | undefined;
     nodeVtepsAnnotation: string | undefined;
+    nodeMasqueradeSubnetAnnotation: string | undefined;
     sriovNodeState: SriovNetworkNodeState | undefined;
     /** The node's main routing table; other tables belong to their VRF's drawer. */
     mainRoutes: ReturnType<typeof getRunningRoutes>;
@@ -180,6 +184,8 @@ export const useNodePhysicalData = (name: string): NodePhysicalData => {
     // Passed on as the annotation string alone: a Node's status changes constantly,
     // and handing the whole object down would rebuild the graph on every heartbeat.
     const nodeVtepsAnnotation = node?.metadata?.annotations?.[NODE_VTEPS_ANNOTATION];
+    // The same Node, for its masquerade subnet (ovn-recon-2n6.4): no new watch.
+    const nodeMasqueradeSubnetAnnotation = node?.metadata?.annotations?.[NODE_MASQUERADE_SUBNET_ANNOTATION];
 
     // SR-IOV (ovn-recon-s3t.66). The operator keeps one SriovNetworkNodeState per node,
     // named for it, in its own namespace. On a cluster without the operator the kind
@@ -208,9 +214,10 @@ export const useNodePhysicalData = (name: string): NodePhysicalData => {
     const graphContext = React.useMemo(
         () => (nns ? buildGraphContext({
             nns, cudns, udns, nads, routeAdvertisements, enactments, vteps: vteps || undefined,
-            nodeVtepsAnnotation, sriovNodeState: sriovNodeState || undefined,
+            nodeVtepsAnnotation, nodeMasqueradeSubnetAnnotation, sriovNodeState: sriovNodeState || undefined,
         }) : null),
-        [nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation, sriovNodeState]
+        [nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation,
+            nodeMasqueradeSubnetAnnotation, sriovNodeState]
     );
     return {
         nns: nns ?? undefined,
@@ -223,6 +230,7 @@ export const useNodePhysicalData = (name: string): NodePhysicalData => {
         enactments,
         vteps: vteps || undefined,
         nodeVtepsAnnotation,
+        nodeMasqueradeSubnetAnnotation,
         sriovNodeState: sriovNodeState || undefined,
         mainRoutes,
         graphContext,
@@ -240,7 +248,7 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
     const { enabled: ovnCollectorEnabled } = useOvnCollectorFeatureGate();
     const {
         nns, loaded, loadError, cudns, udns, nads, routeAdvertisements, enactments, vteps,
-        nodeVtepsAnnotation, sriovNodeState, mainRoutes, graphContext,
+        nodeVtepsAnnotation, nodeMasqueradeSubnetAnnotation, sriovNodeState, mainRoutes, graphContext,
     } = useNodePhysicalData(name);
 
     // An interface in the main routing table selects it in the graph below
@@ -302,6 +310,7 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
                         nns={nns} cudns={cudns} udns={udns} nads={nads}
                         routeAdvertisements={routeAdvertisements} enactments={enactments}
                         vteps={vteps} nodeVtepsAnnotation={nodeVtepsAnnotation}
+                        nodeMasqueradeSubnetAnnotation={nodeMasqueradeSubnetAnnotation}
                         sriovNodeState={sriovNodeState}
                         hideHostSelect
                         plain
@@ -367,6 +376,7 @@ export const NodeNetworkStateBody: React.FC<NodeNetworkStateBodyProps> = ({
                     nns={nns} cudns={cudns} udns={udns} nads={nads}
                     routeAdvertisements={routeAdvertisements} enactments={enactments}
                     vteps={vteps} nodeVtepsAnnotation={nodeVtepsAnnotation}
+                        nodeMasqueradeSubnetAnnotation={nodeMasqueradeSubnetAnnotation}
                     sriovNodeState={sriovNodeState}
                     hideHostSelect={hideHostSelect}
                     collectorEnabled={ovnCollectorEnabled}
@@ -402,7 +412,16 @@ const useContentWidth = (ref: React.RefObject<HTMLElement>): number => {
  */
 export const NodeRoutesBody: React.FC<{ name: string }> = ({ name }) => {
     const navigate = useNavigate();
-    const { nns, loaded, loadError, mainRoutes, graphContext } = useNodePhysicalData(name);
+    const {
+        nns, loaded, loadError, mainRoutes, graphContext, cudns, udns, nads, nodeMasqueradeSubnetAnnotation,
+    } = useNodePhysicalData(name);
+    // Owners from this node's own NodeNetworkState and the watched networks
+    // (ovn-recon-2n6.4): a masquerade address names its role, a management-port
+    // one its network. Nothing is watched or fetched for it.
+    const ownerStates = React.useMemo(() => (nns ? [nns] : []), [nns]);
+    const addressOwners = useNodeAddressOwners({
+        nodeName: name, nodeNetworkStates: ownerStates, cudns, udns, nads, nodeMasqueradeSubnetAnnotation,
+    });
     // Beside the tree the six columns do not fit: Metric, Source and MTU then move
     // into each row's expansion, as in a drawer. Collapsing the tree brings them back.
     const frame = React.useRef<HTMLDivElement>(null);
@@ -432,11 +451,13 @@ export const NodeRoutesBody: React.FC<{ name: string }> = ({ name }) => {
             <>
                 <p style={{ color: 'var(--pf-t--global--text--color--subtle)' }} className="pf-u-mb-md">
                     The main routing table. A VRF&apos;s table is in that VRF&apos;s drawer on the Physical tab.
+                    {' '}{MASQUERADE_SUBNET_HELP}
                 </p>
                 <KernelRouteTable
                     routes={mainRoutes}
                     ariaLabel="Main routing table"
                     selectInterface={selectInterface}
+                    gatewayOwners={addressOwners}
                     narrow={narrow}
                 />
             </>
