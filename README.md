@@ -246,6 +246,7 @@ Every view has its own URL:
 | `/ovn-recon/node-network-state` | Cluster, Nodes tab (kept for older bookmarks) |
 | `/ovn-recon/networks` | Cluster, Networks tab |
 | `/ovn-recon/findings` | Cluster, Findings tab |
+| `/ovn-recon/network-config` | Cluster, Network config tab (the Cluster Network Operator's settings, read-only) |
 | `/ovn-recon/ovn` | Cluster, Logical topology tab (collector) |
 | `/ovn-recon/search` | Cluster, Search results tab (`?q=` holds the search) |
 | `/ovn-recon/node-network-state/:name` | A node's physical topology |

@@ -201,7 +201,7 @@ describe('OvnReconApp search (ovn-recon-gbr.8)', () => {
 
             // On Cluster the Search results tab is still there, and leads back.
             await go(networksPath());
-            expect(clusterTabs()).toEqual(['nodes', 'networks', 'findings', 'search']);
+            expect(clusterTabs()).toEqual(['nodes', 'networks', 'findings', 'config', 'search']);
             expect(byTestId('cluster-tab-search')?.getAttribute('href')).toBe(searchPath('br-vmdata'));
 
             // Back, twice, returns to the results.

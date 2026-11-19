@@ -8,6 +8,7 @@ import { matchPath, MemoryRouter, NavigateFunction, Route, Routes, useLocation, 
 import {
     BASE_PATH,
     clusterFindingsPath,
+    clusterNetworkConfigPath,
     clusterLogicalPath,
     constructDetailPath,
     networkPath,
@@ -221,7 +222,7 @@ describe('OvnReconApp, the explorer shell', () => {
             // The scope: its header, its tabs (no Logical topology while the collector is off) and the table.
             const content = container.querySelector('.pf-v6-c-drawer__content')!;
             expect(content.querySelector('h2')?.textContent).toBe('Cluster');
-            expect(tabKeys()).toEqual(['nodes', 'networks', 'findings']);
+            expect(tabKeys()).toEqual(['nodes', 'networks', 'findings', 'config']);
             expect(activeTab()).toMatch(/^Nodes10$/);
             expect(content.querySelectorAll('[data-testid^="overview-node-"]')).toHaveLength(10);
             expect(content.textContent).not.toContain('Logical');
@@ -231,7 +232,7 @@ describe('OvnReconApp, the explorer shell', () => {
         it('shows the Logical topology tab when the collector is on', async () => {
             mockGate.enabled = true;
             await render(overviewPath());
-            expect(tabKeys()).toEqual(['nodes', 'networks', 'findings', 'logical']);
+            expect(tabKeys()).toEqual(['nodes', 'networks', 'findings', 'config', 'logical']);
         });
 
         it('collapses the tree to a rail and back, keeping its filter and moving focus', async () => {
@@ -265,6 +266,7 @@ describe('OvnReconApp, the explorer shell', () => {
             ['the overview alias', `${BASE_PATH}/${SHELL_ROUTES.nodesAlias}`, { tab: 'cluster-tab-nodes', selected: CLUSTER_ITEM_ID }],
             ['networks', networksPath(), { tab: 'cluster-tab-networks', selected: CLUSTER_ITEM_ID }],
             ['findings', clusterFindingsPath(), { tab: 'cluster-tab-findings', selected: CLUSTER_ITEM_ID }],
+            ['network config', clusterNetworkConfigPath(), { tab: 'cluster-tab-config', selected: CLUSTER_ITEM_ID }],
             ['the cluster ladder', clusterLogicalPath(), {
                 tab: 'cluster-tab-logical', page: /^cluster-logical/, selected: CLUSTER_ITEM_ID,
             }],
@@ -349,6 +351,7 @@ describe('OvnReconApp, the explorer shell', () => {
             const built: [string, string][] = [
                 [SHELL_ROUTES.networks, networksPath()],
                 [SHELL_ROUTES.findings, clusterFindingsPath()],
+                [SHELL_ROUTES.networkConfig, clusterNetworkConfigPath()],
                 [SHELL_ROUTES.clusterLogical, clusterLogicalPath()],
                 [SHELL_ROUTES.search, `${BASE_PATH}/search`],
                 [SHELL_ROUTES.nodePhysical, nodePhysicalPath('a b')],

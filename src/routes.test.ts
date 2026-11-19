@@ -16,6 +16,7 @@ import { nodePagePath } from './insights/links';
 import {
     BASE_PATH,
     clusterFindingsPath,
+    clusterNetworkConfigPath,
     clusterLogicalPath,
     constructDetailPath,
     ExplorerView,
@@ -165,6 +166,7 @@ const EXISTING: Row[] = [
 /** The four paths the explorer adds. Nothing links to them yet. */
 const NEW: Row[] = [
     { url: '/ovn-recon/findings', built: [clusterFindingsPath()], view: { scope: 'cluster', tab: 'findings', params: {} } },
+    { url: '/ovn-recon/network-config', built: [clusterNetworkConfigPath()], view: { scope: 'cluster', tab: 'config', params: {} } },
     {
         url: '/ovn-recon/search?q=203.0.113.70',
         built: [searchPath('203.0.113.70'), searchPath(' 203.0.113.70 ')],

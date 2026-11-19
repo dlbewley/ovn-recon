@@ -9,12 +9,14 @@ import {
     UserDefinedNetwork,
 } from '../types';
 import { CollectorState, useCollectorState } from './CollectorStatus';
+import { NetworkConfigSources, useNetworkConfigSources } from './useNetworkConfigSources';
 
 /**
  * The explorer's cluster-wide watches (ovn-recon-gbr.10; formerly the overview page's
  * `useOverviewData`): every NodeNetworkState, Node, CUDN, UDN, NAD,
- * RouteAdvertisements and NodeNetworkConfigurationEnactment, and the collector's
- * state. `useExplorerData` builds the tree, the tables and the findings from them,
+ * RouteAdvertisements and NodeNetworkConfigurationEnactment, the cluster network
+ * configuration's sources (`useNetworkConfigSources`, ovn-recon-n7r.1), and the
+ * collector's state. `useExplorerData` builds the tree, the tables and the findings from them,
  * once, for the whole shell.
  */
 
@@ -42,6 +44,8 @@ export interface ClusterWatches {
     enactments: NodeNetworkConfigurationEnactment[];
     /** The CUDN, UDN and NAD watches have each settled: loaded, or failed. */
     networksLoaded: boolean;
+    /** The Cluster Network Operator's configuration and what goes with it, each source on its own. */
+    networkConfig: NetworkConfigSources;
     collector: CollectorState;
 }
 
@@ -83,6 +87,7 @@ export const useClusterWatches = (): ClusterWatches => {
         groupVersionKind: { group: 'nmstate.io', version: 'v1beta1', kind: 'NodeNetworkConfigurationEnactment' },
         isList: true,
     });
+    const networkConfig = useNetworkConfigSources();
     const collector = useCollectorState();
 
     return {
@@ -100,6 +105,7 @@ export const useClusterWatches = (): ClusterWatches => {
         networksLoaded: (cudnsLoaded || Boolean(cudnsError))
             && (udnsLoaded || Boolean(udnsError))
             && (nadsLoaded || Boolean(nadsError)),
+        networkConfig,
         collector,
     };
 };
