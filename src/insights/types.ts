@@ -1,6 +1,9 @@
+import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
+
 import type { GraphContext } from '../topology/context';
 import type {
     ClusterUserDefinedNetwork,
+    LogicalDatabase,
     LogicalTopologySnapshot,
     MultiNetworkPolicy,
     NetworkAttachmentDefinition,
@@ -121,6 +124,22 @@ export interface ClusterNetworkInputs {
     udns: UserDefinedNetwork[];
     nads: NetworkAttachmentDefinition[];
     nodeNetworkStates?: NodeNetworkState[];
+    /**
+     * The cluster's Nodes, read for their annotations (the masquerade rules,
+     * ovn-recon-2n6.5). Absent or empty where a surface does not watch them.
+     */
+    nodes?: K8sResourceCommon[];
+    /**
+     * Zone databases this browser tab already holds from the collector, live ones
+     * only. Never fetched for the findings: absent until a view has loaded them.
+     */
+    zoneDatabases?: ZoneDatabase[];
+}
+
+/** One zone's northbound database, by the node whose zone it is. */
+export interface ZoneDatabase {
+    node: string;
+    database: LogicalDatabase;
 }
 
 /**

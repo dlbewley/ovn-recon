@@ -1,8 +1,9 @@
 import { makeFinding, nodeRef } from '../refs';
 import type { NodeNetworkState } from '../../types';
 import type { Finding } from '../types';
+import { loadSnapshot } from '../testing';
 import {
-    clusterNodeNetworkStates, HIDE_INFO_STORAGE_KEY, readHideInfo, visibleFindings, writeHideInfo
+    clusterNodeNetworkStates, HIDE_INFO_STORAGE_KEY, readHideInfo, visibleFindings, writeHideInfo, zoneDatabasesOf
 } from './useFindings';
 
 const finding = (severity: Finding['severity'], summary: string): Finding => makeFinding({
@@ -48,5 +49,16 @@ describe('clusterNodeNetworkStates', () => {
         expect(clusterNodeNetworkStates(undefined, true)).toBeUndefined();
         expect(clusterNodeNetworkStates(null, true)).toBeUndefined();
         expect(clusterNodeNetworkStates(list, true)).toBe(list);
+    });
+});
+
+describe('zoneDatabasesOf (ovn-recon-2n6.5)', () => {
+    it('keeps live snapshots and leaves out absent and degraded ones', () => {
+        const live = loadSnapshot('cnv-1');
+        const degraded = loadSnapshot('cnv-2');
+        degraded.metadata.sourceHealth = 'degraded';
+        const sample = loadSnapshot('ctrl-1');
+        sample.warnings = [{ code: 'LIVE_PROBE_FAILED', message: 'served the fixture' }];
+        expect(zoneDatabasesOf([live, null, undefined, degraded, sample])).toEqual([{ node: 'cnv-1', database: live.database }]);
     });
 });

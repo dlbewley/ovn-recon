@@ -5,6 +5,10 @@ import { localnetUnmapped } from './rules/localnetUnmapped';
 import { lspDown } from './rules/lspDown';
 import { macBindingOrphan } from './rules/macBindingOrphan';
 import { mappingBridgeMissing } from './rules/mappingBridgeMissing';
+import { masqueradeAddressMismatch } from './rules/masqueradeAddressMismatch';
+import { masqueradeSubnetDisagreement } from './rules/masqueradeSubnetDisagreement';
+import { masqueradeSubnetOverlap } from './rules/masqueradeSubnetOverlap';
+import { masqueradeSubnetTooSmall } from './rules/masqueradeSubnetTooSmall';
 import { matchRefUnresolved } from './rules/matchRefUnresolved';
 import { mnpMissingNad } from './rules/mnpMissingNad';
 import { mtuExceedsUplink } from './rules/mtuExceedsUplink';
@@ -28,7 +32,13 @@ export const PHYSICAL_RULES: readonly PhysicalRule[] = [
     mtuExceedsUplink,
     nadConfigUnparsed,
     vrfPortUnmatched,
-    ovsBridgeUnbondedUplinks
+    ovsBridgeUnbondedUplinks,
+    // Masquerade subnet and addresses (ovn-recon-2n6.5): network-scope rules over the
+    // Nodes and the zone databases the shell holds.
+    masqueradeSubnetTooSmall,
+    masqueradeSubnetOverlap,
+    masqueradeAddressMismatch,
+    masqueradeSubnetDisagreement
 ];
 
 /**
