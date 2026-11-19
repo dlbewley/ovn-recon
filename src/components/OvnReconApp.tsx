@@ -31,6 +31,7 @@ import { searchMarksOf } from './clusterSearchModel';
 import {
     ClusterFindingsTab,
     ClusterLogicalTab,
+    ClusterNetworkConfigTab,
     ClusterNetworksTab,
     ClusterNodesTab,
     ClusterScopeHeader,
@@ -463,6 +464,7 @@ const OvnReconApp: React.FC = () => {
                                 <Route path={SHELL_ROUTES.nodesAlias} element={<ClusterIndex view={view} data={data} />} />
                                 <Route path={SHELL_ROUTES.networks} element={<ClusterNetworksTab data={data} />} />
                                 <Route path={SHELL_ROUTES.findings} element={<ClusterFindingsTab data={data} />} />
+                                <Route path={SHELL_ROUTES.networkConfig} element={<ClusterNetworkConfigTab data={data} />} />
                                 <Route path={SHELL_ROUTES.clusterLogical} element={<ClusterLogicalTab />} />
                                 <Route path={SHELL_ROUTES.search} element={<ClusterSearchTab search={search} />} />
                                 <Route path={SHELL_ROUTES.nodePhysical} element={nodeBody} />

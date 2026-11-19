@@ -14,6 +14,7 @@ import { constructSelectValue, encodeSelectValue, withSelectParam } from './comp
  *   /ovn-recon, /ovn-recon/node-network-state      cluster  nodes
  *   /ovn-recon/networks                            cluster  networks
  *   /ovn-recon/findings                            cluster  findings    (new)
+ *   /ovn-recon/network-config                      cluster  config      (ovn-recon-n7r)
  *   /ovn-recon/ovn                                 cluster  logical
  *   /ovn-recon/search?q=                           cluster  search      (new; /ovn-recon?q= too)
  *   /ovn-recon/node-network-state/:name            node     physical
@@ -41,6 +42,7 @@ const LOGICAL_SEGMENT = 'ovn';
 const NETWORKS_SEGMENT = 'networks';
 const FINDINGS_SEGMENT = 'findings';
 const SEARCH_SEGMENT = 'search';
+const NETWORK_CONFIG_SEGMENT = 'network-config';
 const ROUTES_SEGMENT = 'routes';
 
 /** The query parameter that carries a search: `?q=`. */
@@ -79,6 +81,9 @@ export const clusterLogicalPath = (construct?: Pick<LadderConstruct, 'kind' | 'n
 
 /** The cluster's Findings tab. */
 export const clusterFindingsPath = (): string => `${BASE_PATH}/${FINDINGS_SEGMENT}`;
+
+/** The cluster's Network config tab: the Cluster Network Operator's settings (ovn-recon-n7r). */
+export const clusterNetworkConfigPath = (): string => `${BASE_PATH}/${NETWORK_CONFIG_SEGMENT}`;
 
 /** The cluster's Search results tab, `/ovn-recon/search?q=`. */
 export const searchPath = (text: string): string => `${BASE_PATH}/${SEARCH_SEGMENT}${querySearch(text)}`;
@@ -145,6 +150,7 @@ export const SHELL_ROUTES = {
     nodesAlias: PHYSICAL_SEGMENT,
     networks: NETWORKS_SEGMENT,
     findings: FINDINGS_SEGMENT,
+    networkConfig: NETWORK_CONFIG_SEGMENT,
     clusterLogical: LOGICAL_SEGMENT,
     search: SEARCH_SEGMENT,
     nodePhysical: `${PHYSICAL_SEGMENT}/:name`,
@@ -186,7 +192,7 @@ export const parseNetworkPath = (pathname: string): { list: true } | NetworkAddr
 };
 
 export type ExplorerScope = 'cluster' | 'node' | 'network';
-export type ClusterTab = 'nodes' | 'networks' | 'findings' | 'logical' | 'search';
+export type ClusterTab = 'nodes' | 'networks' | 'findings' | 'config' | 'logical' | 'search';
 export type NodeTab = 'physical' | 'logical' | 'routes' | 'findings' | 'construct';
 export type NetworkTab = 'network';
 
@@ -251,6 +257,7 @@ export const viewForLocation = ({ pathname, search }: ViewLocation): ExplorerVie
     }
     if (first === SEARCH_SEGMENT && tail.length === 0) return { scope: 'cluster', tab: 'search', params };
     if (first === FINDINGS_SEGMENT && tail.length === 0) return { scope: 'cluster', tab: 'findings', params };
+    if (first === NETWORK_CONFIG_SEGMENT && tail.length === 0) return { scope: 'cluster', tab: 'config', params };
 
     if (first === PHYSICAL_SEGMENT) {
         const [node, view, ...extra] = tail;

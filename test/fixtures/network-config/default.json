@@ -1,0 +1,98 @@
+{
+  "operatorNetwork": {
+    "apiVersion": "operator.openshift.io/v1",
+    "kind": "Network",
+    "metadata": { "name": "cluster" },
+    "spec": {
+      "managementState": "Managed",
+      "logLevel": "Normal",
+      "operatorLogLevel": "Normal",
+      "clusterNetwork": [{ "cidr": "10.128.0.0/14", "hostPrefix": 23 }],
+      "serviceNetwork": ["172.30.0.0/16"],
+      "defaultNetwork": {
+        "type": "OVNKubernetes",
+        "ovnKubernetesConfig": {
+          "mtu": 1400,
+          "genevePort": 6081,
+          "egressIPConfig": {},
+          "gatewayConfig": { "ipForwarding": "Restricted", "ipv4": {}, "ipv6": {}, "routingViaHost": false },
+          "ipsecConfig": { "mode": "Disabled" },
+          "policyAuditConfig": {
+            "destination": "null",
+            "maxFileSize": 50,
+            "maxLogFiles": 5,
+            "rateLimit": 20,
+            "syslogFacility": "local0"
+          }
+        }
+      },
+      "disableMultiNetwork": false,
+      "disableNetworkDiagnostics": false,
+      "useMultiNetworkPolicy": false,
+      "deployKubeProxy": false
+    },
+    "status": {
+      "version": "4.22.0",
+      "conditions": [
+        { "type": "ManagementStateDegraded", "status": "False", "lastTransitionTime": "2026-01-10T10:00:00Z" },
+        { "type": "Degraded", "status": "False", "lastTransitionTime": "2026-01-10T10:05:00Z" },
+        { "type": "Upgradeable", "status": "True", "lastTransitionTime": "2026-01-10T10:00:00Z" },
+        { "type": "Progressing", "status": "False", "lastTransitionTime": "2026-01-10T10:20:00Z" },
+        { "type": "Available", "status": "True", "lastTransitionTime": "2026-01-10T10:06:00Z" }
+      ]
+    }
+  },
+  "configNetwork": {
+    "apiVersion": "config.openshift.io/v1",
+    "kind": "Network",
+    "metadata": { "name": "cluster" },
+    "spec": {
+      "clusterNetwork": [{ "cidr": "10.128.0.0/14", "hostPrefix": 23 }],
+      "serviceNetwork": ["172.30.0.0/16"],
+      "networkType": "OVNKubernetes",
+      "externalIP": { "policy": {} }
+    },
+    "status": {
+      "clusterNetworkMTU": 1400,
+      "networkType": "OVNKubernetes",
+      "conditions": [
+        { "type": "NetworkDiagnosticsAvailable", "status": "True", "reason": "AsExpected", "lastTransitionTime": "2026-01-10T10:06:00Z" }
+      ]
+    }
+  },
+  "clusterOperator": {
+    "apiVersion": "config.openshift.io/v1",
+    "kind": "ClusterOperator",
+    "metadata": { "name": "network" },
+    "status": {
+      "conditions": [
+        { "type": "Degraded", "status": "False", "lastTransitionTime": "2026-01-10T10:05:00Z" },
+        { "type": "Progressing", "status": "False", "lastTransitionTime": "2026-01-10T10:20:00Z" },
+        { "type": "Available", "status": "True", "lastTransitionTime": "2026-01-10T10:06:00Z" },
+        { "type": "Upgradeable", "status": "True", "lastTransitionTime": "2026-01-10T10:00:00Z" }
+      ],
+      "versions": [{ "name": "operator", "version": "4.22.0" }]
+    }
+  },
+  "featureGate": {
+    "apiVersion": "config.openshift.io/v1",
+    "kind": "FeatureGate",
+    "metadata": { "name": "cluster" },
+    "spec": {},
+    "status": {
+      "featureGates": [
+        {
+          "version": "4.22.0",
+          "enabled": [{ "name": "DNSNameResolver" }, { "name": "RouteAdvertisements" }],
+          "disabled": [{ "name": "NoOverlayMode" }, { "name": "OVNKubernetesUplinkMode" }, { "name": "OVNObservability" }]
+        }
+      ]
+    }
+  },
+  "infrastructure": {
+    "apiVersion": "config.openshift.io/v1",
+    "kind": "Infrastructure",
+    "metadata": { "name": "cluster" },
+    "status": { "platform": "BareMetal", "platformStatus": { "type": "BareMetal" } }
+  }
+}

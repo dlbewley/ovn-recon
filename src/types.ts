@@ -1022,3 +1022,138 @@ export interface OvnRecon extends K8sResourceCommon {
         };
     };
 }
+
+// --- Cluster network configuration (ovn-recon-n7r) ----------------------------------
+// Only the fields the Network config tab reads. Everything is optional: the gated
+// fields (transport, noOverlayConfig, uplinkMode) are absent on a cluster without
+// their feature gate, and absent always reads as the platform default.
+
+export interface OperatorCondition {
+    type: string;
+    status: string;
+    reason?: string;
+    message?: string;
+    lastTransitionTime?: string;
+}
+
+export interface ClusterNetworkEntry {
+    cidr?: string;
+    hostPrefix?: number;
+}
+
+export interface OvnKubernetesIpConfig {
+    internalJoinSubnet?: string;
+    internalTransitSwitchSubnet?: string;
+}
+
+export interface OvnKubernetesGatewayConfig {
+    routingViaHost?: boolean;
+    ipForwarding?: string;
+    uplinkMode?: string;
+    ipv4?: { internalMasqueradeSubnet?: string };
+    ipv6?: { internalMasqueradeSubnet?: string };
+}
+
+export interface OvnKubernetesConfig {
+    mtu?: number;
+    genevePort?: number;
+    transport?: string;
+    noOverlayConfig?: { outboundSNAT?: string; routing?: string };
+    bgpManagedConfig?: { asNumber?: number; bgpTopology?: string };
+    hybridOverlayConfig?: { hybridClusterNetwork?: ClusterNetworkEntry[]; hybridOverlayVXLANPort?: number };
+    ipsecConfig?: { mode?: string; full?: { encapsulation?: string } };
+    policyAuditConfig?: {
+        destination?: string;
+        rateLimit?: number;
+        maxFileSize?: number;
+        maxLogFiles?: number;
+        syslogFacility?: string;
+    };
+    gatewayConfig?: OvnKubernetesGatewayConfig;
+    v4InternalSubnet?: string;
+    v6InternalSubnet?: string;
+    egressIPConfig?: { reachabilityTotalTimeoutSeconds?: number };
+    ipv4?: OvnKubernetesIpConfig;
+    ipv6?: OvnKubernetesIpConfig;
+    routeAdvertisements?: string;
+}
+
+export interface NetworkMigration {
+    networkType?: string;
+    mtu?: { network?: { from?: number; to?: number }; machine?: { from?: number; to?: number } };
+    features?: Record<string, boolean>;
+    mode?: string;
+}
+
+/** `operator.openshift.io/v1` Network `cluster`: what the Cluster Network Operator is told. */
+export interface OperatorNetwork extends K8sResourceCommon {
+    spec?: {
+        managementState?: string;
+        logLevel?: string;
+        operatorLogLevel?: string;
+        unsupportedConfigOverrides?: unknown;
+        clusterNetwork?: ClusterNetworkEntry[];
+        serviceNetwork?: string[];
+        defaultNetwork?: { type?: string; ovnKubernetesConfig?: OvnKubernetesConfig };
+        additionalNetworks?: { name?: string; namespace?: string; type?: string }[];
+        disableMultiNetwork?: boolean;
+        useMultiNetworkPolicy?: boolean;
+        deployKubeProxy?: boolean;
+        kubeProxyConfig?: Record<string, unknown>;
+        disableNetworkDiagnostics?: boolean;
+        exportNetworkFlows?: {
+            netFlow?: { collectors?: string[] };
+            sFlow?: { collectors?: string[] };
+            ipfix?: { collectors?: string[] };
+        };
+        migration?: NetworkMigration;
+        additionalRoutingCapabilities?: { providers?: string[] };
+    };
+    status?: {
+        conditions?: OperatorCondition[];
+        version?: string;
+    };
+}
+
+/** `config.openshift.io/v1` Network `cluster`: the cluster's network as installed and as it is now. */
+export interface ConfigNetwork extends K8sResourceCommon {
+    spec?: {
+        networkType?: string;
+        externalIP?: { policy?: { allowedCIDRs?: string[]; rejectedCIDRs?: string[] }; autoAssignCIDRs?: string[] };
+        serviceNodePortRange?: string;
+        networkDiagnostics?: { mode?: string };
+        networkObservability?: { installationPolicy?: string };
+    };
+    status?: {
+        networkType?: string;
+        clusterNetworkMTU?: number;
+        migration?: NetworkMigration;
+        conditions?: OperatorCondition[];
+    };
+}
+
+/** `config.openshift.io/v1` ClusterOperator: the operator's summarised state. */
+export interface ClusterOperator extends K8sResourceCommon {
+    status?: {
+        conditions?: OperatorCondition[];
+        versions?: { name?: string; version?: string }[];
+        relatedObjects?: { group?: string; resource?: string; namespace?: string; name?: string }[];
+    };
+}
+
+/** `config.openshift.io/v1` FeatureGate `cluster`. */
+export interface FeatureGate extends K8sResourceCommon {
+    spec?: { featureSet?: string };
+    status?: {
+        featureGates?: { version?: string; enabled?: { name: string }[]; disabled?: { name: string }[] }[];
+    };
+}
+
+/** `config.openshift.io/v1` Infrastructure `cluster`: only its platform. */
+export interface Infrastructure extends K8sResourceCommon {
+    status?: { platform?: string; platformStatus?: { type?: string } };
+}
+
+export interface ConfigMap extends K8sResourceCommon {
+    data?: Record<string, string>;
+}

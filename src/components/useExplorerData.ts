@@ -3,6 +3,7 @@ import * as React from 'react';
 import type { SeverityCounts } from '../insights/selectors';
 import type { Finding } from '../insights/types';
 import { useClusterFindings, useHideInfoFindings, visibleFindings } from '../insights/ui/useFindings';
+import { buildCnoConfigModel, CnoConfigModel } from './cnoConfigModel';
 import type { NetworkInputs } from './networkPageModel';
 import { findingCountsByNode, NodeSummary, nodeRole, OverviewNetworkRow, overviewNetworkRows, summarizeNode } from './overviewModel';
 import { ClusterWatches, useClusterWatches } from './useClusterWatches';
@@ -31,6 +32,8 @@ export interface ExplorerData extends ClusterWatches {
     networkInputs: NetworkInputs;
     /** Every network, findings first. */
     networkRows: OverviewNetworkRow[];
+    /** The cluster network configuration, for the summary strip and the Network config tab (ovn-recon-n7r.1). */
+    networkConfigModel: CnoConfigModel;
     /** The NodeNetworkState watch has settled: loaded, or failed. */
     nodeNetworkStatesSettled: boolean;
     /** The collector gate is known and on: the logical views are offered. */
@@ -49,6 +52,7 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
         nads,
         routeAdvertisements,
         enactments,
+        networkConfig,
         collector,
     } = data;
 
@@ -90,6 +94,11 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
         [networkInputs, nodeNetworkStates, nnsLoaded, nnsError, findings],
     );
 
+    const networkConfigModel = React.useMemo(
+        () => buildCnoConfigModel({ ...networkConfig, nodes }),
+        [networkConfig, nodes],
+    );
+
     return {
         ...data,
         summaries,
@@ -102,6 +111,7 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
         findingCounts,
         networkInputs,
         networkRows,
+        networkConfigModel,
         nodeNetworkStatesSettled: nnsLoaded || Boolean(nnsError),
         showLogical: collector.gateLoaded && collector.enabled,
     };

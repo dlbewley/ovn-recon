@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { Flex, FlexItem, PageSection, Spinner, Title } from '@patternfly/react-core';
+import { Link } from 'react-router';
+import { Flex, FlexItem, Label, PageSection, Spinner, Title } from '@patternfly/react-core';
 import { DocumentTitle } from '@openshift-console/dynamic-plugin-sdk';
 
 import FindingsPanel from '../insights/ui/FindingsPanel';
@@ -7,11 +8,13 @@ import {
     ClusterTab,
     clusterFindingsPath,
     clusterLogicalPath,
+    clusterNetworkConfigPath,
     networksPath,
     overviewPath,
     searchPath,
 } from '../routes';
 import { ClusterSearchResultsPanel, ClusterSearchState } from './ClusterSearch';
+import NetworkConfigPanel from './NetworkConfigPanel';
 import NetworksTable from './NetworksTable';
 import NodesTable from './NodesTable';
 import ScopeTabs, { ScopeTab } from './ScopeTabs';
@@ -48,6 +51,7 @@ export const ClusterScopeHeader: React.FC<ClusterScopeHeaderProps> = ({ tab, dat
         { key: 'nodes', title: 'Nodes', path: overviewPath(), count: data.nodeNetworkStatesSettled ? data.summaries.length : undefined },
         { key: 'networks', title: 'Networks', path: networksPath(), count: data.networksLoaded ? data.networkRows.length : undefined },
         { key: 'findings', title: 'Findings', path: clusterFindingsPath(), count: data.nodeNetworkStatesSettled ? data.findings.length : undefined },
+        { key: 'config', title: 'Network config', path: clusterNetworkConfigPath() },
     ];
     if (data.showLogical || tab === 'logical') {
         tabs.push({ key: 'logical', title: 'Logical topology', path: clusterLogicalPath() });
@@ -65,6 +69,22 @@ export const ClusterScopeHeader: React.FC<ClusterScopeHeaderProps> = ({ tab, dat
                     </span>
                 </FlexItem>
             </Flex>
+            {data.networkConfigModel.summary.length > 0 && (
+                // The cluster network configuration in one line; each chip opens the Network config tab.
+                <Flex
+                    spaceItems={{ default: 'spaceItemsSm' }}
+                    style={{ marginBlockStart: 'var(--pf-t--global--spacer--sm)' }}
+                    data-testid="cluster-network-summary"
+                >
+                    {data.networkConfigModel.summary.map((chip) => (
+                        <FlexItem key={chip.id}>
+                            <Link to={clusterNetworkConfigPath()} data-testid={`cluster-network-summary-${chip.id}`}>
+                                <Label isCompact variant="outline">{chip.label}: {chip.value}</Label>
+                            </Link>
+                        </FlexItem>
+                    ))}
+                </Flex>
+            )}
             <ScopeTabs tabs={tabs} active={tab} aria-label="Cluster views" testIdPrefix="cluster-tab" />
         </PageSection>
     );
@@ -121,6 +141,16 @@ export const ClusterFindingsTab: React.FC<{ data: ExplorerData }> = ({ data }) =
                 ? 'NodeNetworkStates could not be read, so node findings are unknown.'
                 : undefined}
         />
+    </TabBody>
+);
+
+/**
+ * Network config: the Cluster Network Operator's settings, what is set and what is left
+ * to the platform default, and the operator's conditions (ovn-recon-n7r.1). Read-only.
+ */
+export const ClusterNetworkConfigTab: React.FC<{ data: ExplorerData }> = ({ data }) => (
+    <TabBody title="OVN Recon - Network config">
+        <NetworkConfigPanel model={data.networkConfigModel} />
     </TabBody>
 );
 
