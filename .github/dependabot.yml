@@ -1,0 +1,53 @@
+# Keeps container base images and workflow actions from going stale.
+# The plugin image once sat on a frozen nginx:1.21-alpine tag for years
+# (bead ovn-recon-arr); this config exists so that cannot happen quietly again
+# (bead ovn-recon-5rx).
+#
+# Tag conventions the docker updater relies on:
+# - Root Dockerfile: the nginx runtime is pinned to an exact patch tag
+#   (nginx:X.Y.Z-alpine), so every nginx release raises a PR. The node builder
+#   tracks an LTS major tag (node:N).
+# - collector/Dockerfile, operator/Dockerfile: golang:X.Y[-alpine] and
+#   alpine:X.Y minor tags; patch releases arrive on rebuild, and Dependabot
+#   raises a PR for each new minor.
+# - gcr.io/distroless/static:nonroot carries no version and is left alone.
+#
+# When a Go builder moves, move the matching go-version in
+# .github/workflows/{collector-release,operator-release,release-dryrun}.yaml
+# with it; when the node builder moves, move node-version in build-test.yaml.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build(image)"
+    ignore:
+      # Odd-numbered Node majors never become LTS; stay on even ones.
+      - dependency-name: node
+        versions: ["27.x", "29.x", "31.x"]
+
+  - package-ecosystem: docker
+    directory: /collector
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build(collector)"
+
+  - package-ecosystem: docker
+    directory: /operator
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build(operator)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns: ["*"]

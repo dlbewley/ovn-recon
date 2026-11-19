@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Webpack runs only on the build host arch. Per-target images only add nginx + dist (avoids QEMU arm64 webpack on amd64 CI).
-FROM --platform=$BUILDPLATFORM node:18 AS builder
+FROM --platform=$BUILDPLATFORM node:26 AS builder
 
 WORKDIR /usr/src/app
 
