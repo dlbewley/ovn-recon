@@ -605,7 +605,7 @@ describe('facts builders', () => {
             const brEx = bridgeFacts(captured, 'br-ex');
             expect(brEx.groups.internal).toEqual(['br-ex']);
             expect(items(byLabel(brEx.facts, 'Internal Port'))).toEqual([
-                { text: 'br-ex', detail: '192.0.2.101/24, 169.254.0.2/17' }
+                { text: 'br-ex', detail: '192.0.2.101/24, 169.254.0.2/17 (Host masquerade: source for host-to-service traffic)' }
             ]);
             expect(brEx.groups.patches.map((port) => port.portName)).toEqual(['patch-br-ex_worker-1-to-br-int']);
         });
