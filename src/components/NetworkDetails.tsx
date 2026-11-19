@@ -33,6 +33,7 @@ import {
     networkConditions,
     networkCreationFailure,
     NetworkInputs,
+    NetworkMasqueradeContext,
     networkPath,
     NetworkRecord,
     networkSummaryFacts,
@@ -49,6 +50,7 @@ import { networksPath, nodePhysicalPath } from '../routes';
 import { networkDisplayName, networkNotFoundText, networkScopeState } from './networkScopeModel';
 import { useNetworkWorkloads } from './useNetworkWorkloads';
 import { useOvnCollectorFeatureGate } from './useOvnCollectorFeatureGate';
+import { rememberedCollectorSnapshot } from './collectorApi';
 
 /**
  * The network pages (ovn-recon-nfs.1, nfs.2): a list of every CUDN, UDN and NAD-only
@@ -228,6 +230,18 @@ const ViewLinks: React.FC<{ row: PlacementRow; showLogical: boolean }> = ({ row,
                 <Link to={row.logicalPath}>Logical</Link>
             </>
         )}
+        {row.gatewayRouter && (
+            <>
+                {' · '}
+                <Link
+                    to={row.gatewayRouter.path}
+                    title={`${row.gatewayRouter.name}: Routes and NAT`}
+                    data-testid={`placement-gateway-router-${row.node}`}
+                >
+                    Gateway router
+                </Link>
+            </>
+        )}
     </>
 );
 
@@ -359,15 +373,19 @@ const PlacementCard: React.FC<{
     nns: Watched<NodeNetworkState>;
     vlan: string | undefined;
     showLogical: boolean;
-}> = ({ record, inputs, nns, vlan, showLogical }) => {
+    zones: NetworkMasqueradeContext['zones'];
+}> = ({ record, inputs, nns, vlan, showLogical, zones }) => {
     // Counted only while the table is on screen. The cluster default network is left out:
     // nearly every pod is on it, so a count would say little and cost the most.
     const tableShown = nns.available && nns.loaded && !nns.error && nns.data.length > 0;
     const showAttached = !record.clusterDefault;
     const { workloads, requestCount } = useNetworkWorkloads(record, inputs, tableShown && showAttached);
     const placement = React.useMemo(
-        () => buildPlacement(record, nns.data, inputs, showAttached ? workloads : undefined),
-        [record, nns.data, inputs, showAttached, workloads],
+        () => buildPlacement(record, nns.data, inputs, showAttached ? workloads : undefined, {
+            collectorEnabled: showLogical,
+            zones,
+        }),
+        [record, nns.data, inputs, showAttached, workloads, showLogical, zones],
     );
     let body: React.ReactNode;
     if (!nns.available) {
@@ -445,7 +463,23 @@ export interface NetworkBodyProps {
     inputs: NetworkInputs;
     nns: Watched<NodeNetworkState>;
     showLogical: boolean;
+    /** The shell's Nodes, read for their masquerade subnet; the defaults stand in without them. */
+    nodes?: K8sResourceCommon[];
 }
+
+/**
+ * The zone snapshots this browser tab already remembers for the given nodes, with the
+ * collector gate on; a degraded one is the collector's sample data and is left out. No
+ * request is made for them (the physical drawer's rule).
+ */
+const rememberedZones = (nodes: string[], collectorEnabled: boolean): NetworkMasqueradeContext['zones'] => {
+    if (!collectorEnabled) return [];
+    return nodes.flatMap((node) => {
+        const snapshot = rememberedCollectorSnapshot(node);
+        if (!snapshot?.database || snapshot.metadata?.sourceHealth === 'degraded') return [];
+        return [{ node, database: snapshot.database }];
+    });
+};
 
 /**
  * One network's findings, summary and placement by node: everything on a network page
@@ -453,8 +487,13 @@ export interface NetworkBodyProps {
  * page (NetworkPage) and the console's CUDN, UDN and NAD details tabs
  * (NetworkOvnReconTab, ovn-recon-zdt.1) all render this; there is no second copy.
  */
-export const NetworkBody: React.FC<NetworkBodyProps> = ({ record, inputs, nns, showLogical }) => {
-    const facts = React.useMemo(() => networkSummaryFacts(record, inputs), [record, inputs]);
+export const NetworkBody: React.FC<NetworkBodyProps> = ({ record, inputs, nns, showLogical, nodes }) => {
+    const nodeNames = React.useMemo(() => nns.data.map((state) => state.metadata?.name || '').filter(Boolean), [nns.data]);
+    const zones = React.useMemo(() => rememberedZones(nodeNames, showLogical), [nodeNames, showLogical]);
+    const facts = React.useMemo(
+        () => networkSummaryFacts(record, inputs, { nodes, zones }),
+        [record, inputs, nodes, zones],
+    );
     const vlan = facts.find((fact) => fact.label === 'VLAN')?.value;
 
     // Network-scope findings about this network. NodeNetworkStates are handed over only
@@ -501,6 +540,7 @@ export const NetworkBody: React.FC<NetworkBodyProps> = ({ record, inputs, nns, s
                     nns={nns}
                     vlan={typeof vlan === 'string' ? vlan : undefined}
                     showLogical={showLogical}
+                    zones={zones}
                 />
             </PageSection>
         </>
@@ -556,7 +596,7 @@ export const useNetworkData = (): NetworkData => {
  * when the URL names a network nobody can see rather than loading for good
  * (ovn-recon-nt4.13).
  */
-export const NetworkExplorerBody: React.FC<{ address: NetworkAddress }> = ({ address }) => {
+export const NetworkExplorerBody: React.FC<{ address: NetworkAddress; nodes?: K8sResourceCommon[] }> = ({ address, nodes }) => {
     const { inputs, loaded, nns, showLogical } = useNetworkData();
     const state = React.useMemo(() => networkScopeState(address, inputs, loaded), [address, inputs, loaded]);
     const title = <DocumentTitle>{`OVN Recon - ${networkDisplayName(address)}`}</DocumentTitle>;
@@ -585,7 +625,7 @@ export const NetworkExplorerBody: React.FC<{ address: NetworkAddress }> = ({ add
     return (
         <>
             {title}
-            <NetworkBody record={state.record} inputs={inputs} nns={nns} showLogical={showLogical} />
+            <NetworkBody record={state.record} inputs={inputs} nns={nns} showLogical={showLogical} nodes={nodes} />
         </>
     );
 };

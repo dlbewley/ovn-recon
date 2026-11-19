@@ -12,7 +12,19 @@ import {
     parseNadConfig,
     PrimaryNetworkMatch
 } from './nodeVisualizationSelectors';
-import { NETWORKS_PATH, networkPath, nodeLogicalPath, nodePhysicalPath, parseNetworkPath } from '../routes';
+import {
+    constructDetailPath, NETWORKS_PATH, networkPath, nodeLogicalPath, nodePhysicalPath, parseNetworkPath
+} from '../routes';
+import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
+import { mangleNetworkName } from './logicalClassification';
+import {
+    MASQUERADE_ROLE_LABELS,
+    masqueradeIpsForNetworkId,
+    MasqueradeSubnet,
+    masqueradeSubnets,
+    ovnNetworkNameOf
+} from './masqueradeIps';
+import { parsePrefix } from './ipPrefix';
 import { getActiveBridgeMappings, getBridgeUplinks, getLocalnetNetworks } from '../insights/network';
 import { cudnRef, nadRef, udnRef } from '../insights/refs';
 import type { K8sRef } from '../insights/types';
@@ -28,6 +40,7 @@ import type {
     ClusterUserDefinedNetwork,
     Interface,
     Layer3Subnet,
+    LogicalDatabase,
     NetworkAttachmentDefinition,
     NetworkAttachmentsResponse,
     NodeNetworkState,
@@ -518,8 +531,228 @@ const routeAdvertisementFacts = (record: NetworkRecord, inputs: NetworkInputs): 
     }];
 };
 
+// --- Network ID and masquerade IPs (ovn-recon-2n6.3) ------------------------
+
+/**
+ * What the page holds beyond the network watches, to tie a network to its masquerade
+ * addresses. Nothing here is fetched for it: the Nodes are the shell's watch, and the
+ * zones are the snapshots this browser tab already remembers (collector gate on, not
+ * degraded). Either may be absent.
+ */
+export interface NetworkMasqueradeContext {
+    /** Nodes, read for their `k8s.ovn.org/node-masquerade-subnet` annotation. */
+    nodes?: ReadonlyArray<K8sResourceCommon>;
+    /** Zone databases, by node. */
+    zones?: ReadonlyArray<{ node: string; database: LogicalDatabase }>;
+}
+
+export interface NetworkIdReading {
+    /** The distinct IDs the network's NADs carry; more than one is a disagreement. */
+    ids: number[];
+    /** The NADs that carry one. */
+    nads: NetworkAttachmentDefinition[];
+}
+
+/**
+ * The network ID OVN-Kubernetes gave a network, from the `k8s.ovn.org/network-id`
+ * annotation on its NADs: a NAD's own, a CUDN's or UDN's generated ones. Empty for a
+ * network whose NADs carry none, which is every NAD outside OVN-Kubernetes.
+ */
+export const networkIdOf = (record: NetworkRecord, inputs: NetworkInputs): NetworkIdReading => {
+    const candidates = record.kind === 'nad'
+        ? [record.resource as NetworkAttachmentDefinition]
+        : generatedNads(record, inputs);
+    const ids = new Set<number>();
+    const nads: NetworkAttachmentDefinition[] = [];
+    for (const nad of candidates) {
+        const raw = nad.metadata?.annotations?.[NETWORK_ID_ANNOTATION];
+        const id = raw === undefined || raw.trim() === '' ? NaN : Number(raw);
+        if (!Number.isSafeInteger(id) || id < 0) continue;
+        ids.add(id);
+        nads.push(nad);
+    }
+    return { ids: [...ids].sort((a, b) => a - b), nads };
+};
+
+/**
+ * The `k8s.ovn.org/network` identity of an OVN network: `cluster_udn_<name>` for a
+ * CUDN, `<namespace>_<name>` for a UDN, and for a NAD its owner's, else its config's
+ * `name`. Undefined for a NAD outside OVN-Kubernetes.
+ */
+export const ovnNetworkNameOfRecord = (record: NetworkRecord): string | undefined => {
+    if (record.kind === 'cudn') return ovnNetworkNameOf({ kind: 'cudn', name: record.name });
+    if (record.kind === 'udn') return ovnNetworkNameOf({ kind: 'udn', namespace: record.namespace || 'default', name: record.name });
+    if (!isOvnNetwork(record) || record.clusterDefault) return undefined;
+    if (record.owner) {
+        return record.owner.kind === 'cudn'
+            ? ovnNetworkNameOf({ kind: 'cudn', name: record.owner.name })
+            : ovnNetworkNameOf({ kind: 'udn', namespace: record.owner.namespace || 'default', name: record.owner.name });
+    }
+    return asString(parseNadConfig((record.resource as NetworkAttachmentDefinition).spec?.config)?.name);
+};
+
+/** Whether the network is a primary one, which alone has gateway routers and a masquerade pair. */
+const isPrimaryNetwork = (record: NetworkRecord): boolean =>
+    record.role === 'Primary' && isOvnNetwork(record) && !record.clusterDefault;
+
+/**
+ * The name OVN-Kubernetes gives a primary network's gateway router on a node:
+ * `GR_<network, dashes as dots>_<node>`, as in `GR_cluster_udn_example.p.cudn_worker-1`.
+ */
+export const gatewayRouterName = (ovnNetwork: string, node: string): string =>
+    `GR_${mangleNetworkName(ovnNetwork)}_${node}`;
+
+/** A zone's gateway router for a network: the router carrying its network ID and named `GR_`. */
+const gatewayRouterIn = (database: LogicalDatabase, ovnNetwork: string, node: string) => {
+    const expected = gatewayRouterName(ovnNetwork, node);
+    return database.logicalRouters.find((router) => router.name === expected)
+        ?? database.logicalRouters.find((router) =>
+            router.name.startsWith('GR_') && router.externalIds?.['k8s.ovn.org/network'] === ovnNetwork);
+};
+
+const addressOnly = (text: string): string => text.split('/')[0].trim();
+
+/** Where a zone shows an address on the network's gateway router, in words; undefined when it does not. */
+const gatewayRouterEvidence = (
+    database: LogicalDatabase,
+    ovnNetwork: string,
+    node: string,
+    address: string,
+): string | undefined => {
+    const router = gatewayRouterIn(database, ovnNetwork, node);
+    if (!router) return undefined;
+    const physicalIps = (router.externalIds?.physical_ips ?? router.externalIds?.physical_ip ?? '')
+        .split(',').map(addressOnly);
+    if (physicalIps.includes(address)) return `${router.name} external_ids:physical_ips on ${node}`;
+    const ports = new Set(router.ports);
+    const port = database.logicalRouterPorts.find((candidate) =>
+        ports.has(candidate.uuid) && (candidate.networks ?? []).some((network) => addressOnly(network) === address));
+    if (port) return `${router.name} port ${port.name} on ${node}`;
+    const nats = new Set(router.nat ?? []);
+    if (database.nats.some((nat) => nats.has(nat.uuid) && nat.externalIp && addressOnly(nat.externalIp) === address)) {
+        return `${router.name} SNAT external IP on ${node}`;
+    }
+    return undefined;
+};
+
+/** The address families the network's own subnets declare; empty when it declares none that parse. */
+const subnetFamilies = (record: NetworkRecord): Set<4 | 6> => {
+    const spec = layerSpec(record);
+    const raw = spec?.subnets;
+    const texts: string[] = typeof raw === 'string'
+        ? raw.split(',')
+        : Array.isArray(raw)
+            ? raw.map((subnet) => (typeof subnet === 'string' ? subnet : asString(asRecord(subnet)?.cidr) ?? ''))
+            : [];
+    const families = new Set<4 | 6>();
+    for (const text of texts) {
+        const prefix = parsePrefix(text.trim());
+        if (prefix) families.add(prefix.family);
+    }
+    return families;
+};
+
+const familyLabel = (family: 4 | 6): string => (family === 4 ? 'IPv4' : 'IPv6');
+
+const networkIdFact = (reading: NetworkIdReading): Fact => {
+    const sources = reading.nads.map((nad) => `${namespaceOf(nad)}/${nad.metadata?.name}`).join(', ');
+    return {
+        label: 'Network ID',
+        value: reading.ids.join(', '),
+        provenance: 'observed',
+        hint: reading.ids.length > 1
+            ? `The network's NADs disagree: ${sources} carry ${NETWORK_ID_ANNOTATION} values ${reading.ids.join(' and ')}.`
+            : `The ${NETWORK_ID_ANNOTATION} annotation OVN-Kubernetes wrote on NAD ${sources}.`
+    };
+};
+
+const masqueradeFact = (
+    record: NetworkRecord,
+    networkId: number,
+    context: NetworkMasqueradeContext,
+): Fact => {
+    const zones = context.zones ?? [];
+    const allSubnets = masqueradeSubnets({ nodes: context.nodes ?? [], databases: zones.map((zone) => zone.database) });
+    // Show the families the network uses; one that declares no subnet shows every family.
+    const families = subnetFamilies(record);
+    const subnets: MasqueradeSubnet[] = families.size > 0
+        ? allSubnets.filter((subnet) => families.has(subnet.family))
+        : allSubnets;
+    const ovnNetwork = ovnNetworkNameOfRecord(record);
+    const items: FactItem[] = [];
+    const confirmations: string[] = [];
+    const noRoom: string[] = [];
+    for (const subnet of subnets) {
+        const [pair] = masqueradeIpsForNetworkId(networkId, [subnet]);
+        if (!pair) {
+            noRoom.push(subnet.cidr);
+            continue;
+        }
+        const evidence = ovnNetwork
+            ? zones.map((zone) => gatewayRouterEvidence(zone.database, ovnNetwork, zone.node, pair.gatewayRouter))
+                .find((found): found is string => Boolean(found))
+            : undefined;
+        if (evidence) confirmations.push(`${pair.gatewayRouter} on ${evidence}`);
+        const family = familyLabel(pair.family);
+        items.push(
+            {
+                text: pair.gatewayRouter,
+                detail: `(${MASQUERADE_ROLE_LABELS['udn-gateway-router']}, ${family}, ${evidence ? 'confirmed' : 'derived'})`
+            },
+            {
+                text: pair.managementPort,
+                detail: `(${MASQUERADE_ROLE_LABELS['udn-management-port']}, ${family}, derived)`
+            }
+        );
+    }
+    for (const cidr of noRoom) {
+        items.push({ text: `No room in ${cidr}`, detail: `(the subnet is too small for network ID ${networkId})` });
+    }
+    const subnetText = subnets.map((subnet) => `${subnet.cidr} (${subnet.source === 'default'
+        ? 'the platform default'
+        : subnet.source === 'node-annotation' ? 'from the Nodes\' annotation' : 'from a gateway router\'s static route'})`)
+        .join(' and ');
+    const derivation = `Derived from network ID ${networkId}: the gateway router takes the subnet's base + 10 + 2 x ID - 1 `
+        + `and the management port base + 10 + 2 x ID, in ${subnetText || 'no masquerade subnet'}. `
+        + 'The offsets are an OVN-Kubernetes implementation detail, not a documented contract.';
+    return {
+        label: 'Masquerade IPs',
+        value: items,
+        provenance: confirmations.length > 0 ? 'observed' : 'inferred',
+        hint: confirmations.length > 0
+            ? `${derivation} Confirmed by a zone snapshot this tab already holds: ${confirmations.join('; ')}. `
+                + 'The management port address sits on the host and is not in OVN\'s databases.'
+            : `${derivation} Not yet seen on a gateway router: no zone snapshot this tab holds shows it.`,
+        emptyText: 'No masquerade subnet is known.'
+    };
+};
+
+/**
+ * "Network ID" for any network whose NADs carry one, and for a primary network its
+ * "Masquerade IPs": the gateway router and management port pair in each masquerade
+ * subnet, derived from the ID and confirmed where a remembered zone shows the gateway
+ * router address. A secondary network has no gateway router, so no pair.
+ */
+export const masqueradeFacts = (
+    record: NetworkRecord,
+    inputs: NetworkInputs,
+    context: NetworkMasqueradeContext = {},
+): Fact[] => {
+    const reading = networkIdOf(record, inputs);
+    if (reading.ids.length === 0) return [];
+    const facts = [networkIdFact(reading)];
+    if (reading.ids.length === 1 && reading.ids[0] >= 1 && isPrimaryNetwork(record)) {
+        facts.push(masqueradeFact(record, reading.ids[0], context));
+    }
+    return facts;
+};
+
 /** The page's summary: what the network is, who uses it, what selects it. */
-export const networkSummaryFacts = (record: NetworkRecord, inputs: NetworkInputs): Fact[] => {
+export const networkSummaryFacts = (
+    record: NetworkRecord,
+    inputs: NetworkInputs,
+    masquerade: NetworkMasqueradeContext = {},
+): Fact[] => {
     const spec = layerSpec(record);
     const nads = generatedNads(record, inputs);
     return [
@@ -539,6 +772,7 @@ export const networkSummaryFacts = (record: NetworkRecord, inputs: NetworkInputs
         ...physicalNetworkFact(record),
         ...mtuFact(record, spec, inputs),
         ...ipamFact(record, spec),
+        ...masqueradeFacts(record, inputs, masquerade),
         ...namespaceFacts(record),
         ...(record.kind !== 'nad'
             ? [{
@@ -587,6 +821,11 @@ export interface PlacementRow {
     /** The node's physical view, with the relevant graph node selected. */
     physicalPath: string;
     logicalPath: string;
+    /**
+     * A wired primary network's gateway router on this node, and its construct page on
+     * the Routes and NAT tab; set only when the caller says the collector is on.
+     */
+    gatewayRouter?: { name: string; path: string };
     /** Pods and VMs attached to the network here; set when the caller read them. */
     workloads?: PlacementWorkloads;
 }
@@ -860,11 +1099,33 @@ export const placementWorkloadsNote = (workloads: NetworkWorkloads, nodes: reado
  * Rows are sorted by node name; `wired` counts the wired rows. Given `workloads`, each
  * row also says what is attached to the network on that node.
  */
+export interface PlacementOptions {
+    /** The collector gate is on: a wired primary network's rows link to its gateway routers. */
+    collectorEnabled?: boolean;
+    /** Zone databases this tab already holds, by node, read for the gateway router's actual name. */
+    zones?: NetworkMasqueradeContext['zones'];
+}
+
+/** A wired primary row's gateway router: the name a remembered zone shows, else the one OVN-Kubernetes gives it. */
+const placementGatewayRouter = (
+    record: NetworkRecord,
+    node: string,
+    options: PlacementOptions,
+): PlacementRow['gatewayRouter'] => {
+    if (!options.collectorEnabled || !isPrimaryNetwork(record)) return undefined;
+    const ovnNetwork = ovnNetworkNameOfRecord(record);
+    if (!ovnNetwork) return undefined;
+    const zone = options.zones?.find((candidate) => candidate.node === node);
+    const name = (zone && gatewayRouterIn(zone.database, ovnNetwork, node)?.name) || gatewayRouterName(ovnNetwork, node);
+    return { name, path: constructDetailPath(node, 'router', name, { tab: 'routes' }) };
+};
+
 export const buildPlacement = (
     record: NetworkRecord,
     nodeNetworkStates: NodeNetworkState[],
     inputs: NetworkInputs,
-    workloads?: NetworkWorkloads
+    workloads?: NetworkWorkloads,
+    options: PlacementOptions = {}
 ): Placement => {
     const rows = nodeNetworkStates
         .map((nns): PlacementRow => {
@@ -879,9 +1140,11 @@ export const buildPlacement = (
                             uplinks: [],
                             physicalPath: physicalViewPath(node, record.graphNodeId)
                         };
+            const gatewayRouter = row.status === 'wired' ? placementGatewayRouter(record, node, options) : undefined;
             return {
                 ...row,
                 logicalPath: logicalViewPath(node),
+                ...(gatewayRouter ? { gatewayRouter } : {}),
                 ...(workloads ? { workloads: workloadsOnNode(node, workloads) } : {})
             };
         })

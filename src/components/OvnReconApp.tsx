@@ -347,7 +347,7 @@ const OvnReconApp: React.FC = () => {
 
     // The node routes all draw the node scope; the URL says which tab.
     const nodeBody = view?.scope === 'node' ? <NodeScopeBody view={view} data={data} /> : <NotFound />;
-    const networkBody = view?.scope === 'network' ? <NetworkScopeBody view={view} /> : <NotFound />;
+    const networkBody = view?.scope === 'network' ? <NetworkScopeBody view={view} data={data} /> : <NotFound />;
 
     const panel = collapsed ? (
         <DrawerPanelContent

@@ -291,14 +291,14 @@ describe('OvnReconApp, the explorer shell', () => {
                 selected: nodeItemId(node),
             }],
             ['a CUDN', networkPath({ kind: 'cudn', name: 'vlan-1924' }), {
-                page: /^network \{"address":\{"kind":"cudn","name":"vlan-1924"\}\}/,
+                page: /^network \{"address":\{"kind":"cudn","name":"vlan-1924"\}[,}]/,
                 selected: networkItemId({ kind: 'cudn', name: 'vlan-1924' }),
             }],
             ['a UDN', networkPath({ kind: 'udn', namespace: 'team', name: 'blue' }), {
-                page: /^network \{"address":\{"kind":"udn","namespace":"team","name":"blue"\}\}/, selected: null,
+                page: /^network \{"address":\{"kind":"udn","namespace":"team","name":"blue"\}[,}]/, selected: null,
             }],
             ['a NAD', networkPath({ kind: 'nad', namespace: 'default', name: 'vlan-999' }), {
-                page: /^network \{"address":\{"kind":"nad","namespace":"default","name":"vlan-999"\}\}/, selected: null,
+                page: /^network \{"address":\{"kind":"nad","namespace":"default","name":"vlan-999"\}[,}]/, selected: null,
             }],
         ];
 
@@ -520,7 +520,7 @@ describe('OvnReconApp, the explorer shell', () => {
             await click(treeItem(networkItemId({ kind: 'cudn', name: 'vlan-333' })));
             expect(current.pathname).toBe(networkPath({ kind: 'cudn', name: 'vlan-333' }));
             expect(byTestId('network-scope-name')?.textContent).toBe('vlan-333');
-            expect(passthrough()).toMatch(/^network \{"address":\{"kind":"cudn","name":"vlan-333"\}\}/);
+            expect(passthrough()).toMatch(/^network \{"address":\{"kind":"cudn","name":"vlan-333"\}[,}]/);
         });
     });
 

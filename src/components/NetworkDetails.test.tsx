@@ -13,6 +13,7 @@ import type { NetworkView } from './networkScopeModel';
 import NetworksTable from './NetworksTable';
 import { overviewNetworkRows } from './overviewModel';
 import { TestRouter } from './testRouter';
+import { constructDetailPath } from '../routes';
 import type { ExplorerData } from './useExplorerData';
 
 // Mutable so tests can vary what each watch returns; jest.mock factories may only
@@ -160,6 +161,45 @@ describe('NetworkDetails', () => {
         expect(text('placement-worker-2')).toContain('inferred');
         expect(text('placement-worker-2')).toContain('ovn-k8s-mp3');
         expect(links()).toContain('/ovn-recon/node-network-state/worker-2?select=vrf:example-p-cudn');
+    });
+
+    describe('a primary network\'s ID and masquerade IPs (ovn-recon-2n6.3)', () => {
+        const gatewayRouterPath = constructDetailPath(
+            'worker-1', 'router', 'GR_cluster_udn_example.p.cudn_worker-1', { tab: 'routes' },
+        );
+
+        beforeEach(() => {
+            mockWatches.NodeNetworkState = [loadFixture<NodeNetworkState>('nns', 'primary-cudn-vrf.json')];
+            mockWatches.ClusterUserDefinedNetwork = loadItems<ClusterUserDefinedNetwork>('cudn', 'primary-cudn-vrf.json');
+            mockWatches.NetworkAttachmentDefinition = [{
+                metadata: {
+                    name: 'example-p-cudn',
+                    namespace: 'example',
+                    annotations: { 'k8s.ovn.org/network-id': '3' },
+                    ownerReferences: [{ apiVersion: 'k8s.ovn.org/v1', kind: 'ClusterUserDefinedNetwork', name: 'example-p-cudn', uid: 'x' }],
+                },
+                spec: { config: JSON.stringify({ type: 'ovn-k8s-cni-overlay', name: 'cluster_udn_example-p-cudn', topology: 'layer2', role: 'primary' }) },
+            }];
+        });
+
+        it('shows the network ID and the masquerade pair with roles in the summary', async () => {
+            await render({ kind: 'cudn', name: 'example-p-cudn' });
+            const summary = text('network-summary');
+            expect(summary).toContain('Network ID');
+            expect(summary).toContain('169.254.0.15');
+            expect(summary).toContain('Gateway router masquerade, IPv4, derived');
+            expect(summary).toContain('169.254.0.16');
+            expect(summary).toContain('Management port masquerade, IPv4, derived');
+        });
+
+        it('links a wired row to its gateway router on Routes and NAT with the collector on, not off', async () => {
+            await render({ kind: 'cudn', name: 'example-p-cudn' });
+            expect(container.querySelector('[data-testid="placement-gateway-router-worker-1"]')?.getAttribute('href'))
+                .toBe(gatewayRouterPath);
+            mockGate.enabled = false;
+            await render({ kind: 'cudn', name: 'example-p-cudn' });
+            expect(links()).not.toContain(gatewayRouterPath);
+        });
     });
 
     it('offers a network\'s traffic in its header only when Network Observability can answer', async () => {
