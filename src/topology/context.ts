@@ -73,6 +73,12 @@ export interface GraphContext {
      */
     sriovNodeState?: SriovNetworkNodeState;
     /**
+     * The cluster network MTU and the encapsulation the node's uplinks carry on top of
+     * it (ovn-recon-n7r.3), from the Cluster Network Operator, for mtu-exceeds-uplink.
+     * Undefined where the caller does not read the network configuration.
+     */
+    clusterMtu?: ClusterMtu;
+    /**
      * Names of interfaces that are declared bridges. Needed to resolve the case where
      * an ovs-interface shares its name with the bridge it belongs to; without it the
      * two collide on a single id.
@@ -129,6 +135,20 @@ export type OvsBondRuntimeState =
     }
     | { error: string };
 
+/**
+ * The cluster network MTU as the Cluster Network Operator reports it, with where it
+ * was read, and the bytes of encapsulation each uplink must carry on top of it.
+ */
+export interface ClusterMtu {
+    value: number;
+    /** The object the MTU was read from (shaped as an insights K8sRef). */
+    source: { group: string; version: string; kind: string; name: string };
+    path: string;
+    overhead: number;
+    /** Why the overhead is what it is, in words. */
+    overheadBasis: string;
+}
+
 /** Namespaces attached to each CUDN, plus one node per UDN. */
 const buildAttachmentNodes = (
     cudns: ClusterUserDefinedNetwork[],
@@ -171,6 +191,8 @@ export interface GraphContextInput {
     nodeMasqueradeSubnetAnnotation?: string;
     /** This node's SriovNetworkNodeState, when the SR-IOV Network Operator is present. */
     sriovNodeState?: SriovNetworkNodeState;
+    /** The cluster network MTU, for mtu-exceeds-uplink (ovn-recon-n7r.3). */
+    clusterMtu?: ClusterMtu;
 }
 
 const BRIDGE_TYPES = ['linux-bridge', 'ovs-bridge', 'openvswitch'];
@@ -194,7 +216,8 @@ export const buildGraphContext = ({
     vteps = [],
     nodeVtepsAnnotation,
     nodeMasqueradeSubnetAnnotation,
-    sriovNodeState
+    sriovNodeState,
+    clusterMtu
 }: GraphContextInput): GraphContext => {
     const interfaces: Interface[] = nns?.status?.currentState?.interfaces ?? [];
     const nodeVteps = parseNodeVteps(nodeVtepsAnnotation);
@@ -217,6 +240,7 @@ export const buildGraphContext = ({
                 : [],
         }),
         sriovNodeState,
+        ...(clusterMtu ? { clusterMtu } : {}),
         explicitBridgeNames: new Set(
             interfaces.filter((i) => BRIDGE_TYPES.includes(i.type)).map((i) => i.name)
         ),

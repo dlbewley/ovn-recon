@@ -1,10 +1,11 @@
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 import * as React from 'react';
 
-import { buildGraphContext, GraphContext } from '../../topology/context';
+import { buildGraphContext, ClusterMtu, GraphContext } from '../../topology/context';
 import type {
     ClusterUserDefinedNetwork,
     LogicalTopologySnapshot,
+    MultiNetworkPolicy,
     NetworkAttachmentDefinition,
     NodeNetworkConfigurationEnactment,
     NodeNetworkState,
@@ -12,7 +13,7 @@ import type {
 } from '../../types';
 import { evaluatePhysical, PhysicalEvaluator } from '../evaluate';
 import { applySurfaceGates } from '../gates';
-import type { ClusterNetworkInputs, Finding, ZoneDatabase } from '../types';
+import type { ClusterNetworkConfig, ClusterNetworkInputs, Finding, ZoneDatabase } from '../types';
 
 /**
  * The hooks between the findings engine and the surfaces (ovn-recon-7i6.1).
@@ -146,6 +147,12 @@ export interface ClusterFindingsInput {
     nodes?: K8sResourceCommon[];
     /** Zone databases already held (heldZoneDatabases); never fetched for the findings. */
     zoneDatabases?: ZoneDatabase[];
+    /** The cluster network configuration's sources and model, for the cno-* rules (ovn-recon-n7r.3). */
+    networkConfig?: ClusterNetworkConfig;
+    /** Every MultiNetworkPolicy, once listed, for cno-mnp-disabled. */
+    multiNetworkPolicies?: MultiNetworkPolicy[];
+    /** The cluster network MTU (clusterMtuOf), laid on every node's context for mtu-exceeds-uplink. */
+    clusterMtu?: ClusterMtu;
 }
 
 export const NODE_LABEL = 'nmstate.io/node';
@@ -156,7 +163,8 @@ export const NODE_LABEL = 'nmstate.io/node';
  * (the inputs rules read), so the two surfaces agree.
  */
 export const useClusterFindings = ({
-    nodeNetworkStates, nodeNetworkStatesLoaded, cudns, udns, nads, enactments, nodes, zoneDatabases
+    nodeNetworkStates, nodeNetworkStatesLoaded, cudns, udns, nads, enactments, nodes, zoneDatabases, networkConfig, clusterMtu,
+    multiNetworkPolicies
 }: ClusterFindingsInput): Finding[] => {
     const evaluate = React.useContext(FindingsEvaluatorContext);
     const contexts = React.useMemo(() => {
@@ -166,18 +174,20 @@ export const useClusterFindings = ({
             const name = nns?.metadata?.name;
             if (!name) return;
             byName.set(name, buildGraphContext({
-                nns, cudns, udns, nads,
+                nns, cudns, udns, nads, clusterMtu,
                 enactments: enactments.filter((enactment) => enactment.metadata?.labels?.[NODE_LABEL] === name)
             }));
         });
         return byName;
-    }, [nodeNetworkStates, nodeNetworkStatesLoaded, cudns, udns, nads, enactments]);
+    }, [nodeNetworkStates, nodeNetworkStatesLoaded, cudns, udns, nads, enactments, clusterMtu]);
     const cluster = React.useMemo<ClusterNetworkInputs>(() => ({
         cudns, udns, nads,
         nodeNetworkStates: clusterNodeNetworkStates(nodeNetworkStates, nodeNetworkStatesLoaded),
         ...(nodes && nodes.length > 0 ? { nodes } : {}),
-        ...(zoneDatabases && zoneDatabases.length > 0 ? { zoneDatabases } : {})
-    }), [cudns, udns, nads, nodeNetworkStates, nodeNetworkStatesLoaded, nodes, zoneDatabases]);
+        ...(zoneDatabases && zoneDatabases.length > 0 ? { zoneDatabases } : {}),
+        ...(networkConfig ? { networkConfig } : {}),
+        ...(multiNetworkPolicies ? { multiNetworkPolicies } : {})
+    }), [cudns, udns, nads, nodeNetworkStates, nodeNetworkStatesLoaded, nodes, zoneDatabases, networkConfig, multiNetworkPolicies]);
     return React.useMemo(
         () => applySurfaceGates(
             evaluate.cluster(cluster, Array.from(contexts.values())),

@@ -1,4 +1,6 @@
 import type { ClusterUserDefinedNetwork, NetworkAttachmentDefinition, NodeNetworkState } from '../../types';
+import { clusterMtuOf } from '../cno';
+import { CnoFixture, cnoFixture, cnoSourcesOf, cnoWith } from '../cnoTesting';
 import { clone, loadFixture, loadItems, physicalContext } from '../testing';
 import { mtuExceedsUplink } from './mtuExceedsUplink';
 
@@ -96,5 +98,46 @@ describe('mtu-exceeds-uplink', () => {
         expect(findings.map((f) => f.evidence[2].fact)).toEqual([
             'bond0.1926 (vlan) is an uplink of br-ex with MTU 1500.'
         ]);
+    });
+});
+
+describe('mtu-exceeds-uplink on the cluster network (ovn-recon-n7r.3)', () => {
+    // worker-1's gateway bridge: physnet -> br-ex -> ens192, MTU 1500.
+    const clusterMtuFor = (change?: (data: CnoFixture) => void) =>
+        clusterMtuOf(cnoSourcesOf(change ? cnoWith(change) : cnoFixture()));
+
+    it('is quiet when the default cluster MTU plus Geneve fits the uplink exactly', () => {
+        // 1400 + 100 = 1500.
+        expect(mtuExceedsUplink.evaluate(physicalContext({ nns, cudns, clusterMtu: clusterMtuFor() }))).toEqual([]);
+    });
+
+    it('fires when IPsec adds its overhead on top, on the uplink, citing the CNO', () => {
+        const clusterMtu = clusterMtuFor((d) => {
+            d.operatorNetwork.spec!.defaultNetwork!.ovnKubernetesConfig!.ipsecConfig = { mode: 'Full' };
+        });
+        const findings = mtuExceedsUplink.evaluate(physicalContext({ nns, cudns, clusterMtu }));
+        expect(findings).toHaveLength(1);
+        expect(findings[0]).toEqual(expect.objectContaining({
+            subject: { kind: 'graph-node', node: 'worker-1', graphNodeId: 'iface:ens192' },
+            summary: 'The cluster network MTU 1400 needs 1546 on the uplinks of br-ex, larger than the 1500 of uplink ens192 on worker-1.'
+        }));
+        expect(findings[0].evidence[0]).toEqual(expect.objectContaining({
+            sources: [expect.objectContaining({ group: 'config.openshift.io', kind: 'Network' })],
+            path: 'status.clusterNetworkMTU'
+        }));
+        expect(findings[0].evidence[1].fact).toContain('IPsec (mode Full) 46 more');
+    });
+
+    it('reads a larger cluster MTU from the cluster network configuration', () => {
+        const clusterMtu = clusterMtuFor((d) => { d.configNetwork.status!.clusterNetworkMTU = 8900; });
+        expect(mtuExceedsUplink.evaluate(physicalContext({ nns, cudns, clusterMtu }))).toHaveLength(1);
+    });
+
+    it('stays quiet during an MTU migration, and without the CNO', () => {
+        expect(clusterMtuFor((d) => {
+            d.configNetwork.status!.clusterNetworkMTU = 8900;
+            d.configNetwork.status!.migration = { mtu: { network: { from: 1400, to: 8900 } } };
+        })).toBeUndefined();
+        expect(mtuExceedsUplink.evaluate(physicalContext({ nns, cudns }))).toEqual([]);
     });
 });
