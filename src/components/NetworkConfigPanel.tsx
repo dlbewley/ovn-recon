@@ -3,6 +3,7 @@ import { Alert, Card, CardBody, CardTitle, Label, Spinner, Stack, StackItem } fr
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 
 import { ConsoleLink } from '../linkOut/LinkOut';
+import AppliedSpecCard from './AppliedSpecCard';
 import { resourceTarget } from '../linkOut/registry';
 import type {
     Capability, CapabilityStatus, CnoConfigModel, ConditionRow, ConditionSeverity, ConfigRow, ConfigSection, PrerequisiteState,
@@ -253,6 +254,7 @@ const NetworkConfigPanel: React.FC<{ model: CnoConfigModel }> = ({ model }) => {
                     </Alert>
                 </StackItem>
             ))}
+            {model.applied.status === 'differs' && <StackItem><AppliedSpecCard comparison={model.applied} /></StackItem>}
             {model.capabilities.length > 0 && <StackItem><CapabilitiesCard capabilities={model.capabilities} /></StackItem>}
             {model.sections.map((section) => (
                 <StackItem key={section.id}><SectionCard section={section} /></StackItem>

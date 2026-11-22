@@ -342,7 +342,12 @@ describe('buildCnoConfigModel', () => {
             }), NOW);
             expect(model.notices).toEqual([
                 { id: 'overrides-configmap', severity: 'warning', title: 'Hidden OVN-Kubernetes overrides are present (ConfigMap ovn-kubernetes-config-overrides)', body: 'Keys: enable-lflow-cache' },
-                { id: 'gateway-mode-configmap', severity: 'info', title: 'The legacy gateway mode switch is present (ConfigMap gateway-mode-config)', body: 'mode: local' },
+                {
+                    id: 'gateway-mode-configmap',
+                    severity: 'warning',
+                    title: 'The legacy gateway mode switch is present (ConfigMap gateway-mode-config)',
+                    body: 'mode: local, which disagrees with routingViaHost (shared)',
+                },
             ]);
             expect(rowOf(model, 'host-mtu')).toMatchObject({ value: '1500', origin: 'reported', source: 'ConfigMap mtu' });
         });

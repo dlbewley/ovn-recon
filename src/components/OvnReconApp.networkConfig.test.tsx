@@ -179,6 +179,25 @@ describe('the Network config tab, drawn by the shell', () => {
         expect(container.querySelector('[aria-label="Loading the cluster network configuration"]')).toBeNull();
     });
 
+    it('lists the fields the operator has not applied, beside what it last applied (ovn-recon-n7r.5)', async () => {
+        const spec = JSON.parse(JSON.stringify((fixture.operatorNetwork as { spec: Record<string, unknown> }).spec));
+        mockObjects['core/ConfigMap/applied-cluster'] = [{ data: { applied: JSON.stringify(spec) } }, true, undefined];
+        await render(clusterNetworkConfigPath());
+        expect(byTestId('network-config-applied')).toBeNull();
+        expect(text(row('applied-configuration'))).toContain('Matches the spec');
+
+        act(() => root.unmount());
+        root = createRoot(container);
+        spec.serviceNetwork = ['172.31.0.0/16'];
+        mockObjects['core/ConfigMap/applied-cluster'] = [{ data: { applied: JSON.stringify(spec) } }, true, undefined];
+        await render(clusterNetworkConfigPath());
+        expect(byTestId('network-config-notice-applied-differs')).not.toBeNull();
+        const differences = [...container.querySelectorAll('[data-testid="network-config-applied-difference"]')];
+        expect(differences.map((difference) => [...difference.querySelectorAll('td')].map(text))).toEqual([
+            ['spec.serviceNetwork[0]', '172.30.0.0/16', '172.31.0.0/16'],
+        ]);
+    });
+
     it('waits with a spinner only until a source answers', async () => {
         Object.values(KEYS).forEach((key) => { mockObjects[key] = [undefined, false, undefined]; });
         ['applied-cluster', 'mtu', 'ovn-kubernetes-config-overrides', 'gateway-mode-config'].forEach((name) => {
