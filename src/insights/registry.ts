@@ -1,4 +1,11 @@
 import { bondDegraded } from './rules/bondDegraded';
+import { cnoEvpnGatewayPrereq } from './rules/cnoEvpnGatewayPrereq';
+import { cnoEvpnWithIpsec } from './rules/cnoEvpnWithIpsec';
+import { cnoMigrationInProgress } from './rules/cnoMigrationInProgress';
+import { cnoMnpDisabled } from './rules/cnoMnpDisabled';
+import { cnoOperatorUnhealthy } from './rules/cnoOperatorUnhealthy';
+import { cnoRouteAdsDisabled } from './rules/cnoRouteAdsDisabled';
+import { cnoUnsupportedOverrides } from './rules/cnoUnsupportedOverrides';
 import { collectorDegraded } from './rules/collectorDegraded';
 import { interfaceDown } from './rules/interfaceDown';
 import { localnetUnmapped } from './rules/localnetUnmapped';
@@ -38,7 +45,16 @@ export const PHYSICAL_RULES: readonly PhysicalRule[] = [
     masqueradeSubnetTooSmall,
     masqueradeSubnetOverlap,
     masqueradeAddressMismatch,
-    masqueradeSubnetDisagreement
+    masqueradeSubnetDisagreement,
+    // The Cluster Network Operator's configuration (ovn-recon-n7r.3): network-scope
+    // rules over the sources the shell watches and the Network config tab's model.
+    cnoEvpnGatewayPrereq,
+    cnoRouteAdsDisabled,
+    cnoMnpDisabled,
+    cnoEvpnWithIpsec,
+    cnoOperatorUnhealthy,
+    cnoUnsupportedOverrides,
+    cnoMigrationInProgress
 ];
 
 /**

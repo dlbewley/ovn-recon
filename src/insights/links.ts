@@ -1,6 +1,7 @@
 import { networkPath } from '../components/networkPageModel';
 import type { NetworkAddress } from '../components/networkPageModel';
-import { nodePhysicalPath } from '../routes';
+import { clusterNetworkConfigPath, nodePhysicalPath } from '../routes';
+import { isNetworkConfigRef } from './cno';
 import { graphNodeIdForRef } from './refs';
 import type { Finding, K8sRef } from './types';
 
@@ -52,6 +53,9 @@ export const networkAddressForRef = (ref: K8sRef): NetworkAddress | undefined =>
  *                         is offered second (`anyNode` picks which one; the first by
  *                         name). A NAD's lane is hidden by default, so it cannot be
  *                         selected on arrival and gets no second link.
+ *   the network config    the Network config tab, for the operator and cluster
+ *                         Network objects and the network ClusterOperator
+ *                         (ovn-recon-n7r.3)
  *   anything else         the object in the console
  */
 export const findingSubjectLink = (finding: Finding, anyNode?: string): FindingLink => {
@@ -73,6 +77,7 @@ export const findingSubjectLink = (finding: Finding, anyNode?: string): FindingL
                     : {})
             };
         }
+        if (isNetworkConfigRef(subject.ref)) return { to: clusterNetworkConfigPath(), label: refLabel(subject.ref) };
         return { href: consoleHrefForRef(subject.ref), label: refLabel(subject.ref) };
     }
     return { label: `${subject.constructKind} ${subject.name}` };

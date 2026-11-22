@@ -1,5 +1,6 @@
 import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 
+import type { CnoConfigInputs, CnoConfigModel } from '../components/cnoConfigModel';
 import type { GraphContext } from '../topology/context';
 import type {
     ClusterUserDefinedNetwork,
@@ -134,6 +135,19 @@ export interface ClusterNetworkInputs {
      * only. Never fetched for the findings: absent until a view has loaded them.
      */
     zoneDatabases?: ZoneDatabase[];
+    /**
+     * The cluster network configuration (ovn-recon-n7r.3): the sources the shell
+     * watches and the model it builds from them once, whose capability checklist the
+     * cno-* rules read instead of re-deriving a prerequisite. Absent where a surface
+     * does not watch them; the cno-* rules are then quiet.
+     */
+    networkConfig?: ClusterNetworkConfig;
+}
+
+/** The Network config tab's inputs and model, as the findings read them. */
+export interface ClusterNetworkConfig {
+    sources: CnoConfigInputs;
+    model: CnoConfigModel;
 }
 
 /** One zone's northbound database, by the node whose zone it is. */

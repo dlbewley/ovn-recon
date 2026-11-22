@@ -19,6 +19,8 @@ logical side), and each one is quiet when its data is missing.
 Every rule that ships today is a `warning`, but for two masquerade findings (`ovn-recon-2n6.5`):
 `masquerade-address-mismatch` is always `info`, because the per-network offsets it checks are an upstream
 implementation detail, and `masquerade-subnet-too-small` is `info` while no primary network needs a pair yet.
+Two Cluster Network Operator findings (`ovn-recon-n7r.3`) are `info` too: `cno-unsupported-overrides`
+(the cluster may work, outside support) and `cno-migration-in-progress`.
 `info` also exists for the practice notes of `ovn-recon-s3t.35`.
 
 ## The model (`types.ts`)
@@ -57,6 +59,14 @@ identity, so build the contexts in a `useMemo` and pass the same objects back.
 the tab already holds (`zoneDatabases`, live snapshots only, read through
 `rememberedCollectorSnapshot` by `useHeldZoneDatabases`; never fetched for the findings).
 Only the explorer shell passes them; a rule needing one is quiet without it.
+
+It also carries, optionally, the cluster network configuration (`networkConfig`: the sources
+`useNetworkConfigSources` watches and the `CnoConfigModel` the Network config tab draws, built once in
+`useExplorerData`). The `cno-*` rules read the model's capability checklist for a prerequisite rather
+than reading the spec again (`cno.ts`: `prerequisite`, `unmetPrerequisites`). The cluster network MTU
+(`clusterMtuOf`) reaches the node rules on each node's `GraphContext.clusterMtu`, for
+`mtu-exceeds-uplink`. A finding whose subject is the operator or cluster `Network` or the network
+ClusterOperator links to the Network config tab.
 
 Network-scope rules read `ctx.cluster` only; node and node-network rules read
 `ctx.node` only. The evaluator enforces this, which is what lets a node page and the
@@ -139,7 +149,7 @@ Rules must:
 | `interface-down` | node | A VRF port, a mapped bridge's uplink, or a NAD's bridge (or its uplink) is down; members of a kernel or OVS bond are left to `bond-degraded` |
 | `bond-degraded` | node | A kernel bond, or an OVS bond in a bridge's `bridge.port` list, has members down or missing among those configured (reported, plus any an enactment declares); `ignore` is not down. An OVS bond's finding is on the bond's own graph node, `ovs-bond:<bridge>/<bond>` (`ovn-recon-1tw.4`, `ovn-recon-1tw.2`) |
 | `nnce-failing` | node | An enactment on the node is Failing or Degraded |
-| `mtu-exceeds-uplink` | node-network | A Localnet network's declared MTU exceeds the smallest MTU of its bridge's uplinks on that node |
+| `mtu-exceeds-uplink` | node-network | A Localnet network's declared MTU exceeds the smallest MTU of its bridge's uplinks on that node; or the cluster network MTU the CNO reports, plus Geneve's 100 bytes (and IPsec Full's 46), exceeds the smallest uplink of the gateway bridge (`physnet`, else br-ex). Quiet without the CNO and during an MTU migration (`ovn-recon-n7r.3`) |
 | `nad-config-unparsed` | network | A NAD's `spec.config` is not a JSON object, so the view fell back to pattern matching |
 | `vrf-port-unmatched` | node | A VRF declares a port no interface carries |
 | `ovs-bridge-unbonded-uplinks` | node | An OVS bridge (not br-int) has two or more uplinks, an OVS bond counting as one, with STP stated off and RSTP not on (`ovn-recon-1tw.5`); uplinks are counted by the link they leave on, so VLANs of one NIC or bond are one uplink (`ovn-recon-vb1`); an uplink that is down still counts, a bridge reporting no STP setting is quiet, Linux bridges are out of scope |
@@ -186,3 +196,10 @@ Logical side (`ovn-recon-7i6.3`):
 - **A localnet switch with no bridge mapping in its zone** is not a rule of its own: it
   is `localnet-unmapped` (same id, shown on the ladder too) when the physical network is
   mapped nowhere, and a neutral fact otherwise.
+| `cno-evpn-gateway-prereq` | network | A CUDN is carried over EVPN (or, with none, a VTEP exists) while the EVPN checklist's `routingViaHost: true` or `ipForwarding: Global` is unmet; on each EVPN CUDN, else once on the network configuration (`ovn-recon-n7r.3`) |
+| `cno-route-ads-disabled` | network | RouteAdvertisements exist while route advertisements are not Enabled, so they are ignored; FRR missing from the providers is cited too |
+| `cno-mnp-disabled` | network | `disableMultiNetwork` is true while NADs a CUDN did not generate exist. The MultiNetworkPolicy half of the bead's condition needs an MNP list the shell does not watch, and is not reported |
+| `cno-evpn-with-ipsec` | network | A CUDN is carried over EVPN while IPsec is not Disabled; on each EVPN CUDN |
+| `cno-operator-unhealthy` | network | The network ClusterOperator or operator configuration reports Degraded (or ManagementStateDegraded) True, Available False, or Progressing True for longer than the model's threshold; or managementState is not Managed. Once, on the ClusterOperator |
+| `cno-unsupported-overrides` | network | Info. `spec.unsupportedConfigOverrides` is set, or ConfigMap `ovn-kubernetes-config-overrides` is present |
+| `cno-migration-in-progress` | network | Info. `spec.migration` or the cluster network configuration's `status.migration` is set |

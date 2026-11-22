@@ -1,10 +1,11 @@
 import * as React from 'react';
 
+import { clusterMtuOf } from '../insights/cno';
 import type { SeverityCounts } from '../insights/selectors';
-import type { Finding } from '../insights/types';
+import type { ClusterNetworkConfig, Finding } from '../insights/types';
 import { useClusterFindings, useHeldZoneDatabases, useHideInfoFindings, visibleFindings } from '../insights/ui/useFindings';
 import { rememberedCollectorSnapshot } from './collectorApi';
-import { buildCnoConfigModel, CnoConfigModel } from './cnoConfigModel';
+import { buildCnoConfigModel, CnoConfigInputs, CnoConfigModel } from './cnoConfigModel';
 import type { NetworkInputs } from './networkPageModel';
 import { findingCountsByNode, NodeSummary, nodeRole, OverviewNetworkRow, overviewNetworkRows, summarizeNode } from './overviewModel';
 import { ClusterWatches, useClusterWatches } from './useClusterWatches';
@@ -69,6 +70,19 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
     );
     const zoneDatabases = useHeldZoneDatabases(nodeNamesForZones, rememberedCollectorSnapshot);
 
+    // The network configuration is modelled once: the Network config tab draws the
+    // model, and the cno-* rules (ovn-recon-n7r.3) read the same model and sources.
+    const networkConfigInputs = React.useMemo<CnoConfigInputs>(
+        () => ({ ...networkConfig, nodes, routeAdvertisements, vteps }),
+        [networkConfig, nodes, routeAdvertisements, vteps],
+    );
+    const networkConfigModel = React.useMemo(() => buildCnoConfigModel(networkConfigInputs), [networkConfigInputs]);
+    const networkConfigForFindings = React.useMemo<ClusterNetworkConfig>(
+        () => ({ sources: networkConfigInputs, model: networkConfigModel }),
+        [networkConfigInputs, networkConfigModel],
+    );
+    const clusterMtu = React.useMemo(() => clusterMtuOf(networkConfigInputs), [networkConfigInputs]);
+
     const allFindings = useClusterFindings({
         nodeNetworkStates,
         nodeNetworkStatesLoaded: nnsLoaded && !nnsError,
@@ -78,6 +92,8 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
         enactments,
         nodes,
         zoneDatabases,
+        networkConfig: networkConfigForFindings,
+        clusterMtu,
     });
     const [hideInfo, setHideInfo] = useHideInfoFindings();
     const findings = React.useMemo(() => visibleFindings(allFindings, hideInfo), [allFindings, hideInfo]);
@@ -107,11 +123,6 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
             findings,
         ),
         [networkInputs, nodeNetworkStates, nnsLoaded, nnsError, findings],
-    );
-
-    const networkConfigModel = React.useMemo(
-        () => buildCnoConfigModel({ ...networkConfig, nodes, routeAdvertisements, vteps }),
-        [networkConfig, nodes, routeAdvertisements, vteps],
     );
 
     return {

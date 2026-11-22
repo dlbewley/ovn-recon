@@ -7,7 +7,7 @@ import { ALL_RULES, getRule, LOGICAL_RULES, PHYSICAL_RULES } from './registry';
  * ovn-recon-7i6.2; the README says why some candidates are not findings.
  */
 describe('the rule registry', () => {
-    it('ships the confirmed physical rules, warnings but for the masquerade address cross-check', () => {
+    it('ships the confirmed physical rules, warnings but for the masquerade address cross-check and two CNO notes', () => {
         expect(PHYSICAL_RULES.map((rule) => [rule.id, rule.severity])).toEqual([
             ['localnet-unmapped', 'warning'],
             ['mapping-bridge-missing', 'warning'],
@@ -22,7 +22,15 @@ describe('the rule registry', () => {
             ['masquerade-subnet-too-small', 'warning'],
             ['masquerade-subnet-overlap', 'warning'],
             ['masquerade-address-mismatch', 'info'],
-            ['masquerade-subnet-disagreement', 'warning']
+            ['masquerade-subnet-disagreement', 'warning'],
+            // ovn-recon-n7r.3. Overrides and a migration work, so they are info.
+            ['cno-evpn-gateway-prereq', 'warning'],
+            ['cno-route-ads-disabled', 'warning'],
+            ['cno-mnp-disabled', 'warning'],
+            ['cno-evpn-with-ipsec', 'warning'],
+            ['cno-operator-unhealthy', 'warning'],
+            ['cno-unsupported-overrides', 'info'],
+            ['cno-migration-in-progress', 'info']
         ]);
     });
 
