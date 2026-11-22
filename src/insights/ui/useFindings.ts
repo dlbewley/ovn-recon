@@ -1,8 +1,10 @@
+import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 import * as React from 'react';
 
 import { buildGraphContext, GraphContext } from '../../topology/context';
 import type {
     ClusterUserDefinedNetwork,
+    LogicalTopologySnapshot,
     NetworkAttachmentDefinition,
     NodeNetworkConfigurationEnactment,
     NodeNetworkState,
@@ -10,7 +12,7 @@ import type {
 } from '../../types';
 import { evaluatePhysical, PhysicalEvaluator } from '../evaluate';
 import { applySurfaceGates } from '../gates';
-import type { ClusterNetworkInputs, Finding } from '../types';
+import type { ClusterNetworkInputs, Finding, ZoneDatabase } from '../types';
 
 /**
  * The hooks between the findings engine and the surfaces (ovn-recon-7i6.1).
@@ -101,6 +103,37 @@ export const useNodeFindings = (
     }, [evaluate, ctx, cluster]);
 };
 
+/**
+ * The zone databases of the snapshots a tab already holds, for the masquerade rules
+ * (ovn-recon-2n6.5). A degraded snapshot is the collector's sample data, which says
+ * nothing about this cluster, so it is left out.
+ */
+export const zoneDatabasesOf = (snapshots: ReadonlyArray<LogicalTopologySnapshot | null | undefined>): ZoneDatabase[] =>
+    snapshots.flatMap((snapshot) => {
+        const node = snapshot?.metadata?.nodeName;
+        if (!snapshot || !node || !snapshot.database || snapshot.metadata.sourceHealth === 'degraded') return [];
+        if ((snapshot.warnings ?? []).some((warning) => warning.code === 'LIVE_PROBE_FAILED')) return [];
+        return [{ node, database: snapshot.database }];
+    });
+
+/**
+ * The snapshots `read` hands back for each node, as zone databases, kept the same
+ * array while every snapshot is the same object, so the findings re-evaluate only
+ * when a held snapshot changes. `read` must not fetch: it reads what the tab holds.
+ */
+export const useHeldZoneDatabases = (
+    nodeNames: readonly string[],
+    read: (nodeName: string) => LogicalTopologySnapshot | null
+): ZoneDatabase[] => {
+    const snapshots = nodeNames.map(read);
+    const previous = React.useRef<{ snapshots: Array<LogicalTopologySnapshot | null>; zones: ZoneDatabase[] }>();
+    const same = previous.current !== undefined
+        && previous.current.snapshots.length === snapshots.length
+        && previous.current.snapshots.every((snapshot, index) => snapshot === snapshots[index]);
+    if (!same) previous.current = { snapshots, zones: zoneDatabasesOf(snapshots) };
+    return (previous.current as { zones: ZoneDatabase[] }).zones;
+};
+
 export interface ClusterFindingsInput {
     nodeNetworkStates: NodeNetworkState[] | undefined | null;
     nodeNetworkStatesLoaded: boolean;
@@ -109,6 +142,10 @@ export interface ClusterFindingsInput {
     nads: NetworkAttachmentDefinition[];
     /** Every enactment in the cluster; each node's context takes its own. */
     enactments: NodeNetworkConfigurationEnactment[];
+    /** The cluster's Nodes, for the masquerade rules' annotation reads. */
+    nodes?: K8sResourceCommon[];
+    /** Zone databases already held (heldZoneDatabases); never fetched for the findings. */
+    zoneDatabases?: ZoneDatabase[];
 }
 
 export const NODE_LABEL = 'nmstate.io/node';
@@ -119,7 +156,7 @@ export const NODE_LABEL = 'nmstate.io/node';
  * (the inputs rules read), so the two surfaces agree.
  */
 export const useClusterFindings = ({
-    nodeNetworkStates, nodeNetworkStatesLoaded, cudns, udns, nads, enactments
+    nodeNetworkStates, nodeNetworkStatesLoaded, cudns, udns, nads, enactments, nodes, zoneDatabases
 }: ClusterFindingsInput): Finding[] => {
     const evaluate = React.useContext(FindingsEvaluatorContext);
     const contexts = React.useMemo(() => {
@@ -137,8 +174,10 @@ export const useClusterFindings = ({
     }, [nodeNetworkStates, nodeNetworkStatesLoaded, cudns, udns, nads, enactments]);
     const cluster = React.useMemo<ClusterNetworkInputs>(() => ({
         cudns, udns, nads,
-        nodeNetworkStates: clusterNodeNetworkStates(nodeNetworkStates, nodeNetworkStatesLoaded)
-    }), [cudns, udns, nads, nodeNetworkStates, nodeNetworkStatesLoaded]);
+        nodeNetworkStates: clusterNodeNetworkStates(nodeNetworkStates, nodeNetworkStatesLoaded),
+        ...(nodes && nodes.length > 0 ? { nodes } : {}),
+        ...(zoneDatabases && zoneDatabases.length > 0 ? { zoneDatabases } : {})
+    }), [cudns, udns, nads, nodeNetworkStates, nodeNetworkStatesLoaded, nodes, zoneDatabases]);
     return React.useMemo(
         () => applySurfaceGates(
             evaluate.cluster(cluster, Array.from(contexts.values())),

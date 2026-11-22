@@ -7,7 +7,7 @@ import { ALL_RULES, getRule, LOGICAL_RULES, PHYSICAL_RULES } from './registry';
  * ovn-recon-7i6.2; the README says why some candidates are not findings.
  */
 describe('the rule registry', () => {
-    it('ships the confirmed physical rules, all warnings', () => {
+    it('ships the confirmed physical rules, warnings but for the masquerade address cross-check', () => {
         expect(PHYSICAL_RULES.map((rule) => [rule.id, rule.severity])).toEqual([
             ['localnet-unmapped', 'warning'],
             ['mapping-bridge-missing', 'warning'],
@@ -17,7 +17,12 @@ describe('the rule registry', () => {
             ['mtu-exceeds-uplink', 'warning'],
             ['nad-config-unparsed', 'warning'],
             ['vrf-port-unmatched', 'warning'],
-            ['ovs-bridge-unbonded-uplinks', 'warning']
+            ['ovs-bridge-unbonded-uplinks', 'warning'],
+            // ovn-recon-2n6.5. Too-small is info when no primary network needs a pair yet.
+            ['masquerade-subnet-too-small', 'warning'],
+            ['masquerade-subnet-overlap', 'warning'],
+            ['masquerade-address-mismatch', 'info'],
+            ['masquerade-subnet-disagreement', 'warning']
         ]);
     });
 

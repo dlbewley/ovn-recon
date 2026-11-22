@@ -16,8 +16,10 @@ logical side), and each one is quiet when its data is missing.
 | `warning` | Looks broken: investigate. | For something that works. |
 | `info` | Works, but current guidance differs (a dated practice). | Drawn as a warning triangle. |
 
-Every rule that ships today, physical and logical, is a `warning`. `info` exists for the practice notes of
-`ovn-recon-s3t.35`.
+Every rule that ships today is a `warning`, but for two masquerade findings (`ovn-recon-2n6.5`):
+`masquerade-address-mismatch` is always `info`, because the per-network offsets it checks are an upstream
+implementation detail, and `masquerade-subnet-too-small` is `info` while no primary network needs a pair yet.
+`info` also exists for the practice notes of `ovn-recon-s3t.35`.
 
 ## The model (`types.ts`)
 
@@ -50,6 +52,11 @@ const { warning, info } = countBySeverity(findings);
 `evaluatePhysical.cluster(cluster, graphContexts)` evaluates the whole cluster for the
 overview: network rules once, node rules per node. Results are memoised by object
 identity, so build the contexts in a `useMemo` and pass the same objects back.
+
+`ClusterNetworkInputs` also carries, optionally, the cluster's Nodes and the zone databases
+the tab already holds (`zoneDatabases`, live snapshots only, read through
+`rememberedCollectorSnapshot` by `useHeldZoneDatabases`; never fetched for the findings).
+Only the explorer shell passes them; a rule needing one is quiet without it.
 
 Network-scope rules read `ctx.cluster` only; node and node-network rules read
 `ctx.node` only. The evaluator enforces this, which is what lets a node page and the
@@ -136,6 +143,10 @@ Rules must:
 | `nad-config-unparsed` | network | A NAD's `spec.config` is not a JSON object, so the view fell back to pattern matching |
 | `vrf-port-unmatched` | node | A VRF declares a port no interface carries |
 | `ovs-bridge-unbonded-uplinks` | node | An OVS bridge (not br-int) has two or more uplinks, an OVS bond counting as one, with STP stated off and RSTP not on (`ovn-recon-1tw.5`); uplinks are counted by the link they leave on, so VLANs of one NIC or bond are one uplink (`ovn-recon-vb1`); an uplink that is down still counts, a bridge reporting no STP setting is quiet, Linux bridges are out of scope |
+| `masquerade-subnet-too-small` | network | The masquerade subnet the Nodes' `k8s.ovn.org/node-masquerade-subnet` reports cannot hold offset 10 + 2 x the highest network ID in use (the legacy /29 and /125 hold none). Warning with a primary network, info without; on the network configuration (`ovn-recon-2n6.5`) |
+| `masquerade-subnet-overlap` | network | The masquerade subnet (annotation, else a held zone's gateway router route, else the default) overlaps a CUDN or UDN subnet or join subnet (on the network), a NodeNetworkState interface address other than br-ex's and the management ports' own (on the interface), or a join or transit subnet on a held zone's router ports (on the network configuration, once per subnet) |
+| `masquerade-address-mismatch` | network | Info. A primary network's gateway router in a held zone database carries a gateway router masquerade address (port, `physical_ips`, NAT) other than the one its network ID gives, or none in a family it has addresses in; on the router, scoped to the node and the network. Quiet without a zone database |
+| `masquerade-subnet-disagreement` | network | Nodes report different masquerade subnets; once, on the network configuration |
 
 Logical side (`ovn-recon-7i6.3`), evaluated over one zone's collector snapshot:
 

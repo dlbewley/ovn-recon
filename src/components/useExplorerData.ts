@@ -2,7 +2,8 @@ import * as React from 'react';
 
 import type { SeverityCounts } from '../insights/selectors';
 import type { Finding } from '../insights/types';
-import { useClusterFindings, useHideInfoFindings, visibleFindings } from '../insights/ui/useFindings';
+import { useClusterFindings, useHeldZoneDatabases, useHideInfoFindings, visibleFindings } from '../insights/ui/useFindings';
+import { rememberedCollectorSnapshot } from './collectorApi';
 import { buildCnoConfigModel, CnoConfigModel } from './cnoConfigModel';
 import type { NetworkInputs } from './networkPageModel';
 import { findingCountsByNode, NodeSummary, nodeRole, OverviewNetworkRow, overviewNetworkRows, summarizeNode } from './overviewModel';
@@ -56,6 +57,17 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
         collector,
     } = data;
 
+    // The zone databases this tab already holds (the cluster ladder's aggregate, a node's
+    // logical view), for the masquerade rules (ovn-recon-2n6.5). No request is made for
+    // them: a snapshot loaded meanwhile is read when the shell next renders, at the
+    // latest on the collector status poll.
+    const collectorOn = collector.gateLoaded && collector.enabled;
+    const nodeNamesForZones = React.useMemo(
+        () => (collectorOn ? nodes.map((node) => node.metadata?.name).filter((name): name is string => Boolean(name)) : []),
+        [collectorOn, nodes],
+    );
+    const zoneDatabases = useHeldZoneDatabases(nodeNamesForZones, rememberedCollectorSnapshot);
+
     const allFindings = useClusterFindings({
         nodeNetworkStates,
         nodeNetworkStatesLoaded: nnsLoaded && !nnsError,
@@ -63,6 +75,8 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
         udns,
         nads,
         enactments,
+        nodes,
+        zoneDatabases,
     });
     const [hideInfo, setHideInfo] = useHideInfoFindings();
     const findings = React.useMemo(() => visibleFindings(allFindings, hideInfo), [allFindings, hideInfo]);
