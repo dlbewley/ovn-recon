@@ -7,6 +7,7 @@ import {
     NodeNetworkState,
     RouteAdvertisements,
     UserDefinedNetwork,
+    Vtep,
 } from '../types';
 import { CollectorState, useCollectorState } from './CollectorStatus';
 import { NetworkConfigSources, useNetworkConfigSources } from './useNetworkConfigSources';
@@ -42,6 +43,8 @@ export interface ClusterWatches {
     nads: NetworkAttachmentDefinition[];
     routeAdvertisements: RouteAdvertisements[];
     enactments: NodeNetworkConfigurationEnactment[];
+    /** Every VTEP (EVPN); undefined where the kind is not served or may not be listed. */
+    vteps: Vtep[] | undefined;
     /** The CUDN, UDN and NAD watches have each settled: loaded, or failed. */
     networksLoaded: boolean;
     /** The Cluster Network Operator's configuration and what goes with it, each source on its own. */
@@ -87,6 +90,12 @@ export const useClusterWatches = (): ClusterWatches => {
         groupVersionKind: { group: 'nmstate.io', version: 'v1beta1', kind: 'NodeNetworkConfigurationEnactment' },
         isList: true,
     });
+    // For the capability checklist (ovn-recon-n7r.2). The kind arrived with EVPN: without
+    // it, or without permission, the watch errors and the checklist says it is unknown.
+    const [vteps, vtepsLoaded, vtepsError] = useK8sWatchResource<Vtep[]>({
+        groupVersionKind: { group: 'k8s.ovn.org', version: 'v1', kind: 'VTEP' },
+        isList: true,
+    });
     const networkConfig = useNetworkConfigSources();
     const collector = useCollectorState();
 
@@ -100,6 +109,7 @@ export const useClusterWatches = (): ClusterWatches => {
         nads: listOr(nads, NO_NADS),
         routeAdvertisements: listOr(routeAdvertisements, NO_ROUTE_ADVERTISEMENTS),
         enactments: listOr(enactments, NO_ENACTMENTS),
+        vteps: vtepsLoaded && !vtepsError && Array.isArray(vteps) ? vteps : undefined,
         // A kind the cluster does not serve, or one the user may not list, has settled
         // too: the table then lists what the other kinds hold.
         networksLoaded: (cudnsLoaded || Boolean(cudnsError))
