@@ -166,9 +166,17 @@ bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --status in_progress
 bd close <id>
-bd dolt push          # Publish Dolt history to origin at session end
+bd dolt push          # Publish Dolt history to origin
 bd dolt pull          # Fetch Dolt history from origin (new clone: bd bootstrap)
 ```
+
+The workflow rules come from `bd prime`, under the `team-maintainer` agent profile
+(`bd config get agent.profile`). Two rules it does not cover:
+
+- **Push beads from worktrees too.** `bd prime` falls back to "do not push" on a branch
+  with no upstream, which is every session worktree. That caution is about the code
+  branch: after changing a bead, still run `bd dolt pull` and then `bd dolt push`.
+- **Close a bead when its PR merges**, not when the PR opens.
 
 Do not treat any committed JSONL as the source of truth. See `.beads/README.md`.
 
