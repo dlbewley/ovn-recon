@@ -9,17 +9,26 @@ import {
     candidateSubnets,
     groupNatRules,
     groupStaticRoutes,
+    isMasqueradeSubnetRoute,
+    masqueradeRoleOf,
+    NAT_LOGICAL_INTENT_LABELS,
     NatGroupView,
+    NatLogicalIntent,
+    natLogicalIntent,
     NatView,
     natTypeCounts,
     NexthopTarget,
     nexthopResolverFor,
     PodAddressOwner,
+    RouterMasqueradeContext,
+    routerMasqueradeContext,
     routePolicy,
 } from './routerRules';
-import { AddressOwner, addressBookForDatabase, resolveAddress } from './addressBook';
+import { AddressOwner, addressBookForDatabase, addressOwnerTarget, resolveAddress } from './addressBook';
 import AddressOwners from './AddressOwners';
-import { PodLink } from '../linkOut/LinkOut';
+import { ConsoleLink, PodLink } from '../linkOut/LinkOut';
+import { networkDisplayName } from './LogicalLadderView';
+import { isUdnMasqueradeRole, MASQUERADE_ROLE_LABELS, MasqueradeClassification } from './masqueradeIps';
 
 const SUBTLE: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
 const DASH = <span style={SUBTLE}>—</span>;
@@ -105,6 +114,55 @@ const GroupPortRanges: React.FC<{ group: NatGroupView }> = ({ group }) => {
     );
 };
 
+/** The network an owner names, linked to its network scope. */
+const NetworkName: React.FC<{ owner: AddressOwner }> = ({ owner }) => (
+    <ConsoleLink target={addressOwnerTarget(owner)}>{networkDisplayName(owner.network as string)}</ConsoleLink>
+);
+
+/**
+ * Under a NAT external IP in the masquerade subnet: "masquerade IP of
+ * example-p-cudn (network ID 3)", or the global role it has.
+ */
+const MasqueradeExternalNote: React.FC<{ owner: AddressOwner }> = ({ owner }) => {
+    const detail = owner.masquerade;
+    if (!detail) return null;
+    if (!isUdnMasqueradeRole(detail.role)) {
+        return <span style={{ ...SUBTLE, display: 'block' }} data-testid="nat-masquerade-owner">{MASQUERADE_ROLE_LABELS[detail.role]}</span>;
+    }
+    const id = detail.networkId !== undefined ? `network ID ${detail.networkId}` : undefined;
+    return (
+        <span style={{ ...SUBTLE, display: 'block' }} data-testid="nat-masquerade-owner">
+            {detail.role === 'udn-gateway-router' ? 'masquerade IP' : 'management port masquerade IP'} of{' '}
+            {owner.network ? <><NetworkName owner={owner} />{id && ` (${id})`}</> : id ?? 'an unknown network'}
+        </span>
+    );
+};
+
+/** A masquerade address's role in a few words, with the network ID of a pair. */
+export const masqueradeRoleText = (classification: MasqueradeClassification): string =>
+    isUdnMasqueradeRole(classification.role)
+        ? `${MASQUERADE_ROLE_LABELS[classification.role]} (network ID ${classification.networkId})`
+        : MASQUERADE_ROLE_LABELS[classification.role];
+
+/** The text a filter matches beside a NAT row's own fields. */
+const natAnnotationTerms = (
+    nat: NATRow,
+    context: RouterMasqueradeContext | undefined,
+    masqueradeOwnerOf: (address: string) => AddressOwner | undefined,
+): string[] => {
+    const terms: string[] = [];
+    const owner = nat.externalIp ? masqueradeOwnerOf(nat.externalIp) : undefined;
+    if (owner) {
+        terms.push('masquerade', owner.label);
+        if (owner.network) terms.push(owner.network, networkDisplayName(owner.network));
+    }
+    const intent = context?.egress ? natLogicalIntent(nat, context) : undefined;
+    if (intent && context) {
+        terms.push(NAT_LOGICAL_INTENT_LABELS[intent], 'masquerade', context.network, networkDisplayName(context.network));
+    }
+    return terms;
+};
+
 const natField = (view: NatView, field: keyof NATRow): string | number | undefined =>
     view.kind === 'rule' ? (view.rule[field] as string | number | undefined) : undefined;
 
@@ -135,6 +193,14 @@ export interface NatRuleTableProps extends RuleTablePageOptions {
     grouped?: boolean;
     /** Extra toolbar items above the table (the page's grouping switch). */
     toolbarItems?: React.ReactNode;
+    /** The router's OVN name, to read its ports and options in `database`. */
+    routerName?: string;
+    /**
+     * Above the table, on a user-defined network's gateway router that SNATs to
+     * its masquerade IP, one line on the second SNAT br-ex does. The page sets
+     * it; the drawer does not.
+     */
+    explainEgress?: boolean;
 }
 
 const queryMatches = (query: string | undefined, values: Array<string | number | undefined>): boolean => {
@@ -148,8 +214,10 @@ export const natRuleMatches = (
     nat: NATRow,
     query: string | undefined,
     gatewayPortName?: (uuid: string) => string | undefined,
+    extraTerms: readonly string[] = [],
 ): boolean =>
     queryMatches(query, [
+        ...extraTerms,
         NAT_TYPE_LABELS[nat.type],
         nat.type,
         nat.externalIp,
@@ -161,8 +229,59 @@ export const natRuleMatches = (
     ]);
 
 /** Whether a static route's text contains the query. */
-export const staticRouteMatches = (route: StaticRouteRow, query: string | undefined): boolean =>
-    queryMatches(query, [route.ipPrefix, route.nexthop, route.outputPort, routePolicy(route), route.routeTable]);
+export const staticRouteMatches = (
+    route: StaticRouteRow,
+    query: string | undefined,
+    extraTerms: readonly string[] = [],
+): boolean =>
+    queryMatches(query, [...extraTerms, route.ipPrefix, route.nexthop, route.outputPort, routePolicy(route), route.routeTable]);
+
+/** The text a filter matches beside a static route's own fields. */
+const routeAnnotationTerms = (route: StaticRouteRow, context: RouterMasqueradeContext | undefined): string[] => {
+    const terms: string[] = [];
+    if (isMasqueradeSubnetRoute(route, context)) terms.push('masquerade subnet');
+    const role = masqueradeRoleOf(route.nexthop, context);
+    if (role) terms.push('masquerade', masqueradeRoleText(role));
+    return terms;
+};
+
+/**
+ * One line on what the NAT table cannot show: br-ex SNATs the masquerade IP
+ * to the node address in an OVS flow.
+ */
+const MasqueradeEgressLine: React.FC<{ context: RouterMasqueradeContext; owner?: AddressOwner }> = ({ context, owner }) => {
+    const { egress } = context;
+    if (!egress) return null;
+    const network = owner?.network === egress.network
+        ? <NetworkName owner={owner} />
+        : networkDisplayName(egress.network);
+    return (
+        <p className="pf-u-mb-sm" data-testid="nat-masquerade-egress">
+            Egress from {network} leaves OVN as <code>{egress.masqueradeIp}</code>; br-ex then rewrites it to the node
+            address{egress.nodeIp ? <> <code>{egress.nodeIp}</code></> : ''}. That second step is an OVS flow and is not
+            listed here.{' '}
+            <span data-testid="nat-masquerade-egress-ip-caveat">
+                Pods an EgressIP selects leave as its egress IP instead
+                {egress.egressIps?.length ? (
+                    <>
+                        {' '}
+                        (on this router:{' '}
+                        {egress.egressIps.map((address, index) => (
+                            <React.Fragment key={address}>
+                                {index > 0 && ', '}
+                                <code>{address}</code>
+                            </React.Fragment>
+                        ))}
+                        )
+                    </>
+                ) : (
+                    ', from whichever node holds it'
+                )}
+                .
+            </span>
+        </p>
+    );
+};
 
 /**
  * A router's NAT rules grouped by intent: plain per-address SNAT rows that
@@ -181,10 +300,29 @@ export const NatRuleTable: React.FC<NatRuleTableProps> = ({
     pageSize,
     perPageOptions,
     toolbarItems,
+    routerName,
+    explainEgress,
 }) => {
+    const context = React.useMemo(() => routerMasqueradeContext(database, routerName), [database, routerName]);
+    const ownersOf = React.useMemo(() => {
+        const book = addressBookForDatabase(database, databaseNode);
+        return (address: string): readonly AddressOwner[] => (book ? resolveAddress(book, address, { network }) : []);
+    }, [database, databaseNode, network]);
+    const masqueradeOwnerOf = React.useCallback(
+        (address: string): AddressOwner | undefined => ownersOf(address).find((owner) => owner.kind === 'masquerade'),
+        [ownersOf],
+    );
+    // A row's intent is named only where the router SNATs to a masquerade IP:
+    // elsewhere (the default network's gateway router) the rows stay as they were.
+    const intentOf = (nat: NATRow): NatLogicalIntent | undefined =>
+        (context?.egress ? natLogicalIntent(nat, context) : undefined);
     const nats = React.useMemo(
-        () => (query ? allNats.filter((nat) => natRuleMatches(nat, query, gatewayPortName)) : allNats),
-        [allNats, query, gatewayPortName],
+        () =>
+            query
+                ? allNats.filter((nat) =>
+                    natRuleMatches(nat, query, gatewayPortName, natAnnotationTerms(nat, context, masqueradeOwnerOf)))
+                : allNats,
+        [allNats, query, gatewayPortName, context, masqueradeOwnerOf],
     );
     const views = React.useMemo<NatView[]>(
         () =>
@@ -193,10 +331,6 @@ export const NatRuleTable: React.FC<NatRuleTableProps> = ({
                 : nats.map((rule) => ({ kind: 'rule', key: rule.uuid, rule })),
         [nats, database, grouped],
     );
-    const ownersOf = React.useMemo(() => {
-        const book = addressBookForDatabase(database, databaseNode);
-        return (address: string): readonly AddressOwner[] => (book ? resolveAddress(book, address, { network }) : []);
-    }, [database, databaseNode, network]);
     const counts = natTypeCounts(nats);
 
     const portName = (uuid?: string) => (uuid ? gatewayPortName?.(uuid) ?? uuid : undefined);
@@ -217,7 +351,16 @@ export const NatRuleTable: React.FC<NatRuleTableProps> = ({
         {
             key: 'external',
             title: 'External IP',
-            cell: (view) => <code>{externalOf(view) || '—'}</code>,
+            cell: (view) => {
+                const external = externalOf(view);
+                const owner = external ? masqueradeOwnerOf(external) : undefined;
+                return (
+                    <>
+                        <code>{external || '—'}</code>
+                        {owner && <MasqueradeExternalNote owner={owner} />}
+                    </>
+                );
+            },
             compare: (a, b) => comparePrefixes(externalOf(a), externalOf(b)),
         },
         {
@@ -237,11 +380,19 @@ export const NatRuleTable: React.FC<NatRuleTableProps> = ({
                     );
                 }
                 const { logicalIp, logicalPort } = view.rule;
+                const intent = intentOf(view.rule);
                 return (
                     <>
                         <code>{logicalIp ?? '—'}</code>
                         {logicalPort && <div style={SUBTLE}>port <code>{logicalPort}</code></div>}
-                        {logicalIp && !logicalPort && (
+                        {intent && context && (
+                            <span style={{ ...SUBTLE, display: 'block' }} data-testid="nat-logical-intent">
+                                {intent === 'pod-subnet'
+                                    ? <>pod subnet of {networkDisplayName(context.network)}</>
+                                    : NAT_LOGICAL_INTENT_LABELS[intent]}
+                            </span>
+                        )}
+                        {logicalIp && !logicalPort && !intent && (
                             <AddressOwners address={logicalIp} owners={ownersOf(logicalIp)} renderOwner={renderNatOwner} />
                         )}
                     </>
@@ -289,7 +440,10 @@ export const NatRuleTable: React.FC<NatRuleTableProps> = ({
         });
     }
 
+    const egressOwner = context?.egress ? masqueradeOwnerOf(context.egress.masqueradeIp) : undefined;
     return (
+        <>
+        {explainEgress && context?.egress && <MasqueradeEgressLine context={context} owner={egressOwner} />}
         <RuleTable
             ariaLabel="NAT rules"
             columns={columns}
@@ -314,6 +468,7 @@ export const NatRuleTable: React.FC<NatRuleTableProps> = ({
             toolbarItems={toolbarItems}
             emptyMessage={{ none: 'No NAT rules.', noMatch: 'No NAT rules match.' }}
         />
+        </>
     );
 };
 
@@ -374,12 +529,13 @@ export const StaticRouteTable: React.FC<StaticRouteTableProps> = ({
     pageSize,
     perPageOptions,
 }) => {
+    const context = React.useMemo(() => routerMasqueradeContext(database, routerName), [database, routerName]);
     const ordered = React.useMemo(
         () =>
             groupStaticRoutes(routes)
                 .flatMap((group) => group.routes)
-                .filter((route) => staticRouteMatches(route, query)),
-        [routes, query],
+                .filter((route) => staticRouteMatches(route, query, routeAnnotationTerms(route, context))),
+        [routes, query, context],
     );
     const resolve = React.useMemo(() => nexthopResolverFor(database, routerName), [database, routerName]);
     const defaults = routes.filter((route) => isDefaultPrefix(route.ipPrefix)).length;
@@ -398,6 +554,12 @@ export const StaticRouteTable: React.FC<StaticRouteTableProps> = ({
                             <Label isCompact color="blue">default</Label>
                         </>
                     )}
+                    {isMasqueradeSubnetRoute(route, context) && (
+                        <>
+                            {' '}
+                            <Label isCompact color="teal" data-testid="masquerade-subnet-route">masquerade subnet</Label>
+                        </>
+                    )}
                 </>
             ),
             compare: (a, b) => comparePrefixes(a.ipPrefix, b.ipPrefix),
@@ -407,9 +569,11 @@ export const StaticRouteTable: React.FC<StaticRouteTableProps> = ({
             title: 'Next hop',
             cell: (route) => {
                 const target = resolve(route);
+                const role = masqueradeRoleOf(route.nexthop, context);
                 return (
                     <>
                         <code>{route.nexthop || '—'}</code>
+                        {role && <div style={SUBTLE} data-testid="nexthop-masquerade-role">{masqueradeRoleText(role)}</div>}
                         {target && <NexthopNote target={target} nodeHref={nodeHref} />}
                     </>
                 );
