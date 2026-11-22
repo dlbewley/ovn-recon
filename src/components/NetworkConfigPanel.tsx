@@ -5,12 +5,13 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import { ConsoleLink } from '../linkOut/LinkOut';
 import { resourceTarget } from '../linkOut/registry';
 import type {
-    CnoConfigModel, ConditionRow, ConditionSeverity, ConfigRow, ConfigSection, RowOrigin, SourceSummary
+    Capability, CapabilityStatus, CnoConfigModel, ConditionRow, ConditionSeverity, ConfigRow, ConfigSection, PrerequisiteState,
+    RowOrigin, SourceSummary
 } from './cnoConfigModel';
 
 /**
- * The Network config tab's body (ovn-recon-n7r.1): the cluster network configuration
- * as `cnoConfigModel` grouped it. Read-only; it draws no page chrome, and every link
+ * The Network config tab's body (ovn-recon-n7r.1): the capability checklist first
+ * (n7r.2), then the cluster network configuration as `cnoConfigModel` grouped it. Read-only; it draws no page chrome, and every link
  * to a console page goes through the link-out registry.
  */
 
@@ -70,6 +71,72 @@ const SectionCard: React.FC<{ section: ConfigSection }> = ({ section }) => (
                     {section.rows.map((row) => <SettingRow key={row.id} row={row} />)}
                 </Tbody>
             </Table>
+        </CardBody>
+    </Card>
+);
+
+const CAPABILITY_COLOR: Record<CapabilityStatus, 'green' | 'grey' | 'blue'> = {
+    ready: 'green',
+    'not-ready': 'grey',
+    unknown: 'blue',
+};
+
+const PREREQUISITE: Record<PrerequisiteState, { text: string; color: 'green' | 'orange' | 'blue' }> = {
+    met: { text: 'Met', color: 'green' },
+    unmet: { text: 'Not met', color: 'orange' },
+    unknown: { text: 'Unknown', color: 'blue' },
+};
+
+const CapabilityBlock: React.FC<{ capability: Capability }> = ({ capability }) => (
+    <section
+        aria-label={capability.label}
+        data-testid={`network-config-capability-${capability.id}`}
+        data-status={capability.status}
+        style={{ marginBlockEnd: 'var(--pf-t--global--spacer--lg)' }}
+    >
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--pf-t--global--spacer--sm)', alignItems: 'baseline' }}>
+            <strong>{capability.label}</strong>
+            <Label isCompact color={CAPABILITY_COLOR[capability.status]} data-testid="network-config-capability-status">
+                {capability.statusText}
+            </Label>
+        </div>
+        <Table variant="compact" aria-label={`${capability.label} prerequisites`}>
+            <Thead>
+                <Tr>
+                    <Th width={10}>State</Th>
+                    <Th width={30}>Prerequisite</Th>
+                    <Th width={25}>Actual</Th>
+                    <Th>Source</Th>
+                </Tr>
+            </Thead>
+            <Tbody>
+                {capability.prerequisites.map((prerequisite) => (
+                    <Tr key={prerequisite.id} data-testid={`network-config-prerequisite-${prerequisite.id}`} data-state={prerequisite.state}>
+                        <Td dataLabel="State">
+                            <Label isCompact color={PREREQUISITE[prerequisite.state].color}>{PREREQUISITE[prerequisite.state].text}</Label>
+                        </Td>
+                        <Td dataLabel="Prerequisite">{prerequisite.label}</Td>
+                        <Td dataLabel="Actual" style={{ overflowWrap: 'anywhere' }}>{prerequisite.actual}</Td>
+                        <Td dataLabel="Source">
+                            <div style={small}>{prerequisite.source}</div>
+                            <code style={{ fontSize: 'var(--pf-t--global--font--size--sm)', overflowWrap: 'anywhere' }}>{prerequisite.sourcePath}</code>
+                        </Td>
+                    </Tr>
+                ))}
+            </Tbody>
+        </Table>
+        {capability.notes.map((note) => <div key={note} style={small}>{note}</div>)}
+    </section>
+);
+
+const CapabilitiesCard: React.FC<{ capabilities: Capability[] }> = ({ capabilities }) => (
+    <Card data-testid="network-config-capabilities">
+        <CardTitle>Capabilities</CardTitle>
+        <CardBody>
+            <p style={{ ...subtle, marginBlockEnd: 'var(--pf-t--global--spacer--md)' }}>
+                What each advanced feature needs from this configuration, and whether it is there.
+            </p>
+            {capabilities.map((capability) => <CapabilityBlock key={capability.id} capability={capability} />)}
         </CardBody>
     </Card>
 );
@@ -186,6 +253,7 @@ const NetworkConfigPanel: React.FC<{ model: CnoConfigModel }> = ({ model }) => {
                     </Alert>
                 </StackItem>
             ))}
+            {model.capabilities.length > 0 && <StackItem><CapabilitiesCard capabilities={model.capabilities} /></StackItem>}
             {model.sections.map((section) => (
                 <StackItem key={section.id}><SectionCard section={section} /></StackItem>
             ))}

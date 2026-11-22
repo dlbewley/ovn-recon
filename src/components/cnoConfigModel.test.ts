@@ -386,4 +386,145 @@ describe('buildCnoConfigModel', () => {
             expect(rowOf(model, 'management-state')).toMatchObject({ value: 'Managed', origin: 'default' });
         });
     });
+
+    describe('the capability checklist (ovn-recon-n7r.2)', () => {
+        const capabilityOf = (model: CnoConfigModel, id: string) => model.capabilities.find((capability) => capability.id === id)!;
+        const states = (model: CnoConfigModel, id: string) =>
+            capabilityOf(model, id).prerequisites.map((prerequisite) => [prerequisite.id, prerequisite.state, prerequisite.actual]);
+
+        it('lists every feature, none ready on a cluster with nothing changed', () => {
+            const model = buildCnoConfigModel(inputsOf(fixture(), { routeAdvertisements: [], vteps: [] }), NOW);
+            expect(model.capabilities.map((capability) => [capability.id, capability.status, capability.statusText])).toEqual([
+                ['route-advertisements', 'not-ready', '0 of 2 prerequisites met'],
+                ['evpn', 'not-ready', '2 of 6 prerequisites met'],
+                ['no-overlay', 'not-ready', '0 of 4 prerequisites met'],
+                ['uplink-optional', 'not-ready', '0 of 3 prerequisites met'],
+                ['multi-network-policy', 'not-ready', '1 of 2 prerequisites met'],
+                ['ipsec', 'not-ready', '0 of 1 prerequisite met'],
+                ['hybrid-overlay', 'not-ready', '0 of 1 prerequisite met'],
+            ]);
+            expect(states(model, 'route-advertisements')).toEqual([
+                ['frr-provider', 'unmet', 'None'],
+                ['route-advertisements-enabled', 'unmet', 'Disabled'],
+            ]);
+            expect(capabilityOf(model, 'route-advertisements').prerequisites[1]).toMatchObject({
+                source: 'Network operator configuration',
+                sourcePath: 'spec.defaultNetwork.ovnKubernetesConfig.routeAdvertisements',
+            });
+            expect(capabilityOf(model, 'route-advertisements').notes).toEqual(['No RouteAdvertisements resources exist']);
+        });
+
+        it('has none without the operator configuration', () => {
+            const model = buildCnoConfigModel(inputsOf(fixture(), { operatorNetwork: { status: 'forbidden' } }), NOW);
+            expect(model.capabilities).toEqual([]);
+        });
+
+        it('ticks route advertisements and EVPN once their settings are on', () => {
+            const data = fixture();
+            const spec = data.operatorNetwork.spec!;
+            spec.additionalRoutingCapabilities = { providers: ['FRR'] };
+            const ovn = spec.defaultNetwork!.ovnKubernetesConfig!;
+            ovn.routeAdvertisements = 'Enabled';
+            ovn.gatewayConfig = { ...ovn.gatewayConfig, routingViaHost: true, ipForwarding: 'Global' };
+            const model = buildCnoConfigModel(inputsOf(data, {
+                routeAdvertisements: [
+                    { metadata: { name: 'a' }, status: { conditions: [{ type: 'Accepted', status: 'True' }] } } as never,
+                    { metadata: { name: 'b' } },
+                ],
+                vteps: [{ metadata: { name: 'vtep-1' }, spec: { mode: 'Unmanaged', cidrs: ['192.0.2.0/24'] } }],
+            }), NOW);
+            expect(capabilityOf(model, 'route-advertisements')).toMatchObject({ status: 'ready', statusText: 'Prerequisites met' });
+            expect(capabilityOf(model, 'route-advertisements').notes).toEqual(['2 RouteAdvertisements resources, 1 accepted']);
+            expect(capabilityOf(model, 'evpn').status).toBe('ready');
+            expect(states(model, 'evpn')).toEqual([
+                ['frr-provider', 'met', 'FRR'],
+                ['route-advertisements-enabled', 'met', 'Enabled'],
+                ['routing-via-host', 'met', 'true'],
+                ['ip-forwarding-global', 'met', 'Global'],
+                ['platform-bare-metal', 'met', 'BareMetal'],
+                ['ipsec-disabled', 'met', 'Disabled'],
+            ]);
+            expect(capabilityOf(model, 'evpn').notes[0]).toBe('1 VTEP resource: vtep-1 (Unmanaged; 192.0.2.0/24)');
+        });
+
+        it('says what stands in the way of EVPN: IPsec, the platform, shared gateway mode', () => {
+            const data = fixture();
+            data.operatorNetwork.spec!.defaultNetwork!.ovnKubernetesConfig!.ipsecConfig = { mode: 'Full' };
+            data.infrastructure.status = { platformStatus: { type: 'AWS' } };
+            const model = buildCnoConfigModel(inputsOf(data), NOW);
+            expect(states(model, 'evpn').filter(([, state]) => state === 'unmet').map(([id, , actual]) => [id, actual])).toEqual([
+                ['frr-provider', 'None'],
+                ['route-advertisements-enabled', 'Disabled'],
+                ['routing-via-host', 'false'],
+                ['ip-forwarding-global', 'Restricted'],
+                ['platform-bare-metal', 'AWS'],
+                ['ipsec-disabled', 'Full'],
+            ]);
+            expect(capabilityOf(model, 'evpn').notes[0]).toMatch(/^VTEPs could not be listed/);
+            expect(capabilityOf(model, 'ipsec')).toMatchObject({ status: 'ready' });
+            expect(capabilityOf(model, 'ipsec').notes[0]).toBe('East-west and north-south; encapsulation Auto');
+        });
+
+        it('warns that RouteAdvertisements resources are ignored while the setting is off', () => {
+            const model = buildCnoConfigModel(inputsOf(fixture(), { routeAdvertisements: [{ metadata: { name: 'a' } }] }), NOW);
+            expect(capabilityOf(model, 'route-advertisements').notes).toEqual([
+                '1 RouteAdvertisements resource, 0 accepted; they are ignored while route advertisements are not Enabled',
+            ]);
+        });
+
+        it('names the feature gate a gated feature needs, whether off, unlisted or unreadable', () => {
+            const model = buildCnoConfigModel(inputsOf(fixture()), NOW);
+            expect(capabilityOf(model, 'no-overlay').prerequisites[0]).toMatchObject({
+                label: 'Feature gate NoOverlayMode is enabled', state: 'unmet', actual: 'Disabled', source: 'FeatureGate cluster',
+            });
+
+            const unlisted = fixture();
+            unlisted.featureGate.status!.featureGates![0].disabled = [];
+            expect(capabilityOf(buildCnoConfigModel(inputsOf(unlisted), NOW), 'uplink-optional').prerequisites[0])
+                .toMatchObject({ state: 'unmet', actual: 'Not listed in this release' });
+
+            const hidden = buildCnoConfigModel(inputsOf(fixture(), { featureGate: { status: 'forbidden' }, infrastructure: { status: 'forbidden' } }), NOW);
+            expect(capabilityOf(hidden, 'no-overlay').prerequisites[0]).toMatchObject({ state: 'unknown', actual: 'The FeatureGate could not be read' });
+            expect(capabilityOf(hidden, 'evpn').prerequisites[4]).toMatchObject({ state: 'unknown', actual: 'The Infrastructure could not be read' });
+        });
+
+        it('is unknown, not ready, when all that is left is something it could not read', () => {
+            const data = fixture();
+            const gateway = data.operatorNetwork.spec!.defaultNetwork!.ovnKubernetesConfig!.gatewayConfig!;
+            gateway.routingViaHost = true;
+            gateway.uplinkMode = 'Optional';
+            const model = buildCnoConfigModel(inputsOf(data, { featureGate: { status: 'forbidden' } }), NOW);
+            expect(capabilityOf(model, 'uplink-optional')).toMatchObject({ status: 'unknown', statusText: '2 of 3 prerequisites met' });
+        });
+
+        it('asks for the managed BGP configuration only when no-overlay routing is Managed', () => {
+            const data = fixture();
+            data.featureGate.status!.featureGates![0] = { version: '4.22.0', enabled: [{ name: 'NoOverlayMode' }], disabled: [] };
+            const spec = data.operatorNetwork.spec!;
+            spec.additionalRoutingCapabilities = { providers: ['FRR'] };
+            const ovn = spec.defaultNetwork!.ovnKubernetesConfig!;
+            ovn.routeAdvertisements = 'Enabled';
+            ovn.transport = 'NoOverlay';
+            ovn.noOverlayConfig = { outboundSNAT: 'Enabled', routing: 'Unmanaged' };
+            expect(capabilityOf(buildCnoConfigModel(inputsOf(data), NOW), 'no-overlay')).toMatchObject({ status: 'ready' });
+            expect(capabilityOf(buildCnoConfigModel(inputsOf(data), NOW), 'no-overlay').prerequisites).toHaveLength(4);
+
+            ovn.noOverlayConfig.routing = 'Managed';
+            expect(states(buildCnoConfigModel(inputsOf(data), NOW), 'no-overlay')[4]).toEqual(['bgp-managed-config', 'unmet', 'Not set']);
+            ovn.bgpManagedConfig = { asNumber: 65001 };
+            expect(states(buildCnoConfigModel(inputsOf(data), NOW), 'no-overlay')[4]).toEqual(['bgp-managed-config', 'met', 'AS 65001, FullMesh']);
+        });
+
+        it('reads MultiNetworkPolicy and hybrid overlay', () => {
+            const data = fixture();
+            data.operatorNetwork.spec!.useMultiNetworkPolicy = true;
+            data.operatorNetwork.spec!.defaultNetwork!.ovnKubernetesConfig!.hybridOverlayConfig = { hybridClusterNetwork: [{ cidr: '10.132.0.0/14', hostPrefix: 23 }] };
+            const model = buildCnoConfigModel(inputsOf(data), NOW);
+            expect(capabilityOf(model, 'multi-network-policy').status).toBe('ready');
+            expect(states(model, 'hybrid-overlay')).toEqual([['hybrid-overlay-config', 'met', '10.132.0.0/14']]);
+
+            data.operatorNetwork.spec!.disableMultiNetwork = true;
+            expect(states(buildCnoConfigModel(inputsOf(data), NOW), 'multi-network-policy')[0]).toEqual(['multi-network-enabled', 'unmet', 'true']);
+        });
+    });
 });

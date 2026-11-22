@@ -53,6 +53,7 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
         nads,
         routeAdvertisements,
         enactments,
+        vteps,
         networkConfig,
         collector,
     } = data;
@@ -109,8 +110,8 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
     );
 
     const networkConfigModel = React.useMemo(
-        () => buildCnoConfigModel({ ...networkConfig, nodes }),
-        [networkConfig, nodes],
+        () => buildCnoConfigModel({ ...networkConfig, nodes, routeAdvertisements, vteps }),
+        [networkConfig, nodes, routeAdvertisements, vteps],
     );
 
     return {

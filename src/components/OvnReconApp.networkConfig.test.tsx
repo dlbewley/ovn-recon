@@ -118,6 +118,32 @@ describe('the Network config tab, drawn by the shell', () => {
         expect(byTestId('network-config-missing')).toBeNull();
     });
 
+    it('draws the capability checklist first, each prerequisite met or not with what was read', async () => {
+        await render(clusterNetworkConfigPath());
+        const panel = byTestId('network-config')!;
+        const cards = [...panel.querySelectorAll('[data-testid="network-config-capabilities"], [data-testid^="network-config-section-"]')];
+        expect(cards[0].getAttribute('data-testid')).toBe('network-config-capabilities');
+        expect([...panel.querySelectorAll('[data-testid^="network-config-capability-"]')]
+            .filter((element) => element.tagName === 'SECTION')
+            .map((element) => element.getAttribute('data-testid')!.replace('network-config-capability-', ''))).toEqual([
+            'route-advertisements', 'evpn', 'no-overlay', 'uplink-optional', 'multi-network-policy', 'ipsec', 'hybrid-overlay',
+        ]);
+
+        const evpn = byTestId('network-config-capability-evpn')!;
+        expect(evpn.getAttribute('data-status')).toBe('not-ready');
+        expect(text(evpn.querySelector('[data-testid="network-config-capability-status"]'))).toBe('2 of 6 prerequisites met');
+        const forwarding = evpn.querySelector('[data-testid="network-config-prerequisite-ip-forwarding-global"]')!;
+        expect(forwarding.getAttribute('data-state')).toBe('unmet');
+        expect(text(forwarding)).toContain('Not met');
+        expect(text(forwarding)).toContain('Restricted');
+        expect(text(forwarding)).toContain('spec.defaultNetwork.ovnKubernetesConfig.gatewayConfig.ipForwarding');
+        expect(evpn.querySelector('[data-testid="network-config-prerequisite-platform-bare-metal"]')!.getAttribute('data-state')).toBe('met');
+        expect(text(byTestId('network-config-capability-no-overlay'))).toContain('Feature gate NoOverlayMode is enabled');
+        // Lists load as empty here: no RouteAdvertisements, and VTEPs listed with none.
+        expect(text(byTestId('network-config-capability-route-advertisements'))).toContain('No RouteAdvertisements resources exist');
+        expect(text(evpn)).toContain('No VTEP resources exist');
+    });
+
     it('links each section to its API reference and each source to its console page', async () => {
         await render(clusterNetworkConfigPath());
         expect(byTestId('network-config-section-gateway')!.querySelector('a')?.getAttribute('href'))

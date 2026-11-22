@@ -10,6 +10,8 @@ import type {
     NetworkMigration,
     OperatorCondition,
     OperatorNetwork,
+    RouteAdvertisements,
+    Vtep,
 } from '../types';
 
 /**
@@ -29,7 +31,8 @@ import type {
  *
  * Every source degrades on its own: a resource the user may not read is named in
  * `sources`, and the rows that needed it are left out. The capability checklist
- * (n7r.2), the findings (n7r.3) and the masquerade subnet's capacity and layout
+ * (`capabilities`, n7r.2) says which advanced features have their prerequisites. The
+ * findings (n7r.3) and the masquerade subnet's capacity and layout
  * (n7r.4, from the model of ovn-recon-2n6.1) are not here.
  */
 
@@ -90,6 +93,10 @@ export interface CnoConfigInputs {
     configMaps: Record<CnoConfigMapId, Source<ConfigMap>>;
     /** The Nodes the shell already watches, for the masquerade subnet in effect. */
     nodes: K8sResourceCommon[];
+    /** The RouteAdvertisements the shell watches, for the capability checklist; absent reads as unknown. */
+    routeAdvertisements?: RouteAdvertisements[];
+    /** Every VTEP; undefined where the kind is not served or may not be listed. */
+    vteps?: Vtep[];
 }
 
 const LOADING: Source<never> = { status: 'loading' };
@@ -249,6 +256,35 @@ export interface ConfigNotice {
     body?: string;
 }
 
+export type PrerequisiteState = 'met' | 'unmet' | 'unknown';
+
+/** One thing a feature needs, and whether the cluster has it. */
+export interface Prerequisite {
+    id: string;
+    /** What is needed: "Route advertisements are Enabled". */
+    label: string;
+    state: PrerequisiteState;
+    /** What the cluster has: the value read, or why it could not be. */
+    actual: string;
+    source: string;
+    sourcePath: string;
+}
+
+/** `ready`: every prerequisite met. `unknown`: none unmet, but one could not be read. */
+export type CapabilityStatus = 'ready' | 'not-ready' | 'unknown';
+
+/** An advanced feature and what it needs (ovn-recon-n7r.2). */
+export interface Capability {
+    id: string;
+    label: string;
+    status: CapabilityStatus;
+    /** "Prerequisites met", "2 of 5 prerequisites met". */
+    statusText: string;
+    prerequisites: Prerequisite[];
+    /** What is known beyond the prerequisites: the resources that use the feature, a caveat. */
+    notes: string[];
+}
+
 export interface CnoConfigModel {
     /** Every source and how reading it went; the view names the ones that are missing. */
     sources: SourceSummary[];
@@ -257,6 +293,8 @@ export interface CnoConfigModel {
     /** Empty until the operator configuration or the cluster network configuration is read. */
     summary: SummaryChip[];
     notices: ConfigNotice[];
+    /** The capability checklist; empty until the operator configuration is read. */
+    capabilities: Capability[];
     sections: ConfigSection[];
     conditions: ConditionRow[];
 }
@@ -397,6 +435,144 @@ const featureGateState = (featureGate: FeatureGate, version: string | undefined)
     for (const gate of entry?.enabled ?? []) state.set(gate.name, true);
     for (const gate of entry?.disabled ?? []) state.set(gate.name, false);
     return state;
+};
+
+// --- Capabilities ------------------------------------------------------------------
+
+const capability = (id: string, label: string, prerequisites: Prerequisite[], notes: (string | undefined)[] = []): Capability => {
+    const met = prerequisites.filter((prerequisite) => prerequisite.state === 'met').length;
+    const unmet = prerequisites.some((prerequisite) => prerequisite.state === 'unmet');
+    const status: CapabilityStatus = met === prerequisites.length ? 'ready' : unmet ? 'not-ready' : 'unknown';
+    const statusText = status === 'ready'
+        ? 'Prerequisites met'
+        : `${met} of ${prerequisites.length} prerequisite${prerequisites.length === 1 ? '' : 's'} met`;
+    return { id, label, status, statusText, prerequisites, notes: notes.filter((note): note is string => Boolean(note)) };
+};
+
+const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+const isAccepted = (resource: RouteAdvertisements): boolean => {
+    const conditions = (resource as { status?: { conditions?: OperatorCondition[] } }).status?.conditions ?? [];
+    return conditions.some((condition) => condition.type === 'Accepted' && condition.status === 'True');
+};
+
+/**
+ * The checklist: one entry per advanced feature, each prerequisite met, unmet or
+ * unknown with the value read and where. The rules are the API's own validation
+ * (route advertisements need FRR; uplinkMode needs routingViaHost; NoOverlay needs
+ * route advertisements) and the documented EVPN requirements. A prerequisite behind a
+ * feature gate names the gate.
+ */
+const buildCapabilities = (
+    inputs: CnoConfigInputs, operator: OperatorNetwork, gates: Map<string, boolean> | undefined, platform: string | undefined,
+): Capability[] => {
+    const spec = operator.spec;
+    const ovn = spec?.defaultNetwork?.ovnKubernetesConfig;
+    const gateway = ovn?.gatewayConfig;
+    const operatorSource = SOURCE_LABELS.operator;
+
+    const check = (id: string, label: string, sourcePath: string, met: boolean, actual: string): Prerequisite =>
+        ({ id, label, state: met ? 'met' : 'unmet', actual, source: operatorSource, sourcePath });
+    const gate = (name: string): Prerequisite => {
+        const enabled = gates?.get(name);
+        const base = { id: `gate-${name}`, label: `Feature gate ${name} is enabled`, source: SOURCE_LABELS.featureGate, sourcePath: 'status.featureGates' };
+        if (gates === undefined) return { ...base, state: 'unknown', actual: 'The FeatureGate could not be read' };
+        if (enabled === undefined) return { ...base, state: 'unmet', actual: 'Not listed in this release' };
+        return { ...base, state: enabled ? 'met' : 'unmet', actual: enabled ? 'Enabled' : 'Disabled' };
+    };
+
+    const providers = spec?.additionalRoutingCapabilities?.providers ?? [];
+    const advertisements = ovn?.routeAdvertisements ?? DEFAULTS.routeAdvertisements;
+    const frr = check('frr-provider', 'FRR is a routing provider', 'spec.additionalRoutingCapabilities.providers',
+        providers.includes('FRR'), providers.join(', ') || DEFAULTS.none);
+    const advertisementsEnabled = check('route-advertisements-enabled', 'Route advertisements are Enabled',
+        `${OVN}.routeAdvertisements`, advertisements === 'Enabled', advertisements);
+    const routingViaHost = check('routing-via-host', 'Local gateway mode (routingViaHost is true)',
+        `${OVN}.gatewayConfig.routingViaHost`, gateway?.routingViaHost === true, String(gateway?.routingViaHost ?? DEFAULTS.routingViaHost));
+    const ipsecMode = ovn?.ipsecConfig?.mode ?? DEFAULTS.ipsecMode;
+    const transport = ovn?.transport ?? DEFAULTS.transport;
+
+    const resources = inputs.routeAdvertisements;
+    const advertisementsNote = resources === undefined
+        ? undefined
+        : resources.length === 0
+            ? 'No RouteAdvertisements resources exist'
+            : `${plural(resources.length, 'RouteAdvertisements resource')}, ${resources.filter(isAccepted).length} accepted${
+                advertisements === 'Enabled' ? '' : '; they are ignored while route advertisements are not Enabled'}`;
+
+    const vteps = inputs.vteps;
+    const vtepNote = vteps === undefined
+        ? 'VTEPs could not be listed: the kind is not served here, or is not visible to you'
+        : vteps.length === 0
+            ? 'No VTEP resources exist'
+            : `${plural(vteps.length, 'VTEP resource')}: ${vteps.map((vtep) => {
+                const cidrs = (vtep.spec?.cidrs ?? []).join(', ') || 'no CIDRs';
+                return `${vtep.metadata?.name ?? '?'} (${vtep.spec?.mode ?? 'mode not set'}; ${cidrs})`;
+            }).join('; ')}`;
+
+    const noOverlayRouting = ovn?.noOverlayConfig?.routing;
+    const uplinkMode = gateway?.uplinkMode ?? DEFAULTS.uplinkMode;
+    const hybrid = ovn?.hybridOverlayConfig;
+
+    return [
+        capability('route-advertisements', 'BGP route advertisements', [frr, advertisementsEnabled], [advertisementsNote]),
+        capability('evpn', 'BGP EVPN on primary ClusterUserDefinedNetworks', [
+            frr,
+            advertisementsEnabled,
+            routingViaHost,
+            check('ip-forwarding-global', 'IP forwarding is Global', `${OVN}.gatewayConfig.ipForwarding`,
+                gateway?.ipForwarding === 'Global', gateway?.ipForwarding ?? DEFAULTS.ipForwarding),
+            platform === undefined
+                ? {
+                    id: 'platform-bare-metal', label: 'The platform is bare metal', state: 'unknown',
+                    actual: 'The Infrastructure could not be read', source: SOURCE_LABELS.infrastructure, sourcePath: 'status.platformStatus.type',
+                }
+                : {
+                    id: 'platform-bare-metal', label: 'The platform is bare metal', state: platform === 'BareMetal' ? 'met' : 'unmet',
+                    actual: platform, source: SOURCE_LABELS.infrastructure, sourcePath: 'status.platformStatus.type',
+                },
+            check('ipsec-disabled', 'IPsec is Disabled', `${OVN}.ipsecConfig.mode`, ipsecMode === 'Disabled', ipsecMode),
+        ], [vtepNote, 'EVPN does not support IPsec, EgressIP, Egress Service or multiple external gateways']),
+        capability('no-overlay', 'No-overlay pod network', [
+            gate('NoOverlayMode'),
+            check('transport-no-overlay', 'Transport is NoOverlay', `${OVN}.transport`, transport === 'NoOverlay', transport),
+            advertisementsEnabled,
+            check('no-overlay-config', 'No-overlay configuration is set', `${OVN}.noOverlayConfig`, Boolean(ovn?.noOverlayConfig),
+                ovn?.noOverlayConfig
+                    ? `outboundSNAT ${ovn.noOverlayConfig.outboundSNAT ?? 'not set'}, routing ${noOverlayRouting ?? 'not set'}`
+                    : 'Not set'),
+            ...(noOverlayRouting === 'Managed'
+                ? [check('bgp-managed-config', 'Managed BGP configuration is set (routing is Managed)', `${OVN}.bgpManagedConfig`,
+                    Boolean(ovn?.bgpManagedConfig),
+                    ovn?.bgpManagedConfig
+                        ? `AS ${ovn.bgpManagedConfig.asNumber ?? DEFAULTS.bgpAsNumber}, ${ovn.bgpManagedConfig.bgpTopology ?? DEFAULTS.bgpTopology}`
+                        : 'Not set')]
+                : []),
+        ], ['The transport is chosen at install and cannot be changed']),
+        capability('uplink-optional', 'br-ex without an uplink', [
+            gate('OVNKubernetesUplinkMode'),
+            routingViaHost,
+            check('uplink-mode-optional', 'Uplink mode is Optional', `${OVN}.gatewayConfig.uplinkMode`, uplinkMode === 'Optional', uplinkMode),
+        ]),
+        capability('multi-network-policy', 'MultiNetworkPolicy enforcement', [
+            check('multi-network-enabled', 'Multi-network (Multus) is not disabled', 'spec.disableMultiNetwork',
+                spec?.disableMultiNetwork !== true, String(spec?.disableMultiNetwork ?? false)),
+            check('use-multi-network-policy', 'useMultiNetworkPolicy is true', 'spec.useMultiNetworkPolicy',
+                spec?.useMultiNetworkPolicy === true, String(spec?.useMultiNetworkPolicy ?? false)),
+        ], ['MultiNetworkPolicy resources are ignored until both are met']),
+        capability('ipsec', 'IPsec encryption', [
+            check('ipsec-mode', 'IPsec mode is Full or External', `${OVN}.ipsecConfig.mode`, ipsecMode === 'Full' || ipsecMode === 'External', ipsecMode),
+        ], [
+            ipsecMode === 'Full'
+                ? `East-west and north-south; encapsulation ${ovn?.ipsecConfig?.full?.encapsulation ?? DEFAULTS.ipsecEncapsulation}`
+                : ipsecMode === 'External' ? 'North-south only, configured on the hosts; pod traffic between nodes is not encrypted' : undefined,
+            'Changing the mode rolls a MachineConfig out to every node',
+        ]),
+        capability('hybrid-overlay', 'Hybrid overlay (Windows nodes)', [
+            check('hybrid-overlay-config', 'Hybrid overlay configuration is set', `${OVN}.hybridOverlayConfig`, Boolean(hybrid),
+                hybrid ? (hybrid.hybridClusterNetwork ?? []).map((entry) => entry.cidr ?? '?').join(', ') || 'Set' : 'Not set'),
+        ]),
+    ];
 };
 
 // --- The model ---------------------------------------------------------------------
@@ -810,8 +986,11 @@ export const buildCnoConfigModel = (inputs: CnoConfigInputs, now: number = Date.
         sections.push({ id: 'operator', title: 'Operator and platform', rows: operatorRows, docs: operatorDocs });
     }
 
+    const gates = featureGate ? featureGateState(featureGate, operatorVersion ?? operator?.status?.version) : undefined;
+    const capabilities = operator ? buildCapabilities(inputs, operator, gates, platform) : [];
+
     if (featureGate) {
-        const state = featureGateState(featureGate, operatorVersion ?? operator?.status?.version);
+        const state = gates ?? new Map<string, boolean>();
         const source = SOURCE_LABELS.featureGate;
         sections.push({
             id: 'feature-gates',
@@ -849,6 +1028,7 @@ export const buildCnoConfigModel = (inputs: CnoConfigInputs, now: number = Date.
         loading: sources.every((source) => source.status === 'loading'),
         summary,
         notices,
+        capabilities,
         sections,
         conditions: ordered,
     };
