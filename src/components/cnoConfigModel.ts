@@ -13,6 +13,7 @@ import type {
     RouteAdvertisements,
     Vtep,
 } from '../types';
+import { AppliedComparison, appliedNotice, compareAppliedSpec, gatewayModeNotice } from './cnoAppliedModel';
 
 /**
  * The cluster's network configuration as the Network config tab draws it
@@ -31,7 +32,8 @@ import type {
  *
  * Every source degrades on its own: a resource the user may not read is named in
  * `sources`, and the rows that needed it are left out. The capability checklist
- * (`capabilities`, n7r.2) says which advanced features have their prerequisites. The
+ * (`capabilities`, n7r.2) says which advanced features have their prerequisites, and
+ * `applied` (n7r.5, `cnoAppliedModel.ts`) whether the operator has applied the spec. The
  * findings (n7r.3) and the masquerade subnet's capacity and layout
  * (n7r.4, from the model of ovn-recon-2n6.1) are not here.
  */
@@ -297,6 +299,8 @@ export interface CnoConfigModel {
     capabilities: Capability[];
     sections: ConfigSection[];
     conditions: ConditionRow[];
+    /** The spec against what the operator last applied (ovn-recon-n7r.5, `cnoAppliedModel.ts`). */
+    applied: AppliedComparison;
 }
 
 // --- Helpers -----------------------------------------------------------------------
@@ -672,15 +676,11 @@ export const buildCnoConfigModel = (inputs: CnoConfigInputs, now: number = Date.
             body: keys.length > 0 ? `Keys: ${keys.join(', ')}` : undefined,
         });
     }
-    if (inputs.configMaps.gatewayMode.status === 'ok') {
-        const data = inputs.configMaps.gatewayMode.data?.data ?? {};
-        notices.push({
-            id: 'gateway-mode-configmap',
-            severity: 'info',
-            title: `The legacy gateway mode switch is present (ConfigMap ${CNO_CONFIG_MAPS.gatewayMode})`,
-            body: Object.entries(data).map(([key, value]) => `${key}: ${value}`).join(', ') || undefined,
-        });
-    }
+    const gatewayMode = gatewayModeNotice(inputs.configMaps.gatewayMode, operator ? gateway?.routingViaHost === true : undefined);
+    if (gatewayMode) notices.push(gatewayMode);
+    const applied = compareAppliedSpec(inputs.operatorNetwork, inputs.configMaps.appliedCluster);
+    const appliedWarning = appliedNotice(applied);
+    if (appliedWarning) notices.push(appliedWarning);
 
     // --- Sections from the operator configuration ----------------------------------
     if (operator) {
@@ -935,7 +935,7 @@ export const buildCnoConfigModel = (inputs: CnoConfigInputs, now: number = Date.
                 ...(external.policy?.allowedCIDRs?.length ? [`allowed ${external.policy.allowedCIDRs.join(', ')}`] : []),
                 ...(external.policy?.rejectedCIDRs?.length ? [`rejected ${external.policy.rejectedCIDRs.join(', ')}`] : []),
                 ...(external.autoAssignCIDRs?.length ? [`auto-assign ${external.autoAssignCIDRs.join(', ')}`] : []),
-            ].join('; ') || 'Policy set with no CIDRs'
+            ].join('; ') || 'No CIDRs allowed (external IPs are refused)'
             : undefined;
         const source = SOURCE_LABELS.config;
         sections.push({
@@ -970,6 +970,12 @@ export const buildCnoConfigModel = (inputs: CnoConfigInputs, now: number = Date.
             specRow('unsupported-config-overrides', 'Unsupported configuration overrides', 'spec.unsupportedConfigOverrides',
                 isSet(spec?.unsupportedConfigOverrides) ? 'Set' : undefined, { fallback: DEFAULTS.none }),
         );
+        if (applied.status !== 'loading') {
+            operatorRows.push(reportedRow(
+                'applied-configuration', 'Applied configuration', `ConfigMap ${CNO_CONFIG_MAPS.appliedCluster}`, 'data.applied', applied.text,
+                applied.status === 'differs' ? 'A change was refused or is still pending' : undefined,
+            ));
+        }
         if (operator.status?.version) {
             operatorRows.push(reportedRow('operator-version', 'Applied version', SOURCE_LABELS.operator, 'status.version', operator.status.version));
         }
@@ -1031,5 +1037,6 @@ export const buildCnoConfigModel = (inputs: CnoConfigInputs, now: number = Date.
         capabilities,
         sections,
         conditions: ordered,
+        applied,
     };
 };
