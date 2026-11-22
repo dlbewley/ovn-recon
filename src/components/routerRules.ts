@@ -382,7 +382,18 @@ export interface MasqueradeEgress {
     networkId?: number;
     /** The node address br-ex rewrites the masquerade IP to, when the router shows it. */
     nodeIp?: string;
+    /**
+     * External IPs of this router's NAT rows that an EgressIP owns, when it has
+     * any: pods that EgressIP selects leave as that address, not the masquerade IP.
+     */
+    egressIps?: string[];
 }
+
+/** The owner-type ovn-kubernetes tags an EgressIP's NAT rows with. */
+const EGRESS_IP_OWNER_TYPE = 'EgressIP';
+
+/** Whether an EgressIP owns this NAT row (its pod's SNAT to the egress IP). */
+export const isEgressIpNat = (nat: NATRow): boolean => nat.externalIds?.['k8s.ovn.org/owner-type'] === EGRESS_IP_OWNER_TYPE;
 
 /** Why a NAT row's logical IP is there. */
 export type NatLogicalIntent = 'pod-subnet' | 'join-address';
@@ -441,8 +452,13 @@ export const routerMasqueradeContext = (
     let egress: MasqueradeEgress | undefined;
     if (router.role === 'gateway-router' && router.network !== DEFAULT_NETWORK) {
         const natByUuid = new Map(database.nats.map((nat) => [nat.uuid, nat]));
-        for (const uuid of row.nat ?? []) {
-            const external = natByUuid.get(uuid)?.externalIp;
+        const routerNats = (row.nat ?? []).map((uuid) => natByUuid.get(uuid)).filter((nat): nat is NATRow => nat != null);
+        const egressIps = [
+            ...new Set(routerNats.filter(isEgressIpNat).flatMap((nat) => (nat.externalIp ? [nat.externalIp] : []))),
+        ];
+        for (const nat of routerNats) {
+            if (isEgressIpNat(nat)) continue;
+            const external = nat.externalIp;
             const classification = external ? classifyMasqueradeAddress(external, subnets) : undefined;
             if (classification?.role !== 'udn-gateway-router') continue;
             egress = {
@@ -450,6 +466,7 @@ export const routerMasqueradeContext = (
                 masqueradeIp: external as string,
                 networkId: classification.networkId,
                 nodeIp: nodeAddressOf(row.externalIds, ports, subnets, classification.family),
+                ...(egressIps.length > 0 ? { egressIps } : {}),
             };
             break;
         }
@@ -487,6 +504,10 @@ export const natLogicalIntent = (
 ): NatLogicalIntent | undefined => {
     const logical = nat.logicalIp ? parsePrefix(nat.logicalIp) : null;
     if (!context || !logical) return undefined;
+    // Only a row that SNATs to the router's masquerade IP is part of that egress.
+    const external = nat.externalIp ? parsePrefix(nat.externalIp) : null;
+    const masquerade = context.egress ? parsePrefix(context.egress.masqueradeIp) : null;
+    if (masquerade && (!external || !sameAddress(external, masquerade))) return undefined;
     const host = logical.length === (logical.family === 4 ? 32 : 128);
     if (host && context.joinAddresses.some((join) => sameAddress(join, logical))) return 'join-address';
     if (

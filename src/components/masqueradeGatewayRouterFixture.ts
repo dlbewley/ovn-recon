@@ -13,16 +13,23 @@ export const UDN_NETWORK = 'demo_tenant';
 export const UDN_GATEWAY_ROUTER = 'GR_demo_tenant_node-a';
 export const UDN_MASQUERADE_IP = '169.254.0.13';
 export const UDN_NODE_IP = '192.0.2.10';
+/** The egress IP of the optional EgressIP row, and the pod it selects. */
+export const UDN_EGRESS_IP = '198.51.100.20';
+export const UDN_EGRESS_POD_IP = '10.200.1.7';
 
 const ids = { 'k8s.ovn.org/network': UDN_NETWORK, 'k8s.ovn.org/topology': 'layer3', 'k8s.ovn.org/role': 'primary' };
 
-export const udnGatewayRouterDatabase = (): LogicalDatabase => ({
+/**
+ * With `egressIp`, the router also holds the SNAT row an EgressIP adds on its
+ * egress node: one pod's address to the egress IP, tagged with its owner.
+ */
+export const udnGatewayRouterDatabase = ({ egressIp = false }: { egressIp?: boolean } = {}): LogicalDatabase => ({
     logicalRouters: [
         {
             uuid: 'gr',
             name: UDN_GATEWAY_ROUTER,
             ports: ['rtoj', 'rtoe'],
-            nat: ['nat-pods', 'nat-join'],
+            nat: ['nat-pods', 'nat-join', ...(egressIp ? ['nat-eip'] : [])],
             staticRoutes: ['route-masq', 'route-default', 'route-cluster'],
             externalIds: { ...ids, physical_ip: UDN_NODE_IP, physical_ips: `${UDN_NODE_IP},${UDN_MASQUERADE_IP}` },
             options: { lb_force_snat_ip: '100.65.0.4', chassis: 'chassis-a' },
@@ -64,6 +71,21 @@ export const udnGatewayRouterDatabase = (): LogicalDatabase => ({
             externalPortRange: '32768-60999',
             externalIds: ids,
         },
+        ...(egressIp
+            ? [
+                  {
+                      uuid: 'nat-eip',
+                      type: 'snat' as const,
+                      externalIp: UDN_EGRESS_IP,
+                      logicalIp: UDN_EGRESS_POD_IP,
+                      externalIds: {
+                          'k8s.ovn.org/owner-type': 'EgressIP',
+                          'k8s.ovn.org/name': 'demo-egress',
+                          'k8s.ovn.org/network': UDN_NETWORK,
+                      },
+                  },
+              ]
+            : []),
     ],
     staticRoutes: [
         { uuid: 'route-masq', ipPrefix: '169.254.0.0/17', nexthop: '169.254.0.4', outputPort: `rtoe-${UDN_GATEWAY_ROUTER}`, externalIds: ids },

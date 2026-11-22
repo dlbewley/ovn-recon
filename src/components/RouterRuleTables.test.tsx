@@ -6,6 +6,8 @@ import { LogicalDatabase, LogicalTopologySnapshot, NATRow, StaticRouteRow } from
 import { NatRuleTable, NatRuleTableProps, StaticRouteTable } from './RouterRuleTables';
 import { TestRouter } from './testRouter';
 import {
+    UDN_EGRESS_IP,
+    UDN_EGRESS_POD_IP,
     UDN_GATEWAY_ROUTER,
     UDN_MASQUERADE_IP,
     UDN_NETWORK,
@@ -89,13 +91,29 @@ describe('router rule tables: masquerade (ovn-recon-2n6.2)', () => {
             const line = container.querySelector('[data-testid="nat-masquerade-egress"]');
             expect(line?.textContent).toBe(
                 `Egress from demo/tenant leaves OVN as ${UDN_MASQUERADE_IP}; br-ex then rewrites it to the node address ` +
-                    `${UDN_NODE_IP}. That second step is an OVS flow and is not listed here.`,
+                    `${UDN_NODE_IP}. That second step is an OVS flow and is not listed here. ` +
+                    'Pods an EgressIP selects leave as its egress IP instead, from whichever node holds it.',
             );
             expect(line?.querySelector('a')?.getAttribute('href')).toBe('/ovn-recon/networks/udn/demo/tenant');
 
             render(natTable(udn, UDN_GATEWAY_ROUTER));
             expect(container.querySelector('[data-testid="nat-masquerade-egress"]')).toBeNull();
             expect(container.querySelectorAll('[data-testid="nat-masquerade-owner"]')).toHaveLength(2);
+        });
+
+        it("names the router's EgressIP addresses in the line and leaves the EgressIP row undescribed", () => {
+            const withEip = udnGatewayRouterDatabase({ egressIp: true });
+            render(natTable(withEip, UDN_GATEWAY_ROUTER, { explainEgress: true, grouped: false }));
+            expect(natRows()).toHaveLength(3);
+            expect(container.querySelector('[data-testid="nat-masquerade-egress-ip-caveat"]')?.textContent).toBe(
+                `Pods an EgressIP selects leave as its egress IP instead (on this router: ${UDN_EGRESS_IP}).`,
+            );
+            // The two masquerade rows keep their notes; the EgressIP row gets neither.
+            expect(container.querySelectorAll('[data-testid="nat-masquerade-owner"]')).toHaveLength(2);
+            expect(container.querySelectorAll('[data-testid="nat-logical-intent"]')).toHaveLength(2);
+            const eipRow = natRows().find((row) => row.textContent?.includes(UDN_EGRESS_POD_IP));
+            expect(eipRow?.querySelector('[data-testid="nat-logical-intent"]')).toBeNull();
+            expect(eipRow?.querySelector('[data-testid="nat-masquerade-owner"]')).toBeNull();
         });
 
         it('matches "masquerade", the network name and the intent in the filter', () => {

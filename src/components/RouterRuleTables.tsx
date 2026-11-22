@@ -259,7 +259,26 @@ const MasqueradeEgressLine: React.FC<{ context: RouterMasqueradeContext; owner?:
         <p className="pf-u-mb-sm" data-testid="nat-masquerade-egress">
             Egress from {network} leaves OVN as <code>{egress.masqueradeIp}</code>; br-ex then rewrites it to the node
             address{egress.nodeIp ? <> <code>{egress.nodeIp}</code></> : ''}. That second step is an OVS flow and is not
-            listed here.
+            listed here.{' '}
+            <span data-testid="nat-masquerade-egress-ip-caveat">
+                Pods an EgressIP selects leave as its egress IP instead
+                {egress.egressIps?.length ? (
+                    <>
+                        {' '}
+                        (on this router:{' '}
+                        {egress.egressIps.map((address, index) => (
+                            <React.Fragment key={address}>
+                                {index > 0 && ', '}
+                                <code>{address}</code>
+                            </React.Fragment>
+                        ))}
+                        )
+                    </>
+                ) : (
+                    ', from whichever node holds it'
+                )}
+                .
+            </span>
         </p>
     );
 };

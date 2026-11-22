@@ -6,6 +6,7 @@ import {
     groupStaticRoutes,
     isMasqueradeSubnetRoute,
     masqueradeRoleOf,
+    isEgressIpNat,
     natLogicalIntent,
     natTypeCounts,
     nexthopResolverFor,
@@ -259,6 +260,19 @@ describe('routerMasqueradeContext (ovn-recon-2n6.2)', () => {
         expect(natLogicalIntent(udnNat('nat-pods'), context)).toBe('pod-subnet');
         expect(natLogicalIntent(udnNat('nat-join'), context)).toBe('join-address');
         expect(natLogicalIntent({ uuid: 'x', type: 'snat', logicalIp: '198.51.100.0/24' }, context)).toBeUndefined();
+        // A row into the pod subnet that SNATs to anything but the masquerade IP is not this egress.
+        expect(natLogicalIntent({ ...udnNat('nat-pods'), externalIp: '198.51.100.20' }, context)).toBeUndefined();
+    });
+
+    it("lists an EgressIP's NAT addresses on the egress and keeps the masquerade IP from the masquerade rows", () => {
+        const withEip = udnGatewayRouterDatabase({ egressIp: true });
+        const context = routerMasqueradeContext(withEip, UDN_GATEWAY_ROUTER)!;
+        expect(context.egress?.masqueradeIp).toBe('169.254.0.13');
+        expect(context.egress?.egressIps).toEqual(['198.51.100.20']);
+        const eip = withEip.nats.find((nat) => nat.uuid === 'nat-eip')!;
+        expect(isEgressIpNat(eip)).toBe(true);
+        expect(natLogicalIntent(eip, context)).toBeUndefined();
+        expect(routerMasqueradeContext(udn, UDN_GATEWAY_ROUTER)!.egress?.egressIps).toBeUndefined();
     });
 
     it('labels the masquerade subnet route and resolves the dummy next hop', () => {
