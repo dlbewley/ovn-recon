@@ -55,6 +55,7 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
         routeAdvertisements,
         enactments,
         vteps,
+        multiNetworkPolicies,
         networkConfig,
         collector,
     } = data;
@@ -94,6 +95,7 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
         zoneDatabases,
         networkConfig: networkConfigForFindings,
         clusterMtu,
+        multiNetworkPolicies,
     });
     const [hideInfo, setHideInfo] = useHideInfoFindings();
     const findings = React.useMemo(() => visibleFindings(allFindings, hideInfo), [allFindings, hideInfo]);

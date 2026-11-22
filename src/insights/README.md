@@ -198,7 +198,7 @@ Logical side (`ovn-recon-7i6.3`):
   mapped nowhere, and a neutral fact otherwise.
 | `cno-evpn-gateway-prereq` | network | A CUDN is carried over EVPN (or, with none, a VTEP exists) while the EVPN checklist's `routingViaHost: true` or `ipForwarding: Global` is unmet; on each EVPN CUDN, else once on the network configuration (`ovn-recon-n7r.3`) |
 | `cno-route-ads-disabled` | network | RouteAdvertisements exist while route advertisements are not Enabled, so they are ignored; FRR missing from the providers is cited too |
-| `cno-mnp-disabled` | network | `disableMultiNetwork` is true while NADs a CUDN did not generate exist. The MultiNetworkPolicy half of the bead's condition needs an MNP list the shell does not watch, and is not reported |
+| `cno-mnp-disabled` | network | `disableMultiNetwork` is true while NADs a CUDN did not generate, or MultiNetworkPolicies, exist; or multi-network is on, `useMultiNetworkPolicy` is not true and MultiNetworkPolicies exist. One finding at most; without the MultiNetworkPolicy list (kind not served, or not visible) only the NADs are read |
 | `cno-evpn-with-ipsec` | network | A CUDN is carried over EVPN while IPsec is not Disabled; on each EVPN CUDN |
 | `cno-operator-unhealthy` | network | The network ClusterOperator or operator configuration reports Degraded (or ManagementStateDegraded) True, Available False, or Progressing True for longer than the model's threshold; or managementState is not Managed. Once, on the ClusterOperator |
 | `cno-unsupported-overrides` | network | Info. `spec.unsupportedConfigOverrides` is set, or ConfigMap `ovn-kubernetes-config-overrides` is present |

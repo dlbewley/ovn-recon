@@ -2,6 +2,7 @@ import { K8sResourceCommon, useK8sWatchResource } from '@openshift-console/dynam
 
 import {
     ClusterUserDefinedNetwork,
+    MultiNetworkPolicy,
     NetworkAttachmentDefinition,
     NodeNetworkConfigurationEnactment,
     NodeNetworkState,
@@ -15,7 +16,8 @@ import { NetworkConfigSources, useNetworkConfigSources } from './useNetworkConfi
 /**
  * The explorer's cluster-wide watches (ovn-recon-gbr.10; formerly the overview page's
  * `useOverviewData`): every NodeNetworkState, Node, CUDN, UDN, NAD,
- * RouteAdvertisements and NodeNetworkConfigurationEnactment, the cluster network
+ * RouteAdvertisements, NodeNetworkConfigurationEnactment, VTEP and
+ * MultiNetworkPolicy, the cluster network
  * configuration's sources (`useNetworkConfigSources`, ovn-recon-n7r.1), and the
  * collector's state. `useExplorerData` builds the tree, the tables and the findings from them,
  * once, for the whole shell.
@@ -45,6 +47,11 @@ export interface ClusterWatches {
     enactments: NodeNetworkConfigurationEnactment[];
     /** Every VTEP (EVPN); undefined where the kind is not served or may not be listed. */
     vteps: Vtep[] | undefined;
+    /**
+     * Every MultiNetworkPolicy, for cno-mnp-disabled (ovn-recon-n7r.3); undefined until
+     * loaded, and where the kind is not served or may not be listed.
+     */
+    multiNetworkPolicies: MultiNetworkPolicy[] | undefined;
     /** The CUDN, UDN and NAD watches have each settled: loaded, or failed. */
     networksLoaded: boolean;
     /** The Cluster Network Operator's configuration and what goes with it, each source on its own. */
@@ -96,6 +103,13 @@ export const useClusterWatches = (): ClusterWatches => {
         groupVersionKind: { group: 'k8s.ovn.org', version: 'v1', kind: 'VTEP' },
         isList: true,
     });
+    // For cno-mnp-disabled (ovn-recon-n7r.3): policies the operator configuration may
+    // leave unenforced. Without the kind, or without permission, the watch errors and
+    // the rule reports only what the NADs show.
+    const [multiNetworkPolicies, mnpsLoaded, mnpsError] = useK8sWatchResource<MultiNetworkPolicy[]>({
+        groupVersionKind: { group: 'k8s.cni.cncf.io', version: 'v1beta1', kind: 'MultiNetworkPolicy' },
+        isList: true,
+    });
     const networkConfig = useNetworkConfigSources();
     const collector = useCollectorState();
 
@@ -110,6 +124,7 @@ export const useClusterWatches = (): ClusterWatches => {
         routeAdvertisements: listOr(routeAdvertisements, NO_ROUTE_ADVERTISEMENTS),
         enactments: listOr(enactments, NO_ENACTMENTS),
         vteps: vtepsLoaded && !vtepsError && Array.isArray(vteps) ? vteps : undefined,
+        multiNetworkPolicies: mnpsLoaded && !mnpsError && Array.isArray(multiNetworkPolicies) ? multiNetworkPolicies : undefined,
         // A kind the cluster does not serve, or one the user may not list, has settled
         // too: the table then lists what the other kinds hold.
         networksLoaded: (cudnsLoaded || Boolean(cudnsError))

@@ -5,6 +5,7 @@ import { buildGraphContext, ClusterMtu, GraphContext } from '../../topology/cont
 import type {
     ClusterUserDefinedNetwork,
     LogicalTopologySnapshot,
+    MultiNetworkPolicy,
     NetworkAttachmentDefinition,
     NodeNetworkConfigurationEnactment,
     NodeNetworkState,
@@ -148,6 +149,8 @@ export interface ClusterFindingsInput {
     zoneDatabases?: ZoneDatabase[];
     /** The cluster network configuration's sources and model, for the cno-* rules (ovn-recon-n7r.3). */
     networkConfig?: ClusterNetworkConfig;
+    /** Every MultiNetworkPolicy, once listed, for cno-mnp-disabled. */
+    multiNetworkPolicies?: MultiNetworkPolicy[];
     /** The cluster network MTU (clusterMtuOf), laid on every node's context for mtu-exceeds-uplink. */
     clusterMtu?: ClusterMtu;
 }
@@ -160,7 +163,8 @@ export const NODE_LABEL = 'nmstate.io/node';
  * (the inputs rules read), so the two surfaces agree.
  */
 export const useClusterFindings = ({
-    nodeNetworkStates, nodeNetworkStatesLoaded, cudns, udns, nads, enactments, nodes, zoneDatabases, networkConfig, clusterMtu
+    nodeNetworkStates, nodeNetworkStatesLoaded, cudns, udns, nads, enactments, nodes, zoneDatabases, networkConfig, clusterMtu,
+    multiNetworkPolicies
 }: ClusterFindingsInput): Finding[] => {
     const evaluate = React.useContext(FindingsEvaluatorContext);
     const contexts = React.useMemo(() => {
@@ -181,8 +185,9 @@ export const useClusterFindings = ({
         nodeNetworkStates: clusterNodeNetworkStates(nodeNetworkStates, nodeNetworkStatesLoaded),
         ...(nodes && nodes.length > 0 ? { nodes } : {}),
         ...(zoneDatabases && zoneDatabases.length > 0 ? { zoneDatabases } : {}),
-        ...(networkConfig ? { networkConfig } : {})
-    }), [cudns, udns, nads, nodeNetworkStates, nodeNetworkStatesLoaded, nodes, zoneDatabases, networkConfig]);
+        ...(networkConfig ? { networkConfig } : {}),
+        ...(multiNetworkPolicies ? { multiNetworkPolicies } : {})
+    }), [cudns, udns, nads, nodeNetworkStates, nodeNetworkStatesLoaded, nodes, zoneDatabases, networkConfig, multiNetworkPolicies]);
     return React.useMemo(
         () => applySurfaceGates(
             evaluate.cluster(cluster, Array.from(contexts.values())),

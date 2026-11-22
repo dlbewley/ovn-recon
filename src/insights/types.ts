@@ -142,6 +142,11 @@ export interface ClusterNetworkInputs {
      * does not watch them; the cno-* rules are then quiet.
      */
     networkConfig?: ClusterNetworkConfig;
+    /**
+     * Every MultiNetworkPolicy, for cno-mnp-disabled (ovn-recon-n7r.3). Undefined
+     * until loaded and where the kind cannot be listed; the rule then reads only the NADs.
+     */
+    multiNetworkPolicies?: MultiNetworkPolicy[];
 }
 
 /** The Network config tab's inputs and model, as the findings read them. */
