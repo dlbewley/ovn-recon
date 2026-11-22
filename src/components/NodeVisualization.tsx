@@ -55,9 +55,8 @@ import { describeCounts, FindingsBadge, findingsBadgeWidth } from '../insights/u
 import { useHideInfoFindings, useNodeFindings, visibleFindings } from '../insights/ui/useFindings';
 import { nodePhysicalPath } from '../routes';
 import { useOvsBondState } from './useOvsBondState';
-import { AddressBook, buildAddressBook, resolveAddress } from './addressBook';
 import { rememberedCollectorSnapshot } from './collectorApi';
-import type { GatewayOwners } from './KernelRouteTable';
+import { useNodeAddressOwners } from './useNodeAddressOwners';
 
 /** The card the graph sits in on the routed page, or nothing for a host that frames it. */
 const ViewFrame: React.FC<{ plain: boolean; children: React.ReactNode }> = ({ plain, children }) => (plain ? (
@@ -79,6 +78,8 @@ interface NodeVisualizationProps {
     vteps?: Vtep[];
     /** The raw k8s.ovn.org/vteps annotation off this node's Node object, when readable. */
     nodeVtepsAnnotation?: string;
+    /** The raw k8s.ovn.org/node-masquerade-subnet annotation off this node's Node object, when readable. */
+    nodeMasqueradeSubnetAnnotation?: string;
     /** This node's SriovNetworkNodeState, when the SR-IOV Network Operator is present. */
     sriovNodeState?: SriovNetworkNodeState;
     /** Leave the host select out of the toolbar, for a host that has its own way to change node. */
@@ -147,6 +148,7 @@ const accentStripePath = (height: number): string => {
 
 const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     nns, cudns = [], udns = [], nads = [], routeAdvertisements = [], enactments = [], vteps = NO_VTEPS, nodeVtepsAnnotation,
+    nodeMasqueradeSubnetAnnotation,
     sriovNodeState, hideHostSelect = false, plain = false, collectorEnabled = false
 }) => {
 
@@ -172,9 +174,11 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
 
     const watchedCtx: GraphContext = React.useMemo(
         () => buildGraphContext({
-            nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation, sriovNodeState
+            nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation,
+            nodeMasqueradeSubnetAnnotation, sriovNodeState
         }),
-        [nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation, sriovNodeState]
+        [nns, cudns, udns, nads, routeAdvertisements, enactments, vteps, nodeVtepsAnnotation,
+            nodeMasqueradeSubnetAnnotation, sriovNodeState]
     );
     // OVS bond runtime state (ovn-recon-1tw.7): asked of the collector only with its
     // gate on and an OVS bond on this node, then laid over the context the watches
@@ -207,16 +211,14 @@ const NodeVisualization: React.FC<NodeVisualizationProps> = ({
     // when a drawer first asks.
     const zoneSnapshot = collectorEnabled && nodeName ? rememberedCollectorSnapshot(nodeName) : null;
     const zoneDatabase = zoneSnapshot?.metadata?.sourceHealth === 'degraded' ? undefined : zoneSnapshot?.database;
-    const gatewayOwners = React.useMemo<GatewayOwners>(() => {
-        let book: AddressBook | undefined;
-        return (gateway) => {
-            book ??= buildAddressBook({
-                zones: zoneDatabase ? [{ node: nodeName, database: zoneDatabase }] : [],
-                nodeNetworkStates: allNodeNetworkStates?.length ? allNodeNetworkStates : nns ? [nns] : [],
-            });
-            return resolveAddress(book, gateway, { preferNode: nodeName });
-        };
-    }, [zoneDatabase, nodeName, allNodeNetworkStates, nns]);
+    // The networks name a management-port masquerade address's network (ovn-recon-2n6.4).
+    const ownerStates = React.useMemo(
+        () => (allNodeNetworkStates?.length ? allNodeNetworkStates : nns ? [nns] : []),
+        [allNodeNetworkStates, nns]
+    );
+    const gatewayOwners = useNodeAddressOwners({
+        nodeName, nodeNetworkStates: ownerStates, zoneDatabase, cudns, udns, nads, nodeMasqueradeSubnetAnnotation,
+    });
     const hasLldpData = hasLldpNeighbors(interfaces);
 
     // State for toggle

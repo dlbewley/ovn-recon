@@ -2,6 +2,7 @@ import {
     extractLldpNeighbors, getCudnAssociatedNamespaces, getKnownVtepNames, getOvsBonds, parseNodeVteps,
     LldpNeighborNode, OvsBond
 } from '../components/nodeVisualizationSelectors';
+import { masqueradeSubnets, MasqueradeSubnet, NODE_MASQUERADE_SUBNET_ANNOTATION } from '../components/masqueradeIps';
 import { AttachmentNode, IntegrationBridgeNode } from './types';
 import {
     ClusterUserDefinedNetwork,
@@ -57,6 +58,13 @@ export interface GraphContext {
      * these would produce.
      */
     vtepNames: string[];
+    /**
+     * This node's masquerade subnets (ovn-recon-2n6.4), per address family: what
+     * the Node's k8s.ovn.org/node-masquerade-subnet annotation says, else
+     * OVN-Kubernetes' defaults. The drawer labels br-ex's masquerade address and
+     * reads a VRF's management-port route against them.
+     */
+    masqueradeSubnets: MasqueradeSubnet[];
     /**
      * This node's SriovNetworkNodeState (ovn-recon-s3t.66): which VFs of each PF are
      * carved for which device-plugin resource, and what driver each VF is bound to.
@@ -159,6 +167,8 @@ export interface GraphContextInput {
     vteps?: Vtep[];
     /** The raw k8s.ovn.org/vteps annotation off this node's Node object. */
     nodeVtepsAnnotation?: string;
+    /** The raw k8s.ovn.org/node-masquerade-subnet annotation off this node's Node object. */
+    nodeMasqueradeSubnetAnnotation?: string;
     /** This node's SriovNetworkNodeState, when the SR-IOV Network Operator is present. */
     sriovNodeState?: SriovNetworkNodeState;
 }
@@ -183,6 +193,7 @@ export const buildGraphContext = ({
     enactments = [],
     vteps = [],
     nodeVtepsAnnotation,
+    nodeMasqueradeSubnetAnnotation,
     sriovNodeState
 }: GraphContextInput): GraphContext => {
     const interfaces: Interface[] = nns?.status?.currentState?.interfaces ?? [];
@@ -200,6 +211,11 @@ export const buildGraphContext = ({
         vteps,
         nodeVteps,
         vtepNames: getKnownVtepNames(vteps, cudns, nodeVteps),
+        masqueradeSubnets: masqueradeSubnets({
+            nodes: nodeMasqueradeSubnetAnnotation
+                ? [{ metadata: { annotations: { [NODE_MASQUERADE_SUBNET_ANNOTATION]: nodeMasqueradeSubnetAnnotation } } }]
+                : [],
+        }),
         sriovNodeState,
         explicitBridgeNames: new Set(
             interfaces.filter((i) => BRIDGE_TYPES.includes(i.type)).map((i) => i.name)
