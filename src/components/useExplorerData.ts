@@ -74,8 +74,8 @@ export const useExplorerModel = (data: ClusterWatches): ExplorerData => {
     // The network configuration is modelled once: the Network config tab draws the
     // model, and the cno-* rules (ovn-recon-n7r.3) read the same model and sources.
     const networkConfigInputs = React.useMemo<CnoConfigInputs>(
-        () => ({ ...networkConfig, nodes, routeAdvertisements, vteps }),
-        [networkConfig, nodes, routeAdvertisements, vteps],
+        () => ({ ...networkConfig, nodes, routeAdvertisements, vteps, nads, cudns, udns }),
+        [networkConfig, nodes, routeAdvertisements, vteps, nads, cudns, udns],
     );
     const networkConfigModel = React.useMemo(() => buildCnoConfigModel(networkConfigInputs), [networkConfigInputs]);
     const networkConfigForFindings = React.useMemo<ClusterNetworkConfig>(
