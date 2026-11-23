@@ -1,19 +1,24 @@
 import * as React from 'react';
-import { Alert, Card, CardBody, CardTitle, Label, Spinner, Stack, StackItem } from '@patternfly/react-core';
+import { Alert, Card, CardBody, CardTitle, ExpandableSection, Label, Spinner, Stack, StackItem } from '@patternfly/react-core';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
+import { Link } from 'react-router';
 
 import { ConsoleLink } from '../linkOut/LinkOut';
 import AppliedSpecCard from './AppliedSpecCard';
 import { resourceTarget } from '../linkOut/registry';
+import { networkPath } from '../routes';
 import type {
     Capability, CapabilityStatus, CnoConfigModel, ConditionRow, ConditionSeverity, ConfigRow, ConfigSection, PrerequisiteState,
     RowOrigin, SourceSummary
 } from './cnoConfigModel';
+import type { MasqueradeFamilyLayout, MasqueradeLayout, MasqueradeLayoutNote, MasqueradeSubnetLayout } from './masqueradeLayoutModel';
 
 /**
  * The Network config tab's body (ovn-recon-n7r.1): the capability checklist first
- * (n7r.2), then the cluster network configuration as `cnoConfigModel` grouped it. Read-only; it draws no page chrome, and every link
- * to a console page goes through the link-out registry.
+ * (n7r.2), then the cluster network configuration as `cnoConfigModel` grouped it, with
+ * the masquerade subnet's capacity and address layout after the addressing section
+ * (n7r.4). Read-only; it draws no page chrome, and every link to a console page goes
+ * through the link-out registry.
  */
 
 const subtle: React.CSSProperties = { color: 'var(--pf-t--global--text--color--subtle)' };
@@ -142,6 +147,131 @@ const CapabilitiesCard: React.FC<{ capabilities: Capability[] }> = ({ capabiliti
     </Card>
 );
 
+const code: React.CSSProperties = { fontSize: 'var(--pf-t--global--font--size--sm)', overflowWrap: 'anywhere' };
+
+const LayoutNotes: React.FC<{ notes: MasqueradeLayoutNote[] }> = ({ notes }) => (
+    <>
+        {notes.map((note) => (note.severity === 'warning' ? (
+            <div key={note.id} data-testid={`network-config-masquerade-note-${note.id}`}>
+                <Label isCompact color="orange">Warning</Label> {note.text}
+            </div>
+        ) : (
+            <div key={note.id} style={small} data-testid={`network-config-masquerade-note-${note.id}`}>{note.text}</div>
+        )))}
+    </>
+);
+
+const MasqueradeAddressLayout: React.FC<{ subnet: MasqueradeSubnetLayout }> = ({ subnet }) => {
+    const [open, setOpen] = React.useState(false);
+    return (
+        <ExpandableSection
+            toggleText={`Address layout of ${subnet.cidr}`}
+            isExpanded={open}
+            onToggle={(_event, expanded) => setOpen(expanded)}
+            data-testid={`network-config-masquerade-layout-${subnet.cidr}`}
+        >
+            <Table variant="compact" aria-label={`Address layout of ${subnet.cidr}`}>
+                <Thead>
+                    <Tr>
+                        <Th width={35}>Address</Th>
+                        <Th>Used for</Th>
+                    </Tr>
+                </Thead>
+                <Tbody>
+                    {subnet.globals.map((global) => (
+                        <Tr key={global.address}>
+                            <Td dataLabel="Address"><code style={code}>{global.address}</code></Td>
+                            <Td dataLabel="Used for">{global.label}</Td>
+                        </Tr>
+                    ))}
+                    {subnet.networks.map((network) => (
+                        <Tr key={network.networkId} data-testid={`network-config-masquerade-network-${network.networkId}`}>
+                            <Td dataLabel="Address">
+                                {network.gatewayRouter ? (
+                                    <>
+                                        <code style={code}>{network.gatewayRouter}</code>
+                                        <span style={small}> gateway router</span>
+                                        <br />
+                                        <code style={code}>{network.managementPort}</code>
+                                        <span style={small}> management port</span>
+                                    </>
+                                ) : <span style={subtle}>No room in this subnet</span>}
+                            </Td>
+                            <Td dataLabel="Used for">
+                                {network.target ? <Link to={networkPath(network.target)}>{network.label}</Link> : network.label}
+                                <div style={small}>Network ID {network.networkId}</div>
+                            </Td>
+                        </Tr>
+                    ))}
+                </Tbody>
+            </Table>
+            <div style={small}>
+                {subnet.firstPair
+                    ? `The addresses after the global ones are reserved up to the first network's pair, ${subnet.firstPair.gatewayRouter} `
+                        + `and ${subnet.firstPair.managementPort}; each network ID takes the next two. `
+                    : ''}
+                {subnet.networks.length === 0 ? 'No primary network holds a pair. ' : ''}
+                Derived from the network IDs; only primary networks are listed.
+            </div>
+        </ExpandableSection>
+    );
+};
+
+const MasqueradeFamilyRows: React.FC<{ family: MasqueradeFamilyLayout }> = ({ family }) => (
+    <>
+        {family.subnets.map((subnet, index) => (
+            <Tr key={subnet.cidr} data-testid={`network-config-masquerade-${family.name.toLowerCase()}`} data-source={subnet.source}>
+                <Td dataLabel="Family">{family.name}</Td>
+                <Td dataLabel="Subnet in effect">
+                    <span data-testid="network-config-masquerade-subnet">{subnet.cidr}</span>
+                    {subnet.nodes > 0 && <div style={small}>Reported by {subnet.nodes} node{subnet.nodes === 1 ? '' : 's'}</div>}
+                    {index === 0 && <LayoutNotes notes={family.notes} />}
+                </Td>
+                <Td dataLabel="Source">
+                    <div style={small}>{subnet.sourceText}</div>
+                    {subnet.sourcePath && <code style={code}>{subnet.sourcePath}</code>}
+                </Td>
+                <Td dataLabel="Capacity">
+                    <span data-testid="network-config-masquerade-capacity">{subnet.capacityText}</span>
+                    <LayoutNotes notes={subnet.notes} />
+                    <MasqueradeAddressLayout subnet={subnet} />
+                </Td>
+            </Tr>
+        ))}
+    </>
+);
+
+const MasqueradeCard: React.FC<{ masquerade: MasqueradeLayout }> = ({ masquerade }) => (
+    <Card data-testid="network-config-masquerade">
+        <CardTitle>Masquerade subnet</CardTitle>
+        <CardBody>
+            <p style={{ ...subtle, marginBlockEnd: 'var(--pf-t--global--spacer--md)' }}>
+                Link-local addresses every node reserves: a few global ones, then a gateway router and a management port
+                address for each network, placed by its network ID.
+            </p>
+            <Table variant="compact" aria-label="Masquerade subnet">
+                <Thead>
+                    <Tr>
+                        <Th width={10}>Family</Th>
+                        <Th width={25}>Subnet in effect</Th>
+                        <Th width={25}>Source</Th>
+                        <Th>Capacity and layout</Th>
+                    </Tr>
+                </Thead>
+                <Tbody>
+                    {masquerade.families.map((family) => <MasqueradeFamilyRows key={family.family} family={family} />)}
+                </Tbody>
+            </Table>
+            <div data-testid="network-config-masquerade-usage" style={{ marginBlockStart: 'var(--pf-t--global--spacer--sm)' }}>
+                {masquerade.usageText}.
+            </div>
+            <div data-testid="network-config-masquerade-immutable">
+                <Label isCompact color="orange">Immutable</Label> {masquerade.immutableText}
+            </div>
+        </CardBody>
+    </Card>
+);
+
 const CONDITION_COLOR: Record<ConditionSeverity, 'red' | 'orange' | 'blue' | 'grey'> = {
     danger: 'red',
     warning: 'orange',
@@ -257,8 +387,16 @@ const NetworkConfigPanel: React.FC<{ model: CnoConfigModel }> = ({ model }) => {
             {model.applied.status === 'differs' && <StackItem><AppliedSpecCard comparison={model.applied} /></StackItem>}
             {model.capabilities.length > 0 && <StackItem><CapabilitiesCard capabilities={model.capabilities} /></StackItem>}
             {model.sections.map((section) => (
-                <StackItem key={section.id}><SectionCard section={section} /></StackItem>
+                <React.Fragment key={section.id}>
+                    <StackItem><SectionCard section={section} /></StackItem>
+                    {section.id === 'addressing' && model.masquerade.families.length > 0 && (
+                        <StackItem><MasqueradeCard masquerade={model.masquerade} /></StackItem>
+                    )}
+                </React.Fragment>
             ))}
+            {model.masquerade.families.length > 0 && !model.sections.some((section) => section.id === 'addressing') && (
+                <StackItem><MasqueradeCard masquerade={model.masquerade} /></StackItem>
+            )}
             {model.conditions.length > 0 && <StackItem><ConditionsCard conditions={model.conditions} /></StackItem>}
             <StackItem><SourcesCard sources={model.sources} /></StackItem>
         </Stack>

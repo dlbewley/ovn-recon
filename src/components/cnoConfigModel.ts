@@ -3,17 +3,21 @@ import type { K8sResourceCommon } from '@openshift-console/dynamic-plugin-sdk';
 import type {
     ClusterNetworkEntry,
     ClusterOperator,
+    ClusterUserDefinedNetwork,
     ConfigMap,
     ConfigNetwork,
     FeatureGate,
     Infrastructure,
+    NetworkAttachmentDefinition,
     NetworkMigration,
     OperatorCondition,
     OperatorNetwork,
     RouteAdvertisements,
+    UserDefinedNetwork,
     Vtep,
 } from '../types';
 import { AppliedComparison, appliedNotice, compareAppliedSpec, gatewayModeNotice } from './cnoAppliedModel';
+import { buildMasqueradeLayout, MasqueradeLayout } from './masqueradeLayoutModel';
 
 /**
  * The cluster's network configuration as the Network config tab draws it
@@ -34,8 +38,9 @@ import { AppliedComparison, appliedNotice, compareAppliedSpec, gatewayModeNotice
  * `sources`, and the rows that needed it are left out. The capability checklist
  * (`capabilities`, n7r.2) says which advanced features have their prerequisites, and
  * `applied` (n7r.5, `cnoAppliedModel.ts`) whether the operator has applied the spec. The
- * findings (n7r.3) and the masquerade subnet's capacity and layout
- * (n7r.4, from the model of ovn-recon-2n6.1) are not here.
+ * findings (n7r.3) are not here. The masquerade subnet's capacity and address layout
+ * (`masquerade`, n7r.4) are built by `masqueradeLayoutModel.ts` from the model of
+ * ovn-recon-2n6.1.
  */
 
 // --- Sources -----------------------------------------------------------------------
@@ -99,6 +104,13 @@ export interface CnoConfigInputs {
     routeAdvertisements?: RouteAdvertisements[];
     /** Every VTEP; undefined where the kind is not served or may not be listed. */
     vteps?: Vtep[];
+    /**
+     * The networks the shell watches, for the masquerade subnet's use (n7r.4): the NADs
+     * carry the network IDs, and a CUDN or UDN is what makes the subnet unchangeable.
+     */
+    nads?: NetworkAttachmentDefinition[];
+    cudns?: ClusterUserDefinedNetwork[];
+    udns?: UserDefinedNetwork[];
 }
 
 const LOADING: Source<never> = { status: 'loading' };
@@ -301,6 +313,8 @@ export interface CnoConfigModel {
     conditions: ConditionRow[];
     /** The spec against what the operator last applied (ovn-recon-n7r.5, `cnoAppliedModel.ts`). */
     applied: AppliedComparison;
+    /** The masquerade subnet per family: source, capacity and address layout (ovn-recon-n7r.4). */
+    masquerade: MasqueradeLayout;
 }
 
 // --- Helpers -----------------------------------------------------------------------
@@ -683,12 +697,16 @@ export const buildCnoConfigModel = (inputs: CnoConfigInputs, now: number = Date.
     if (appliedWarning) notices.push(appliedWarning);
 
     // --- Sections from the operator configuration ----------------------------------
+    // Known only from the operator configuration; without it the masquerade layout
+    // draws what the Nodes report.
+    let ipFamilies: { ipv4: boolean; ipv6: boolean } | undefined;
     if (operator) {
         const clusterNetwork = spec?.clusterNetwork ?? [];
         const cidrs = [...clusterNetwork.map((entry) => entry.cidr), ...(spec?.serviceNetwork ?? [])];
         const hasV4 = cidrs.some((cidr) => cidr && !isV6(cidr)) || cidrs.length === 0;
         const hasV6 = cidrs.some(isV6);
         const families = hasV4 && hasV6 ? 'Dual stack (IPv4 and IPv6)' : hasV6 ? 'IPv6' : 'IPv4';
+        ipFamilies = { ipv4: hasV4, ipv6: hasV6 };
         const masquerade = nodeMasqueradeSubnets(inputs.nodes);
 
         const addressing: ConfigRow[] = [
@@ -734,7 +752,9 @@ export const buildCnoConfigModel = (inputs: CnoConfigInputs, now: number = Date.
                         fallback: defaults.masquerade,
                         note: configured
                             ? undefined
-                            : 'The default for a new cluster; an upgraded cluster keeps the subnet it was installed with',
+                            : 'The default for a new cluster; an upgraded cluster keeps the subnet it was installed with. '
+                                + 'Capacity and address layout are under Masquerade subnet',
+                        immutable: 'Cannot be changed once a user-defined network exists',
                     },
                 ),
             );
@@ -1038,5 +1058,16 @@ export const buildCnoConfigModel = (inputs: CnoConfigInputs, now: number = Date.
         sections,
         conditions: ordered,
         applied,
+        masquerade: buildMasqueradeLayout({
+            families: ipFamilies,
+            configured: {
+                ipv4: gateway?.ipv4?.internalMasqueradeSubnet,
+                ipv6: gateway?.ipv6?.internalMasqueradeSubnet,
+            },
+            nodes: inputs.nodes,
+            nads: inputs.nads,
+            cudns: inputs.cudns,
+            udns: inputs.udns,
+        }),
     };
 };
