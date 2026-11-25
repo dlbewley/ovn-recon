@@ -50,12 +50,13 @@ export const ClusterScopeHeader: React.FC<ClusterScopeHeaderProps> = ({ tab, dat
     const tabs: ScopeTab[] = [
         { key: 'nodes', title: 'Nodes', path: overviewPath(), count: data.nodeNetworkStatesSettled ? data.summaries.length : undefined },
         { key: 'networks', title: 'Networks', path: networksPath(), count: data.networksLoaded ? data.networkRows.length : undefined },
+        // After Networks, ahead of Findings, while the collector is on (or its URL is open).
+        ...(data.showLogical || tab === 'logical'
+            ? [{ key: 'logical', title: 'Logical topology', path: clusterLogicalPath() }]
+            : []),
         { key: 'findings', title: 'Findings', path: clusterFindingsPath(), count: data.nodeNetworkStatesSettled ? data.findings.length : undefined },
         { key: 'config', title: 'Network config', path: clusterNetworkConfigPath() },
     ];
-    if (data.showLogical || tab === 'logical') {
-        tabs.push({ key: 'logical', title: 'Logical topology', path: clusterLogicalPath() });
-    }
     // Open until the search is cleared, so a followed result can come back to it (ovn-recon-gbr.8).
     if (tab === 'search' || query) tabs.push({ key: 'search', title: 'Search results', path: searchPath(query ?? '') });
 
