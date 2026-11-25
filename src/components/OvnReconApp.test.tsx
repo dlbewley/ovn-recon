@@ -232,7 +232,7 @@ describe('OvnReconApp, the explorer shell', () => {
         it('shows the Logical topology tab when the collector is on', async () => {
             mockGate.enabled = true;
             await render(overviewPath());
-            expect(tabKeys()).toEqual(['nodes', 'networks', 'findings', 'config', 'logical']);
+            expect(tabKeys()).toEqual(['nodes', 'networks', 'logical', 'findings', 'config']);
         });
 
         it('collapses the tree to a rail and back, keeping its filter and moving focus', async () => {
